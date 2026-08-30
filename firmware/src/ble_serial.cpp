@@ -44,33 +44,23 @@ void processIncomingCommand(const String& rawCommand) {
     DeserializationError error = deserializeJson(doc, rawCommand.c_str());
 
     if (!error) {
-        // 1. Trigger mode change: {"mode": 1} or {"mode": "1"}
+        // 1. Trigger mode change: {"mode": 1}
+        // (raw-text "1" / "mode 1" for manual serial is handled in the fallback below)
         if (doc["mode"].is<int>()) {
             int modeVal = doc["mode"].as<int>();
             if (modeVal >= 0 && modeVal <= 3) {
                 setOperatingMode(static_cast<OperatingMode>(modeVal));
                 ESP_LOGI(TAG, "Command triggered mode change to: %d", modeVal);
             }
-        } else if (doc["mode"].is<const char*>() || doc["mode"].is<String>()) {
-            String mStr = doc["mode"].as<String>();
-            int modeVal = mStr.toInt();
-            if (modeVal >= 0 && modeVal <= 3) {
-                setOperatingMode(static_cast<OperatingMode>(modeVal));
-                ESP_LOGI(TAG, "Command triggered mode change to: %d", modeVal);
-            }
         }
 
-        // 2. Trigger target lock: {"mac": "AA:BB:CC:DD:EE:FF"} or {"lock_mac": "..."} or {"target": "..."} or {"lock": "..."}
+        // 2. Trigger target lock: {"lock": "AA:BB:CC:DD:EE:FF"}
+        // ponytail: "mac" also locks here, but it doubles as the ble_write
+        // target key (section 5), so a ble_write command spuriously re-locks.
+        // Left as-is; disentangling the mac key is a correctness fix, not this
+        // cleanup. Fix: gate the mac-lock on there being no "action".
         if (doc["mac"].is<const char*>() || doc["mac"].is<String>()) {
             String targetMac = doc["mac"].as<String>();
-            setBanditLockTarget(targetMac);
-            ESP_LOGI(TAG, "Command set target lock MAC: %s", targetMac.c_str());
-        } else if (doc["lock_mac"].is<const char*>() || doc["lock_mac"].is<String>()) {
-            String targetMac = doc["lock_mac"].as<String>();
-            setBanditLockTarget(targetMac);
-            ESP_LOGI(TAG, "Command set target lock MAC: %s", targetMac.c_str());
-        } else if (doc["target"].is<const char*>() || doc["target"].is<String>()) {
-            String targetMac = doc["target"].as<String>();
             setBanditLockTarget(targetMac);
             ESP_LOGI(TAG, "Command set target lock MAC: %s", targetMac.c_str());
         } else if (doc["lock"].is<const char*>() || doc["lock"].is<String>()) {
