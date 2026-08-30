@@ -10,7 +10,6 @@
   },
   "devDependencies": {
     "@capacitor/cli": "^8.5.0",
-    "@vitejs/plugin-react": "^6.0.5",
     "vite": "^8.2.0"
   },
   "dependencies": {
@@ -20,8 +19,6 @@
     "@capacitor/core": "^8.5.0",
     "@capacitor/geolocation": "^8.2.2",
     "leaflet": "^1.9.4",
-    "leaflet.offline": "^3.2.1",
-    "react": "^19.2.8",
-    "react-dom": "^19.2.8"
+    "leaflet.offline": "^3.2.1"
   }
 }
