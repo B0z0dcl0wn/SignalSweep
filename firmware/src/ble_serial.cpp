@@ -54,12 +54,12 @@ void processIncomingCommand(const String& rawCommand) {
             }
         }
 
-        // 2. Trigger target lock: {"lock": "AA:BB:CC:DD:EE:FF"}
-        // ponytail: "mac" also locks here, but it doubles as the ble_write
-        // target key (section 5), so a ble_write command spuriously re-locks.
-        // Left as-is; disentangling the mac key is a correctness fix, not this
-        // cleanup. Fix: gate the mac-lock on there being no "action".
-        if (doc["mac"].is<const char*>() || doc["mac"].is<String>()) {
+        // 2. Trigger target lock: {"lock": "AA:BB:CC:DD:EE:FF"} or bare {"mac": "..."}.
+        // "mac" also carries the ble_write target (section 5), so only treat it
+        // as a lock when there's no "action" — otherwise a ble_write spuriously
+        // re-locks the target.
+        if (!doc["action"].is<const char*>() && !doc["action"].is<String>() &&
+            (doc["mac"].is<const char*>() || doc["mac"].is<String>())) {
             String targetMac = doc["mac"].as<String>();
             setBanditLockTarget(targetMac);
             ESP_LOGI(TAG, "Command set target lock MAC: %s", targetMac.c_str());
