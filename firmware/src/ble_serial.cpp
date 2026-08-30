@@ -44,14 +44,18 @@ void processIncomingCommand(const String& rawCommand) {
     DeserializationError error = deserializeJson(doc, rawCommand.c_str());
 
     if (!error) {
-        // 1. Trigger mode change: {"mode": 1}
-        // (raw-text "1" / "mode 1" for manual serial is handled in the fallback below)
+        // 1. Trigger mode change: {"mode": 1}, or a bare number "1" (which
+        // parses as valid JSON, so it lands here rather than the raw fallback).
+        // (raw-text "mode 1" for manual serial is handled in the fallback below)
+        int modeVal = -1;
         if (doc["mode"].is<int>()) {
-            int modeVal = doc["mode"].as<int>();
-            if (modeVal >= 0 && modeVal <= 3) {
-                setOperatingMode(static_cast<OperatingMode>(modeVal));
-                ESP_LOGI(TAG, "Command triggered mode change to: %d", modeVal);
-            }
+            modeVal = doc["mode"].as<int>();
+        } else if (doc.is<int>()) {
+            modeVal = doc.as<int>();
+        }
+        if (modeVal >= 0 && modeVal <= 3) {
+            setOperatingMode(static_cast<OperatingMode>(modeVal));
+            ESP_LOGI(TAG, "Command triggered mode change to: %d", modeVal);
         }
 
         // 2. Trigger target lock: {"lock": "AA:BB:CC:DD:EE:FF"} or bare {"mac": "..."}.
@@ -106,15 +110,12 @@ void processIncomingCommand(const String& rawCommand) {
             }
         }
     } else {
-        // Raw text fallback parsing (e.g. "1", "2", "3", "0", "mode 1", "lock AA:BB:CC:DD:EE:FF")
+        // Raw text fallback parsing (e.g. "mode 1", "lock AA:BB:CC:DD:EE:FF").
+        // Bare digits like "1" are valid JSON, so they're handled above, not here.
         String rawStr = rawCommand;
         rawStr.trim();
 
-        if (rawStr == "0" || rawStr == "1" || rawStr == "2" || rawStr == "3") {
-            int modeVal = rawStr.toInt();
-            setOperatingMode(static_cast<OperatingMode>(modeVal));
-            ESP_LOGI(TAG, "Raw string triggered mode change to: %d", modeVal);
-        } else if (rawStr.startsWith("mode ") || rawStr.startsWith("mode=")) {
+        if (rawStr.startsWith("mode ") || rawStr.startsWith("mode=")) {
             int modeVal = rawStr.substring(5).toInt();
             if (modeVal >= 0 && modeVal <= 3) {
                 setOperatingMode(static_cast<OperatingMode>(modeVal));
