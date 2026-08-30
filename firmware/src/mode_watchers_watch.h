@@ -49,13 +49,13 @@ bool isWatchersWatchActive();
 
 /**
  * @brief Get JSON representation of all tracked surveillance targets
- * @return JSON string formatted for GET /api/watchers/targets
+ * @return JSON string sent to the app over BLE NUS via sendBleSerial()
  */
 String getWatchersTargetsJson();
 
 /**
  * @brief Get JSON representation of all signature rules from LittleFS
- * @return JSON string formatted for GET /api/watchers/signatures
+ * @return JSON string sent to the app over BLE NUS via sendBleSerial()
  */
 String getWatchersSignaturesJson();
 

@@ -49,8 +49,8 @@ bool setBanditLockTarget(const String& mac);
 String getBanditLockTarget();
 
 /**
- * @brief Get JSON representation of all tracked targets for web API
- * @return JSON string formatted for GET /api/bandit/targets
+ * @brief Get JSON representation of all tracked targets
+ * @return JSON string sent to the app over BLE NUS via sendBleSerial()
  */
 String getBanditTargetsJson();
 

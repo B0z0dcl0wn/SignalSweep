@@ -45,7 +45,7 @@ bool isSkySweeperActive();
 
 /**
  * @brief Get JSON representation of all detected drone targets
- * @return JSON string formatted for GET /api/skysweeper/targets
+ * @return JSON string sent to the app over BLE NUS via sendBleSerial()
  */
 String getSkySweeperTargetsJson();
 
