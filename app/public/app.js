@@ -196,7 +196,11 @@
                         renderTargets(1, data.targets);
                     }
                 } else if (data.mode === 2) {
-                    // War Flocking logic...
+                    // War Flocking: render the surveillance list (map trail is driven by GPS).
+                    if (data.targets) renderTargets(2, data.targets);
+                } else if (data.mode === 3) {
+                    // Sky Sweeper: render the drone list (radar blips handled in renderTargets).
+                    if (data.targets) renderTargets(3, data.targets);
                 }
             } catch (e) {
                 console.warn('Data parse error:', e);
@@ -829,9 +833,11 @@
                 return;
             }
 
-            // Beacon Bandit: pin the locked-on target to the top regardless of RSSI.
+            // Beacon Bandit: locked-on target first, then by stalking score.
             if (mode === 1) {
-                targets = targets.slice().sort((a, b) => (b.is_locked ? 1 : 0) - (a.is_locked ? 1 : 0));
+                targets = targets.slice().sort((a, b) =>
+                    ((b.is_locked ? 1 : 0) - (a.is_locked ? 1 : 0)) ||
+                    ((b.stalking_score || 0) - (a.stalking_score || 0)));
             }
 
             let html = '';
@@ -903,11 +909,25 @@
                     </div>`;
                 }
 
+                // Confidence badge (Watcher's Watch) / stalking-risk badge (Beacon Bandit)
+                let badgeHtml = '';
+                if (mode === 2) {
+                    const tier = t.tier || 'Possible';
+                    const conf = (t.confidence != null) ? t.confidence : 0;
+                    const color = tier === 'Confirmed' ? 'var(--accent-red)'
+                                : tier === 'Likely' ? 'var(--accent-amber)'
+                                : 'var(--text-muted)';
+                    badgeHtml = `<span style="margin-left:8px; font-size:0.65rem; font-weight:bold; text-transform:uppercase; padding:2px 6px; border-radius:4px; border:1px solid ${color}; color:${color};">${tier} ${conf}%</span>`;
+                } else if (mode === 1 && (t.is_separated || (t.stalking_score || 0) >= 40)) {
+                    const sep = t.is_separated ? ' · separated' : '';
+                    badgeHtml = `<span style="margin-left:8px; font-size:0.65rem; font-weight:bold; text-transform:uppercase; padding:2px 6px; border-radius:4px; border:1px solid var(--accent-red); color:var(--accent-red);">⚠ Stalking ${t.stalking_score || 0}${sep}</span>`;
+                }
+
                 html += `
                 <div class="target-card ${mode === 1 ? isLocked : ''}" ${mode === 1 ? `onclick="lockTarget('${mac}', ${t.is_locked})"` : ''}>
                     <div style="display: flex; justify-content: space-between; width: 100%; align-items: center;">
                         <div>
-                            <h3 style="color: var(--accent-cyan); margin-bottom: 0.3rem; font-size: 1.1rem;">${name}</h3>
+                            <h3 style="color: var(--accent-cyan); margin-bottom: 0.3rem; font-size: 1.1rem;">${name}${badgeHtml}</h3>
                             <div style="font-size: 0.8rem; color: var(--text-muted)">MAC: ${mac} | ${details}</div>
                         </div>
                         ${rssiSectionHtml}
