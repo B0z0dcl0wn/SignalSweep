@@ -12,6 +12,7 @@
 #include <freertos/semphr.h>
 #include <freertos/task.h>
 #include <vector>
+#include <algorithm>
 #include "hardware_manager.h"
 
 static const char *TAG = "WatchersWatch";
@@ -100,14 +101,42 @@ static void ensureSignaturesFileExists() {
 }
 
 /**
- * @brief Match an advertised device against a signature rule in memory
+ * @brief Confidence weights per signal type. An OUI prefix is weak (shared
+ * across a vendor's whole catalogue and easily randomized); a matching mfg ID
+ * is medium; a device-name substring or service UUID is strong. WiFi vendor-IE
+ * and SSID weights live in the promiscuous callback.
+ * ponytail: tune these against field false-positive rates.
  */
-static bool matchDeviceAgainstRule(NimBLEAdvertisedDevice* dev, const WatcherSignature& sig, String& outMatchedRule, String& outCategory) {
-    bool hasCondition = false;
+#define W_OUI    30
+#define W_MFG    45
+#define W_NAME   70
+#define W_UUID   70
+#define W_WIFI_OUI 30
+// ponytail: Lite-On vendor IE (50:6F:9A) is only a weak hint — 50:6F:9A is
+// Lite-On Technology's general OUI, present in many consumer WiFi chips, not
+// Flock-specific. Bench testing flagged 3 random nearby devices as "Confirmed"
+// when this was 80. Keep it weak; real confidence needs the SSID or corroboration.
+#define W_WIFI_IE  30
+#define W_WIFI_SSID 80
+#define W_CORROBORATION 15   // same MAC seen on both BLE and WiFi
+#define CONF_LIST_MIN   30   // ignore anything weaker than a lone OUI hit
+
+static String tierForConfidence(int confidence) {
+    if (confidence >= 75) return "Confirmed";
+    if (confidence >= 45) return "Likely";
+    return "Possible";
+}
+
+/**
+ * @brief Match a device against one signature rule. Returns an accumulated
+ * confidence weight (0 = no match). A rule ANDs its non-empty conditions; the
+ * returned weight is the sum of the matched conditions' weights (capped 100).
+ */
+static int matchDeviceAgainstRule(NimBLEAdvertisedDevice* dev, const WatcherSignature& sig, String& outMatchedRule, String& outCategory) {
+    int weight = 0;
 
     // 1. Check OUI (MAC Prefix)
     if (sig.oui.length() > 0) {
-        hasCondition = true;
         String mac = String(dev->getAddress().toString().c_str());
         String cleanMac = "";
         for (size_t i = 0; i < mac.length(); i++) {
@@ -121,19 +150,19 @@ static bool matchDeviceAgainstRule(NimBLEAdvertisedDevice* dev, const WatcherSig
         }
 
         if (!cleanMac.startsWith(cleanOui)) {
-            return false;
+            return 0;
         }
+        weight += W_OUI;
     }
 
     // 2. Check Manufacturer ID
     if (sig.mfgId.length() > 0) {
-        hasCondition = true;
         if (!dev->haveManufacturerData()) {
-            return false;
+            return 0;
         }
         std::string mfg = dev->getManufacturerData();
         if (mfg.length() < 2) {
-            return false;
+            return 0;
         }
         uint16_t devMfgId = static_cast<uint8_t>(mfg[0]) | (static_cast<uint8_t>(mfg[1]) << 8);
 
@@ -147,15 +176,15 @@ static bool matchDeviceAgainstRule(NimBLEAdvertisedDevice* dev, const WatcherSig
         }
 
         if (devMfgId != targetMfgId) {
-            return false;
+            return 0;
         }
+        weight += W_MFG;
     }
 
     // 3. Check Device Name Substring
     if (sig.deviceName.length() > 0) {
-        hasCondition = true;
         if (!dev->haveName()) {
-            return false;
+            return 0;
         }
         String devName = String(dev->getName().c_str());
         devName.toLowerCase();
@@ -163,15 +192,15 @@ static bool matchDeviceAgainstRule(NimBLEAdvertisedDevice* dev, const WatcherSig
         targetName.toLowerCase();
 
         if (devName.indexOf(targetName) < 0) {
-            return false;
+            return 0;
         }
+        weight += W_NAME;
     }
 
     // 4. Check Service UUID
     if (sig.serviceUuid.length() > 0) {
-        hasCondition = true;
         if (!dev->haveServiceUUID()) {
-            return false;
+            return 0;
         }
         bool uuidMatched = false;
         size_t count = dev->getServiceUUIDCount();
@@ -187,17 +216,18 @@ static bool matchDeviceAgainstRule(NimBLEAdvertisedDevice* dev, const WatcherSig
             }
         }
         if (!uuidMatched) {
-            return false;
+            return 0;
         }
+        weight += W_UUID;
     }
 
-    if (!hasCondition) {
-        return false;
+    if (weight == 0) {
+        return 0;  // rule had no conditions
     }
 
     outMatchedRule = sig.name.length() > 0 ? sig.name : "Matched Signature";
     outCategory = sig.category.length() > 0 ? sig.category : "Surveillance";
-    return true;
+    return weight > 100 ? 100 : weight;
 }
 
 /**
@@ -216,28 +246,47 @@ class WatchersScanCallbacks : public NimBLEAdvertisedDeviceCallbacks {
         String devName = advertisedDevice->haveName() ? String(advertisedDevice->getName().c_str()) : "";
 
         if (xSemaphoreTake(watchersMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+            // Accumulate confidence across every rule this device matches, so
+            // corroborating signals (e.g. OUI + service UUID) add up. Keep the
+            // rule/category from the single strongest match for display.
+            int confidence = 0;
+            int bestWeight = 0;
             String matchedRule = "";
             String matchedCategory = "";
-            bool isMatch = false;
 
             for (const auto& sig : loadedSignatures) {
-                if (matchDeviceAgainstRule(advertisedDevice, sig, matchedRule, matchedCategory)) {
-                    isMatch = true;
-                    break;
+                String r = "", c = "";
+                int w = matchDeviceAgainstRule(advertisedDevice, sig, r, c);
+                if (w > 0) {
+                    confidence += w;
+                    if (w > bestWeight) {
+                        bestWeight = w;
+                        matchedRule = r;
+                        matchedCategory = c;
+                    }
                 }
             }
+            if (confidence > 100) confidence = 100;
 
-            if (isMatch) {
+            if (confidence >= CONF_LIST_MIN) {
                 bool found = false;
                 for (auto& target : trackedTargets) {
                     if (target.mac.equalsIgnoreCase(mac)) {
                         target.rssi = rssi;
                         target.lastSeenMs = now;
                         target.count++;
-                        target.protocol = "BLE";
-                        if (devName.length() > 0) {
-                            target.name = devName;
+                        // Corroboration: this MAC was previously seen over WiFi.
+                        int merged = confidence;
+                        if (target.protocol == "WiFi" || target.protocol == "BLE+WiFi") {
+                            merged = confidence + W_CORROBORATION;
+                            target.protocol = "BLE+WiFi";
+                        } else {
+                            target.protocol = "BLE";
                         }
+                        if (merged > 100) merged = 100;
+                        if (merged > target.confidence) target.confidence = merged;
+                        target.tier = tierForConfidence(target.confidence);
+                        if (devName.length() > 0) target.name = devName;
                         target.type = matchedCategory;
                         target.matchedRule = matchedRule;
                         found = true;
@@ -256,16 +305,17 @@ class WatchersScanCallbacks : public NimBLEAdvertisedDeviceCallbacks {
                     newTarget.lastSeenMs = now;
                     newTarget.count = 1;
                     newTarget.protocol = "BLE";
+                    newTarget.confidence = confidence;
+                    newTarget.tier = tierForConfidence(confidence);
                     trackedTargets.push_back(newTarget);
 
-                    ESP_LOGI(TAG, "[SURVEILLANCE DETECTED] MAC: %s, Rule: %s, Category: %s, RSSI: %d dBm",
-                             mac.c_str(), matchedRule.c_str(), matchedCategory.c_str(), rssi);
-                    
-                    if (matchedCategory.indexOf("Possible") >= 0) {
-                        triggerWarning();
-                    } else {
-                        triggerAlarm();
-                    }
+                    ESP_LOGI(TAG, "[SURVEILLANCE] MAC: %s, Rule: %s, Cat: %s, Conf: %d (%s), RSSI: %d",
+                             mac.c_str(), matchedRule.c_str(), matchedCategory.c_str(),
+                             confidence, newTarget.tier.c_str(), rssi);
+
+                    // Only sound the full alarm for a high-confidence hit.
+                    if (confidence >= 75) triggerAlarm();
+                    else triggerWarning();
                 }
             }
             xSemaphoreGive(watchersMutex);
@@ -283,13 +333,15 @@ static TaskHandle_t watchersWifiHopTaskHandle = NULL;
 
 static void watchersWifiChannelHopperTask(void *pvParameters) {
     (void)pvParameters;
-    const uint8_t channels[] = {1, 6, 11};
+    // Hop all US 2.4 GHz channels so a Flock node beaconing off 1/6/11 isn't
+    // missed. (ESP32-S3 is 2.4 GHz only.)
+    const uint8_t channels[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
     int chIndex = 0;
     while (watchersRunning) {
         vTaskDelay(pdMS_TO_TICKS(150));
         if (!watchersRunning) break;
         esp_wifi_set_channel(channels[chIndex], WIFI_SECOND_CHAN_NONE);
-        chIndex = (chIndex + 1) % 3;
+        chIndex = (chIndex + 1) % (int)(sizeof(channels) / sizeof(channels[0]));
     }
     watchersWifiHopTaskHandle = NULL;
     vTaskDelete(NULL);
@@ -317,10 +369,11 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
     if (ftype == 0 && (fsubtype == 4 || fsubtype == 5 || fsubtype == 8)) {
         if (watchersMutex == NULL) return;
         
-        bool isFlock = false;
+        int wifiConfidence = 0;
+        int bestWeight = 0;
         String matchedRule = "";
-        
-        // 1. Check OUI
+
+        // 1. Check OUI (weak signal)
         String mac = "";
         char macBuf[20];
         snprintf(macBuf, sizeof(macBuf), "%02X:%02X:%02X:%02X:%02X:%02X", addr2[0], addr2[1], addr2[2], addr2[3], addr2[4], addr2[5]);
@@ -330,7 +383,7 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
             char c = mac[i];
             if (c != ':' && c != '-') cleanMac += (char)toupper(c);
         }
-        
+
         if (xSemaphoreTake(watchersMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
             for (const auto& sig : loadedSignatures) {
                 if (sig.oui.length() > 0) {
@@ -340,52 +393,54 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
                         if (c != ':' && c != '-') cleanOui += (char)toupper(c);
                     }
                     if (cleanMac.startsWith(cleanOui)) {
-                        isFlock = true;
-                        matchedRule = sig.name.length() > 0 ? sig.name : "WiFi OUI Match";
+                        wifiConfidence += W_WIFI_OUI;
+                        if (W_WIFI_OUI > bestWeight) { bestWeight = W_WIFI_OUI; matchedRule = sig.name.length() > 0 ? sig.name : "WiFi OUI Match"; }
                         break;
                     }
                 }
             }
             xSemaphoreGive(watchersMutex);
         }
-        
-        // 2. Check LiteOn IE (0x221 length>=4 50 6F 9A)
-        if (!isFlock && length > 24 + 12) {
+
+        // 2. Strong signals: Lite-On Flock vendor IE (50:6F:9A) and Flock SSIDs.
+        // Scanned unconditionally so they add to (not replace) the OUI weight.
+        if (length > 24 + 12) {
             int offset = (fsubtype == 4) ? 24 : 36;
             int body_len = length - offset - 4; // -4 for FCS
             const uint8_t *body = payload + offset;
-            
+            bool ieHit = false, ssidHit = false;
+
             int b = 0;
             while (b < body_len - 1) {
                 uint8_t id = body[b];
                 uint8_t elen = body[b+1];
                 if (b + 2 + elen > body_len) break;
-                
-                // LiteOn IE
-                if (id == 221 && elen >= 4 && body[b+2] == 0x50 && body[b+3] == 0x6F && body[b+4] == 0x9A) {
-                    isFlock = true;
-                    matchedRule = "Lite-On Flock Vendor IE";
-                    break;
+
+                if (!ieHit && id == 221 && elen >= 4 && body[b+2] == 0x50 && body[b+3] == 0x6F && body[b+4] == 0x9A) {
+                    ieHit = true;
+                    wifiConfidence += W_WIFI_IE;
+                    if (W_WIFI_IE > bestWeight) { bestWeight = W_WIFI_IE; matchedRule = "Lite-On Flock Vendor IE"; }
                 }
-                
-                // SSID Check
-                if (id == 0 && elen > 0 && elen <= 32) {
+
+                if (!ssidHit && id == 0 && elen > 0 && elen <= 32) {
                     char ssid[33] = {0};
                     memcpy(ssid, body + b + 2, elen);
                     String ssidStr = String(ssid);
                     ssidStr.toLowerCase();
                     if (ssidStr.indexOf("flock") >= 0 || ssidStr.indexOf("fs_") >= 0 || ssidStr.indexOf("pigvision") >= 0) {
-                        isFlock = true;
-                        matchedRule = "Flock SSID Signature";
-                        break;
+                        ssidHit = true;
+                        wifiConfidence += W_WIFI_SSID;
+                        if (W_WIFI_SSID > bestWeight) { bestWeight = W_WIFI_SSID; matchedRule = "Flock SSID Signature"; }
                     }
                 }
-                
+
                 b += 2 + elen;
             }
         }
-        
-        if (isFlock && xSemaphoreTake(watchersMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+
+        if (wifiConfidence > 100) wifiConfidence = 100;
+
+        if (wifiConfidence >= CONF_LIST_MIN && xSemaphoreTake(watchersMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
             bool found = false;
             uint32_t now = millis();
             for (auto& target : trackedTargets) {
@@ -393,10 +448,19 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
                     target.rssi = rssi;
                     target.lastSeenMs = now;
                     target.count++;
-                        target.protocol = "BLE";
+                    int merged = wifiConfidence;
+                    // Corroboration: this MAC was previously seen over BLE.
+                    if (target.protocol == "BLE" || target.protocol == "BLE+WiFi") {
+                        merged = wifiConfidence + W_CORROBORATION;
+                        target.protocol = "BLE+WiFi";
+                    } else {
+                        target.protocol = "WiFi";
+                    }
+                    if (merged > 100) merged = 100;
+                    if (merged > target.confidence) target.confidence = merged;
+                    target.tier = tierForConfidence(target.confidence);
                     target.type = "Flock Safety";
                     target.matchedRule = matchedRule;
-                    target.protocol = "WiFi";
                     found = true;
                     break;
                 }
@@ -411,11 +475,13 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
                 newTarget.firstSeenMs = now;
                 newTarget.lastSeenMs = now;
                 newTarget.count = 1;
-                    newTarget.protocol = "BLE";
                 newTarget.protocol = "WiFi";
+                newTarget.confidence = wifiConfidence;
+                newTarget.tier = tierForConfidence(wifiConfidence);
                 trackedTargets.push_back(newTarget);
-                
-                ESP_LOGI(TAG, "[SURVEILLANCE DETECTED - WIFI] MAC: %s, Rule: %s, RSSI: %d dBm", mac.c_str(), matchedRule.c_str(), rssi);
+
+                ESP_LOGI(TAG, "[SURVEILLANCE - WIFI] MAC: %s, Rule: %s, Conf: %d (%s), RSSI: %d",
+                         mac.c_str(), matchedRule.c_str(), wifiConfidence, newTarget.tier.c_str(), rssi);
             }
             xSemaphoreGive(watchersMutex);
         }
@@ -582,8 +648,13 @@ String getWatchersTargetsJson() {
     if (watchersMutex != NULL && xSemaphoreTake(watchersMutex, pdMS_TO_TICKS(200)) == pdTRUE) {
         doc["count"] = trackedTargets.size();
 
+        std::vector<WatcherTargetInfo> sortedTargets = trackedTargets;
+        std::sort(sortedTargets.begin(), sortedTargets.end(), [](const WatcherTargetInfo& a, const WatcherTargetInfo& b) {
+            return a.confidence > b.confidence;
+        });
+
         JsonArray targetsArr = doc["targets"].to<JsonArray>();
-        for (const auto& t : trackedTargets) {
+        for (const auto& t : sortedTargets) {
             JsonObject obj = targetsArr.add<JsonObject>();
             obj["mac"] = t.mac;
             obj["name"] = t.name;
@@ -594,6 +665,8 @@ String getWatchersTargetsJson() {
             obj["last_seen_ms"] = t.lastSeenMs;
             obj["count"] = t.count;
             obj["protocol"] = t.protocol.length() > 0 ? t.protocol : "BLE";
+            obj["confidence"] = t.confidence;
+            obj["tier"] = t.tier.length() > 0 ? t.tier : "Possible";
         }
         xSemaphoreGive(watchersMutex);
     } else {

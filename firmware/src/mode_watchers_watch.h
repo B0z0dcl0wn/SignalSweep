@@ -29,6 +29,8 @@ struct WatcherTargetInfo {
     uint32_t firstSeenMs;
     uint32_t lastSeenMs;
     uint32_t count;
+    int confidence;   // 0-100, accumulated across matching signals
+    String tier;      // "Confirmed" | "Likely" | "Possible"
 };
 
 /**
