@@ -272,14 +272,17 @@ static void wifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type_t type)
  */
 static void wifiChannelHopperTask(void *pvParameters) {
     (void)pvParameters;
-    uint8_t channels[] = {1, 6, 11};
+    // Hop all US 2.4 GHz channels, not just 1/6/11: a drone's Remote ID WiFi
+    // rides its operating channel, which can be any of them. 5 GHz Remote ID is
+    // out of reach — the ESP32-S3 radio is 2.4 GHz only (a hardware limit).
+    uint8_t channels[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
     uint8_t chIndex = 0;
     uint32_t lastPushTime = 0;
 
     while (skySweeperRunning) {
         // Channel hop across 2.4 GHz primary channels
         esp_wifi_set_channel(channels[chIndex], WIFI_SECOND_CHAN_NONE);
-        chIndex = (chIndex + 1) % 3;
+        chIndex = (chIndex + 1) % (sizeof(channels) / sizeof(channels[0]));
 
         uint32_t now = millis();
         if (now - lastPushTime >= 1000) {
