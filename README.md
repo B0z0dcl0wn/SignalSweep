@@ -26,6 +26,8 @@ The firmware is designed to run on a XIAO ESP32-S3 board. It handles hardware in
 4. Click the **PlatformIO: Upload** button (right arrow icon in the bottom status bar) to compile and flash the firmware to the device.
 5. Use the **PlatformIO: Serial Monitor** (plug icon) to view debug logs.
 
+**From the command line:** the firmware has one build environment per hardware tier. Flash the current cheap/off-the-shelf build with `python flash.py --tier 1 --port COM3` (Tier 1 uses a XIAO ESP32-S3 with an external U.FL antenna). `--tier 2/3` target future hardware layers (screen/battery/second-radio, then GPS/buttons) from the same codebase.
+
 ---
 
 ## 2. Control App (pp/)

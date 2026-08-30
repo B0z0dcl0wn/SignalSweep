@@ -4,6 +4,7 @@
 #include "mode_sky_sweeper.h"
 #include "hardware_manager.h"
 #include "ble_serial.h"
+#include "capabilities.h"
 #include <Preferences.h>
 #include <ArduinoJson.h>
 #include <esp_log.h>
@@ -132,6 +133,7 @@ void ModeManagerTask(void *pvParameters) {
                 doc["status"] = "success";
                 doc["mode"] = 0;
                 doc["name"] = getModeName(MODE_SELECTOR);
+                doc["tier"] = getTier();
                 String msg;
                 serializeJson(doc, msg);
                 sendBleSerial(msg);
@@ -150,6 +152,13 @@ void modeManagerInit() {
         currentMode = static_cast<OperatingMode>(savedMode);
     }
     prefs.end();
+
+    // Board self-ID: persist the compiled hardware tier so a future
+    // flash.py --auto can read it back over serial (see capabilities.h).
+    prefs.begin("ouispy-hw", false);
+    prefs.putInt("tier", getTier());
+    prefs.end();
+    ESP_LOGI(TAG, "Hardware tier: %d", getTier());
 
     // Create FreeRTOS queue for mode change events
     modeChangeQueue = xQueueCreate(5, sizeof(OperatingMode));
