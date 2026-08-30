@@ -91,6 +91,22 @@ static String checkFingerprint(NimBLEAdvertisedDevice* dev) {
 }
 
 /**
+ * @brief Detect the Apple Find My "offline finding" broadcast (mfg 0x004C,
+ * message type 0x12), which a tag sends when it is separated from its owner and
+ * actively findable — i.e. the state that matters for stalking detection.
+ * ponytail: keys on the message type, which AirGuard/OpenHaystack treat as the
+ * separated indicator; the status byte's finer bits aren't needed here.
+ */
+static bool detectFindMySeparated(NimBLEAdvertisedDevice* dev) {
+    if (!dev->haveManufacturerData()) return false;
+    std::string mfg = dev->getManufacturerData();
+    return mfg.length() >= 3 &&
+           static_cast<uint8_t>(mfg[0]) == 0x4C &&
+           static_cast<uint8_t>(mfg[1]) == 0x00 &&
+           static_cast<uint8_t>(mfg[2]) == 0x12;
+}
+
+/**
  * @brief NimBLE Scan Callbacks for processing advertised devices
  */
 class BanditScanCallbacks : public NimBLEAdvertisedDeviceCallbacks {
@@ -142,6 +158,7 @@ class BanditScanCallbacks : public NimBLEAdvertisedDeviceCallbacks {
                     target.count++;
                     target.isLocked = isLockTarget;
                     target.addrType = advertisedDevice->getAddress().getType();
+                    target.isSeparated = detectFindMySeparated(advertisedDevice);
                     if (devName.length() > 0) {
                         target.name = devName;
                     }
@@ -164,6 +181,7 @@ class BanditScanCallbacks : public NimBLEAdvertisedDeviceCallbacks {
                 newTarget.count = 1;
                 newTarget.isLocked = isLockTarget;
                 newTarget.addrType = advertisedDevice->getAddress().getType();
+                newTarget.isSeparated = detectFindMySeparated(advertisedDevice);
                 trackedTargets.push_back(newTarget);
 
                 ESP_LOGI(TAG, "New Target Discovered -> MAC: %s, Type: %s, RSSI: %d dBm", 
@@ -444,6 +462,22 @@ String getBanditTargetsJson() {
             obj["last_seen_ms"] = t.lastSeenMs;
             obj["count"] = t.count;
             obj["is_locked"] = t.isLocked;
+
+            // Stalking score: a tracker that lingers near you over time is the
+            // signal. Persistence (duration) + repeat sightings + proximity +
+            // Find My separated-state, per MAC. ponytail: per-MAC only — MAC
+            // rotation (~15 min) breaks cross-rotation identity; tune weights.
+            uint32_t durMs = (t.lastSeenMs >= t.firstSeenMs) ? (t.lastSeenMs - t.firstSeenMs) : 0;
+            int durMin = (int)(durMs / 60000UL);
+            int score = durMin * 8
+                      + (t.count > 20 ? 20 : (int)t.count)
+                      + (t.rssi > -70 ? 20 : 0)
+                      + (t.isSeparated ? 35 : 0);
+            if (score > 100) score = 100;
+
+            obj["is_separated"] = t.isSeparated;
+            obj["duration_ms"] = durMs;
+            obj["stalking_score"] = score;
         }
         xSemaphoreGive(banditMutex);
     } else {

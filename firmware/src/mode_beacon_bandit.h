@@ -17,6 +17,7 @@ struct BanditTargetInfo {
     uint32_t count;
     bool isLocked;
     uint8_t addrType;
+    bool isSeparated;   // Apple Find My "offline finding" — separated from owner
 };
 
 /**
