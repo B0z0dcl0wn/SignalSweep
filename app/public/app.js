@@ -339,6 +339,20 @@
 
         // Web Bluetooth Connection
         
+        // Subscribe to TX notifications for a native BLE device (shared by
+        // connect and by reconcileConnection after a resume).
+        async function subscribeNative(deviceId) {
+            await window.BleClient.startNotifications(
+                deviceId,
+                NUS_SERVICE_UUID,
+                NUS_TX_UUID,
+                (value) => {
+                    const chunk = new TextDecoder('utf-8').decode(value.buffer);
+                    processIncomingChunk(chunk);
+                }
+            );
+        }
+
         async function connectNativeBluetooth() {
             const pulseDot = document.getElementById('pulseDot');
             const connStatusText = document.getElementById('connStatusText');
@@ -347,34 +361,59 @@
 
             try {
                 await window.BleClient.initialize({ androidNeverForLocation: true });
-                const device = await window.BleClient.requestDevice({
-                    services: [NUS_SERVICE_UUID],
-                    optionalServices: [NUS_SERVICE_UUID]
-                });
-                
-                await window.BleClient.connect(device.deviceId, (deviceId) => {
-                    onDeviceDisconnected();
-                });
-                
+
+                // The native link can already be up (e.g. after backgrounding) —
+                // and a still-connected device stops advertising, so a fresh scan
+                // would find nothing. Reattach to an existing connection first.
+                const existing = await window.BleClient.getConnectedDevices([NUS_SERVICE_UUID]);
+                let device = existing && existing[0];
+
+                if (!device) {
+                    device = await window.BleClient.requestDevice({
+                        services: [NUS_SERVICE_UUID],
+                        optionalServices: [NUS_SERVICE_UUID]
+                    });
+                    await window.BleClient.connect(device.deviceId, () => onDeviceDisconnected());
+                } else {
+                    try { await window.BleClient.connect(device.deviceId, () => onDeviceDisconnected()); } catch (e) { /* already connected */ }
+                }
+
                 bleDevice = device;
-                
-                await window.BleClient.startNotifications(
-                    device.deviceId,
-                    NUS_SERVICE_UUID,
-                    NUS_TX_UUID,
-                    (value) => {
-                        const decoder = new TextDecoder('utf-8');
-                        const chunk = decoder.decode(value.buffer);
-                        processIncomingChunk(chunk);
-                    }
-                );
-                
+                try { localStorage.setItem('lastDeviceId', device.deviceId); } catch (e) {}
+                await subscribeNative(device.deviceId);
+
                 updateConnectionUI(true, 'BLE');
                 sendCommand({ get: 'status' });
             } catch (err) {
                 console.error('Native BLE Connect Failed:', err);
                 updateConnectionUI(false);
                 showToast(`Native BLE Connect Failed: ${err.message || err}`, '✕');
+            }
+        }
+
+        // Re-sync the app's connection state with the actual native BLE link.
+        // The JS/UI state can drift from reality across background/resume (the
+        // native connection survives with no disconnect callback), leaving the
+        // app showing "disconnected" while still connected. Called on resume.
+        async function reconcileConnection() {
+            if (!(window.Capacitor && window.Capacitor.isNativePlatform() && window.BleClient)) return;
+            try {
+                const connected = await window.BleClient.getConnectedDevices([NUS_SERVICE_UUID]);
+                const device = connected && connected[0];
+                if (device) {
+                    if (connectionType !== 'BLE' || !bleDevice) {
+                        bleDevice = device;
+                        try { localStorage.setItem('lastDeviceId', device.deviceId); } catch (e) {}
+                        try { await subscribeNative(device.deviceId); } catch (e) { /* already subscribed */ }
+                        updateConnectionUI(true, 'BLE');
+                        sendCommand({ get: 'status' });
+                    }
+                } else if (connectionType === 'BLE') {
+                    // We think we're connected but the link is really gone.
+                    onDeviceDisconnected();
+                }
+            } catch (e) {
+                console.warn('reconcileConnection error:', e);
             }
         }
 
@@ -964,11 +1003,25 @@
             }
         }
 
+        // Re-sync connection state whenever the app returns to the foreground,
+        // so a background/resume can't leave the UI stuck on "disconnected"
+        // while the native BLE link is still alive.
+        if (window.App) {
+            window.App.addListener('appStateChange', (state) => {
+                if (state && state.isActive) reconcileConnection();
+            });
+        }
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') reconcileConnection();
+        });
+
         // Initialize UI on page load
         document.addEventListener('DOMContentLoaded', () => {
             checkApiSupport();
-            // Show connection modal if disconnected on start
-            setTimeout(() => {
+            // Reconcile first (the native link may have survived a page reload),
+            // then prompt to connect only if we're really not connected.
+            setTimeout(async () => {
+                await reconcileConnection();
                 if (!connectionType) {
                     openConnModal();
                 }
