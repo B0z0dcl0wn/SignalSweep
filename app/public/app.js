@@ -829,6 +829,11 @@
                 return;
             }
 
+            // Beacon Bandit: pin the locked-on target to the top regardless of RSSI.
+            if (mode === 1) {
+                targets = targets.slice().sort((a, b) => (b.is_locked ? 1 : 0) - (a.is_locked ? 1 : 0));
+            }
+
             let html = '';
             targets.forEach(t => {
                 let name = t.name || t.uas_id || t.type || 'Unknown Target';
