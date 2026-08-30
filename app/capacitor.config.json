@@ -1,0 +1,5 @@
+{
+  "appId": "com.signalsweep.app",
+  "appName": "SignalSweep",
+  "webDir": "dist"
+}

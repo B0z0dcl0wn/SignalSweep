@@ -1,0 +1,2205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SignalSweep | Tactical Dashboard</title>
+    
+    <style>
+        :root {
+            --bg-color: #090d16;
+            --card-bg: rgba(18, 26, 43, 0.65);
+            --card-border: rgba(255, 255, 255, 0.08);
+            --card-hover-border: rgba(0, 242, 254, 0.4);
+            --text-main: #f3f4f6;
+            --text-muted: #9ca3af;
+            --accent-cyan: #00f2fe;
+            --accent-blue: #4facfe;
+            --accent-emerald: #10b981;
+            --accent-purple: #a855f7;
+            --accent-amber: #f59e0b;
+            --accent-red: #ef4444;
+            --glass-glow: rgba(0, 242, 254, 0.15);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            background-image: 
+                radial-gradient(circle at 15% 15%, rgba(0, 242, 254, 0.08) 0%, transparent 40%),
+                radial-gradient(circle at 85% 85%, rgba(168, 85, 247, 0.08) 0%, transparent 40%),
+                linear-gradient(180deg, #090d16 0%, #05070c 100%);
+            min-height: 100vh;
+            color: var(--text-main);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 2rem 1rem 8rem 1rem;
+        }
+
+        .container {
+            max-width: 1100px;
+            width: 100%;
+        }
+
+        /* Header */
+        header {
+            background: var(--card-bg);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid var(--card-border);
+            border-radius: 16px;
+            padding: 1.5rem 2rem;
+            margin-bottom: 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .radar-icon {
+            width: 42px;
+            height: 42px;
+            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-blue));
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 0 15px var(--glass-glow);
+        }
+
+        .radar-icon svg {
+            width: 24px;
+            height: 24px;
+            fill: none;
+            stroke: #090d16;
+            stroke-width: 2.2;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+
+        .brand-text h1 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            background: linear-gradient(90deg, #ffffff, var(--accent-cyan));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .brand-text p {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            letter-spacing: 1px;
+            text-transform: uppercase;
+        }
+
+        .header-controls {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .status-badge {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            background: rgba(0, 0, 0, 0.4);
+            border: 1px solid var(--card-border);
+            padding: 0.6rem 1.2rem;
+            border-radius: 30px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .status-badge:hover {
+            border-color: var(--card-hover-border);
+            box-shadow: 0 0 12px var(--glass-glow);
+        }
+
+        .pulse-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background-color: var(--accent-red);
+            box-shadow: 0 0 8px var(--accent-red);
+            animation: pulse-red 2s infinite;
+        }
+
+        .pulse-dot.connected {
+            background-color: var(--accent-emerald);
+            box-shadow: 0 0 8px var(--accent-emerald);
+            animation: pulse-green 2s infinite;
+        }
+
+        .pulse-dot.connecting {
+            background-color: var(--accent-amber);
+            box-shadow: 0 0 8px var(--accent-amber);
+            animation: pulse-yellow 1s infinite;
+        }
+
+        @keyframes pulse-green {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+            70% { transform: scale(1); box-shadow: 0 0 0 8px rgba(16, 185, 129, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+        }
+
+        @keyframes pulse-red {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+            70% { transform: scale(1); box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+        }
+
+        @keyframes pulse-yellow {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.7); }
+            70% { transform: scale(1); box-shadow: 0 0 0 8px rgba(245, 158, 11, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); }
+        }
+
+        .status-info {
+            font-size: 0.85rem;
+            font-weight: 500;
+        }
+
+        .active-mode-label {
+            color: var(--accent-cyan);
+            font-weight: 600;
+        }
+
+        .btn-header-conn {
+            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-blue));
+            color: #090d16;
+            border: none;
+            padding: 0.6rem 1.2rem;
+            border-radius: 30px;
+            font-weight: 700;
+            font-size: 0.85rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 15px rgba(0, 242, 254, 0.3);
+        }
+
+        .btn-header-conn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0, 242, 254, 0.5);
+        }
+
+        .btn-disconnect {
+            background: rgba(239, 68, 68, 0.2);
+            border: 1px solid rgba(239, 68, 68, 0.4);
+            color: #f87171;
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            font-weight: 600;
+            font-size: 0.8rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: none;
+        }
+
+        .btn-disconnect:hover {
+            background: rgba(239, 68, 68, 0.35);
+            color: #fff;
+        }
+
+        /* Banner Disconnected Alert */
+        .conn-alert-banner {
+            background: rgba(245, 158, 11, 0.12);
+            border: 1px solid rgba(245, 158, 11, 0.3);
+            border-radius: 12px;
+            padding: 1rem 1.5rem;
+            margin-bottom: 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 1rem;
+            backdrop-filter: blur(10px);
+        }
+
+        .conn-alert-text {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            font-size: 0.9rem;
+            color: #fde68a;
+        }
+
+        .conn-alert-text svg {
+            width: 20px;
+            height: 20px;
+            fill: none;
+            stroke: var(--accent-amber);
+            stroke-width: 2;
+            flex-shrink: 0;
+        }
+
+        /* Grid Section */
+        .grid-title {
+            font-size: 1rem;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            color: var(--text-muted);
+            margin-bottom: 1.25rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .grid-title::before {
+            content: '';
+            display: inline-block;
+            width: 4px;
+            height: 16px;
+            background: var(--accent-cyan);
+            border-radius: 2px;
+        }
+
+        .modes-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 1.5rem;
+        }
+
+        /* Mode Cards */
+        .mode-card {
+            background: var(--card-bg);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid var(--card-border);
+            border-radius: 16px;
+            padding: 1.75rem;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+            cursor: pointer;
+        }
+
+        .mode-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 3px;
+            background: transparent;
+            transition: background 0.3s ease;
+        }
+
+        .mode-card:hover {
+            transform: translateY(-4px);
+            border-color: var(--card-hover-border);
+            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4), 0 0 20px var(--glass-glow);
+        }
+
+        .mode-card.active {
+            border-color: var(--accent-cyan);
+            background: rgba(22, 33, 56, 0.85);
+            box-shadow: 0 0 25px rgba(0, 242, 254, 0.25);
+        }
+
+        .mode-card.active::before {
+            background: linear-gradient(90deg, var(--accent-cyan), var(--accent-blue));
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 1.25rem;
+        }
+
+        .card-icon {
+            width: 48px;
+            height: 48px;
+            border-radius: 12px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-main);
+            transition: all 0.3s ease;
+        }
+
+        .mode-card:hover .card-icon {
+            background: rgba(0, 242, 254, 0.15);
+            color: var(--accent-cyan);
+            border-color: rgba(0, 242, 254, 0.3);
+        }
+
+        .mode-card.active .card-icon {
+            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-blue));
+            color: #090d16;
+            border-color: transparent;
+        }
+
+        .card-icon svg {
+            width: 24px;
+            height: 24px;
+            fill: none;
+            stroke: currentColor;
+            stroke-width: 2;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+
+        .tag {
+            font-size: 0.68rem;
+            font-weight: 700;
+            padding: 0.25rem 0.6rem;
+            border-radius: 6px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            background: rgba(255, 255, 255, 0.06);
+            color: var(--text-muted);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .mode-card.active .tag {
+            background: rgba(0, 242, 254, 0.15);
+            color: var(--accent-cyan);
+            border-color: rgba(0, 242, 254, 0.3);
+        }
+
+        .card-body h2 {
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+
+        .card-body p {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            line-height: 1.5;
+            margin-bottom: 1.5rem;
+        }
+
+        .btn-select {
+            width: 100%;
+            padding: 0.75rem 1rem;
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--text-main);
+            font-weight: 600;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+        }
+
+        .btn-select:hover {
+            background: rgba(255, 255, 255, 0.12);
+        }
+
+        .mode-card.active .btn-select {
+            background: linear-gradient(90deg, var(--accent-cyan), var(--accent-blue));
+            color: #090d16;
+            border-color: transparent;
+            font-weight: 700;
+            box-shadow: 0 4px 12px rgba(0, 242, 254, 0.3);
+        }
+
+        /* Target Items */
+        .target-card {
+            background: var(--card-bg);
+            backdrop-filter: blur(16px);
+            border: 1px solid var(--card-border);
+            border-radius: 14px;
+            padding: 1.25rem 1.5rem;
+            display: flex;
+            flex-direction: column;
+            align-items: stretch;
+            justify-content: flex-start;
+            transition: all 0.2s ease;
+            cursor: pointer;
+        }
+
+        .target-card:hover {
+            border-color: var(--card-hover-border);
+            transform: translateX(4px);
+        }
+
+        .target-card.locked {
+            border: 1px solid var(--accent-purple);
+            background: rgba(168, 85, 247, 0.1);
+        }
+
+        /* Filter Toggle */
+        .filter-container {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 1rem;
+            background: rgba(255,255,255,0.05);
+            padding: 0.75rem 1rem;
+            border-radius: 8px;
+        }
+
+        .filter-label {
+            font-size: 0.9rem;
+            color: var(--text-main);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 44px;
+            height: 24px;
+        }
+
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #374151;
+            transition: .4s;
+            border-radius: 24px;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 18px;
+            width: 18px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+
+        input:checked + .slider {
+            background-color: var(--accent-cyan);
+        }
+
+        input:focus + .slider {
+            box-shadow: 0 0 1px var(--accent-cyan);
+        }
+
+        input:checked + .slider:before {
+            transform: translateX(20px);
+        }
+
+        /* Modal Overlay */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(5, 7, 12, 0.85);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            z-index: 999;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 1rem;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+
+        .modal-overlay.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .modal-card {
+            background: rgba(18, 26, 43, 0.95);
+            border: 1px solid var(--accent-cyan);
+            box-shadow: 0 15px 40px rgba(0, 0, 0, 0.6), 0 0 30px rgba(0, 242, 254, 0.2);
+            border-radius: 20px;
+            max-width: 520px;
+            width: 100%;
+            padding: 2.25rem;
+            position: relative;
+            transform: translateY(20px);
+            transition: transform 0.3s ease;
+        }
+
+        .modal-overlay.active .modal-card {
+            transform: translateY(0);
+        }
+
+        .modal-close-btn {
+            position: absolute;
+            top: 1.25rem;
+            right: 1.25rem;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--card-border);
+            color: var(--text-muted);
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.1rem;
+            transition: all 0.2s ease;
+        }
+
+        .modal-close-btn:hover {
+            color: var(--text-main);
+            background: rgba(255, 255, 255, 0.15);
+        }
+
+        .modal-header {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+
+        .modal-icon-glow {
+            width: 64px;
+            height: 64px;
+            margin: 0 auto 1.25rem auto;
+            border-radius: 20px;
+            background: linear-gradient(135deg, rgba(0, 242, 254, 0.2), rgba(79, 172, 254, 0.2));
+            border: 1px solid var(--accent-cyan);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 0 20px var(--glass-glow);
+        }
+
+        .modal-icon-glow svg {
+            width: 34px;
+            height: 34px;
+            fill: none;
+            stroke: var(--accent-cyan);
+            stroke-width: 2;
+        }
+
+        .modal-header h2 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+            background: linear-gradient(90deg, #ffffff, var(--accent-cyan));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .modal-header p {
+            font-size: 0.88rem;
+            color: var(--text-muted);
+            line-height: 1.5;
+        }
+
+        .modal-actions {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .btn-conn-option {
+            width: 100%;
+            padding: 1.1rem 1.5rem;
+            border-radius: 12px;
+            border: 1px solid var(--card-border);
+            background: rgba(255, 255, 255, 0.04);
+            color: var(--text-main);
+            font-weight: 600;
+            font-size: 0.95rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            transition: all 0.2s ease;
+        }
+
+        .btn-conn-option:hover {
+            border-color: var(--accent-cyan);
+            background: rgba(0, 242, 254, 0.08);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(0, 242, 254, 0.15);
+        }
+
+        .btn-conn-option.primary {
+            background: linear-gradient(135deg, rgba(0, 242, 254, 0.15), rgba(79, 172, 254, 0.15));
+            border-color: rgba(0, 242, 254, 0.4);
+        }
+
+        .btn-conn-option.primary:hover {
+            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-blue));
+            color: #090d16;
+        }
+
+        .btn-conn-option.primary:hover svg {
+            stroke: #090d16;
+        }
+
+        .btn-left {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .btn-left svg {
+            width: 24px;
+            height: 24px;
+            fill: none;
+            stroke: var(--accent-cyan);
+            stroke-width: 2;
+        }
+
+        .btn-arrow {
+            color: var(--text-muted);
+            font-size: 1.2rem;
+        }
+
+        .api-support-info {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 10px;
+            padding: 0.9rem;
+            font-size: 0.78rem;
+            color: var(--text-muted);
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .api-badge-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .api-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            padding: 0.2rem 0.5rem;
+            border-radius: 4px;
+            font-weight: 600;
+            font-size: 0.72rem;
+        }
+
+        .api-badge.ok {
+            background: rgba(16, 185, 129, 0.15);
+            color: var(--accent-emerald);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+
+        .api-badge.warn {
+            background: rgba(239, 68, 68, 0.15);
+            color: var(--accent-red);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+
+        /* Toast notification */
+        #toast {
+            position: fixed;
+            top: 2rem;
+            left: 50%;
+            background: rgba(18, 26, 43, 0.95);
+            backdrop-filter: blur(16px);
+            border: 1px solid var(--accent-cyan);
+            color: var(--text-main);
+            padding: 1rem 1.5rem;
+            border-radius: 12px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5), 0 0 15px rgba(0, 242, 254, 0.2);
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            transform: translateX(-50%) translateY(-150%);
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            z-index: 1000;
+            font-size: 0.9rem;
+        }
+
+        #toast.show {
+            transform: translateX(-50%) translateY(0);
+        }
+
+        #toast-icon {
+            color: var(--accent-cyan);
+            font-weight: bold;
+        }
+
+        /* Radar UI */
+        .radar-container {
+            position: relative;
+            width: 300px;
+            height: 300px;
+            margin: 20px auto;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(0, 242, 254, 0.05) 0%, transparent 70%), #090d16;
+            border: 2px solid rgba(0, 242, 254, 0.3);
+            box-shadow: 0 0 20px rgba(0, 242, 254, 0.1), inset 0 0 20px rgba(0, 242, 254, 0.1);
+            overflow: hidden;
+        }
+
+        .radar-container::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 150px;
+            height: 150px;
+            background: conic-gradient(from 0deg, transparent 70%, rgba(0, 242, 254, 0.1) 80%, rgba(0, 242, 254, 0.8) 100%);
+            transform-origin: 0 0;
+            animation: radar-spin 2s linear infinite;
+        }
+
+        .radar-grid {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            border-radius: 50%;
+            background-image: 
+                linear-gradient(rgba(0, 242, 254, 0.2) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0, 242, 254, 0.2) 1px, transparent 1px);
+            background-size: 50px 50px;
+            background-position: center center;
+        }
+
+        .radar-ring {
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            border: 1px solid rgba(0, 242, 254, 0.3);
+            border-radius: 50%;
+        }
+        .radar-ring-1 { width: 100px; height: 100px; }
+        .radar-ring-2 { width: 200px; height: 200px; }
+
+        @keyframes radar-spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        .radar-blip {
+            position: absolute;
+            width: 12px;
+            height: 12px;
+            background: #ff0055;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            box-shadow: 0 0 10px #ff0055, 0 0 20px #ff0055;
+            animation: blip-fade 2s infinite;
+        }
+
+        @keyframes blip-fade {
+            0% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+            100% { opacity: 0.2; transform: translate(-50%, -50%) scale(2); }
+        }
+
+        .radar-status {
+            text-align: center;
+            color: var(--accent-cyan);
+            font-size: 0.85rem;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            margin-top: 10px;
+            animation: pulse-op 1.5s infinite alternate;
+        }
+
+        @keyframes pulse-op {
+            from { opacity: 0.4; }
+            to { opacity: 1; }
+        }
+    </style>
+    <script type="module" src="/src/main.js"></script>
+</head>
+<body>
+
+    <div class="container">
+        <!-- Header -->
+        <header style="display: flex; justify-content: space-between; align-items: center;">
+            <div class="brand">
+                <div class="radar-icon">
+                    <svg viewBox="0 0 24 24">
+                        <circle cx="12" cy="12" r="9"/>
+                        <circle cx="12" cy="12" r="5"/>
+                        <circle cx="12" cy="12" r="1"/>
+                        <path d="M12 12L19 5"/>
+                    </svg>
+                </div>
+                <div class="brand-text">
+                    <h1>SignalSweep</h1>
+                    <p>Unified Blue Architecture</p>
+                </div>
+            </div>
+            <div style="display: flex; gap: 10px;">
+                <button class="btn-help" onclick="document.getElementById('settings-modal').style.display='flex'" style="background: none; border: none; color: white; cursor: pointer; padding: 10px;">
+                    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="3"></circle>
+                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                    </svg>
+                </button>
+                <button class="btn-help" onclick="document.getElementById('help-modal').style.display='flex'" style="background: none; border: none; color: white; cursor: pointer; padding: 10px;">
+                    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+                        <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                    </svg>
+                </button>
+            </div>
+        </header>
+
+            <div class="header-controls">
+                <div class="status-badge" id="statusBadge" onclick="openConnModal()">
+                    <div class="pulse-dot" id="pulseDot"></div>
+                    <div class="status-info">
+                        DEVICE: <span class="active-mode-label" id="connStatusText">DISCONNECTED</span>
+                    </div>
+                </div>
+
+                <button class="btn-header-conn" id="btnConnectHeader" onclick="openConnModal()">
+                    Connect Device
+                </button>
+                <button class="btn-disconnect" id="btnDisconnectHeader" onclick="disconnectDevice()">
+                    Disconnect
+                </button>
+            </div>
+        </header>
+
+        <!-- Disconnected Alert Banner -->
+        <div class="conn-alert-banner" id="connBanner">
+            <div class="conn-alert-text">
+                <svg viewBox="0 0 24 24">
+                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                    <line x1="12" y1="9" x2="12" y2="13"/>
+                    <line x1="12" y1="17" x2="12.01" y2="17"/>
+                </svg>
+                <span><strong>Device Disconnected:</strong> Connect via Web Bluetooth or USB Serial to control modes and stream live telemetry.</span>
+            </div>
+            <button class="btn-header-conn" style="padding: 0.4rem 0.9rem; font-size: 0.8rem;" onclick="openConnModal()">
+                Connect Now
+            </button>
+        </div>
+
+        <!-- Main Mode Grid -->
+        <div class="grid-title">Operating Mode Selection</div>
+
+        <div class="modes-grid">
+            <!-- Mode 0: Mode Selector -->
+            <div class="mode-card" id="card-0" onclick="switchMode(0)">
+                <div>
+                    <div class="card-header">
+                        <div class="card-icon">
+                            <svg viewBox="0 0 24 24">
+                                <rect x="4" y="4" width="6" height="6" rx="1"/>
+                                <rect x="14" y="4" width="6" height="6" rx="1"/>
+                                <rect x="4" y="14" width="6" height="6" rx="1"/>
+                                <rect x="14" y="14" width="6" height="6" rx="1"/>
+                            </svg>
+                        </div>
+                        <span class="tag">System / Standby</span>
+                    </div>
+                    <div class="card-body">
+                        <h2>Mode Selector</h2>
+                        <p>Standby mode. Low-power idle state waiting for mode configuration commands over BLE / Serial.</p>
+                    </div>
+                </div>
+                <button class="btn-select" id="btn-0">
+                    <span id="btn-text-0">Activate Mode 0</span>
+                </button>
+            </div>
+
+            <!-- Mode 1: Beacon Bandit -->
+            <div class="mode-card" id="card-1" onclick="switchMode(1)">
+            <div>
+                <div class="card-header">
+                    <div class="card-icon">
+                        <svg viewBox="0 0 24 24">
+                            <path d="M5 12.55a11 11 0 0 1 14.08 0"/>
+                            <path d="M1.42 9a16 16 0 0 1 21.16 0"/>
+                            <path d="M8.53 16.11a6 6 0 0 1 6.95 0"/>
+                            <line x1="12" y1="20" x2="12.01" y2="20"/>
+                        </svg>
+                    </div>
+                    <span class="tag">Anti-Stalking & Spoofing</span>
+                </div>
+                <div class="card-body">
+                    <h2>Beacon Bandit</h2>
+                    <p>BLE tracker detection for Apple AirTags, Tile, Samsung SmartTags, and Chipolo. Also includes an active BLE spoofing engine for Apple and Samsung devices.</p>
+                </div>
+            </div>
+            <button class="btn-select" id="btn-1">
+                <span id="btn-text-1">Activate Mode 1</span>
+            </button>
+        </div>
+
+        <div class="mode-card" id="card-2" onclick="switchMode(2)">
+            <div>
+                <div class="card-header">
+                    <div class="card-icon">
+                        <svg viewBox="0 0 24 24">
+                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                            <circle cx="12" cy="12" r="3"/>
+                        </svg>
+                    </div>
+                    <span class="tag">Surveillance Mapping</span>
+                </div>
+                <div class="card-body">
+                    <h2>Watchers Watch</h2>
+                    <p>Detects hidden Flock Safety ALPRs (Solar Penguin Packs) and Axon Enterprise Body Cameras / TASER Signal triggers via BLE fingerprints.</p>
+                </div>
+            </div>
+            <button class="btn-select" id="btn-2">
+                    <span id="btn-text-2">Activate Mode 2</span>
+                </button>
+            </div>
+
+            <!-- Mode 3: Sky Sweeper -->
+            <div class="mode-card" id="card-3" onclick="switchMode(3)">
+                <div>
+                    <div class="card-header">
+                        <div class="card-icon">
+                            <svg viewBox="0 0 24 24">
+                                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+                            </svg>
+                        </div>
+                        <span class="tag">Airspace Defense</span>
+                    </div>
+                    <div class="card-body">
+                        <h2>Sky Sweeper</h2>
+                        <p>ASTM F3411 Remote ID drone sniffer (Wi-Fi NAN/Beacon + BLE). Captures real-time drone telemetry, operator location, and ID frames.</p>
+                    </div>
+                </div>
+                <button class="btn-select" id="btn-3">
+                    <span id="btn-text-3">Activate Mode 3</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Mode Specific Data -->
+        <div class="mode-data" id="mode-data-container" style="display: none;">
+            <div class="grid-title" id="mode-data-title">Live Targets</div>
+            
+            
+            <div id="war-flocking-ui" style="display: none; width: 100%; flex-direction: column; gap: 10px; margin-bottom: 20px;">
+                <div id="offline-progress-wrapper" style="display: none; width: 100%; height: 4px; background: rgba(255,255,255,0.1); border-radius: 2px; overflow: hidden;">
+                    <div id="offline-progress-bar" style="width: 0%; height: 100%; background: linear-gradient(90deg, #00f2fe, #4facfe); transition: width 0.1s;"></div>
+                </div>
+                <div id="map-container" style="width: 100%; height: 350px; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.1);"></div>
+                <div style="display: flex; gap: 10px; width: 100%;">
+                <button id="btn-export-osm" onclick="exportOSM()" style="padding: 12px; border-radius: 8px; border: none; background: linear-gradient(90deg, #00f2fe, #4facfe); color: #090d16; font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 10px; flex: 1;">
+                    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                    Export .osm
+                </button>
+                <button id="btn-fullscreen-map" onclick="toggleMapFullscreen()" style="padding: 12px; border-radius: 8px; border: 1px solid var(--accent-cyan); background: transparent; color: var(--accent-cyan); font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 10px; flex: 1;">
+                    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg>
+                    Toggle Fullscreen
+                </button>
+                </div>
+            </div>
+
+            <div id="sky-sweeper-ui" style="display: none; width: 100%; flex-direction: column; align-items: center; margin-bottom: 20px;">
+                <div class="radar-container" id="radar-container">
+                    <div class="radar-grid"></div>
+                    <div class="radar-ring radar-ring-1"></div>
+                    <div class="radar-ring radar-ring-2"></div>
+                    <!-- Blips injected here -->
+                </div>
+                <div class="radar-status">Scanning 2.4GHz & BLE Spectrum</div>
+            </div>
+
+            <div id="spoof-engine-ui" style="display: none; width: 100%; flex-direction: column; align-items: center; margin-bottom: 20px; padding: 15px; background: rgba(0, 242, 254, 0.05); border: 1px solid rgba(0, 242, 254, 0.2); border-radius: 12px;">
+                <h3 style="color: var(--accent-cyan); margin-bottom: 15px; font-size: 1rem; text-transform: uppercase; letter-spacing: 2px;">Spoofing Engine</h3>
+                <div style="display: flex; gap: 10px; flex-wrap: wrap; justify-content: center;">
+                    <button class="action-btn" onclick="triggerSpoof('1E02011A0AFF4C000F05C00F09000000000000')" style="background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.3); color: white;">🍎 Apple TV</button>
+                    <button class="action-btn" onclick="triggerSpoof('1E02011A0AFF4C00071901022075AA3001000000')" style="background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.3); color: white;">🎧 AirPods</button>
+                    <button class="action-btn" onclick="triggerSpoof('1502011A11FF75004204018060000000000000000000')" style="background: rgba(0,102,255,0.2); border: 1px solid rgba(0,102,255,0.5); color: #88b8ff;">📱 Samsung TV</button>
+                </div>
+                <div style="margin-top: 10px; font-size: 0.7rem; color: var(--accent-amber); text-align: center;">WARNING: 10-Second Burst Limit Enforced by Hardware</div>
+            </div>
+
+            <div class="filter-container" id="bandit-filter-container" style="display: none;">
+                <div class="filter-label">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                        <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
+                    </svg>
+                    Strict Tracker Filter (Hide Generic BLE)
+                </div>
+                <label class="switch">
+                    <input type="checkbox" id="filterToggle" checked onchange="toggleFilter(this.checked)">
+                    <span class="slider"></span>
+                </label>
+            </div>
+
+            <!-- View Toggle & AI Export -->
+            <div style="display: flex; gap: 10px; margin-bottom: 15px; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.05); padding: 0.75rem 1rem; border-radius: 8px;">
+                <div style="display: flex; gap: 10px;">
+                    <button id="btn-list-view" onclick="toggleViewMode('list')" class="btn-conn-option primary" style="width: auto; padding: 0.5rem 1rem; margin: 0;">List View</button>
+                    <button id="btn-radar-view" onclick="toggleViewMode('radar')" class="btn-conn-option" style="width: auto; padding: 0.5rem 1rem; margin: 0;">Radar View</button>
+                </div>
+                <button onclick="exportAIDebrief()" class="btn-conn-option" style="width: auto; padding: 0.5rem 1rem; margin: 0; border-color: var(--accent-purple); color: var(--accent-purple);">
+                    Export AI Debrief
+                </button>
+            </div>
+            
+            <div style="text-align: center;">
+                <canvas id="radarCanvas" width="300" height="300" style="display: none; margin: 20px auto; border-radius: 50%; border: 2px solid var(--accent-cyan); background: radial-gradient(circle, rgba(0, 242, 254, 0.05) 0%, transparent 70%), #090d16; box-shadow: 0 0 20px rgba(0, 242, 254, 0.1), inset 0 0 20px rgba(0, 242, 254, 0.1);"></canvas>
+            </div>
+
+            <div class="targets-list" id="targets-list">
+                <!-- Target cards populated by JS -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Connection Modal Overlay -->
+    <div class="modal-overlay" id="connModal">
+        <div class="modal-card">
+            <button class="modal-close-btn" onclick="closeConnModal()">&times;</button>
+            <div class="modal-header">
+                <div class="modal-icon-glow">
+                    <svg viewBox="0 0 24 24">
+                        <path d="M6.5 6.5l11 11M12 2v20l5.5-5.5L12 11l5.5-5.5L12 2z"/>
+                    </svg>
+                </div>
+                <h2>Connect SignalSweep</h2>
+                <p>Select your interface to pair with the ESP32 hardware node.</p>
+            </div>
+
+            <div class="modal-actions">
+                <button class="btn-conn-option primary" onclick="connectWebBluetooth()">
+                    <div class="btn-left">
+                        <svg viewBox="0 0 24 24">
+                            <path d="M6.5 6.5l11 11M12 2v20l5.5-5.5L12 11l5.5-5.5L12 2z"/>
+                        </svg>
+                        <div style="text-align: left;">
+                            <div>Connect via Web Bluetooth</div>
+                            <div style="font-size: 0.75rem; font-weight: normal; opacity: 0.8;">Nordic UART Service (NUS)</div>
+                        </div>
+                    </div>
+                    <span class="btn-arrow">&rarr;</span>
+                </button>
+
+                <button class="btn-conn-option" onclick="connectWebSerial()">
+                    <div class="btn-left">
+                        <svg viewBox="0 0 24 24">
+                            <rect x="4" y="4" width="16" height="12" rx="2"/>
+                            <line x1="8" y1="20" x2="16" y2="20"/>
+                            <line x1="12" y1="16" x2="12" y2="20"/>
+                        </svg>
+                        <div style="text-align: left;">
+                            <div>Connect via WebSerial (USB)</div>
+                            <div style="font-size: 0.75rem; font-weight: normal; opacity: 0.8;">115200 Baud Serial Stream</div>
+                        </div>
+                    </div>
+                    <span class="btn-arrow">&rarr;</span>
+                </button>
+            </div>
+
+            <div class="api-support-info">
+                <div class="api-badge-row">
+                    <span>Web Bluetooth API:</span>
+                    <span class="api-badge" id="bleSupportBadge">Checking...</span>
+                </div>
+                <div class="api-badge-row">
+                    <span>WebSerial API:</span>
+                    <span class="api-badge" id="serialSupportBadge">Checking...</span>
+                </div>
+                <div style="margin-top: 0.5rem; line-height: 1.4; color: var(--text-muted);">
+                    Note: Web Bluetooth & WebSerial require Chrome, Edge, or Opera over HTTPS or localhost.
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="modal-overlay">
+        <div class="modal-card">
+            <button class="modal-close-btn" onclick="document.getElementById('settings-modal').style.display='none'">&times;</button>
+            <div class="modal-header">
+                <h2>Settings</h2>
+                <p>Power Management</p>
+            </div>
+            <div class="modal-actions" style="color: var(--text-main);">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding: 10px; background: rgba(255,255,255,0.05); border-radius: 8px;">
+                    <span>BLE Scanning</span>
+                    <div>
+                        <button onclick="sendCommand({raw: 'CMD:BLE_SCAN:ON'})" style="padding: 6px 12px; margin-right: 5px; background: var(--accent-emerald); border: none; border-radius: 6px; color: #000; font-weight: bold; cursor: pointer;">ON</button>
+                        <button onclick="sendCommand({raw: 'CMD:BLE_SCAN:OFF'})" style="padding: 6px 12px; background: rgba(239, 68, 68, 0.2); border: 1px solid var(--accent-red); border-radius: 6px; color: var(--accent-red); font-weight: bold; cursor: pointer;">OFF</button>
+                    </div>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px; background: rgba(255,255,255,0.05); border-radius: 8px;">
+                    <span>WiFi Scanning</span>
+                    <div>
+                        <button onclick="sendCommand({raw: 'CMD:WIFI_SCAN:ON'})" style="padding: 6px 12px; margin-right: 5px; background: var(--accent-emerald); border: none; border-radius: 6px; color: #000; font-weight: bold; cursor: pointer;">ON</button>
+                        <button onclick="sendCommand({raw: 'CMD:WIFI_SCAN:OFF'})" style="padding: 6px 12px; background: rgba(239, 68, 68, 0.2); border: 1px solid var(--accent-red); border-radius: 6px; color: var(--accent-red); font-weight: bold; cursor: pointer;">OFF</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Component -->
+    <div id="toast">
+        <span id="toast-icon">✓</span>
+        <span id="toast-msg">Operating mode updated</span>
+    </div>
+
+    <script>
+        const NUS_SERVICE_UUID = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
+        const NUS_RX_UUID      = '6e400002-b5a3-f393-e0a9-e50e24dcca9e';
+        const NUS_TX_UUID      = '6e400003-b5a3-f393-e0a9-e50e24dcca9e';
+
+        const modeNames = {
+            0: "Mode Selector",
+            1: "Beacon Bandit",
+            2: "War Flocking",
+            3: "Sky Sweeper"
+        };
+
+        let currentActiveMode = -1;
+        let connectionType = null; // 'BLE' | 'Serial' | null
+        
+        let map = null;
+        let polyline = null;
+        let warFlockingPath = [];
+        let warFlockingMarkers = {};
+
+        function initMap() {
+            if (!window.L) return;
+            if (map) return;
+            map = window.L.map('map-container').setView([0, 0], 15);
+            
+            const baseLayer = window.tileLayerOffline('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+                attribution: '&copy; OpenStreetMap',
+                subdomains: 'abc',
+                minZoom: 3,
+                maxZoom: 20
+            }).addTo(map);
+
+            const saveControl = window.savetiles(baseLayer, {
+                zoomlevels: [13, 14, 15, 16, 17, 18],
+                alwaysDownload: false,
+                confirm(status, successCallback) {
+                    if (window.confirm(`Download ${status._tilesforSave.length} tiles for offline mapping?`)) {
+                        successCallback();
+                    }
+                },
+                confirmRemoval(status, successCallback) {
+                    if (window.confirm('Delete all offline cached map tiles?')) {
+                        successCallback();
+                    }
+                },
+                saveText: '💾',
+                rmText: '🗑️'
+            });
+            saveControl.addTo(map);
+
+            let progress = 0;
+            let total = 0;
+            baseLayer.on('savestart', (e) => {
+                progress = 0;
+                total = e._tilesforSave.length;
+                document.getElementById('offline-progress-wrapper').style.display = 'block';
+                document.getElementById('offline-progress-bar').style.width = '0%';
+            });
+            baseLayer.on('loadtileend', () => {
+                progress += 1;
+                document.getElementById('offline-progress-bar').style.width = `${(progress / total) * 100}%`;
+                if (progress === total) {
+                    setTimeout(() => {
+                        document.getElementById('offline-progress-wrapper').style.display = 'none';
+                        showToast('Offline map area saved!', '✓');
+                    }, 1000);
+                }
+            });
+
+            polyline = window.L.polyline([], {color: '#00f2fe'}).addTo(map);
+        }
+
+        let globalPhoneLocation = null;
+        let gpsInitialized = false;
+
+        function initGPS() {
+            if (gpsInitialized) return;
+            if (window.Geolocation) {
+                window.Geolocation.requestPermissions().then((status) => {
+                    if (status.location === 'granted' || status.coarseLocation === 'granted') {
+                        gpsInitialized = true;
+                        window.Geolocation.watchPosition({ enableHighAccuracy: true }, (pos, err) => {
+                            if (pos) {
+                                globalPhoneLocation = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+                                if (currentActiveMode === 2 && map && polyline) {
+                                    const latlng = [pos.coords.latitude, pos.coords.longitude];
+                                    warFlockingPath.push(latlng);
+                                    polyline.setLatLngs(warFlockingPath);
+                                    map.setView(latlng);
+                                }
+                            }
+                        });
+                    } else {
+                        console.error('Geolocation permission denied');
+                        showToast('Location permission denied!', '✕');
+                    }
+                }).catch(err => console.error(err));
+            }
+        }
+
+        function setupGeiger() {
+            const geigerContainer = document.getElementById('geiger-container');
+            const toggle = document.getElementById('geiger-toggle');
+
+            toggle.addEventListener('click', () => {
+                geigerEnabled = !geigerEnabled;
+                if (geigerEnabled) {
+                    toggle.classList.add('active');
+                    geigerContainer.classList.add('active');
+                } else {
+                    toggle.classList.remove('active');
+                    geigerContainer.classList.remove('active');
+                    updateGeigerUI(-100);
+                }
+            });
+        }
+
+        let gattProfileCache = {};
+        let lastBanditData = null;
+
+        function translateUUID(uuid) {
+            const shortUuid = uuid.length === 36 ? uuid.split('-')[0].replace(/^0+/, '') : uuid;
+            const uuids = {
+                '1800': 'Generic Access',
+                '1801': 'Generic Attribute',
+                '180a': 'Device Information',
+                '180f': 'Battery Service',
+                '2a00': 'Device Name',
+                '2a29': 'Manufacturer Name',
+                '2a24': 'Model Number',
+                '2a26': 'Firmware Revision',
+                '2a27': 'Hardware Revision',
+                '2a19': 'Battery Level'
+            };
+            return uuids[shortUuid.toLowerCase()] || 'Proprietary';
+        }
+
+        function processIncomingData(dataStr) {
+            try {
+                let data = JSON.parse(dataStr);
+                
+                if (data.event === 'gatt_profile') {
+                    let html = `<div style="margin-top: 15px; padding: 12px; background: rgba(0, 242, 254, 0.03); border: 1px solid rgba(0, 242, 254, 0.15); border-radius: 8px; font-family: monospace;">`;
+                    html += `<h4 style="color: var(--accent-cyan); margin-bottom: 8px; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 1px;">GATT Interrogation Dossier</h4>`;
+                    
+                    if (data.services && data.services.length > 0) {
+                        data.services.forEach(srv => {
+                            let srvName = translateUUID(srv.uuid);
+                            html += `<div style="margin-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 5px;">`;
+                            html += `<div style="font-size: 0.85rem; font-weight: bold; color: var(--accent-emerald);">${srvName} <span style="color: var(--text-muted); font-size: 0.7rem; font-weight: normal;">(${srv.uuid})</span></div>`;
+                            
+                            if (srv.characteristics) {
+                                srv.characteristics.forEach(ch => {
+                                    let chName = translateUUID(ch.uuid);
+                                    html += `<div style="margin-left: 12px; font-size: 0.75rem; color: var(--text-color); margin-top: 4px;">`;
+                                    
+                                    // Make it beep exploit!
+                                    if (srv.uuid.toLowerCase() === '1802' && ch.uuid.toLowerCase() === '2a06') {
+                                        html += `<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                                                    <div><span style="color: var(--text-muted);">└─</span> ${chName} <span style="color: var(--text-muted); font-size: 0.65rem;">(${ch.uuid})</span></div>
+                                                    <button onclick="triggerBleWrite('${data.mac}', '${srv.uuid}', '${ch.uuid}', '02')" style="background: rgba(255, 50, 50, 0.2); border: 1px solid rgba(255, 50, 50, 0.6); color: #ff6b6b; padding: 2px 8px; border-radius: 4px; cursor: pointer; font-size: 0.7rem; font-weight: bold; animation: pulse 2s infinite;">RING ALARM</button>
+                                                 </div>`;
+                                    } else {
+                                        let writeUI = '';
+                                        if (ch.properties && (ch.properties.includes('Write') || ch.properties.includes('WriteNoResponse'))) {
+                                            let inputId = `write_${data.mac.replace(/:/g,'')}_${ch.uuid}`;
+                                            writeUI = `<div style="display: flex; gap: 5px; margin-top: 4px; margin-left: 20px;">
+                                                        <input type="text" id="${inputId}" placeholder="HEX (e.g. 0A FF)" style="flex: 1; background: rgba(0,0,0,0.3); border: 1px solid rgba(0,242,254,0.3); color: white; padding: 2px 5px; font-size: 0.7rem; border-radius: 3px;">
+                                                        <button onclick="let v=document.getElementById('${inputId}').value; if(v) triggerBleWrite('${data.mac}', '${srv.uuid}', '${ch.uuid}', v.replace(/\\s/g,''))" style="background: rgba(0,242,254,0.1); border: 1px solid var(--accent-cyan); color: var(--accent-cyan); padding: 2px 8px; border-radius: 3px; cursor: pointer; font-size: 0.7rem;">WRITE</button>
+                                                       </div>`;
+                                        }
+                                        
+                                        html += `<div><span style="color: var(--text-muted);">└─</span> ${chName} <span style="color: var(--text-muted); font-size: 0.65rem;">(${ch.uuid})</span></div>`;
+                                        if (ch.value_hex) {
+                                            html += `<div style="margin-left: 20px; margin-top: 2px;">`;
+                                            html += `<span style="color: var(--accent-amber);">HEX:</span> ${ch.value_hex}<br>`;
+                                            html += `<span style="color: var(--accent-cyan);">TXT:</span> ${ch.value_ascii}`;
+                                            html += `</div>`;
+                                        }
+                                        html += writeUI;
+                                    }
+                                    html += `</div>`;
+                                });
+                            }
+                            html += `</div>`;
+                        });
+                    } else {
+                        html += `<div style="font-size: 0.8rem; color: var(--accent-amber);">No readable services found or connection dropped.</div>`;
+                    }
+                    html += `</div>`;
+                    
+                    gattProfileCache[data.mac] = html;
+                    
+                    if (currentActiveMode === 1 && lastBanditData) {
+                        renderTargets(1, lastBanditData.targets);
+                    }
+                    return;
+                }
+
+                if (data.mode === 0) {
+                    updateActiveUI(0);
+                } else if (data.mode === 1) {
+                    if (data.targets) {
+                        lastBanditData = data;
+                        renderTargets(1, data.targets);
+                    }
+                } else if (data.mode === 2) {
+                    // War Flocking logic...
+                }
+            } catch (e) {
+                console.warn('Data parse error:', e);
+            }
+        }
+
+        let isMapFullscreen = false;
+        function toggleMapFullscreen() {
+            const ui = document.getElementById('war-flocking-ui');
+            const mapContainer = document.getElementById('map-container');
+            
+            if (!isMapFullscreen) {
+                ui.style.position = 'fixed';
+                ui.style.top = '0';
+                ui.style.left = '0';
+                ui.style.width = '100vw';
+                ui.style.height = '100vh';
+                ui.style.zIndex = '9999';
+                ui.style.background = 'var(--bg-color)';
+                ui.style.padding = '20px';
+                ui.style.boxSizing = 'border-box';
+                mapContainer.style.height = 'calc(100vh - 100px)';
+                isMapFullscreen = true;
+            } else {
+                ui.style.position = 'static';
+                ui.style.width = '100%';
+                ui.style.height = 'auto';
+                ui.style.zIndex = 'auto';
+                ui.style.background = 'transparent';
+                ui.style.padding = '0';
+                mapContainer.style.height = '350px';
+                isMapFullscreen = false;
+            }
+            if (map) {
+                setTimeout(() => { map.invalidateSize(); }, 100);
+            }
+        }
+    
+        function exportOSM() {
+            const targets = Object.values(trackedTargets);
+            if (targets.length === 0) {
+                showToast('No targets logged yet.', '✕');
+                return;
+            }
+
+            let osm = `<?xml version='1.0' encoding='UTF-8'?>\n<osm version="0.6" generator="SignalSweep">\n`;
+            let idCounter = -1; // Negative IDs for new elements
+
+            targets.forEach(t => {
+                const lat = warFlockingPath.length > 0 ? warFlockingPath[warFlockingPath.length-1][0] : 0;
+                const lon = warFlockingPath.length > 0 ? warFlockingPath[warFlockingPath.length-1][1] : 0;
+                
+                osm += `  <node id="${idCounter}" lat="${lat}" lon="${lon}">\n`;
+                osm += `    <tag k="man_made" v="surveillance"/>\n`;
+                osm += `    <tag k="surveillance:type" v="ALPR"/>\n`;
+                osm += `    <tag k="manufacturer" v="Flock Safety"/>\n`;
+                osm += `    <tag k="name" v="${t.n || t.m}"/>\n`;
+                osm += `    <tag k="mac" v="${t.m}"/>\n`;
+                osm += `  </node>\n`;
+                idCounter--;
+            });
+
+            osm += `</osm>`;
+            
+            const element = document.createElement('a');
+            element.setAttribute('href', 'data:text/xml;charset=utf-8,' + encodeURIComponent(osm));
+            element.setAttribute('download', `flock_targets_${new Date().getTime()}.osm`);
+            element.style.display = 'none';
+            document.body.appendChild(element);
+            element.click();
+            document.body.removeChild(element);
+            showToast('OSM Export Downloaded!', '✓');
+        }
+
+        let bleDevice = null;
+        let gattServer = null;
+        let rxCharacteristic = null;
+        let txCharacteristic = null;
+        let serialPort = null;
+        let serialReader = null;
+        let serialWriter = null;
+        let rxBuffer = '';
+
+        // Check browser capabilities
+        function checkApiSupport() {
+            const bleBadge = document.getElementById('bleSupportBadge');
+            const serialBadge = document.getElementById('serialSupportBadge');
+
+            if ('bluetooth' in navigator) {
+                bleBadge.className = 'api-badge ok';
+                bleBadge.textContent = 'Supported';
+            } else {
+                bleBadge.className = 'api-badge warn';
+                bleBadge.textContent = 'Not Supported';
+            }
+
+            if ('serial' in navigator) {
+                serialBadge.className = 'api-badge ok';
+                serialBadge.textContent = 'Supported';
+            } else {
+                serialBadge.className = 'api-badge warn';
+                serialBadge.textContent = 'Not Supported';
+            }
+        }
+
+        function openConnModal() {
+            document.getElementById('connModal').classList.add('active');
+        }
+
+        function closeConnModal() {
+            document.getElementById('connModal').classList.remove('active');
+        }
+
+        function updateConnectionUI(isConnected, type = '') {
+            const pulseDot = document.getElementById('pulseDot');
+            const connStatusText = document.getElementById('connStatusText');
+            const btnConnectHeader = document.getElementById('btnConnectHeader');
+            const btnDisconnectHeader = document.getElementById('btnDisconnectHeader');
+            const connBanner = document.getElementById('connBanner');
+
+            if (isConnected) {
+                connectionType = type;
+                pulseDot.className = 'pulse-dot connected';
+                connStatusText.textContent = `CONNECTED (${type})`;
+                btnConnectHeader.style.display = 'none';
+                btnDisconnectHeader.style.display = 'block';
+                connBanner.style.display = 'none';
+                closeConnModal();
+                showToast(`Connected via ${type}`, '✓');
+            } else {
+                connectionType = null;
+                pulseDot.className = 'pulse-dot';
+                connStatusText.textContent = 'DISCONNECTED';
+                btnConnectHeader.style.display = 'flex';
+                btnDisconnectHeader.style.display = 'none';
+                connBanner.style.display = 'flex';
+                showToast('Device disconnected', '✕');
+            }
+        }
+
+        // Web Bluetooth Connection
+        
+        async function connectNativeBluetooth() {
+            const pulseDot = document.getElementById('pulseDot');
+            const connStatusText = document.getElementById('connStatusText');
+            pulseDot.className = 'pulse-dot connecting';
+            connStatusText.textContent = 'CONNECTING NATIVE BLE...';
+
+            try {
+                await window.BleClient.initialize({ androidNeverForLocation: true });
+                const device = await window.BleClient.requestDevice({
+                    services: [NUS_SERVICE_UUID],
+                    optionalServices: [NUS_SERVICE_UUID]
+                });
+                
+                await window.BleClient.connect(device.deviceId, (deviceId) => {
+                    onDeviceDisconnected();
+                });
+                
+                bleDevice = device;
+                
+                await window.BleClient.startNotifications(
+                    device.deviceId,
+                    NUS_SERVICE_UUID,
+                    NUS_TX_UUID,
+                    (value) => {
+                        const decoder = new TextDecoder('utf-8');
+                        const chunk = decoder.decode(value.buffer);
+                        processIncomingChunk(chunk);
+                    }
+                );
+                
+                updateConnectionUI(true, 'BLE');
+                sendCommand({ get: 'status' });
+            } catch (err) {
+                console.error('Native BLE Connect Failed:', err);
+                updateConnectionUI(false);
+                showToast(`Native BLE Connect Failed: ${err.message || err}`, '✕');
+            }
+        }
+
+        async function connectWebBluetooth() {
+            if (window.Capacitor && window.Capacitor.isNativePlatform()) {
+                await connectNativeBluetooth();
+                return;
+            }
+            if (!('bluetooth' in navigator)) {
+                alert('Web Bluetooth API is not supported by your browser. Please use Google Chrome, Microsoft Edge, or Opera.');
+                return;
+            }
+
+            const pulseDot = document.getElementById('pulseDot');
+            const connStatusText = document.getElementById('connStatusText');
+            pulseDot.className = 'pulse-dot connecting';
+            connStatusText.textContent = 'CONNECTING BLE...';
+
+            try {
+                // Request BLE device with NUS service filter or optionalServices fallback
+                let device;
+                try {
+                    device = await navigator.bluetooth.requestDevice({
+                        filters: [
+                            { services: [NUS_SERVICE_UUID] },
+                            { namePrefix: 'SignalSweep' },
+                            { namePrefix: 'ESP32' }
+                        ],
+                        optionalServices: [NUS_SERVICE_UUID]
+                    });
+                } catch (filterErr) {
+                    console.log('Filtered request failed, trying acceptAllDevices fallback:', filterErr);
+                    device = await navigator.bluetooth.requestDevice({
+                        acceptAllDevices: true,
+                        optionalServices: [NUS_SERVICE_UUID]
+                    });
+                }
+
+                bleDevice = device;
+                bleDevice.addEventListener('gattserverdisconnected', onDeviceDisconnected);
+
+                console.log('Connecting to GATT Server...');
+                gattServer = await bleDevice.gatt.connect();
+
+                console.log('Getting NUS Service...');
+                const service = await gattServer.getPrimaryService(NUS_SERVICE_UUID);
+
+                console.log('Getting RX & TX Characteristics...');
+                rxCharacteristic = await service.getCharacteristic(NUS_RX_UUID);
+                txCharacteristic = await service.getCharacteristic(NUS_TX_UUID);
+
+                console.log('Starting Notifications on TX...');
+                await txCharacteristic.startNotifications();
+                txCharacteristic.addEventListener('characteristicvaluechanged', handleBleNotification);
+
+                updateConnectionUI(true, 'BLE');
+
+                // Send request for current status/mode
+                sendCommand({ get: 'status' });
+
+            } catch (err) {
+                console.error('Web Bluetooth connection failed:', err);
+                updateConnectionUI(false);
+                if (err.name !== 'NotFoundError') { // Not user cancel
+                    showToast(`BLE Connect Failed: ${err.message || err}`, '✕');
+                }
+            }
+        }
+
+        function handleBleNotification(event) {
+            const value = event.target.value;
+            const decoder = new TextDecoder('utf-8');
+            const chunk = decoder.decode(value);
+            processIncomingChunk(chunk);
+        }
+
+        // WebSerial Connection
+        async function connectWebSerial() {
+            if (!('serial' in navigator)) {
+                alert('WebSerial API is not supported by your browser. Please use Google Chrome, Microsoft Edge, or Opera.');
+                return;
+            }
+
+            const pulseDot = document.getElementById('pulseDot');
+            const connStatusText = document.getElementById('connStatusText');
+            pulseDot.className = 'pulse-dot connecting';
+            connStatusText.textContent = 'CONNECTING SERIAL...';
+
+            try {
+                serialPort = await navigator.serial.requestPort();
+                await serialPort.open({ baudRate: 115200 });
+
+                serialPort.addEventListener('disconnect', onDeviceDisconnected);
+
+                // Pipe readable stream to text decoder
+                const textDecoder = new TextDecoderStream();
+                serialPort.readable.pipeTo(textDecoder.writable);
+                serialReader = textDecoder.readable.getReader();
+
+                // Pipe writable stream to text encoder
+                const textEncoder = new TextEncoderStream();
+                textEncoder.readable.pipeTo(serialPort.writable);
+                serialWriter = textEncoder.writable.getWriter();
+
+                updateConnectionUI(true, 'SERIAL');
+
+                // Send request for current status/mode
+                sendCommand({ get: 'status' });
+
+                // Start async serial reading loop
+                readSerialLoop();
+
+            } catch (err) {
+                console.error('WebSerial connection failed:', err);
+                updateConnectionUI(false);
+                if (err.name !== 'NotFoundError') {
+                    showToast(`Serial Connect Failed: ${err.message || err}`, '✕');
+                }
+            }
+        }
+
+        async function readSerialLoop() {
+            try {
+                while (serialReader) {
+                    const { value, done } = await serialReader.read();
+                    if (done) {
+                        break;
+                    }
+                    if (value) {
+                        processIncomingChunk(value);
+                    }
+                }
+            } catch (err) {
+                console.error('Serial read loop error:', err);
+            } finally {
+                onDeviceDisconnected();
+            }
+        }
+
+        // Process incoming stream chunks and split by newline
+        function processIncomingChunk(chunk) {
+            rxBuffer += chunk;
+            let lines = rxBuffer.split('\n');
+            rxBuffer = lines.pop(); // Keep last incomplete fragment in buffer
+
+            for (const line of lines) {
+                const trimmed = line.trim();
+                if (trimmed) {
+                    processIncomingData(trimmed);
+                }
+            }
+        }
+
+        function handleDeviceData(data) {
+            if (typeof data.mode === 'number') {
+                updateActiveUI(data.mode);
+            }
+            if (Array.isArray(data.targets)) {
+                renderTargets(currentActiveMode >= 0 ? currentActiveMode : (data.mode || 1), data.targets);
+            }
+            // Removed periodic status toast to prevent spam
+        }
+
+        // Send Command to ESP32 over BLE or Serial
+        async function sendCommand(cmdObj) {
+            const jsonStr = JSON.stringify(cmdObj) + '\n';
+            console.log('Sending command:', jsonStr);
+
+            if (connectionType === 'BLE') {
+                try {
+                    const encoder = new TextEncoder();
+                    const data = encoder.encode(jsonStr);
+                    if (window.Capacitor && window.Capacitor.isNativePlatform()) {
+                        await window.BleClient.write(bleDevice.deviceId, NUS_SERVICE_UUID, NUS_RX_UUID, new DataView(data.buffer));
+                    } else if (rxCharacteristic) {
+                        if (rxCharacteristic.writeValueWithoutResponse) {
+                            await rxCharacteristic.writeValueWithoutResponse(data);
+                        } else {
+                            await rxCharacteristic.writeValueWithResponse(data);
+                        }
+                    }
+                    return true;
+                } catch (err) {
+                    console.error('BLE write error:', err);
+                    showToast(`BLE Transmit Error: ${err.message}`, '✕');
+                    return false;
+                }
+            } else if (connectionType === 'SERIAL' && serialWriter) {
+                try {
+                    await serialWriter.write(jsonStr);
+                    return true;
+                } catch (err) {
+                    console.error('Serial write error:', err);
+                    showToast(`Serial Transmit Error: ${err.message}`, '✕');
+                    return false;
+                }
+            } else {
+                openConnModal();
+                showToast('Please connect to device first', '✕');
+                return false;
+            }
+        }
+
+        async function disconnectDevice() {
+            if (bleDevice) {
+                if (bleDevice.gatt && bleDevice.gatt.connected) {
+                    bleDevice.gatt.disconnect();
+                } else if (window.BleClient && bleDevice.deviceId) {
+                    try { await window.BleClient.disconnect(bleDevice.deviceId); } catch(e) { console.error(e); }
+                }
+            }
+            if (serialReader) {
+                try { await serialReader.cancel(); } catch (e) {}
+                serialReader = null;
+            }
+            if (serialWriter) {
+                try { await serialWriter.close(); } catch (e) {}
+                serialWriter = null;
+            }
+            if (serialPort) {
+                try { await serialPort.close(); } catch (e) {}
+                serialPort = null;
+            }
+            onDeviceDisconnected();
+        }
+
+        function onDeviceDisconnected() {
+            bleDevice = null;
+            gattServer = null;
+            rxCharacteristic = null;
+            txCharacteristic = null;
+            serialPort = null;
+            serialReader = null;
+            serialWriter = null;
+            updateConnectionUI(false);
+        }
+
+        function updateActiveUI(activeMode) {
+            currentActiveMode = activeMode;
+
+            // Update Cards
+            for (let i = 0; i <= 3; i++) {
+                const cardEl = document.getElementById(`card-${i}`);
+                const btnTextEl = document.getElementById(`btn-text-${i}`);
+
+                if (cardEl && btnTextEl) {
+                    if (i === activeMode) {
+                        cardEl.classList.add('active');
+                        btnTextEl.textContent = 'ACTIVE';
+                    } else {
+                        cardEl.classList.remove('active');
+                        btnTextEl.textContent = `Activate Mode ${i}`;
+                    }
+                }
+            }
+
+            // Update Live Data Section
+            const dataContainer = document.getElementById('mode-data-container');
+            const dataTitle = document.getElementById('mode-data-title');
+
+            if (activeMode > 0) {
+                dataContainer.style.display = 'block';
+                dataTitle.textContent = `${modeNames[activeMode]} - Live Targets`;
+                document.getElementById('targets-list').innerHTML = '<div class="mode-card" style="text-align:center; padding: 2rem; color: var(--text-muted); display: block; border-style: dashed;">Switching modes... clearing previous targets...</div>';
+            } else {
+                dataContainer.style.display = 'none';
+                document.getElementById('targets-list').innerHTML = '';
+            }
+        }
+
+        const radarAngles = {};
+        
+        let currentViewMode = 'list';
+        let detectedDevices = [];
+
+        function toggleViewMode(mode) {
+            currentViewMode = mode;
+            const btnList = document.getElementById('btn-list-view');
+            const btnRadar = document.getElementById('btn-radar-view');
+            if(btnList) btnList.className = mode === 'list' ? 'btn-conn-option primary' : 'btn-conn-option';
+            if(btnRadar) btnRadar.className = mode === 'radar' ? 'btn-conn-option primary' : 'btn-conn-option';
+            
+            const listEl = document.getElementById('targets-list');
+            const radarEl = document.getElementById('radarCanvas');
+            
+            if (mode === 'list') {
+                if(listEl) listEl.style.display = 'block';
+                if(radarEl) radarEl.style.display = 'none';
+            } else {
+                if(listEl) listEl.style.display = 'none';
+                if(radarEl) radarEl.style.display = 'block';
+                drawRadar();
+            }
+        }
+
+        function drawRadar() {
+            const canvas = document.getElementById('radarCanvas');
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            const width = canvas.width;
+            const height = canvas.height;
+            const centerX = width / 2;
+            const centerY = height / 2;
+            const maxRadius = width / 2;
+
+            ctx.clearRect(0, 0, width, height);
+
+            ctx.strokeStyle = 'rgba(0, 242, 254, 0.3)';
+            ctx.lineWidth = 1;
+            for (let i = 1; i <= 3; i++) {
+                ctx.beginPath();
+                ctx.arc(centerX, centerY, (maxRadius / 3) * i, 0, 2 * Math.PI);
+                ctx.stroke();
+            }
+            ctx.beginPath();
+            ctx.moveTo(centerX, 0);
+            ctx.lineTo(centerX, height);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(0, centerY);
+            ctx.lineTo(width, centerY);
+            ctx.stroke();
+
+            detectedDevices.forEach(device => {
+                const mac = device.mac || 'unknown';
+                if (!radarAngles[mac]) radarAngles[mac] = Math.random() * Math.PI * 2;
+                const angle = radarAngles[mac];
+                
+                const rssi = device.rssi || -100;
+                let distRatio = (rssi - (-30)) / (-100 - (-30));
+                distRatio = Math.max(0, Math.min(1, distRatio));
+                const r = distRatio * (maxRadius - 10);
+
+                const x = centerX + r * Math.cos(angle);
+                const y = centerY + r * Math.sin(angle);
+
+                ctx.beginPath();
+                ctx.arc(x, y, 5, 0, 2 * Math.PI);
+                ctx.fillStyle = '#ff0055';
+                ctx.fill();
+                ctx.shadowBlur = 10;
+                ctx.shadowColor = '#ff0055';
+
+                ctx.fillStyle = '#fff';
+                ctx.font = '10px Arial';
+                ctx.shadowBlur = 0;
+                const name = device.name || device.type || mac;
+                ctx.fillText(name.substring(0, 8), x + 8, y + 4);
+            });
+        }
+
+        function exportAIDebrief() {
+            let text = "I have scanned an environment and detected the following hardware. Please analyze for unusual surveillance...\n\n";
+            let date = new Date().toISOString();
+            text += `Scan Date: ${date}\n\n`;
+            if (detectedDevices.length === 0) {
+                text += "No devices detected yet.";
+            } else {
+                detectedDevices.forEach(d => {
+                    text += `- MAC: ${d.mac || 'N/A'}, Name: ${d.name || d.type || 'Unknown'}, RSSI: ${d.rssi || 'N/A'} dBm, Type: ${d.type || 'N/A'}\n`;
+                });
+            }
+            
+            // Save to localStorage, keep last 5
+            try {
+                let reports = JSON.parse(localStorage.getItem('ai_reports') || '[]');
+                reports.push({ date: date, content: text });
+                if (reports.length > 5) {
+                    reports = reports.slice(reports.length - 5);
+                }
+                localStorage.setItem('ai_reports', JSON.stringify(reports));
+            } catch (e) {
+                console.error("Local storage error:", e);
+            }
+
+            // Download as .txt file
+            const blob = new Blob([text], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `AI_Debrief_${date.replace(/[:.]/g, '-')}.txt`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+
+            // Also copy to clipboard for convenience
+            navigator.clipboard.writeText(text).then(() => {
+                showToast("Debrief downloaded and copied!", "✓");
+            }).catch(err => {
+                console.error('Failed to copy', err);
+                showToast("Debrief downloaded!", "✓");
+            });
+        }
+
+        function renderTargets(mode, targets) {
+            detectedDevices = targets || [];
+            if (currentViewMode === 'radar') {
+                drawRadar();
+            }
+            
+            const list = document.getElementById('targets-list');
+            const radarContainer = document.getElementById('radar-container');
+            
+            // Remove existing blips
+            if (radarContainer) {
+                const existingBlips = radarContainer.querySelectorAll('.radar-blip');
+                existingBlips.forEach(b => b.remove());
+            }
+
+            if (!targets || targets.length === 0) {
+                list.innerHTML = '<div class="mode-card" style="text-align:center; padding: 2rem; color: var(--text-muted); display: block; border-style: dashed;">No targets detected yet... Scanning...</div>';
+                return;
+            }
+
+            let html = '';
+            targets.forEach(t => {
+                let name = t.name || t.uas_id || t.type || 'Unknown Target';
+                if (mode === 2) name = t.name || 'Surveillance Device';
+                let mac = t.mac || '00:00:00:00:00:00';
+                let rssi = t.rssi || -99;
+                let isLocked = t.is_locked ? 'locked' : '';
+
+                let details = '';
+                if (mode === 1) {
+                    details = `Type: ${t.type || 'Generic BLE'} | Count: ${t.count || 1}`;
+                } else if (mode === 3) {
+                    details = `Speed: ${t.speed || 0}m/s | Alt: ${t.altitude || 0}m | Pilot: ${t.operator_id || 'Unknown'} | Src: ${t.source || 'BLE'}`;
+                    
+                    if (radarContainer) {
+                        if (!radarAngles[mac]) radarAngles[mac] = Math.random() * Math.PI * 2;
+                        let angle = radarAngles[mac];
+                        
+                        let isTrueBearing = false;
+                        if (globalPhoneLocation && t.latitude && t.longitude && t.latitude !== 0 && t.longitude !== 0) {
+                            const dLon = (t.longitude - globalPhoneLocation.lng) * (Math.PI / 180);
+                            const lat1 = globalPhoneLocation.lat * (Math.PI / 180);
+                            const lat2 = t.latitude * (Math.PI / 180);
+                            const by = Math.sin(dLon) * Math.cos(lat2);
+                            const bx = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
+                            angle = Math.atan2(by, bx);
+                            isTrueBearing = true;
+                        }
+
+                        let distance = 140 - Math.max(0, Math.min(140, (rssi + 90) * (140/60)));
+                        let blipX = 150 + (isTrueBearing ? Math.sin(angle) : Math.cos(angle)) * distance;
+                        let blipY = 150 + (isTrueBearing ? -Math.cos(angle) : Math.sin(angle)) * distance;
+                        
+                        const blip = document.createElement('div');
+                        blip.className = 'radar-blip';
+                        blip.style.left = `${blipX}px`;
+                        blip.style.top = `${blipY}px`;
+                        radarContainer.appendChild(blip);
+                    }
+                } else if (mode === 2) {
+                    details = `Type: ${t.type || 'Flock/Raven'} | Count: ${t.count || 1}`;
+                }
+
+                let gattHtml = '';
+                if (mode === 1 && t.is_locked) {
+                    if (gattProfileCache[mac]) {
+                        gattHtml = gattProfileCache[mac];
+                    } else {
+                        gattHtml = `<div style="margin-top: 15px; font-size: 0.8rem; color: var(--accent-amber); animation: pulse-op 1s infinite alternate; font-family: monospace;">[!] Establishing BLE connection & Ripping GATT Table...</div>`;
+                    }
+                }
+
+                let targetLockedText = t.is_locked ? 'LOCKED ON' : 'Tap to Lock';
+                let targetLockedColor = t.is_locked ? 'var(--accent-purple)' : 'var(--text-muted)';
+                let rssiSectionHtml = '';
+                
+                if (mode === 1) {
+                    rssiSectionHtml = `
+                    <div style="text-align: right;">
+                        <div style="font-size: 1.25rem; font-weight: bold; color: ${rssi > -60 ? 'var(--accent-emerald)' : (rssi > -80 ? 'var(--accent-amber)' : 'var(--text-muted)')}">${rssi} dBm</div>
+                        <div style="font-size: 0.7rem; color: ${targetLockedColor}; margin-top: 0.2rem; font-weight: bold; text-transform: uppercase;">${targetLockedText}</div>
+                    </div>`;
+                } else {
+                     rssiSectionHtml = `
+                    <div style="text-align: right;">
+                        <div style="font-size: 1.25rem; font-weight: bold; color: ${rssi > -60 ? 'var(--accent-emerald)' : (rssi > -80 ? 'var(--accent-amber)' : 'var(--text-muted)')}">${rssi} dBm</div>
+                    </div>`;
+                }
+
+                html += `
+                <div class="target-card ${mode === 1 ? isLocked : ''}" ${mode === 1 ? `onclick="lockTarget('${mac}', ${t.is_locked})"` : ''}>
+                    <div style="display: flex; justify-content: space-between; width: 100%; align-items: center;">
+                        <div>
+                            <h3 style="color: var(--accent-cyan); margin-bottom: 0.3rem; font-size: 1.1rem;">${name}</h3>
+                            <div style="font-size: 0.8rem; color: var(--text-muted)">MAC: ${mac} | ${details}</div>
+                        </div>
+                        ${rssiSectionHtml}
+                    </div>
+                    ${gattHtml}
+                </div>`;
+            });
+            list.innerHTML = html;
+        }
+
+        async function lockTarget(mac, isCurrentlyLocked) {
+            const cmdMac = isCurrentlyLocked ? 'NONE' : mac;
+            const success = await sendCommand({ lock: cmdMac });
+            if (success) {
+                if (isCurrentlyLocked) {
+                    showToast(`Unlocked target`, '✓');
+                } else {
+                    showToast(`Target lock requested for ${mac}`, '✓');
+                }
+            }
+        }
+
+        async function switchMode(modeInt) {
+            if (modeInt === currentActiveMode) {
+                if (modeInt === 1) {
+                    await lockTarget('NONE');
+                    showToast('Unlocked target', '✓');
+                }
+                return;
+            }
+
+            // Always clear lock and gatt cache when switching away from mode 1
+            if (currentActiveMode === 1) {
+                await lockTarget('NONE');
+                gattProfileCache = {};
+            }
+
+            const btnTextEl = document.getElementById(`btn-text-${modeInt}`);
+            if (btnTextEl) btnTextEl.textContent = 'Switching...';
+
+            const success = await sendCommand({ mode: modeInt });
+            if (success) {
+                updateActiveUI(modeInt);
+                showToast(`Switched to ${modeNames[modeInt]}`, '✓');
+                
+                // Show/hide filter toggle depending on mode
+                document.getElementById('bandit-filter-container').style.display = (modeInt === 1) ? 'flex' : 'none';
+                
+                // Show/hide map depending on mode
+                document.getElementById('war-flocking-ui').style.display = (modeInt === 2) ? 'flex' : 'none';
+                if (modeInt === 2) {
+                    initGPS();
+                    if (!map) setTimeout(initMap, 100);
+                }
+
+                // Show/hide sky sweeper radar depending on mode
+                document.getElementById('sky-sweeper-ui').style.display = (modeInt === 3) ? 'flex' : 'none';
+                document.getElementById('spoof-engine-ui').style.display = (modeInt === 1) ? 'flex' : 'none';
+                if (modeInt === 3) {
+                    initGPS();
+                }
+            } else {
+                updateActiveUI(currentActiveMode);
+            }
+        }
+
+        async function toggleFilter(isActive) {
+            const success = await sendCommand({ filter: isActive });
+            if (success) {
+                showToast(`Filter ${isActive ? 'ON' : 'OFF'}`, '✓');
+            } else {
+                document.getElementById('filterToggle').checked = !isActive;
+            }
+        }
+
+        async function triggerBleWrite(mac, service, char, hexVal) {
+            showToast('Sending BLE Write Command...', '⚡');
+            await sendCommand({
+                action: 'ble_write',
+                mac: mac,
+                service: service,
+                char: char,
+                val: hexVal
+            });
+        }
+
+        async function triggerSpoof(payload) {
+            showToast('Blasting Spoof Payload for 10s...', '☠️');
+            await sendCommand({
+                action: 'ble_spoof',
+                payload: payload
+            });
+        }
+
+        function showToast(msg, icon = '✓') {
+            const toast = document.getElementById('toast');
+            const toastMsg = document.getElementById('toast-msg');
+            const toastIcon = document.getElementById('toast-icon');
+
+            if (toast && toastMsg && toastIcon) {
+                toastMsg.textContent = msg;
+                toastIcon.textContent = icon;
+                toast.classList.add('show');
+                setTimeout(() => {
+                    toast.classList.remove('show');
+                }, 3000);
+            }
+        }
+
+        // Initialize UI on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            checkApiSupport();
+            // Show connection modal if disconnected on start
+            setTimeout(() => {
+                if (!connectionType) {
+                    openConnModal();
+                }
+            }, 600);
+
+            // Handle hardware back button
+            setTimeout(() => {
+                if (window.App) {
+                    window.App.addListener('backButton', () => {
+                        if (typeof isMapFullscreen !== 'undefined' && isMapFullscreen) {
+                            toggleMapFullscreen();
+                        } else {
+                            window.App.exitApp();
+                        }
+                    });
+                }
+            }, 1000);
+        });
+    </script>
+    <div id="help-modal" class="modal-overlay">
+        <div class="modal">
+            <div class="modal-header">
+                <h2>SignalSweep Documentation</h2>
+                <button class="btn-close" onclick="document.getElementById('help-modal').style.display='none'">
+                    <svg viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"></path></svg>
+                </button>
+            </div>
+            <div class="modal-body" style="color: var(--text-muted); line-height: 1.6;">
+                <h3 style="color: white; margin-top: 0;">Mode 1: Beacon Bandit</h3>
+                <p><strong>Anti-Stalking & Spoofing:</strong> Sweeps for personal Bluetooth trackers including Apple AirTags, Samsung SmartTags, Tile, and Chipolo devices. Protects against unwanted stalking.<br>
+                Includes an active <em>Spoofing Engine</em> that blasts BLE pairing requests for Apple and Samsung devices for pentesting and alerts.</p>
+                
+                <h3 style="color: white; margin-top: 15px;">Mode 2: Watchers Watch</h3>
+                <p><strong>Surveillance Mapping:</strong> Actively hunts for hidden surveillance technology. Detects Flock Safety ALPRs (Solar Penguin Packs) via Random Static Address fingerprints, and Axon Enterprise Body Cameras / TASER Signal triggers (UUIDs fe6c/fe6d).</p>
+                
+                <h3 style="color: white; margin-top: 15px;">Mode 3: Sky Sweeper</h3>
+                <p><strong>Airspace Defense:</strong> Pocket AWACS drone sniffer. Leverages ASTM F3411 Remote ID (Wi-Fi NAN/Beacon + BLE) to capture real-time drone telemetry, altitude, speed, and the pilot's exact GPS coordinates.</p>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

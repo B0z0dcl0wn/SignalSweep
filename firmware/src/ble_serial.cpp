@@ -1,0 +1,230 @@
+#include "ble_serial.h"
+#include "mode_manager.h"
+#include "mode_beacon_bandit.h"
+#include "mode_watchers_watch.h"
+#include "mode_sky_sweeper.h"
+#include <NimBLEDevice.h>
+#include <ArduinoJson.h>
+#include <esp_log.h>
+#include "hardware_manager.h"
+
+static const char *TAG = "BleSerial";
+
+#define SERVICE_UUID           "6E400001-B5A3-F393-E0A9-E50E24DCCA9E"
+#define CHARACTERISTIC_UUID_RX "6E400002-B5A3-F393-E0A9-E50E24DCCA9E"
+#define CHARACTERISTIC_UUID_TX "6E400003-B5A3-F393-E0A9-E50E24DCCA9E"
+
+static NimBLEServer *pServer = nullptr;
+static NimBLECharacteristic *pTxCharacteristic = nullptr;
+static NimBLECharacteristic *pRxCharacteristic = nullptr;
+static bool deviceConnected = false;
+
+class ServerCallbacks : public NimBLEServerCallbacks {
+    void onConnect(NimBLEServer* pServer) override {
+        deviceConnected = true;
+        ESP_LOGI(TAG, "BLE Client Connected");
+        playConnectionChirp();
+    }
+
+    void onDisconnect(NimBLEServer* pServer) override {
+        deviceConnected = false;
+        ESP_LOGI(TAG, "BLE Client Disconnected - Restarting Advertising");
+        playDisconnectionChirp();
+        NimBLEDevice::startAdvertising();
+    }
+};
+
+void processIncomingCommand(const String& rawCommand) {
+    if (rawCommand.length() == 0) return;
+
+    ESP_LOGI(TAG, "Processing incoming command: %s", rawCommand.c_str());
+
+    // Process incoming JSON payload or raw commands
+    JsonDocument doc;
+    DeserializationError error = deserializeJson(doc, rawCommand.c_str());
+
+    if (!error) {
+        // 1. Trigger mode change: {"mode": 1} or {"mode": "1"}
+        if (doc["mode"].is<int>()) {
+            int modeVal = doc["mode"].as<int>();
+            if (modeVal >= 0 && modeVal <= 3) {
+                setOperatingMode(static_cast<OperatingMode>(modeVal));
+                ESP_LOGI(TAG, "Command triggered mode change to: %d", modeVal);
+            }
+        } else if (doc["mode"].is<const char*>() || doc["mode"].is<String>()) {
+            String mStr = doc["mode"].as<String>();
+            int modeVal = mStr.toInt();
+            if (modeVal >= 0 && modeVal <= 3) {
+                setOperatingMode(static_cast<OperatingMode>(modeVal));
+                ESP_LOGI(TAG, "Command triggered mode change to: %d", modeVal);
+            }
+        }
+
+        // 2. Trigger target lock: {"mac": "AA:BB:CC:DD:EE:FF"} or {"lock_mac": "..."} or {"target": "..."} or {"lock": "..."}
+        if (doc["mac"].is<const char*>() || doc["mac"].is<String>()) {
+            String targetMac = doc["mac"].as<String>();
+            setBanditLockTarget(targetMac);
+            ESP_LOGI(TAG, "Command set target lock MAC: %s", targetMac.c_str());
+        } else if (doc["lock_mac"].is<const char*>() || doc["lock_mac"].is<String>()) {
+            String targetMac = doc["lock_mac"].as<String>();
+            setBanditLockTarget(targetMac);
+            ESP_LOGI(TAG, "Command set target lock MAC: %s", targetMac.c_str());
+        } else if (doc["target"].is<const char*>() || doc["target"].is<String>()) {
+            String targetMac = doc["target"].as<String>();
+            setBanditLockTarget(targetMac);
+            ESP_LOGI(TAG, "Command set target lock MAC: %s", targetMac.c_str());
+        } else if (doc["lock"].is<const char*>() || doc["lock"].is<String>()) {
+            String targetMac = doc["lock"].as<String>();
+            setBanditLockTarget(targetMac);
+            ESP_LOGI(TAG, "Command set target lock MAC: %s", targetMac.c_str());
+        }
+
+        // 3. Trigger signature updates if signatures JSON object/array is received
+        if (doc["signatures"].is<JsonArray>()) {
+            updateWatchersSignaturesJson(rawCommand);
+            ESP_LOGI(TAG, "Command updated signature rules database");
+        }
+
+        // 4. Toggle Beacon Bandit Filter
+        if (doc["filter"].is<bool>()) {
+            bool filterActive = doc["filter"].as<bool>();
+            setBanditFilter(filterActive);
+        }
+
+        // 5. Weaponized GATT actions (Write and Spoof)
+        if (doc["action"].is<const char*>() || doc["action"].is<String>()) {
+            String action = doc["action"].as<String>();
+            
+            if (action == "ble_write") {
+                if (getCurrentMode() == MODE_BEACON_BANDIT) {
+                    String targetMac = doc["mac"].as<String>();
+                    String srv = doc["service"].as<String>();
+                    String chr = doc["char"].as<String>();
+                    String val = doc["val"].as<String>();
+                    executeBleWrite(targetMac, srv, chr, val);
+                } else {
+                    ESP_LOGW(TAG, "ble_write is only allowed in Beacon Bandit mode.");
+                }
+            } 
+            else if (action == "ble_spoof") {
+                if (getCurrentMode() == MODE_BEACON_BANDIT) {
+                    String payload = doc["payload"].as<String>();
+                    executeBleSpoof(payload);
+                } else {
+                    ESP_LOGW(TAG, "ble_spoof is only allowed in Beacon Bandit mode.");
+                }
+            }
+        }
+    } else {
+        // Raw text fallback parsing (e.g. "1", "2", "3", "0", "mode 1", "lock AA:BB:CC:DD:EE:FF")
+        String rawStr = rawCommand;
+        rawStr.trim();
+
+        if (rawStr == "0" || rawStr == "1" || rawStr == "2" || rawStr == "3") {
+            int modeVal = rawStr.toInt();
+            setOperatingMode(static_cast<OperatingMode>(modeVal));
+            ESP_LOGI(TAG, "Raw string triggered mode change to: %d", modeVal);
+        } else if (rawStr.startsWith("mode ") || rawStr.startsWith("mode=")) {
+            int modeVal = rawStr.substring(5).toInt();
+            if (modeVal >= 0 && modeVal <= 3) {
+                setOperatingMode(static_cast<OperatingMode>(modeVal));
+                ESP_LOGI(TAG, "Raw string triggered mode change to: %d", modeVal);
+            }
+        } else if (rawStr.startsWith("lock ") || rawStr.startsWith("mac=")) {
+            String targetMac = rawStr.substring(5);
+            setBanditLockTarget(targetMac);
+            ESP_LOGI(TAG, "Raw string set target lock MAC: %s", targetMac.c_str());
+        } else if (rawStr == "CMD:BLE_SCAN:OFF") {
+            pauseBle(true);
+        } else if (rawStr == "CMD:BLE_SCAN:ON") {
+            pauseBle(false);
+        } else if (rawStr == "CMD:WIFI_SCAN:OFF") {
+            pauseWifi(true);
+        } else if (rawStr == "CMD:WIFI_SCAN:ON") {
+            pauseWifi(false);
+        }
+    }
+}
+
+class RxCallbacks : public NimBLECharacteristicCallbacks {
+    void onWrite(NimBLECharacteristic *pCharacteristic) override {
+        std::string rxValue = pCharacteristic->getValue();
+        if (rxValue.length() > 0) {
+            processIncomingCommand(String(rxValue.c_str()));
+        }
+    }
+};
+
+static ServerCallbacks serverCallbacks;
+static RxCallbacks rxCallbacks;
+
+void bleSerialInit() {
+    ESP_LOGI(TAG, "Initializing BLE Serial Service (Nordic UART Service)...");
+
+    pServer = NimBLEDevice::createServer();
+    pServer->setCallbacks(&serverCallbacks);
+
+    NimBLEService *pService = pServer->createService(SERVICE_UUID);
+
+    // TX Characteristic (Notify)
+    pTxCharacteristic = pService->createCharacteristic(
+        CHARACTERISTIC_UUID_TX,
+        NIMBLE_PROPERTY::NOTIFY
+    );
+
+    // RX Characteristic (Write / Write No Response)
+    pRxCharacteristic = pService->createCharacteristic(
+        CHARACTERISTIC_UUID_RX,
+        NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR
+    );
+    pRxCharacteristic->setCallbacks(&rxCallbacks);
+
+    pService->start();
+
+    NimBLEAdvertising *pAdvertising = NimBLEDevice::getAdvertising();
+    pAdvertising->addServiceUUID(SERVICE_UUID);
+    pAdvertising->setScanResponse(true);
+    pAdvertising->start();
+
+    ESP_LOGI(TAG, "BLE Nordic UART Service started and advertising.");
+}
+
+void restoreBleSerialAdvertising() {
+    NimBLEAdvertising *pAdvertising = NimBLEDevice::getAdvertising();
+    NimBLEAdvertisementData emptyAdvert;
+    pAdvertising->setAdvertisementData(emptyAdvert); // Unsets custom payload
+    pAdvertising->addServiceUUID(SERVICE_UUID);
+    pAdvertising->setScanResponse(true);
+    pAdvertising->start();
+    ESP_LOGI(TAG, "Restored BLE Serial Advertising.");
+}
+
+bool isBleSerialConnected() {
+    return deviceConnected;
+}
+
+void sendBleSerial(const String& data) {
+    if (pTxCharacteristic == nullptr) return;
+
+    String payload = data + "\n";
+    size_t length = payload.length();
+    if (length == 0) return;
+
+    // Send in chunks fitting within max MTU payload to ensure smooth notification delivery
+    const size_t maxChunkSize = 180;
+    if (length <= maxChunkSize) {
+        pTxCharacteristic->setValue((const uint8_t*)payload.c_str(), length);
+        pTxCharacteristic->notify();
+    } else {
+        size_t offset = 0;
+        while (offset < length) {
+            size_t chunkSize = (length - offset > maxChunkSize) ? maxChunkSize : (length - offset);
+            pTxCharacteristic->setValue((const uint8_t*)(payload.c_str() + offset), chunkSize);
+            pTxCharacteristic->notify();
+            offset += chunkSize;
+            if (offset < length) {
+                vTaskDelay(pdMS_TO_TICKS(10));
+            }
+        }
+    }
+}

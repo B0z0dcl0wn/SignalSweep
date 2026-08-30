@@ -1,0 +1,33 @@
+# Node / app
+app/node_modules/
+app/dist/
+app/dist-ssr/
+*.local
+
+# Vite / build caches
+.vite/
+
+# Firmware / PlatformIO
+firmware/.pio/
+firmware/serial*.log
+
+# Android (Capacitor generated build artifacts)
+app/android/.gradle/
+app/android/.kotlin/
+app/android/build/
+app/android/app/build/
+app/android/capacitor-cordova-android-plugins/build/
+app/android/local.properties
+app/android/.idea/
+*.apk
+*.aab
+
+# Logs
+*.log
+npm-debug.log*
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+*.swp

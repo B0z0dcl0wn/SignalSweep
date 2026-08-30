@@ -1,0 +1,80 @@
+                const mac = device.mac || 'unknown';
+                if (!radarAngles[mac]) radarAngles[mac] = Math.random() * Math.PI * 2;
+                const angle = radarAngles[mac];
+                
+                const rssi = device.rssi || -100;
+                let distRatio = (rssi - (-30)) / (-100 - (-30));
+                distRatio = Math.max(0, Math.min(1, distRatio));
+                const r = distRatio * (maxRadius - 10);
+
+                const x = centerX + r * Math.cos(angle);
+                const y = centerY + r * Math.sin(angle);
+
+                ctx.beginPath();
+                ctx.arc(x, y, 5, 0, 2 * Math.PI);
+                ctx.fillStyle = '#ff0055';
+                ctx.fill();
+                ctx.shadowBlur = 10;
+                ctx.shadowColor = '#ff0055';
+
+                ctx.fillStyle = '#fff';
+                ctx.font = '10px Arial';
+                ctx.shadowBlur = 0;
+                const name = device.name || device.type || mac;
+                ctx.fillText(name.substring(0, 8), x + 8, y + 4);
+            });
+        }
+
+        function exportAIDebrief() {
+            let text = "I have scanned an environment and detected the following hardware. Please analyze for unusual surveillance...\n\n";
+            if (detectedDevices.length === 0) {
+                text += "No devices detected yet.";
+            } else {
+                detectedDevices.forEach(d => {
+                    text += `- MAC: ${d.mac || 'N/A'}, Name: ${d.name || d.type || 'Unknown'}, RSSI: ${d.rssi || 'N/A'} dBm, Type: ${d.type || 'N/A'}\n`;
+                });
+            }
+            navigator.clipboard.writeText(text).then(() => {
+                showToast("AI Debrief copied to clipboard!", "✓");
+            }).catch(err => {
+                console.error('Failed to copy', err);
+                showToast("Copy failed", "✕");
+            });
+        }
+
+        function renderTargets(mode, targets) {
+            detectedDevices = targets || [];
+            if (currentViewMode === 'radar') {
+                drawRadar();
+            }
+            
+            const list = document.getElementById('targets-list');
+            const radarContainer = document.getElementById('radar-container');
+            
+            // Remove existing blips
+            if (radarContainer) {
+                const existingBlips = radarContainer.querySelectorAll('.radar-blip');
+                existingBlips.forEach(b => b.remove());
+            }
+
+            if (!targets || targets.length === 0) {
+                list.innerHTML = '<div class="mode-card" style="text-align:center; padding: 2rem; color: var(--text-muted); display: block; border-style: dashed;">No targets detected yet... Scanning...</div>';
+                return;
+            }
+
+            let html = '';
+            targets.forEach(t => {
+                let name = t.name || t.uas_id || t.type || 'Unknown Target';
+                if (mode === 2) name = t.name || 'Surveillance Device';
+                let mac = t.mac || '00:00:00:00:00:00';
+                let rssi = t.rssi || -99;
+                let isLocked = t.is_locked ? 'locked' : '';
+
+                let details = '';
+                if (mode === 1) {
+                    details = `Type: ${t.type || 'Generic BLE'} | Count: ${t.count || 1}`;
+                } else if (mode === 3) {
+                    details = `Speed: ${t.speed || 0}m/s | Alt: ${t.altitude || 0}m | Pilot: ${t.operator_id || 'Unknown'} | Src: ${t.source || 'BLE'}`;
+                    
+                    if (radarContainer) {
+                        if (!radarAngles[mac]) radarAngles[mac] = Math.random() * Math.PI * 2;
