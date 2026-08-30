@@ -61,13 +61,10 @@ String getBanditTargetsJson();
 void setBanditFilter(bool active);
 
 /**
- * @brief Execute a raw GATT characteristic write to a specific MAC
+ * @brief Write a GATT characteristic on a specific MAC. Backs the defensive
+ * "Ring/Find" action (Immediate Alert Service 0x1802/0x2A06) that makes a
+ * suspected tracker chirp so it can be physically located.
  */
 void executeBleWrite(const String& mac, const String& serviceUuid, const String& charUuid, const String& hexVal);
-
-/**
- * @brief Execute a 10-second BLE advertisement spoofing blast
- */
-void executeBleSpoof(const String& hexPayload);
 
 #endif // MODE_BEACON_BANDIT_H

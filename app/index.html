@@ -948,11 +948,11 @@
                             <line x1="12" y1="20" x2="12.01" y2="20"/>
                         </svg>
                     </div>
-                    <span class="tag">Anti-Stalking & Spoofing</span>
+                    <span class="tag">Anti-Stalking</span>
                 </div>
                 <div class="card-body">
                     <h2>Beacon Bandit</h2>
-                    <p>BLE tracker detection for Apple AirTags, Tile, Samsung SmartTags, and Chipolo. Also includes an active BLE spoofing engine for Apple and Samsung devices.</p>
+                    <p>BLE tracker detection for Apple AirTags, Tile, Samsung SmartTags, and Chipolo. Lock onto a suspicious tag and ring it to physically locate and remove it.</p>
                 </div>
             </div>
             <button class="btn-select" id="btn-1">
@@ -1035,15 +1035,6 @@
                 <div class="radar-status">Scanning 2.4GHz & BLE Spectrum</div>
             </div>
 
-            <div id="spoof-engine-ui" style="display: none; width: 100%; flex-direction: column; align-items: center; margin-bottom: 20px; padding: 15px; background: rgba(0, 242, 254, 0.05); border: 1px solid rgba(0, 242, 254, 0.2); border-radius: 12px;">
-                <h3 style="color: var(--accent-cyan); margin-bottom: 15px; font-size: 1rem; text-transform: uppercase; letter-spacing: 2px;">Spoofing Engine</h3>
-                <div style="display: flex; gap: 10px; flex-wrap: wrap; justify-content: center;">
-                    <button class="action-btn" onclick="triggerSpoof('1E02011A0AFF4C000F05C00F09000000000000')" style="background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.3); color: white;">🍎 Apple TV</button>
-                    <button class="action-btn" onclick="triggerSpoof('1E02011A0AFF4C00071901022075AA3001000000')" style="background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.3); color: white;">🎧 AirPods</button>
-                    <button class="action-btn" onclick="triggerSpoof('1502011A11FF75004204018060000000000000000000')" style="background: rgba(0,102,255,0.2); border: 1px solid rgba(0,102,255,0.5); color: #88b8ff;">📱 Samsung TV</button>
-                </div>
-                <div style="margin-top: 10px; font-size: 0.7rem; color: var(--accent-amber); text-align: center;">WARNING: 10-Second Burst Limit Enforced by Hardware</div>
-            </div>
 
             <div class="filter-container" id="bandit-filter-container" style="display: none;">
                 <div class="filter-label">
@@ -1183,8 +1174,7 @@
             </div>
             <div class="modal-body" style="color: var(--text-muted); line-height: 1.6;">
                 <h3 style="color: white; margin-top: 0;">Mode 1: Beacon Bandit</h3>
-                <p><strong>Anti-Stalking & Spoofing:</strong> Sweeps for personal Bluetooth trackers including Apple AirTags, Samsung SmartTags, Tile, and Chipolo devices. Protects against unwanted stalking.<br>
-                Includes an active <em>Spoofing Engine</em> that blasts BLE pairing requests for Apple and Samsung devices for pentesting and alerts.</p>
+                <p><strong>Anti-Stalking:</strong> Sweeps for personal Bluetooth trackers including Apple AirTags, Samsung SmartTags, Tile, and Chipolo devices. Lock onto a suspicious tracker and use <em>Ring / Find</em> to make it chirp (via its Immediate Alert Service) so you can physically locate and remove it.</p>
                 
                 <h3 style="color: white; margin-top: 15px;">Mode 2: Watchers Watch</h3>
                 <p><strong>Surveillance Mapping:</strong> Actively hunts for hidden surveillance technology. Detects Flock Safety ALPRs (Solar Penguin Packs) via Random Static Address fingerprints, and Axon Enterprise Body Cameras / TASER Signal triggers (UUIDs fe6c/fe6d).</p>

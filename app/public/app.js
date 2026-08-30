@@ -153,22 +153,15 @@
                                     let chName = translateUUID(ch.uuid);
                                     html += `<div style="margin-left: 12px; font-size: 0.75rem; color: var(--text-color); margin-top: 4px;">`;
                                     
-                                    // Make it beep exploit!
+                                    // Ring/Find: if the tracker exposes the Immediate Alert
+                                    // Service (0x1802/0x2A06), offer a button to make it chirp
+                                    // so it can be physically located and removed.
                                     if (srv.uuid.toLowerCase() === '1802' && ch.uuid.toLowerCase() === '2a06') {
                                         html += `<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
                                                     <div><span style="color: var(--text-muted);">└─</span> ${chName} <span style="color: var(--text-muted); font-size: 0.65rem;">(${ch.uuid})</span></div>
-                                                    <button onclick="triggerBleWrite('${data.mac}', '${srv.uuid}', '${ch.uuid}', '02')" style="background: rgba(255, 50, 50, 0.2); border: 1px solid rgba(255, 50, 50, 0.6); color: #ff6b6b; padding: 2px 8px; border-radius: 4px; cursor: pointer; font-size: 0.7rem; font-weight: bold; animation: pulse 2s infinite;">RING ALARM</button>
+                                                    <button onclick="triggerBleWrite('${data.mac}', '${srv.uuid}', '${ch.uuid}', '02')" style="background: rgba(0, 242, 254, 0.15); border: 1px solid var(--accent-cyan); color: var(--accent-cyan); padding: 2px 8px; border-radius: 4px; cursor: pointer; font-size: 0.7rem; font-weight: bold;">🔔 RING / FIND</button>
                                                  </div>`;
                                     } else {
-                                        let writeUI = '';
-                                        if (ch.properties && (ch.properties.includes('Write') || ch.properties.includes('WriteNoResponse'))) {
-                                            let inputId = `write_${data.mac.replace(/:/g,'')}_${ch.uuid}`;
-                                            writeUI = `<div style="display: flex; gap: 5px; margin-top: 4px; margin-left: 20px;">
-                                                        <input type="text" id="${inputId}" placeholder="HEX (e.g. 0A FF)" style="flex: 1; background: rgba(0,0,0,0.3); border: 1px solid rgba(0,242,254,0.3); color: white; padding: 2px 5px; font-size: 0.7rem; border-radius: 3px;">
-                                                        <button onclick="let v=document.getElementById('${inputId}').value; if(v) triggerBleWrite('${data.mac}', '${srv.uuid}', '${ch.uuid}', v.replace(/\\s/g,''))" style="background: rgba(0,242,254,0.1); border: 1px solid var(--accent-cyan); color: var(--accent-cyan); padding: 2px 8px; border-radius: 3px; cursor: pointer; font-size: 0.7rem;">WRITE</button>
-                                                       </div>`;
-                                        }
-                                        
                                         html += `<div><span style="color: var(--text-muted);">└─</span> ${chName} <span style="color: var(--text-muted); font-size: 0.65rem;">(${ch.uuid})</span></div>`;
                                         if (ch.value_hex) {
                                             html += `<div style="margin-left: 20px; margin-top: 2px;">`;
@@ -176,7 +169,6 @@
                                             html += `<span style="color: var(--accent-cyan);">TXT:</span> ${ch.value_ascii}`;
                                             html += `</div>`;
                                         }
-                                        html += writeUI;
                                     }
                                     html += `</div>`;
                                 });
@@ -929,7 +921,6 @@
 
                 // Show/hide sky sweeper radar depending on mode
                 document.getElementById('sky-sweeper-ui').style.display = (modeInt === 3) ? 'flex' : 'none';
-                document.getElementById('spoof-engine-ui').style.display = (modeInt === 1) ? 'flex' : 'none';
                 if (modeInt === 3) {
                     initGPS();
                 }
@@ -948,21 +939,13 @@
         }
 
         async function triggerBleWrite(mac, service, char, hexVal) {
-            showToast('Sending BLE Write Command...', '⚡');
+            showToast('Ringing tracker to locate it...', '🔔');
             await sendCommand({
                 action: 'ble_write',
                 mac: mac,
                 service: service,
                 char: char,
                 val: hexVal
-            });
-        }
-
-        async function triggerSpoof(payload) {
-            showToast('Blasting Spoof Payload for 10s...', '☠️');
-            await sendCommand({
-                action: 'ble_spoof',
-                payload: payload
             });
         }
 

@@ -85,10 +85,12 @@ void processIncomingCommand(const String& rawCommand) {
             setBanditFilter(filterActive);
         }
 
-        // 5. Weaponized GATT actions (Write and Spoof)
+        // 5. GATT write: backs the defensive "Ring/Find" action, which writes
+        // the Immediate Alert Service (0x1802/0x2A06) to make a suspected
+        // tracker chirp so it can be physically located.
         if (doc["action"].is<const char*>() || doc["action"].is<String>()) {
             String action = doc["action"].as<String>();
-            
+
             if (action == "ble_write") {
                 if (getCurrentMode() == MODE_BEACON_BANDIT) {
                     String targetMac = doc["mac"].as<String>();
@@ -98,14 +100,6 @@ void processIncomingCommand(const String& rawCommand) {
                     executeBleWrite(targetMac, srv, chr, val);
                 } else {
                     ESP_LOGW(TAG, "ble_write is only allowed in Beacon Bandit mode.");
-                }
-            } 
-            else if (action == "ble_spoof") {
-                if (getCurrentMode() == MODE_BEACON_BANDIT) {
-                    String payload = doc["payload"].as<String>();
-                    executeBleSpoof(payload);
-                } else {
-                    ESP_LOGW(TAG, "ble_spoof is only allowed in Beacon Bandit mode.");
                 }
             }
         }
