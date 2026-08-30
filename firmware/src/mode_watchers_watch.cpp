@@ -119,7 +119,12 @@ static void ensureSignaturesFileExists() {
 #define W_WIFI_IE  30
 #define W_WIFI_SSID 80
 #define W_CORROBORATION 15   // same MAC seen on both BLE and WiFi
-#define CONF_LIST_MIN   30   // ignore anything weaker than a lone OUI hit
+// A single weak, non-Flock-specific signal (a broad OUI prefix, or the Lite-On
+// vendor IE that rides countless consumer WiFi chips) is noise on its own. Only
+// list a device that clears 60 — i.e. one specific signal (SSID/UUID/name at
+// 70-80) or two corroborating weak ones (OUI 30 + IE 30, or +15 cross-protocol).
+// ponytail: this is the noise floor; lower it if real devices are being missed.
+#define CONF_LIST_MIN   60
 
 static String tierForConfidence(int confidence) {
     if (confidence >= 75) return "Confirmed";
