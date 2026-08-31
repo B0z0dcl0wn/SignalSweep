@@ -53,7 +53,7 @@ void processIncomingCommand(const String& rawCommand) {
         } else if (doc.is<int>()) {
             modeVal = doc.as<int>();
         }
-        if (modeVal >= 0 && modeVal <= 3) {
+        if (modeVal >= 0 && modeVal <= 4) {
             setOperatingMode(static_cast<OperatingMode>(modeVal));
             ESP_LOGI(TAG, "Command triggered mode change to: %d", modeVal);
         }
@@ -111,7 +111,7 @@ void processIncomingCommand(const String& rawCommand) {
 
         if (rawStr.startsWith("mode ") || rawStr.startsWith("mode=")) {
             int modeVal = rawStr.substring(5).toInt();
-            if (modeVal >= 0 && modeVal <= 3) {
+            if (modeVal >= 0 && modeVal <= 4) {
                 setOperatingMode(static_cast<OperatingMode>(modeVal));
                 ESP_LOGI(TAG, "Raw string triggered mode change to: %d", modeVal);
             }

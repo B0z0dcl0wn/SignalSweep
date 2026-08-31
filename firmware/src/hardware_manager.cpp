@@ -81,6 +81,13 @@ static void loadJingleNotes(OperatingMode mode) {
             activeJingle[3] = {2400, 100};
             jingleLength = 4;
             break;
+        case MODE_SHADOW:
+            // Descending, watchful — you're the one being followed.
+            activeJingle[0] = {1200, 70};
+            activeJingle[1] = {900, 70};
+            activeJingle[2] = {600, 140};
+            jingleLength = 3;
+            break;
         default:
             jingleLength = 0;
             break;
@@ -217,6 +224,18 @@ static void HardwareManagerTask(void *pvParameters) {
                     case MODE_SKY_SWEEPER: {
                         uint32_t t = now % 600;
                         if (t < 80) currentPixelColor = strip.Color(120, 0, 255); // Violet strobe
+                        break;
+                    }
+                    case MODE_SHADOW: {
+                        uint32_t t = now % 2000;
+                        // Slow white "sweep" breath — passive, patient watching
+                        if (t < 500) {
+                            uint8_t v = (uint8_t)((t * 180) / 500);
+                            currentPixelColor = strip.Color(v, v, v);
+                        } else if (t < 1000) {
+                            uint8_t v = (uint8_t)(180 - (((t - 500) * 180) / 500));
+                            currentPixelColor = strip.Color(v, v, v);
+                        }
                         break;
                     }
                 }

@@ -6,7 +6,8 @@
             0: "Mode Selector",
             1: "Beacon Bandit",
             2: "War Flocking",
-            3: "Sky Sweeper"
+            3: "Sky Sweeper",
+            4: "Shadow"
         };
 
         let currentActiveMode = -1;
@@ -117,6 +118,81 @@
         let gattProfileCache = {};
         let lastBanditData = null;
 
+        // ---- Shadow (tail detection) -------------------------------------
+        // The device reports what it hears; the phone knows where it is. A tail
+        // is a MAC that reappears near you at several *separate places*, not one
+        // that's merely loud. So we bucket each sighting into a GPS cluster and
+        // score on how many distinct clusters a device shows up in.
+        const SHADOW_CLUSTER_M = 200;   // >200m apart = a different place
+        const SHADOW_ALERT_CLUSTERS = 3;
+        let shadowSeen = {};            // mac -> {clusters:[{lat,lng}], first,last,rssi,name,proto,count}
+
+        function haversineM(a, b) {
+            const R = 6371000, toRad = d => d * Math.PI / 180;
+            const dLat = toRad(b.lat - a.lat), dLng = toRad(b.lng - a.lng);
+            const s = Math.sin(dLat / 2) ** 2 +
+                      Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLng / 2) ** 2;
+            return 2 * R * Math.asin(Math.sqrt(s));
+        }
+
+        // Fold one sighting into a device's record. Returns the updated record.
+        function shadowRecord(store, mac, loc, now, extra) {
+            const rec = store[mac] || { clusters: [], first: now, last: now, count: 0,
+                                        rssi: -99, name: '', proto: '' };
+            rec.last = now;
+            rec.count++;
+            if (extra) {
+                if (extra.rssi != null) rec.rssi = extra.rssi;
+                if (extra.name) rec.name = extra.name;
+                if (extra.proto) rec.proto = extra.proto;
+            }
+            if (loc && loc.lat != null && loc.lng != null) {
+                const near = rec.clusters.some(c => haversineM(c, loc) <= SHADOW_CLUSTER_M);
+                if (!near) rec.clusters.push({ lat: loc.lat, lng: loc.lng });
+            }
+            store[mac] = rec;
+            return rec;
+        }
+
+        // 0-100. Distinct places dominate; span of time and total distance help.
+        function shadowScore(rec, now) {
+            const places = rec.clusters.length;
+            if (places < 2) return 0;   // one place is a neighbour, not a tail
+            let spreadM = 0;
+            for (let i = 0; i < rec.clusters.length; i++)
+                for (let j = i + 1; j < rec.clusters.length; j++)
+                    spreadM = Math.max(spreadM, haversineM(rec.clusters[i], rec.clusters[j]));
+            const minutes = Math.max(0, ((now || rec.last) - rec.first) / 60000);
+            const score = (places - 1) * 30
+                        + Math.min(30, spreadM / 100)
+                        + Math.min(20, minutes);
+            return Math.max(0, Math.min(100, Math.round(score)));
+        }
+
+        // ponytail: runnable self-check for the clustering/scoring above —
+        // window.__shadowSelfTest() in the console returns true if sane.
+        window.__shadowSelfTest = function () {
+            const s = {}, t0 = 0;
+            const A = { lat: 30.2200, lng: -92.0200 };          // origin
+            const B = { lat: 30.2400, lng: -92.0200 };          // ~2.2 km north
+            const C = { lat: 30.2600, lng: -92.0200 };          // ~4.4 km north
+            // stationary device: many hits, one place -> not a tail
+            for (let i = 0; i < 20; i++) shadowRecord(s, 'AA', A, t0 + i * 1000, { rssi: -50 });
+            const stationary = shadowScore(s['AA'], t0 + 20000);
+            // follower: same MAC at three distinct places over 20 min
+            shadowRecord(s, 'BB', A, t0, { rssi: -60 });
+            shadowRecord(s, 'BB', B, t0 + 600000, { rssi: -65 });
+            const two = shadowScore(s['BB'], t0 + 600000);
+            shadowRecord(s, 'BB', C, t0 + 1200000, { rssi: -62 });
+            const three = shadowScore(s['BB'], t0 + 1200000);
+            const nearby = haversineM(A, { lat: 30.2201, lng: -92.0200 }) < SHADOW_CLUSTER_M;
+            const ok = stationary === 0 && s['AA'].clusters.length === 1 &&
+                       s['BB'].clusters.length === 3 && three > two && two > 0 && nearby;
+            console.log('[shadow self-test]', { stationary, two, three,
+                        clustersAA: s['AA'].clusters.length, clustersBB: s['BB'].clusters.length, ok });
+            return ok;
+        };
+
         function translateUUID(uuid) {
             const shortUuid = uuid.length === 36 ? uuid.split('-')[0].replace(/^0+/, '') : uuid;
             const uuids = {
@@ -201,6 +277,9 @@
                 } else if (data.mode === 3) {
                     // Sky Sweeper: render the drone list (radar blips handled in renderTargets).
                     if (data.targets) renderTargets(3, data.targets);
+                } else if (data.mode === 4) {
+                    // Shadow: fold each sighting into its GPS cluster and render tails.
+                    if (data.targets) renderShadow(data.targets);
                 }
             } catch (e) {
                 console.warn('Data parse error:', e);
@@ -659,7 +738,7 @@
             currentActiveMode = activeMode;
 
             // Update Cards
-            for (let i = 0; i <= 3; i++) {
+            for (let i = 0; i <= 4; i++) {
                 const cardEl = document.getElementById(`card-${i}`);
                 const btnTextEl = document.getElementById(`btn-text-${i}`);
 
@@ -938,6 +1017,58 @@
             list.innerHTML = html;
         }
 
+        // Shadow: fold this batch of sightings into the running tail store, then
+        // render devices ranked by how many distinct places they've shadowed you.
+        function renderShadow(sightings) {
+            const now = Date.now();
+            const loc = globalPhoneLocation;   // {lat,lng} from the phone GPS
+            (sightings || []).forEach(s => {
+                const mac = s.mac || '??';
+                shadowRecord(shadowSeen, mac, loc, now,
+                    { rssi: s.rssi, name: s.name, proto: s.protocol });
+            });
+
+            const rows = Object.entries(shadowSeen)
+                .map(([mac, rec]) => ({ mac, rec, score: shadowScore(rec, now) }))
+                .sort((a, b) => b.score - a.score);
+
+            const list = document.getElementById('targets-list');
+            if (!list) return;
+
+            if (!loc) {
+                list.innerHTML = '<div class="mode-card" style="text-align:center; padding:2rem; color:var(--accent-amber); display:block; border-style:dashed;">Waiting for GPS fix — move around and Shadow will flag anything that follows you.</div>';
+                return;
+            }
+            const tails = rows.filter(r => r.score > 0);
+            if (tails.length === 0) {
+                list.innerHTML = `<div class="mode-card" style="text-align:center; padding:2rem; color:var(--text-muted); display:block; border-style:dashed;">Tracking ${rows.length} device(s) across your route… none seen in 2+ separate places yet.</div>`;
+                return;
+            }
+
+            let html = '';
+            tails.forEach(({ mac, rec, score }) => {
+                const alert = rec.clusters.length >= SHADOW_ALERT_CLUSTERS;
+                const color = alert ? 'var(--accent-red)' : 'var(--accent-amber)';
+                const label = rec.name || (rec.proto === 'WiFi' ? 'Wi-Fi device' : 'BLE device');
+                html += `
+                <div class="target-card" style="border-color:${color};">
+                    <div style="display:flex; justify-content:space-between; width:100%; align-items:center;">
+                        <div>
+                            <h3 style="color:var(--accent-cyan); margin-bottom:0.3rem; font-size:1.1rem;">${label}
+                                <span style="margin-left:8px; font-size:0.65rem; font-weight:bold; text-transform:uppercase; padding:2px 6px; border-radius:4px; border:1px solid ${color}; color:${color};">${alert ? '⚠ Following you' : 'Watching'} ${score}</span>
+                            </h3>
+                            <div style="font-size:0.8rem; color:var(--text-muted)">MAC: ${mac} | ${rec.proto} | seen in ${rec.clusters.length} places | ${rec.count} hits</div>
+                        </div>
+                        <div style="text-align:right;">
+                            <div style="font-size:1.25rem; font-weight:bold; color:${color}">${rec.clusters.length}📍</div>
+                            <div style="font-size:0.7rem; color:var(--text-muted)">${rec.rssi} dBm</div>
+                        </div>
+                    </div>
+                </div>`;
+            });
+            list.innerHTML = html;
+        }
+
         async function lockTarget(mac, isCurrentlyLocked) {
             const cmdMac = isCurrentlyLocked ? 'NONE' : mac;
             const success = await sendCommand({ lock: cmdMac });
@@ -986,6 +1117,13 @@
                 // Show/hide sky sweeper radar depending on mode
                 document.getElementById('sky-sweeper-ui').style.display = (modeInt === 3) ? 'flex' : 'none';
                 if (modeInt === 3) {
+                    initGPS();
+                }
+
+                // Shadow needs the phone's location to cluster sightings; start
+                // fresh each time you enter the mode.
+                if (modeInt === 4) {
+                    shadowSeen = {};
                     initGPS();
                 }
             } else {

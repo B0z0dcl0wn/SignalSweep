@@ -2,6 +2,7 @@
 #include "mode_beacon_bandit.h"
 #include "mode_watchers_watch.h"
 #include "mode_sky_sweeper.h"
+#include "mode_shadow.h"
 #include "hardware_manager.h"
 #include "ble_serial.h"
 #include "capabilities.h"
@@ -23,6 +24,7 @@ const char* getModeName(OperatingMode mode) {
         case MODE_BEACON_BANDIT:  return "MODE_BEACON_BANDIT";
         case MODE_WATCHERS_WATCH: return "MODE_WATCHERS_WATCH";
         case MODE_SKY_SWEEPER:    return "MODE_SKY_SWEEPER";
+        case MODE_SHADOW:         return "MODE_SHADOW";
         default:                  return "UNKNOWN_MODE";
     }
 }
@@ -58,6 +60,9 @@ static void shutdownCurrentMode(OperatingMode mode) {
         case MODE_SKY_SWEEPER:
             stopSkySweeper();
             break;
+        case MODE_SHADOW:
+            stopShadow();
+            break;
         default:
             break;
     }
@@ -81,6 +86,10 @@ static void startNewMode(OperatingMode mode) {
         case MODE_SKY_SWEEPER:
             ESP_LOGI(TAG, "Entering Sky Sweeper Mode");
             startSkySweeper();
+            break;
+        case MODE_SHADOW:
+            ESP_LOGI(TAG, "Entering Shadow Mode");
+            startShadow();
             break;
     }
 }
@@ -148,7 +157,7 @@ void modeManagerInit() {
     Preferences prefs;
     prefs.begin("ouispy-mode", true);
     int savedMode = prefs.getInt("mode", MODE_SELECTOR);
-    if (savedMode >= 0 && savedMode <= 3) {
+    if (savedMode >= 0 && savedMode <= 4) {
         currentMode = static_cast<OperatingMode>(savedMode);
     }
     prefs.end();
@@ -188,7 +197,7 @@ void pauseBle(bool pause) {
             pScan->stop();
             ESP_LOGI(TAG, "BLE Scanning paused");
         } else {
-            if (currentMode == MODE_WATCHERS_WATCH || currentMode == MODE_BEACON_BANDIT) {
+            if (currentMode == MODE_WATCHERS_WATCH || currentMode == MODE_BEACON_BANDIT || currentMode == MODE_SHADOW) {
                 pScan->start(0, nullptr, false);
                 ESP_LOGI(TAG, "BLE Scanning resumed");
             }
@@ -201,7 +210,7 @@ void pauseWifi(bool pause) {
         esp_wifi_set_promiscuous(false);
         ESP_LOGI(TAG, "Wi-Fi Promiscuous Scanning paused");
     } else {
-        if (currentMode == MODE_SKY_SWEEPER) {
+        if (currentMode == MODE_SKY_SWEEPER || currentMode == MODE_SHADOW) {
             esp_wifi_set_promiscuous(true);
             ESP_LOGI(TAG, "Wi-Fi Promiscuous Scanning resumed");
         }

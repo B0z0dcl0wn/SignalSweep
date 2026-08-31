@@ -12,7 +12,8 @@ enum OperatingMode {
     MODE_SELECTOR = 0,
     MODE_BEACON_BANDIT = 1,
     MODE_WATCHERS_WATCH = 2,
-    MODE_SKY_SWEEPER = 3
+    MODE_SKY_SWEEPER = 3,
+    MODE_SHADOW = 4
 };
 
 /**
