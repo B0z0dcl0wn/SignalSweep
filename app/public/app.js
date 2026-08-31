@@ -193,6 +193,32 @@
             return ok;
         };
 
+        // Whitelist: your own gear (car AP, phone, earbuds) travels every place
+        // you do, so it always scores as a "tail". Mark it yours once and Shadow
+        // filters it out for good — what's left is genuinely foreign. Per-viewer,
+        // persisted on the phone.
+        let shadowWhitelist = new Set();
+        try { shadowWhitelist = new Set(JSON.parse(localStorage.getItem('shadowWhitelist') || '[]')); } catch (e) {}
+
+        function shadowWhitelistSave() {
+            try { localStorage.setItem('shadowWhitelist', JSON.stringify([...shadowWhitelist])); } catch (e) {}
+        }
+        function shadowWhitelistAdd(mac) {
+            shadowWhitelist.add(mac);
+            delete shadowSeen[mac];          // drop its history so it stops scoring
+            shadowWhitelistSave();
+            showToast('Marked as yours — hidden from Shadow', '✓');
+            shadowRenderList();
+        }
+        function shadowWhitelistClear() {
+            shadowWhitelist.clear();
+            shadowWhitelistSave();
+            showToast('Whitelist cleared', '✓');
+            shadowRenderList();
+        }
+        window.shadowWhitelistAdd = shadowWhitelistAdd;
+        window.shadowWhitelistClear = shadowWhitelistClear;
+
         function translateUUID(uuid) {
             const shortUuid = uuid.length === 36 ? uuid.split('-')[0].replace(/^0+/, '') : uuid;
             const uuids = {
@@ -1017,47 +1043,69 @@
             list.innerHTML = html;
         }
 
-        // Shadow: fold this batch of sightings into the running tail store, then
-        // render devices ranked by how many distinct places they've shadowed you.
+        // Shadow: fold a new batch of sightings into the running store, then render.
         function renderShadow(sightings) {
+            shadowIngest(sightings);
+            shadowRenderList();
+        }
+
+        // Fold sightings into the tail store, skipping anything the user has
+        // marked as their own.
+        function shadowIngest(sightings) {
             const now = Date.now();
             const loc = globalPhoneLocation;   // {lat,lng} from the phone GPS
             (sightings || []).forEach(s => {
                 const mac = s.mac || '??';
+                if (shadowWhitelist.has(mac)) return;
                 shadowRecord(shadowSeen, mac, loc, now,
                     { rssi: s.rssi, name: s.name, proto: s.protocol });
             });
+        }
 
-            const rows = Object.entries(shadowSeen)
-                .map(([mac, rec]) => ({ mac, rec, score: shadowScore(rec, now) }))
-                .sort((a, b) => b.score - a.score);
-
+        // Render the current store, ranked by how many distinct places each
+        // device has shadowed you. A small bar shows/clears your whitelist.
+        function shadowRenderList() {
+            const now = Date.now();
+            const loc = globalPhoneLocation;
             const list = document.getElementById('targets-list');
             if (!list) return;
 
+            const wlBar = shadowWhitelist.size > 0
+                ? `<div style="text-align:center; padding:8px; margin-bottom:10px; font-size:0.75rem; color:var(--text-muted);">${shadowWhitelist.size} device(s) marked yours · <a onclick="shadowWhitelistClear()" style="color:var(--accent-cyan); cursor:pointer; text-decoration:underline;">Clear</a></div>`
+                : '';
+
             if (!loc) {
-                list.innerHTML = '<div class="mode-card" style="text-align:center; padding:2rem; color:var(--accent-amber); display:block; border-style:dashed;">Waiting for GPS fix — move around and Shadow will flag anything that follows you.</div>';
-                return;
-            }
-            const tails = rows.filter(r => r.score > 0);
-            if (tails.length === 0) {
-                list.innerHTML = `<div class="mode-card" style="text-align:center; padding:2rem; color:var(--text-muted); display:block; border-style:dashed;">Tracking ${rows.length} device(s) across your route… none seen in 2+ separate places yet.</div>`;
+                list.innerHTML = wlBar + '<div class="mode-card" style="text-align:center; padding:2rem; color:var(--accent-amber); display:block; border-style:dashed;">Waiting for GPS fix — move around and Shadow will flag anything that follows you.</div>';
                 return;
             }
 
-            let html = '';
+            const rows = Object.entries(shadowSeen)
+                .filter(([mac]) => !shadowWhitelist.has(mac))
+                .map(([mac, rec]) => ({ mac, rec, score: shadowScore(rec, now) }))
+                .sort((a, b) => b.score - a.score);
+
+            const tails = rows.filter(r => r.score > 0);
+            if (tails.length === 0) {
+                list.innerHTML = wlBar + `<div class="mode-card" style="text-align:center; padding:2rem; color:var(--text-muted); display:block; border-style:dashed;">Tracking ${rows.length} device(s) across your route… none seen in 2+ separate places yet.</div>`;
+                return;
+            }
+
+            let html = wlBar;
             tails.forEach(({ mac, rec, score }) => {
                 const alert = rec.clusters.length >= SHADOW_ALERT_CLUSTERS;
                 const color = alert ? 'var(--accent-red)' : 'var(--accent-amber)';
                 const label = rec.name || (rec.proto === 'WiFi' ? 'Wi-Fi device' : 'BLE device');
+                // Tapping a row is how you say "that's mine" — the top hits will
+                // be your own car/phone, so this is the primary interaction.
                 html += `
-                <div class="target-card" style="border-color:${color};">
+                <div class="target-card" style="border-color:${color}; cursor:pointer;" onclick="shadowWhitelistAdd('${mac}')">
                     <div style="display:flex; justify-content:space-between; width:100%; align-items:center;">
                         <div>
                             <h3 style="color:var(--accent-cyan); margin-bottom:0.3rem; font-size:1.1rem;">${label}
                                 <span style="margin-left:8px; font-size:0.65rem; font-weight:bold; text-transform:uppercase; padding:2px 6px; border-radius:4px; border:1px solid ${color}; color:${color};">${alert ? '⚠ Following you' : 'Watching'} ${score}</span>
                             </h3>
                             <div style="font-size:0.8rem; color:var(--text-muted)">MAC: ${mac} | ${rec.proto} | seen in ${rec.clusters.length} places | ${rec.count} hits</div>
+                            <div style="font-size:0.7rem; color:var(--accent-cyan); margin-top:0.2rem;">tap if this is yours → hide it</div>
                         </div>
                         <div style="text-align:right;">
                             <div style="font-size:1.25rem; font-weight:bold; color:${color}">${rec.clusters.length}📍</div>
