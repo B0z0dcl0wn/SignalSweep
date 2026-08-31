@@ -5,6 +5,16 @@ All notable changes to SignalSweep are recorded here.
 ## [Unreleased] — 2026-08-31
 
 ### Added
+- **Factory reset via the BOOT button** — hold BOOT for 5 s to erase all
+  persisted state (NVS namespaces + LittleFS `/data/signatures.json`) and
+  reboot as if freshly flashed. Red LED flash + a warning tone each second
+  while held; release early to abort. A tap still resets to the mode selector,
+  now firing on release so a tap and a hold can be told apart.
+- **"Clear Target" button (Beacon Bandit)** — deselects the locked target from
+  anywhere, appearing whenever the firmware reports a `locked_mac`. Previously
+  the only way out was tapping the locked card, which is impossible once the
+  locked device stops advertising and drops off the list (the lock persists in
+  NVS).
 - **Shadow mode** (mode 4) — tail / pursuit detection. The firmware harvests
   every BLE + Wi-Fi device it hears; the phone correlates each against its GPS
   trail and flags any that reappear near you across multiple distinct places
@@ -26,6 +36,9 @@ All notable changes to SignalSweep are recorded here.
   `capabilities.h` gates hardware features; the compiled tier is stored in NVS.
 
 ### Changed
+- **One radar, not two** — removed the generic List/Radar view toggle and its
+  canvas radar, which placed blips at random angles and duplicated the real
+  Sky Sweeper radar (sweep animation + true GPS bearing).
 - **"Ring / Find" replaces the offensive path** — removed the BLE
   advertisement-spoofing engine (`ble_spoof`) entirely; the retained GATT write
   is reframed as a defensive action that rings a suspected tracker (Immediate

@@ -297,6 +297,10 @@
                         lastBanditData = data;
                         renderTargets(1, data.targets);
                     }
+                    // Clear Target is the only way out when the locked device
+                    // stops advertising and drops off the list.
+                    const btnClear = document.getElementById('btn-clear-lock');
+                    if (btnClear) btnClear.style.display = data.locked_mac ? 'block' : 'none';
                 } else if (data.mode === 2) {
                     // War Flocking: render the surveillance list (map trail is driven by GPS).
                     if (data.targets) renderTargets(2, data.targets);
@@ -795,84 +799,7 @@
 
         const radarAngles = {};
         
-        let currentViewMode = 'list';
         let detectedDevices = [];
-
-        function toggleViewMode(mode) {
-            currentViewMode = mode;
-            const btnList = document.getElementById('btn-list-view');
-            const btnRadar = document.getElementById('btn-radar-view');
-            if(btnList) btnList.className = mode === 'list' ? 'btn-conn-option primary' : 'btn-conn-option';
-            if(btnRadar) btnRadar.className = mode === 'radar' ? 'btn-conn-option primary' : 'btn-conn-option';
-            
-            const listEl = document.getElementById('targets-list');
-            const radarEl = document.getElementById('radarCanvas');
-            
-            if (mode === 'list') {
-                if(listEl) listEl.style.display = 'block';
-                if(radarEl) radarEl.style.display = 'none';
-            } else {
-                if(listEl) listEl.style.display = 'none';
-                if(radarEl) radarEl.style.display = 'block';
-                drawRadar();
-            }
-        }
-
-        function drawRadar() {
-            const canvas = document.getElementById('radarCanvas');
-            if (!canvas) return;
-            const ctx = canvas.getContext('2d');
-            const width = canvas.width;
-            const height = canvas.height;
-            const centerX = width / 2;
-            const centerY = height / 2;
-            const maxRadius = width / 2;
-
-            ctx.clearRect(0, 0, width, height);
-
-            ctx.strokeStyle = 'rgba(0, 242, 254, 0.3)';
-            ctx.lineWidth = 1;
-            for (let i = 1; i <= 3; i++) {
-                ctx.beginPath();
-                ctx.arc(centerX, centerY, (maxRadius / 3) * i, 0, 2 * Math.PI);
-                ctx.stroke();
-            }
-            ctx.beginPath();
-            ctx.moveTo(centerX, 0);
-            ctx.lineTo(centerX, height);
-            ctx.stroke();
-            ctx.beginPath();
-            ctx.moveTo(0, centerY);
-            ctx.lineTo(width, centerY);
-            ctx.stroke();
-
-            detectedDevices.forEach(device => {
-                const mac = device.mac || 'unknown';
-                if (!radarAngles[mac]) radarAngles[mac] = Math.random() * Math.PI * 2;
-                const angle = radarAngles[mac];
-                
-                const rssi = device.rssi || -100;
-                let distRatio = (rssi - (-30)) / (-100 - (-30));
-                distRatio = Math.max(0, Math.min(1, distRatio));
-                const r = distRatio * (maxRadius - 10);
-
-                const x = centerX + r * Math.cos(angle);
-                const y = centerY + r * Math.sin(angle);
-
-                ctx.beginPath();
-                ctx.arc(x, y, 5, 0, 2 * Math.PI);
-                ctx.fillStyle = '#ff0055';
-                ctx.fill();
-                ctx.shadowBlur = 10;
-                ctx.shadowColor = '#ff0055';
-
-                ctx.fillStyle = '#fff';
-                ctx.font = '10px Arial';
-                ctx.shadowBlur = 0;
-                const name = device.name || device.type || mac;
-                ctx.fillText(name.substring(0, 8), x + 8, y + 4);
-            });
-        }
 
         function exportAIDebrief() {
             let text = "I have scanned an environment and detected the following hardware. Please analyze for unusual surveillance...\n\n";
@@ -920,10 +847,7 @@
 
         function renderTargets(mode, targets) {
             detectedDevices = targets || [];
-            if (currentViewMode === 'radar') {
-                drawRadar();
-            }
-            
+
             const list = document.getElementById('targets-list');
             const radarContainer = document.getElementById('radar-container');
             
@@ -1129,6 +1053,13 @@
             }
         }
 
+        async function clearTargetLock() {
+            if (await sendCommand({ lock: 'NONE' })) {
+                showToast('Target cleared', '✓');
+                document.getElementById('btn-clear-lock').style.display = 'none';
+            }
+        }
+
         async function switchMode(modeInt) {
             if (modeInt === currentActiveMode) {
                 if (modeInt === 1) {
@@ -1154,6 +1085,7 @@
                 
                 // Show/hide filter toggle depending on mode
                 document.getElementById('bandit-filter-container').style.display = (modeInt === 1) ? 'flex' : 'none';
+                document.getElementById('btn-clear-lock').style.display = 'none';
                 
                 // Show/hide map depending on mode
                 document.getElementById('war-flocking-ui').style.display = (modeInt === 2) ? 'flex' : 'none';

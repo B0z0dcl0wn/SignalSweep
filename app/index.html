@@ -1070,21 +1070,16 @@
                 </label>
             </div>
 
-            <!-- View Toggle & AI Export -->
-            <div style="display: flex; gap: 10px; margin-bottom: 15px; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.05); padding: 0.75rem 1rem; border-radius: 8px;">
-                <div style="display: flex; gap: 10px;">
-                    <button id="btn-list-view" onclick="toggleViewMode('list')" class="btn-conn-option primary" style="width: auto; padding: 0.5rem 1rem; margin: 0;">List View</button>
-                    <button id="btn-radar-view" onclick="toggleViewMode('radar')" class="btn-conn-option" style="width: auto; padding: 0.5rem 1rem; margin: 0;">Radar View</button>
-                </div>
+            <!-- AI Export -->
+            <div style="display: flex; gap: 10px; margin-bottom: 15px; justify-content: flex-end; align-items: center; background: rgba(255,255,255,0.05); padding: 0.75rem 1rem; border-radius: 8px;">
+                <button id="btn-clear-lock" onclick="clearTargetLock()" class="btn-conn-option" style="display: none; width: auto; padding: 0.5rem 1rem; margin: 0; border-color: var(--accent-red); color: var(--accent-red);">
+                    Clear Target
+                </button>
                 <button onclick="exportAIDebrief()" class="btn-conn-option" style="width: auto; padding: 0.5rem 1rem; margin: 0; border-color: var(--accent-purple); color: var(--accent-purple);">
                     Export AI Debrief
                 </button>
             </div>
             
-            <div style="text-align: center;">
-                <canvas id="radarCanvas" width="300" height="300" style="display: none; margin: 20px auto; border-radius: 50%; border: 2px solid var(--accent-cyan); background: radial-gradient(circle, rgba(0, 242, 254, 0.05) 0%, transparent 70%), #090d16; box-shadow: 0 0 20px rgba(0, 242, 254, 0.1), inset 0 0 20px rgba(0, 242, 254, 0.1);"></canvas>
-            </div>
-
             <div class="targets-list" id="targets-list">
                 <!-- Target cards populated by JS -->
             </div>
