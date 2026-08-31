@@ -692,7 +692,9 @@
 
         // Send Command to ESP32 over BLE or Serial
         async function sendCommand(cmdObj) {
-            const jsonStr = JSON.stringify(cmdObj) + '\n';
+            // ponytail: {raw:'CMD:...'} goes out as the bare string — the firmware's
+            // CMD: handlers live in its raw-text fallback, past the JSON parser.
+            const jsonStr = (cmdObj.raw || JSON.stringify(cmdObj)) + '\n';
             console.log('Sending command:', jsonStr);
 
             if (connectionType === 'BLE') {

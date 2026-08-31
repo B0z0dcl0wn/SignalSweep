@@ -860,13 +860,13 @@
                 </div>
             </div>
             <div style="display: flex; gap: 10px;">
-                <button class="btn-help" onclick="document.getElementById('settings-modal').style.display='flex'" style="background: none; border: none; color: white; cursor: pointer; padding: 10px;">
+                <button class="btn-help" onclick="document.getElementById('settings-modal').classList.add('active')" style="background: none; border: none; color: white; cursor: pointer; padding: 10px;">
                     <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <circle cx="12" cy="12" r="3"></circle>
                         <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
                     </svg>
                 </button>
-                <button class="btn-help" onclick="document.getElementById('help-modal').style.display='flex'" style="background: none; border: none; color: white; cursor: pointer; padding: 10px;">
+                <button class="btn-help" onclick="document.getElementById('help-modal').classList.add('active')" style="background: none; border: none; color: white; cursor: pointer; padding: 10px;">
                     <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <circle cx="12" cy="12" r="10"></circle>
                         <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
@@ -1149,7 +1149,7 @@
     <!-- Settings Modal -->
     <div id="settings-modal" class="modal-overlay">
         <div class="modal-card">
-            <button class="modal-close-btn" onclick="document.getElementById('settings-modal').style.display='none'">&times;</button>
+            <button class="modal-close-btn" onclick="document.getElementById('settings-modal').classList.remove('active')">&times;</button>
             <div class="modal-header">
                 <h2>Settings</h2>
                 <p>Power Management</p>
@@ -1184,7 +1184,7 @@
         <div class="modal">
             <div class="modal-header">
                 <h2>SignalSweep Documentation</h2>
-                <button class="btn-close" onclick="document.getElementById('help-modal').style.display='none'">
+                <button class="btn-close" onclick="document.getElementById('help-modal').classList.remove('active')">
                     <svg viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"></path></svg>
                 </button>
             </div>
