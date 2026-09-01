@@ -1202,6 +1202,11 @@
             });
         }
 
+        // ponytail: rebuilds every row each push (`list.innerHTML = html`). Same
+        // ceiling and same keyed-rendering upgrade path as the classifier
+        // renderers — see the note above sightRowOpen() for the tripwire and the
+        // step-by-step. Mode 1 and 3 lists are short today, so this bites later
+        // than Watcher's Watch will.
         function renderTargets(mode, targets) {
             detectedDevices = targets || [];
             if (mode === 3) updateDroneMarkers(targets);
@@ -1338,6 +1343,41 @@
         // ---- Rendering the two branches of the classifier -----------------
         // Both lists are built from the same sightStore; they differ only in
         // which side of classify() they show.
+        //
+        // ponytail: every list here rebuilds with `list.innerHTML = html` once
+        // per telemetry push. Known ceiling: full teardown/rebuild of every row
+        // at 1 Hz. That was free when Watcher's Watch was gated and showed 0-3
+        // rows; it now harvests everything and can show up to WATCHERS_MAX_REPORT
+        // (40). Nothing is measured to be wrong yet — deliberately left simple
+        // until it actually bites.
+        //
+        // TRIPWIRE — switch to the upgrade below if any of these show up:
+        //   - the list visibly flickers, or scroll position jumps while reading
+        //   - a row cannot be tapped reliably because it is replaced mid-tap
+        //   - profiling shows the 1 Hz render dominating the main thread
+        //   - you want per-row state that must survive a frame (expanded
+        //     detail, a sparkline, an inline edit) — that is the hard blocker,
+        //     since a full rebuild destroys it by construction
+        //
+        // UPGRADE PATH — keyed incremental rendering, ~100 lines, no framework:
+        //  1. Give each renderer a persistent `Map<mac, HTMLElement>` beside it
+        //     (rowCache), and build rows as real elements once instead of as a
+        //     concatenated string. Reuse `sightRowOpen`'s data-mac contract so
+        //     the existing delegated click listeners keep working untouched.
+        //  2. Per frame: diff the desired mac set against rowCache. Create only
+        //     new macs, remove only departed ones, and for survivors write just
+        //     the fields that changed (rssi, visits, hits, badge) via
+        //     textContent on cached child refs — never innerHTML.
+        //  3. Reorder with a single pass of `list.appendChild(existingEl)` in
+        //     the sorted order; appendChild on an attached node moves it, so
+        //     ordering costs no re-creation and preserves focus and scroll.
+        //  4. Clear rowCache wherever the list is currently blown away by hand
+        //     (updateActiveUI's "Switching modes..." placeholder, mode switch).
+        //
+        // Doing this also removes the string-concatenation-plus-esc() pattern
+        // from these paths, which makes the escaping structural rather than
+        // dependent on remembering to call esc() at every new interpolation.
+        // renderTargets() (modes 1 and 3) has the same ceiling and the same fix.
 
         // Shared row chrome. `mac` goes into a data attribute, never into an
         // onclick string, so a device cannot inject script through its address.
