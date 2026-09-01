@@ -267,6 +267,11 @@
             let dropped = 0;
             for (const mac of Object.keys(store)) {
                 const rec = store[mac];
+                // A confirmed installation is the OUTPUT of the whole system, not
+                // cache. Expiring one on a timer un-detects a camera that already
+                // cost two visits to find, and it has to earn them again from
+                // scratch. There are only ever a handful; keep them for ever.
+                if (classify(rec) === 'fixed') continue;
                 const age = now - (rec.last || 0);
                 if (age > SIGHT_PRUNE_STALE_MS ||
                     ((rec.count || 0) <= 1 && age > SIGHT_PRUNE_SINGLE_MS)) {
@@ -285,28 +290,66 @@
             sightPrune(sightStore, Date.now());
         }
 
+        // Drop the n least valuable records. Order is by WHAT A RECORD IS, never
+        // by how chatty it is: this used to sort on `count` and delete the
+        // weakest half, but `count` measures talkativeness, not interest. A
+        // slow-beaconing ALPR caught on two drive-bys sits at count 6 while a
+        // neighbour's smart TV sits at 4000 — so that eviction kept the TV and
+        // deleted the camera. It is the same mistake the firmware's report cap
+        // is forbidden from making with RSSI (see CLAUDE.md), one layer up.
+        // Unclassified candidates go first, stalest first; findings go last.
+        // Returns the victims so the caller can tell if a finding was lost.
+        function sightEvict(store, n) {
+            const rank = { candidate: 0, mobile: 1, fixed: 2 };
+            const victims = Object.keys(store)
+                .map(mac => ({ mac, kind: classify(store[mac]), last: store[mac].last || 0 }))
+                .sort((a, b) => (rank[a.kind] - rank[b.kind]) || (a.last - b.last))
+                .slice(0, n);
+            victims.forEach(v => delete store[v.mac]);
+            return victims;
+        }
+
+        // The actual write. Separate from the throttle so an import can force one.
+        let sightFindingsLost = false;
+        function sightWrite() {
+            try {
+                localStorage.setItem(SIGHT_STORE_KEY, JSON.stringify(sightStore));
+                return true;
+            } catch (e) {
+                console.warn('sightStore write failed, evicting', e);
+            }
+            // Shed a quarter at a time until it fits, rather than binning half the
+            // store on the first stumble.
+            for (let tries = 0; tries < 8; tries++) {
+                const n = Object.keys(sightStore).length;
+                if (!n) break;
+                const lost = sightEvict(sightStore, Math.max(1, Math.ceil(n / 4)));
+                if (!sightFindingsLost && lost.some(v => v.kind !== 'candidate')) {
+                    // Silently discarding a confirmed detection is the one outcome
+                    // worth interrupting the user for.
+                    sightFindingsLost = true;
+                    try { showToast('Storage full — confirmed detections dropped. Export a backup.', '✕'); } catch (e) {}
+                }
+                try {
+                    localStorage.setItem(SIGHT_STORE_KEY, JSON.stringify(sightStore));
+                    return true;
+                } catch (e2) { /* still too big; shed again */ }
+            }
+            return false;
+        }
+
         let sightSaveTimer = null;
         function sightStoreSave() {
             if (sightSaveTimer) return;          // throttle: at most one write per 10 s
             sightSaveTimer = setTimeout(() => {
                 sightSaveTimer = null;
-                try {
-                    localStorage.setItem(SIGHT_STORE_KEY, JSON.stringify(sightStore));
-                } catch (e) {
-                    // Quota blown despite pruning: drop the weakest half rather
-                    // than silently failing every future write.
-                    console.warn('sightStore write failed, pruning harder', e);
-                    const macs = Object.keys(sightStore)
-                        .sort((a, b) => (sightStore[a].count || 0) - (sightStore[b].count || 0));
-                    macs.slice(0, Math.floor(macs.length / 2)).forEach(m => delete sightStore[m]);
-                    try { localStorage.setItem(SIGHT_STORE_KEY, JSON.stringify(sightStore)); } catch (e2) {}
-                }
+                sightWrite();
             }, 10000);
         }
 
         // ponytail: runnable self-check for the store, the visit logic, the
         // classifier and the escaper. window.__sightStoreSelfTest() in the
-        // console (or `node app.js` headless) returns true if sane.
+        // console, or `node app/selftest.js`, returns true if sane.
         function __sightStoreSelfTest() {
             const results = {};
             const A = { lat: 30.2200, lng: -92.0200, acc: 10 };   // origin
@@ -375,6 +418,49 @@
             results.keptRepeat = ('REPEAT' in s6);                   // expect true
             results.prunedAncient = !('ANCIENT' in s6);              // expect true
 
+            // 6b. A confirmed installation must survive the stale prune: it is
+            //     the answer, not cache.
+            const s6b = {
+                CAM: { clusters: [{ lat: 30.22, lng: -92.02, n: 4, visits: 2, epoch: 0 }],
+                       first: 0, last: now - 60 * 24 * 3600 * 1000, count: 4 }
+            };
+            sightPrune(s6b, now);
+            results.keptOldCamera = ('CAM' in s6b);                  // expect true
+
+            // 6c. Eviction must drop a chatty candidate before a quiet camera.
+            //     This is the bug: sorting on `count` did exactly the opposite.
+            const s6c = {
+                CHATTY: { clusters: [], first: 0, last: now, count: 5000 },
+                CAM:    { clusters: [{ lat: 30.22, lng: -92.02, n: 3, visits: 2, epoch: 0 }],
+                          first: 0, last: now, count: 3 }
+            };
+            sightEvict(s6c, 1);
+            results.evictedChatty = !('CHATTY' in s6c);              // expect true
+            results.evictKeptCamera = ('CAM' in s6c);                // expect true
+
+            // 6d. A backup round-trips, and a re-import cannot inflate counters.
+            const s6d = { CAM: { clusters: [{ lat: 30.22, lng: -92.02, n: 3, visits: 2, epoch: 0 }],
+                                 first: 10, last: 20, count: 7, conf: 80, rssi: -70,
+                                 name: 'n', proto: 'BLE', rule: 'r', tier: '' } };
+            const backup = JSON.parse(JSON.stringify({ version: 1, sightStore: s6d,
+                                                       shadowWhitelist: ['MINE'] }));
+            const s6dLocal = {}, wl = new Set();
+            sightMergeBackup(s6dLocal, wl, backup);
+            sightMergeBackup(s6dLocal, wl, backup);        // twice: must be idempotent
+            results.restoredCount = s6dLocal['CAM'].count;           // expect 7, not 14
+            results.restoredVisits = s6dLocal['CAM'].clusters[0].visits;  // expect 2
+            results.restoredKind = classify(s6dLocal['CAM']);        // expect 'fixed'
+            results.restoredWhitelist = wl.has('MINE');              // expect true
+
+            // 6e. A restore must not clobber sightings made since the backup.
+            const s6e = { CAM: { clusters: [{ lat: 30.22, lng: -92.02, n: 9, visits: 5, epoch: 0 },
+                                            { lat: 30.90, lng: -92.02, n: 2, visits: 1, epoch: 1 }],
+                                 first: 5, last: 999, count: 99 } };
+            sightMergeBackup(s6e, new Set(), backup);
+            results.mergeKeptNewer = s6e['CAM'].count === 99 &&
+                                     s6e['CAM'].clusters[0].visits === 5 &&
+                                     s6e['CAM'].clusters.length === 2;
+
             // 7. A hostile device name cannot become markup.
             const evil = '<img src=x onerror="alert(1)">';
             results.escaped = esc(evil);
@@ -395,6 +481,11 @@
                        results.vagueKind === 'candidate' &&
                        results.centroidMoved &&
                        results.prunedOneHit && results.keptRepeat && results.prunedAncient &&
+                       results.keptOldCamera &&
+                       results.evictedChatty && results.evictKeptCamera &&
+                       results.restoredCount === 7 && results.restoredVisits === 2 &&
+                       results.restoredKind === 'fixed' && results.restoredWhitelist &&
+                       results.mergeKeptNewer &&
                        results.escapedSafe;
 
             results.ok = ok;
@@ -479,6 +570,122 @@
         }
         window.shadowWhitelistAdd = shadowWhitelistAdd;
         window.shadowWhitelistClear = shadowWhitelistClear;
+
+        // ---- Backup / restore ---------------------------------------------
+        // Confirming a fixed installation takes repeat visits across days, so
+        // weeks of history IS the detector — and all of it lives in one
+        // localStorage key on one phone. "Clear data", a reinstall or a new
+        // handset erases every confirmed detection. A file you can copy is the
+        // whole fix; the sibling project's advantage over us was never that its
+        // store was relational, only that it was on disk.
+        const SIGHT_BACKUP_VERSION = 1;
+
+        // Merge one imported record into the local one. Neither side is
+        // authoritative: the backup holds visits this phone has forgotten, the
+        // phone holds sightings made since the backup. Union the clusters and
+        // take the best of each counter — max, never sum, so re-importing the
+        // same file twice cannot inflate a device into a false 'fixed'.
+        function sightMergeRecord(local, incoming) {
+            if (!local) return JSON.parse(JSON.stringify(incoming));
+            if (!incoming) return local;
+            const out = Object.assign({}, local);
+            out.first = Math.min(local.first || incoming.first || 0,
+                                 incoming.first || local.first || 0);
+            out.last  = Math.max(local.last || 0, incoming.last || 0);
+            out.count = Math.max(local.count || 0, incoming.count || 0);
+            out.conf  = Math.max(local.conf || 0, incoming.conf || 0);
+            out.rssi  = Math.max(local.rssi == null ? -99 : local.rssi,
+                                 incoming.rssi == null ? -99 : incoming.rssi);
+            out.name  = local.name  || incoming.name  || '';
+            out.proto = local.proto || incoming.proto || '';
+            out.rule  = local.rule  || incoming.rule  || '';
+            out.tier  = local.tier  || incoming.tier  || '';
+            out.clusters = (local.clusters || []).map(c => Object.assign({}, c));
+            (incoming.clusters || []).forEach(ic => {
+                if (ic == null || ic.lat == null || ic.lng == null) return;
+                const hit = out.clusters.find(c => haversineM(c, ic) <= SIGHT_CLUSTER_M);
+                if (hit) {
+                    hit.visits = Math.max(hit.visits || 1, ic.visits || 1);
+                    hit.n      = Math.max(hit.n || 1, ic.n || 1);
+                } else {
+                    out.clusters.push(Object.assign({}, ic));
+                }
+            });
+            return out;
+        }
+
+        // A backup file is user-supplied: validate the shape, skip junk records,
+        // and never let a malformed file wipe the live store.
+        function sightMergeBackup(store, whitelist, payload) {
+            if (!payload || typeof payload !== 'object' ||
+                !payload.sightStore || typeof payload.sightStore !== 'object') {
+                throw new Error('not a SignalSweep backup');
+            }
+            let added = 0, merged = 0;
+            for (const [mac, rec] of Object.entries(payload.sightStore)) {
+                if (!rec || typeof rec !== 'object' || !Array.isArray(rec.clusters)) continue;
+                if (store[mac]) merged++; else added++;
+                store[mac] = sightMergeRecord(store[mac], rec);
+            }
+            if (Array.isArray(payload.shadowWhitelist)) {
+                payload.shadowWhitelist.forEach(m => { if (typeof m === 'string') whitelist.add(m); });
+            }
+            return { added, merged };
+        }
+
+        function exportSightStore() {
+            // The whitelist ships with the sightings: it is equally
+            // unrecoverable, and restoring history without it re-floods both
+            // lists with the user's own gear.
+            const payload = {
+                version: SIGHT_BACKUP_VERSION,
+                exportedAt: new Date().toISOString(),
+                sightStore: sightStore,
+                shadowWhitelist: [...shadowWhitelist]
+            };
+            const el = document.createElement('a');
+            el.setAttribute('href', 'data:application/json;charset=utf-8,' +
+                            encodeURIComponent(JSON.stringify(payload)));
+            el.setAttribute('download', 'signalsweep_backup_' +
+                            new Date().toISOString().replace(/[:.]/g, '-') + '.json');
+            el.style.display = 'none';
+            document.body.appendChild(el);
+            el.click();
+            document.body.removeChild(el);
+            showToast('Backed up ' + Object.keys(sightStore).length + ' devices', '✓');
+        }
+
+        function importSightStore() {
+            const input = document.getElementById('sight-import-file');
+            if (!input) return;
+            input.value = '';       // so re-picking the same file still fires change
+            input.click();
+        }
+
+        function onSightImportFile(input) {
+            const file = input.files && input.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = () => {
+                let res;
+                try {
+                    res = sightMergeBackup(sightStore, shadowWhitelist, JSON.parse(reader.result));
+                } catch (e) {
+                    console.error('sightStore import failed', e);
+                    showToast('Not a valid SignalSweep backup', '✕');
+                    return;
+                }
+                shadowWhitelistSave();
+                sightWrite();       // straight to disk, not the 10 s throttle
+                showToast('Restored ' + res.added + ' new, merged ' + res.merged, '✓');
+                if (currentActiveMode === 4) shadowRenderList();
+                else if (currentActiveMode === 2) watchersRenderList();
+            };
+            reader.readAsText(file);
+        }
+        window.exportSightStore = exportSightStore;
+        window.importSightStore = importSightStore;
+        window.onSightImportFile = onSightImportFile;
 
         // The 16-bit slice of a UUID in any form: '1802', '00001802-0000-...'.
         function short16(uuid) {

@@ -1169,6 +1169,17 @@
                         <button onclick="sendCommand({raw: 'CMD:WIFI_SCAN:OFF'})" style="padding: 6px 12px; background: rgba(239, 68, 68, 0.2); border: 1px solid var(--accent-red); border-radius: 6px; color: var(--accent-red); font-weight: bold; cursor: pointer;">OFF</button>
                     </div>
                 </div>
+
+                <p style="margin: 22px 0 8px; font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em;">Detection History</p>
+                <p style="margin: 0 0 10px; font-size: 0.8rem; color: var(--text-muted);">
+                    Confirming a fixed camera takes repeat visits over days. That history only
+                    exists on this phone &mdash; back it up before a wipe or a new handset.
+                </p>
+                <div style="display: flex; gap: 10px;">
+                    <button onclick="exportSightStore()" class="btn-conn-option" style="width: auto; flex: 1; margin: 0; padding: 0.6rem 1rem; border-color: var(--accent-cyan); color: var(--accent-cyan);">Back Up</button>
+                    <button onclick="importSightStore()" class="btn-conn-option" style="width: auto; flex: 1; margin: 0; padding: 0.6rem 1rem; border-color: var(--accent-purple); color: var(--accent-purple);">Restore</button>
+                </div>
+                <input type="file" id="sight-import-file" accept="application/json,.json" style="display: none;" onchange="onSightImportFile(this)">
             </div>
         </div>
     </div>

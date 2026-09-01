@@ -2,7 +2,7 @@
 
 All notable changes to SignalSweep are recorded here.
 
-## [Unreleased] — 2026-08-31
+## [Unreleased] — 2026-09-01
 
 ### Changed — detection methodology
 
@@ -74,6 +74,53 @@ All notable changes to SignalSweep are recorded here.
   detection used to be stamped `"Flock Safety"` regardless — so a Cradlepoint
   router or a stray ESP32 was reported as a Flock camera. The Lite-On vendor IE
   deliberately asserts no vendor at all.
+
+### Fixed — the sight store was deleting confirmed detections
+
+Confirming a fixed installation takes repeat visits across days, so weeks of
+history *is* the detector. Two storage rules were quietly throwing that history
+away, which un-detects cameras the classifier had already paid for.
+
+- **Quota eviction kept chatty noise and deleted cameras.** When `localStorage`
+  filled, `sightStoreSave()` sorted by `count` and dropped the weakest half. But
+  `count` measures how *talkative* a radio is, not how *interesting*: a
+  slow-beaconing ALPR caught on two drive-bys sits at ~6 sightings while a
+  neighbour's smart TV sits at 4000 — so the eviction reliably kept the TV and
+  binned the camera. This is the same mistake the firmware's report cap is
+  already forbidden from making with RSSI, one layer up. Eviction now orders by
+  what a record *is* (`classify()`): unclassified candidates go first, stalest
+  first, and confirmed findings go last. If a finding ever does have to go, the
+  user is told rather than losing it silently.
+- **The 30-day stale prune expired confirmed installations.** A camera confirmed
+  in March that you didn't drive past in April was deleted in May and had to
+  re-earn its two visits from scratch. Confirmed `fixed` records are the output
+  of the whole system and there are only ever a handful — they are now exempt.
+  Pruning of one-hit randomized MACs is unchanged; that is what keeps the store
+  small enough for `localStorage` to remain the right call.
+
+### Added
+
+- **Back up / restore detection history** (Settings). Weeks of visit history
+  lived in exactly one `localStorage` key on one phone, so Android "Clear data",
+  a reinstall or a new handset erased every confirmed detection. Export writes
+  one JSON file carrying the sighting store *and* the whitelist — the whitelist
+  is equally unrecoverable, and restoring sightings without it re-floods both
+  lists with the user's own gear. Import **merges** rather than replaces, taking
+  the max (never the sum) of every counter, so a restore cannot clobber
+  sightings made since the backup and re-importing the same file twice cannot
+  inflate a device into a false `fixed`.
+- **`app/selftest.js`** — the sight-store self-check's comment claimed
+  `node app.js` ran it headless; it never did (`window is not defined`). A ~25
+  line DOM stub makes `node app/selftest.js` real, and the check now also covers
+  eviction order, the prune exemption, and backup round-tripping. Verified by
+  reverting both fixes and confirming the new assertions fail.
+
+This was the storage half of a three-way comparison against two sibling
+projects. The other project's SQLite/Drift session database was deliberately
+*not* copied: it earns its keep there on many mesh nodes and many concurrent
+engines, and buys zero detections for a few hundred records on one phone. Its
+real advantage was that its store was a file you could copy, which is what the
+backup takes.
 
 ### Changed — telemetry cost
 
