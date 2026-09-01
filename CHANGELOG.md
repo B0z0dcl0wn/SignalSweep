@@ -75,6 +75,37 @@ All notable changes to SignalSweep are recorded here.
   router or a stray ESP32 was reported as a Flock camera. The Lite-On vendor IE
   deliberately asserts no vendor at all.
 
+### Changed — telemetry cost
+
+Measured, not guessed: a 60 s soak showed the "1 Hz" push actually running at
+0.77 Hz (46 pushes in 60 s) at ~33 devices, with 5.5 KB per push. Removing the
+confidence gate took Watcher's Watch from 0-3 reported devices to as many as 40,
+which made the telemetry path the dominant cost in the loop. After these three
+changes the same soak gives **59 pushes in 60 s at ~2.8 KB** — cadence restored,
+payload roughly halved.
+
+- **Don't notify a characteristic nobody is subscribed to.** `sendBleSerial()`
+  chunked and slept its way through the whole payload even with no BLE client
+  connected. With no peer there is also no negotiated MTU, so a ~3 KB push
+  fragmented into ~146 twenty-byte notifications with a yield between each —
+  ~300 ms of every telemetry period spent talking to nobody. This was the actual
+  cause of the slipped cadence; the other two below are real savings but did not
+  move it on their own.
+- **Chunk to the negotiated MTU instead of a fixed 180 bytes.** `onMTUChange`
+  records what the peer agreed and `NimBLEDevice::setMTU(517)` raises the
+  ceiling; at a typical 247-byte MTU that is 244 bytes per notification instead
+  of 180. Falls back to 20 (the 23-byte BLE default minus 3) when nothing has
+  been negotiated, which is correct rather than merely lucky.
+- **Inter-chunk delay 10 ms -> 2 ms.** At ~32 chunks the old value was 320 ms of
+  pure sleeping per cycle.
+- **Dropped `first_seen_ms` / `last_seen_ms` / `duration_ms` from the wire** in
+  all four modes. The app reads none of them — it keeps its own wall-clock
+  timing in `sightStore` — and they were roughly a quarter of the payload.
+  `durMs` still feeds the Beacon Bandit stalking score internally; it just isn't
+  transmitted.
+- **The USB serial mirror is gated on a host actually being attached**
+  (`if (Serial)`), instead of pushing the same kilobytes out CDC unconditionally.
+
 ### Added
 
 - **The buzzer now fires from the Wi-Fi path, not just BLE.** With no phone

@@ -281,7 +281,7 @@ static void banditPeriodicTask(void *pvParameters) {
                 String jsonStr;
                 serializeJson(doc, jsonStr);
                 sendBleSerial(jsonStr);
-                Serial.println(jsonStr);
+                if (Serial) Serial.println(jsonStr);   // skip the USB mirror when no host is attached
                 
                 pClient->disconnect();
             } else {
@@ -296,7 +296,7 @@ static void banditPeriodicTask(void *pvParameters) {
 
         String jsonStr = getBanditTargetsJson();
         sendBleSerial(jsonStr);
-        Serial.println(jsonStr);
+        if (Serial) Serial.println(jsonStr);   // skip the USB mirror when no host is attached
     }
     banditTaskHandle = NULL;
     vTaskDelete(NULL);
@@ -458,8 +458,8 @@ String getBanditTargetsJson() {
             obj["name"] = t.name;
             obj["type"] = t.type;
             obj["rssi"] = t.rssi;
-            obj["first_seen_ms"] = t.firstSeenMs;
-            obj["last_seen_ms"] = t.lastSeenMs;
+            // first_seen_ms / last_seen_ms not sent: unread by the app,
+            // which keeps its own wall-clock timing.
             obj["count"] = t.count;
             obj["is_locked"] = t.isLocked;
 
@@ -476,7 +476,8 @@ String getBanditTargetsJson() {
             if (score > 100) score = 100;
 
             obj["is_separated"] = t.isSeparated;
-            obj["duration_ms"] = durMs;
+            // durMs still feeds the stalking score above; it just isn't sent,
+            // because the app reads only stalking_score.
             obj["stalking_score"] = score;
         }
         xSemaphoreGive(banditMutex);

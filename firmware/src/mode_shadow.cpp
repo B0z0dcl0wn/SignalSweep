@@ -133,7 +133,7 @@ static void shadowPeriodicTask(void *pvParameters) {
 
         String jsonStr = getShadowSightingsJson();
         sendBleSerial(jsonStr);
-        Serial.println(jsonStr);
+        if (Serial) Serial.println(jsonStr);   // skip the USB mirror when no host is attached
     }
     shadowTaskHandle = NULL;
     vTaskDelete(NULL);
@@ -239,8 +239,9 @@ String getShadowSightingsJson() {
             if (s.name.length() > 0) obj["name"] = s.name;
             obj["protocol"] = s.protocol;
             obj["rssi"] = s.rssi;
-            obj["first_seen_ms"] = s.firstSeenMs;
-            obj["last_seen_ms"] = s.lastSeenMs;
+            // first_seen_ms / last_seen_ms deliberately not sent: the app
+            // tracks its own wall-clock timing in sightStore and ignored these,
+            // and at ~40 targets they were about a quarter of the payload.
             obj["count"] = s.count;
         }
         xSemaphoreGive(shadowMutex);

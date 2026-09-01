@@ -628,7 +628,7 @@ static void watchersPeriodicTask(void *pvParameters) {
 
         String jsonStr = getWatchersTargetsJson();
         sendBleSerial(jsonStr);
-        Serial.println(jsonStr);
+        if (Serial) Serial.println(jsonStr);   // skip the USB mirror when no host is attached
     }
     watchersTaskHandle = NULL;
     vTaskDelete(NULL);
@@ -836,8 +836,9 @@ String getWatchersTargetsJson() {
             if (t.type.length() > 0)        obj["type"] = t.type;
             if (t.matchedRule.length() > 0) obj["matched_rule"] = t.matchedRule;
             obj["rssi"] = t.rssi;
-            obj["first_seen_ms"] = t.firstSeenMs;
-            obj["last_seen_ms"] = t.lastSeenMs;
+            // first_seen_ms / last_seen_ms deliberately not sent: the app
+            // tracks its own wall-clock timing in sightStore and ignored these,
+            // and at ~40 targets they were about a quarter of the payload.
             obj["count"] = t.count;
             obj["protocol"] = t.protocol.length() > 0 ? t.protocol : "BLE";
             obj["confidence"] = t.confidence;

@@ -343,7 +343,7 @@ static void wifiChannelHopperTask(void *pvParameters) {
 
             String jsonStr = getSkySweeperTargetsJson();
             sendBleSerial(jsonStr);
-            Serial.println(jsonStr);
+            if (Serial) Serial.println(jsonStr);   // skip the USB mirror when no host is attached
         }
     }
 
@@ -471,8 +471,8 @@ String getSkySweeperTargetsJson() {
             obj["pilot_long"] = t.operatorLongitude;
             obj["rssi"] = t.rssi;
             obj["source"] = t.source;
-            obj["first_seen_ms"] = t.firstSeenMs;
-            obj["last_seen_ms"] = t.lastSeenMs;
+            // first_seen_ms / last_seen_ms not sent: unread by the app,
+            // which keeps its own wall-clock timing.
             obj["count"] = t.count;
         }
         xSemaphoreGive(skySweeperMutex);
