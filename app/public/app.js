@@ -75,6 +75,25 @@
         // One GPS fix. `acc` is the reported accuracy radius in metres and is
         // load-bearing: an urban-canyon fix can be 100 m+ off, and a bad fix that
         // seeds a cluster becomes the coordinate we would publish to OSM.
+        // A fix vaguer than SIGHT_ACCURACY_MAX_M is silently discarded by
+        // sightRecord — no cluster, no visit, no confirmation. That failure is
+        // invisible: the map still moves and the device list still fills, so a
+        // whole drive can record nothing while looking healthy. Without mobile
+        // data there is no A-GPS to warm-start the fix, which is exactly when
+        // it is most likely to happen. Show the number.
+        function updateGpsBadge(acc) {
+            const el = document.getElementById('gpsAccText');
+            if (!el) return;
+            if (acc == null || acc >= 9999) {
+                el.textContent = 'NO FIX';
+                el.style.color = 'var(--accent-red)';
+                return;
+            }
+            const usable = acc <= SIGHT_ACCURACY_MAX_M;
+            el.textContent = Math.round(acc) + ' m' + (usable ? '' : ' — TOO VAGUE');
+            el.style.color = usable ? 'var(--accent-emerald)' : 'var(--accent-red)';
+        }
+
         function onGpsFix(coords) {
             globalPhoneLocation = {
                 lat: coords.latitude,
@@ -82,6 +101,7 @@
                 acc: (coords.accuracy == null ? 9999 : coords.accuracy)
             };
             noteVisitEpoch(globalPhoneLocation);
+            updateGpsBadge(globalPhoneLocation.acc);
 
             if (currentActiveMode === 2 && map && polyline) {
                 const latlng = [coords.latitude, coords.longitude];
