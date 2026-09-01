@@ -85,8 +85,10 @@
             const el = document.getElementById('gpsAccText');
             if (!el) return;
             if (acc == null || acc >= 9999) {
-                el.textContent = 'NO FIX';
-                el.style.color = 'var(--accent-red)';
+                // Distinguish "never asked" from "asked, still locking": only
+                // the second is worth standing outside for.
+                el.textContent = gpsInitialized ? 'WAITING...' : 'OFF';
+                el.style.color = gpsInitialized ? 'var(--accent-amber)' : 'var(--accent-red)';
                 return;
             }
             const usable = acc <= SIGHT_ACCURACY_MAX_M;
@@ -124,6 +126,7 @@
                 window.Geolocation.requestPermissions().then((status) => {
                     if (status.location === 'granted' || status.coarseLocation === 'granted') {
                         gpsInitialized = true;
+                        updateGpsBadge(null);
                         window.Geolocation.watchPosition({ enableHighAccuracy: true }, (pos, err) => {
                             if (pos) onGpsFix(pos.coords);
                         });
