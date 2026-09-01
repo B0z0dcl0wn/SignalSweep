@@ -1044,6 +1044,18 @@
                     Toggle Fullscreen
                 </button>
                 </div>
+                <div id="alpr-row" style="display: flex; gap: 10px; width: 100%; align-items: center;">
+                <button id="btn-alpr-check" onclick="fetchAlprNodes()" style="padding: 12px; border-radius: 8px; border: 1px solid var(--accent-emerald); background: transparent; color: var(--accent-emerald); font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 10px; flex: 1;">
+                    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"></circle><path d="M3 12h18M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18z"></path></svg>
+                    Check vs. OSM
+                </button>
+                </div>
+                <p style="font-size: 0.72rem; color: var(--text-muted); margin: 6px 0 0; line-height: 1.4;">
+                    Compares confirmed detections against ALPRs already mapped in
+                    OpenStreetMap. <span style="color: #f472b6;">Pink = you found one nobody has mapped.</span>
+                    Green = corroborated. Grey = mapped but never heard.
+                    Sends the current map area to Overpass, so it only runs when you press it.
+                </p>
             </div>
 
             <div id="sky-sweeper-ui" style="display: none; width: 100%; flex-direction: column; align-items: center; margin-bottom: 20px;">

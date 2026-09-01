@@ -109,18 +109,42 @@ away, which un-detects cameras the classifier had already paid for.
   the max (never the sum) of every counter, so a restore cannot clobber
   sightings made since the backup and re-importing the same file twice cannot
   inflate a device into a false `fixed`.
+- **OSM cross-check for confirmed installations** ("Check vs. OSM", War
+  Flocking). OpenStreetMap already carries crowd-mapped ALPRs
+  (`man_made=surveillance` + `surveillance:type=ALPR`) — the dataset DeFlock
+  renders — and the geospatial classifier had no independent check against it.
+  The map now shows three outcomes, and the third is the point of the whole
+  project: **corroborated** (you confirmed a radio where OSM says a camera
+  stands), **mapped only** (OSM knows it, you never heard it), and **unmapped**
+  — a fixed installation you confirmed that nobody has mapped. Corroboration is
+  a *label* and never feeds `classify()`; letting OSM promote or demote a
+  detection would re-introduce exactly the list-shaped blindness the geospatial
+  test exists to avoid, same rule that already governs signature matches.
+
+  The query runs **only on the button press**, never on map pan or app start:
+  asking Overpass about a bounding box tells a third party which patch of the
+  world you are looking at, and for this tool's users that is a real disclosure.
+  Results are cached in `localStorage` and merged by node id, so panning builds
+  an area up rather than replacing it and a field trip can run off a prefetch
+  made at home — the same offline story as the saved map tiles. Falls through to
+  a second Overpass mirror on 5xx (the public endpoint rate-limits at 2 slots),
+  then to the cache.
+
+  Confirmed detections were also never actually drawn on the map, despite a
+  comment claiming they were — only the GPS trail was. They are now, which is
+  what makes the comparison visible at all.
 - **`app/selftest.js`** — the sight-store self-check's comment claimed
   `node app.js` ran it headless; it never did (`window is not defined`). A ~25
   line DOM stub makes `node app/selftest.js` real, and the check now also covers
   eviction order, the prune exemption, and backup round-tripping. Verified by
   reverting both fixes and confirming the new assertions fail.
 
-This was the storage half of a three-way comparison against two sibling
-projects. The other project's SQLite/Drift session database was deliberately
-*not* copied: it earns its keep there on many mesh nodes and many concurrent
-engines, and buys zero detections for a few hundred records on one phone. Its
-real advantage was that its store was a file you could copy, which is what the
-backup takes.
+Both of these came out of a three-way comparison against two sibling projects.
+The other project's SQLite/Drift session database was deliberately *not* copied:
+it earns its keep there on many mesh nodes and many concurrent engines, and buys
+zero detections for a few hundred records on one phone. Its real advantage was
+that its store was a file you could copy, which is what the backup takes. Its
+DeFlock/OSM overlay was worth taking outright.
 
 ### Changed — telemetry cost
 

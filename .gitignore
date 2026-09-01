@@ -32,3 +32,6 @@ npm-debug.log*
 .DS_Store
 *.swp
 .playwright-mcp/
+
+# Reference copies of sibling projects (not ours, not shipped)
+inspiration/

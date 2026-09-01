@@ -461,6 +461,35 @@
                                      s6e['CAM'].clusters[0].visits === 5 &&
                                      s6e['CAM'].clusters.length === 2;
 
+            // 6f. OSM cross-check: pair confirmed detections against mapped
+            //     ALPR nodes. The outcome that matters is 'unmapped' — a fixed
+            //     installation nobody has put on the map.
+            const savedStore = sightStore, savedNodes = alprNodes, savedWl = shadowWhitelist;
+            sightStore = {
+                // ~30 m from the mapped node below: same installation.
+                NEAR: { clusters: [{ lat: 30.22000, lng: -92.02000, n: 4, visits: 2, epoch: 0 }],
+                        first: 0, last: 0, count: 4 },
+                // ~2 km away: a fixed radio OSM has never heard of.
+                FAR:  { clusters: [{ lat: 30.24000, lng: -92.02000, n: 4, visits: 2, epoch: 0 }],
+                        first: 0, last: 0, count: 4 },
+                // Not confirmed, so it must not appear at all.
+                CAND: { clusters: [{ lat: 30.22000, lng: -92.02000, n: 1, visits: 1, epoch: 0 }],
+                        first: 0, last: 0, count: 1 }
+            };
+            shadowWhitelist = new Set();
+            alprNodes = [
+                { id: 1, lat: 30.22025, lng: -92.02000, operator: 'Test PD' },   // ~28 m from NEAR
+                { id: 2, lat: 30.30000, lng: -92.02000, operator: 'Unheard' }    // nowhere near anything
+            ];
+            const cc = alprCorroborate();
+            results.alprPaired = cc.paired.length;                   // expect 2 (candidate excluded)
+            results.alprCorroborated = cc.paired.filter(x => x.node).length;  // expect 1
+            results.alprUnmapped = cc.unmapped.map(x => x.mac).join(',');     // expect 'FAR'
+            results.alprMappedOnly = cc.mappedOnly.map(x => x.id).join(',');  // expect '2'
+            // A corroborated pairing must never change the classification.
+            results.alprNoPromotion = classify(sightStore.CAND) === 'candidate';
+            sightStore = savedStore; alprNodes = savedNodes; shadowWhitelist = savedWl;
+
             // 7. A hostile device name cannot become markup.
             const evil = '<img src=x onerror="alert(1)">';
             results.escaped = esc(evil);
@@ -486,6 +515,9 @@
                        results.restoredCount === 7 && results.restoredVisits === 2 &&
                        results.restoredKind === 'fixed' && results.restoredWhitelist &&
                        results.mergeKeptNewer &&
+                       results.alprPaired === 2 && results.alprCorroborated === 1 &&
+                       results.alprUnmapped === 'FAR' && results.alprMappedOnly === '2' &&
+                       results.alprNoPromotion &&
                        results.escapedSafe;
 
             results.ok = ok;
@@ -898,6 +930,176 @@
             document.body.removeChild(element);
             showToast('Exported ' + fixed.length + ' confirmed installation(s).', '✓');
         }
+
+        // ---- DeFlock / OSM ground truth -----------------------------------
+        // OpenStreetMap already carries crowd-mapped ALPRs (`man_made=surveillance`
+        // + `surveillance:type=ALPR`) — the dataset DeFlock renders. Overlaying it
+        // gives the geospatial classifier the one thing it otherwise lacks: an
+        // independent check. Three outcomes, and the interesting one is the third:
+        //   corroborated — you confirmed a radio where OSM says a camera stands.
+        //   mapped only  — OSM knows it, you never heard it (wrong side of the
+        //                  street, no RF, or it is not a radio at all).
+        //   UNMAPPED     — you confirmed a fixed installation nobody has mapped.
+        //                  That is the whole point of detecting by geography.
+        //
+        // This never runs on its own. Querying Overpass tells a third party which
+        // patch of the world you are looking at, which for THIS tool's users is a
+        // real disclosure — so it is a button, never a map-pan handler, and results
+        // are cached so a field trip can run off a prefetch made at home.
+        const OVERPASS_ENDPOINTS = [
+            'https://overpass-api.de/api/interpreter',
+            'https://overpass.private.coffee/api/interpreter'
+        ];
+        const ALPR_CACHE_KEY = 'alprNodes';
+        const ALPR_MATCH_M   = 100;   // how close a detection sits to count as the same install
+
+        let alprNodes = [];
+        let alprLayer = null;
+        try {
+            const cached = JSON.parse(localStorage.getItem(ALPR_CACHE_KEY) || '[]');
+            if (Array.isArray(cached)) alprNodes = cached;
+        } catch (e) {}
+
+        function overpassQuery(b) {
+            const box = '(' + b.south.toFixed(5) + ',' + b.west.toFixed(5) + ',' +
+                              b.north.toFixed(5) + ',' + b.east.toFixed(5) + ')';
+            const base = 'node["man_made"="surveillance"]["surveillance:type"=';
+            // OSM tag values are not case-normalised; both spellings are in use.
+            return '[out:json][timeout:60];(' +
+                   base + '"ALPR"]' + box + ';' +
+                   base + '"alpr"]' + box + ';);out body;';
+        }
+
+        // Anything here is third-party text from a public wiki-style database.
+        // It reaches a popup, so it gets the same treatment as a device name.
+        function alprFromElement(e) {
+            if (!e || typeof e.lat !== 'number' || typeof e.lon !== 'number') return null;
+            const tags = e.tags || {};
+            const tag = k => (typeof tags[k] === 'string' && tags[k].trim()) ? tags[k].trim() : '';
+            return {
+                id: e.id,
+                lat: e.lat,
+                lng: e.lon,
+                operator: tag('operator'),
+                manufacturer: tag('manufacturer'),
+                direction: tag('camera:direction') || tag('direction')
+            };
+        }
+
+        async function fetchAlprNodes() {
+            if (!map) { showToast('Map not ready', '✕'); return; }
+            const b = map.getBounds();
+            const bounds = { south: b.getSouth(), west: b.getWest(),
+                             north: b.getNorth(), east: b.getEast() };
+            const body = 'data=' + encodeURIComponent(overpassQuery(bounds));
+            showToast('Querying OpenStreetMap...', '⏳');
+
+            let elements = null, lastErr = '';
+            for (const url of OVERPASS_ENDPOINTS) {
+                try {
+                    const resp = await fetch(url, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                        body
+                    });
+                    if (resp.status === 429) { lastErr = 'rate limited'; continue; }
+                    if (!resp.ok) { lastErr = 'HTTP ' + resp.status; continue; }
+                    const data = await resp.json();
+                    if (Array.isArray(data.elements)) { elements = data.elements; break; }
+                    lastErr = 'no element list';
+                } catch (e) {
+                    lastErr = (e && e.message) || 'unreachable';
+                }
+            }
+            if (!elements) {
+                // Offline is the expected case in the field, not an error state:
+                // fall back to whatever the last prefetch left behind.
+                showToast('Overpass ' + lastErr + (alprNodes.length ? ' - using cache' : ''), '✕');
+                if (alprNodes.length) renderAlprLayer();
+                return;
+            }
+
+            // Merge by node id so panning around builds an area up instead of
+            // replacing it - the same reason the sight store merges on import.
+            const byId = {};
+            alprNodes.forEach(n => { byId[n.id] = n; });
+            let fresh = 0;
+            elements.forEach(e => {
+                const n = alprFromElement(e);
+                if (!n) return;
+                if (!(n.id in byId)) fresh++;
+                byId[n.id] = n;
+            });
+            alprNodes = Object.values(byId);
+            try { localStorage.setItem(ALPR_CACHE_KEY, JSON.stringify(alprNodes)); } catch (e) {}
+            renderAlprLayer();
+            showToast(fresh + ' new mapped ALPR(s), ' + alprNodes.length + ' cached', '✓');
+        }
+
+        // Pair confirmed detections against mapped nodes. Corroboration is a
+        // LABEL, never an input to classify() - exactly as signature matches are.
+        // Letting OSM promote or demote a detection would re-introduce the
+        // list-shaped blindness the geospatial test exists to avoid.
+        function alprCorroborate() {
+            const fixed = collectFixedDevices();
+            const usedNodes = new Set();
+            const paired = fixed.map(f => {
+                let best = null, bestD = Infinity;
+                alprNodes.forEach(n => {
+                    const d = haversineM(f.cluster, n);
+                    if (d <= ALPR_MATCH_M && d < bestD) { best = n; bestD = d; }
+                });
+                if (best) usedNodes.add(best.id);
+                return { mac: f.mac, rec: f.rec, cluster: f.cluster,
+                         node: best, dist: best ? bestD : null };
+            });
+            return { paired,
+                     unmapped: paired.filter(p => !p.node),
+                     mappedOnly: alprNodes.filter(n => !usedNodes.has(n.id)) };
+        }
+
+        function renderAlprLayer() {
+            if (!map || !window.L) return;
+            if (alprLayer) map.removeLayer(alprLayer);
+            alprLayer = window.L.layerGroup().addTo(map);
+
+            const { paired, unmapped, mappedOnly } = alprCorroborate();
+
+            mappedOnly.forEach(n => {
+                window.L.circleMarker([n.lat, n.lng], {
+                    radius: 5, color: '#9ca3af', weight: 1, fillOpacity: 0.35
+                }).bindPopup('<b>Mapped ALPR</b><br>' +
+                    esc(n.operator || n.manufacturer || 'unknown operator') +
+                    '<br><span style="color:#9ca3af">not heard by you</span>' +
+                    '<br><a href="https://www.openstreetmap.org/node/' +
+                    encodeURIComponent(n.id) +
+                    '" target="_blank" rel="noopener noreferrer">OSM node</a>'
+                ).addTo(alprLayer);
+            });
+
+            paired.forEach(p => {
+                const hit = !!p.node;
+                window.L.circleMarker([p.cluster.lat, p.cluster.lng], {
+                    radius: 8,
+                    color: hit ? '#34d399' : '#f472b6',
+                    weight: 2,
+                    fillOpacity: 0.6
+                }).bindPopup(
+                    '<b>' + (hit ? 'Corroborated' : 'UNMAPPED - not in OSM') + '</b><br>' +
+                    esc(p.mac) + (p.rec.name ? '<br>' + esc(p.rec.name) : '') +
+                    '<br>' + esc(p.cluster.visits) + ' visits, ' + esc(p.rec.count) + ' sightings' +
+                    (hit ? '<br>' + Math.round(p.dist) + ' m from ' +
+                           esc(p.node.operator || p.node.manufacturer || 'a mapped ALPR')
+                         : '<br><span style="color:#f472b6">nobody has mapped this one</span>')
+                ).addTo(alprLayer);
+            });
+
+            showToast(unmapped.length + ' unmapped, ' +
+                      (paired.length - unmapped.length) + ' corroborated, ' +
+                      mappedOnly.length + ' mapped-only', '✓');
+        }
+        window.fetchAlprNodes = fetchAlprNodes;
+        window.renderAlprLayer = renderAlprLayer;
 
         let bleDevice = null;
         let gattServer = null;
@@ -1802,9 +2004,17 @@
                 // The .osm export only means anything for fixed installations.
                 const btnOsm = document.getElementById('btn-export-osm');
                 if (btnOsm) btnOsm.style.display = (modeInt === 2) ? 'flex' : 'none';
+                // The OSM cross-check is about fixed installations, so it rides
+                // with the .osm export and stays off Sky Sweeper's shared map.
+                const alprRow = document.getElementById('alpr-row');
+                if (alprRow) alprRow.style.display = (modeInt === 2) ? 'flex' : 'none';
+                if (modeInt !== 2 && map && alprLayer) { map.removeLayer(alprLayer); alprLayer = null; }
                 if (modeInt === 2) {
                     initGPS();
                     if (!map) setTimeout(initMap, 100);
+                    // Redraw from the cache so a prefetched area is on screen
+                    // without another network call.
+                    if (alprNodes.length) setTimeout(renderAlprLayer, 300);
                 }
 
                 // Show/hide sky sweeper radar depending on mode
