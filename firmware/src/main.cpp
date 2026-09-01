@@ -27,6 +27,20 @@ void setup() {
         nvs_flash_init();
     }
 
+    // Mount LittleFS. Without this NOTHING filesystem-backed works: every
+    // LittleFS.exists() returns false and every open() fails, so
+    // ensureSignaturesFileExists() cannot write the defaults and
+    // loadWatchersSignatures() bails out leaving loadedSignatures empty. That
+    // silently disabled the entire Watcher's Watch signature database — every
+    // OUI / device-name / service-UUID / manufacturer-ID rule was dead, and the
+    // only detections that could fire were the two hardcoded checks in the
+    // Wi-Fi callback. `true` formats on failure so a fresh board self-heals.
+    if (!LittleFS.begin(true)) {
+        Serial.println("[FS] LittleFS mount FAILED — signature rules unavailable.");
+    } else {
+        Serial.println("[FS] LittleFS mounted.");
+    }
+
     // Initialize BLE stack
     NimBLEDevice::init("SignalSweep");
 

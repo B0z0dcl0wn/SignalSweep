@@ -170,6 +170,10 @@ void processIncomingCommand(const String& rawCommand) {
             String targetMac = rawStr.substring(5);
             setBanditLockTarget(targetMac);
             ESP_LOGI(TAG, "Raw string set target lock MAC: %s", targetMac.c_str());
+        } else if (rawStr == "CMD:SIGS:RESET") {
+            // Restore the built-in signature rules, undoing a pushed rule set
+            // without the full factory reset (which also wipes mode + lock).
+            resetWatchersSignaturesToDefaults();
         } else if (rawStr == "CMD:BLE_SCAN:OFF") {
             pauseBle(true);
         } else if (rawStr == "CMD:BLE_SCAN:ON") {

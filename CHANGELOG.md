@@ -77,6 +77,21 @@ All notable changes to SignalSweep are recorded here.
 
 ### Added
 
+- **The buzzer now fires from the Wi-Fi path, not just BLE.** With no phone
+  connected the buzzer is the whole user interface, and the strongest Flock
+  signal in the system — an SSID match, weight 80 — exists only on the Wi-Fi
+  side and made no sound whatsoever, because the only `triggerAlarm()` calls
+  lived in the BLE callback. Both paths now record the hit and the 1 Hz task
+  sounds it: >= 75 alarms, 60-74 warns, below 60 stays silent. Routing it
+  through the task keeps the Wi-Fi promiscuous callback non-blocking (the
+  trigger functions take a 10 ms mutex) and rate-limits a dense area to one
+  alert per second instead of a continuous tone.
+  Note this is inherently a *signature* alarm: the geospatial "is it bolted
+  down" test needs GPS, which lives in the phone until Tier 3, so headless can
+  only ever shout about brands it already knows.
+- **`CMD:SIGS:RESET`** — restore the built-in signature rules. Once a rule set
+  had been pushed there was no way back short of a full factory reset, which
+  also wipes the mode and target lock.
 - **The pilot's location on the map (Sky Sweeper).** Remote ID broadcasts where
   the *operator* is standing, and the firmware was already decoding and
   transmitting `operator_latitude`/`operator_longitude` — the app read the
@@ -96,6 +111,30 @@ All notable changes to SignalSweep are recorded here.
   confirm as fixed infrastructure, exactly as your phone would score as a tail.
 
 ### Fixed
+
+- **LittleFS was never mounted, so the entire signature database has never
+  loaded — on any build, ever.** Nothing called `LittleFS.begin()`. Every
+  `LittleFS.exists()` therefore returned false and every `open()` failed, so
+  `ensureSignaturesFileExists()` could not write the defaults and
+  `loadWatchersSignatures()` bailed out leaving `loadedSignatures` empty. Every
+  OUI, device-name, service-UUID and manufacturer-ID rule was dead code; the
+  only Watcher's Watch detections that could ever fire were the two hardcoded
+  checks in the Wi-Fi callback (the Lite-On vendor IE and the SSID keyword
+  test), neither of which consults the rule list. Mounting it immediately
+  brought the rules to life on the bench — and immediately exposed the next
+  item.
+- **Removed the `mfg_id: "0x01"` "Flock XUNTONG" default rule.** Bluetooth
+  Company ID `0x0001` is Nokia's, not Flock's. Within seconds of the rules
+  actually loading it was labelling Govee smart bulbs `"Flock Safety"`, tier
+  `"Likely"`, at confidence 45. Same class of junk as the Espressif OUIs, and
+  invisible until the filesystem worked. (Schema v3.)
+- **Pushing a rule set with `{"signatures":[...]}` was a silent no-op.**
+  `updateWatchersSignaturesJson()` wrote the file and then called
+  `loadWatchersSignatures()`, which calls `ensureSignaturesFileExists()`, which
+  saw no `version` field, judged the file stale against the new
+  `SIG_SCHEMA_VERSION`, and deleted it. Pushed rules now carry the current
+  version stamp.
+
 
 - **Removed `restoreBleSerialAdvertising()`** — it had no callers anywhere in
   the tree, and it carried a latent bug worth recording because it bit during

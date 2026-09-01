@@ -25,14 +25,15 @@ static const char *SIG_FILE_PATH = "/data/signatures.json";
 // on every board that had already booted once.
 //   v2: removed a4:cf:12 + 3c:71:bf (Espressif, i.e. this very board's vendor
 //       block), cc:cc:cc (unassigned), 82:6b:f2 (locally-administered).
-#define SIG_SCHEMA_VERSION 2
+//   v3: removed mfg_id 0x01 ("Flock XUNTONG"). 0x0001 is Nokia's assigned
+//       Bluetooth Company ID; on the bench it matched Govee bulbs.
+#define SIG_SCHEMA_VERSION 3
 
 static SemaphoreHandle_t watchersMutex = NULL;
 static bool watchersRunning = false;
 static std::vector<WatcherSignature> loadedSignatures;
 static std::vector<WatcherTargetInfo> trackedTargets;
 static TaskHandle_t watchersTaskHandle = NULL;
-
 /**
  * @brief Ensure /data/signatures.json exists on LittleFS, creating default rules if missing
  */
@@ -114,8 +115,11 @@ static void ensureSignaturesFileExists() {
                 addRule("Flock BLE Name", "Flock Safety", "", "", name, "");
             }
             
-            // XUNTONG Mfg ID
-            addRule("Flock XUNTONG Mfg", "Flock Safety", "", "0x01", "", "");
+            // NOTE: a rule matching manufacturer ID 0x01 was removed here.
+            // Bluetooth Company ID 0x0001 is Nokia's, not Flock's, and once the
+            // signature file actually started loading it immediately labelled
+            // Govee smart bulbs as "Flock Safety / Likely" on the bench. Same
+            // class of junk as the Espressif OUIs above.
 
             // Pre-existing SignalSweep Rules
             addRule("Flock Safety Mfg ID", "Flock Safety", "", "0x09C8", "", "");
@@ -172,6 +176,30 @@ static String tierForConfidence(int confidence) {
     if (confidence >= 75) return "Confirmed";
     if (confidence >= 45) return "Likely";
     return "Possible";
+}
+
+// Headless alerting.
+//
+// With no phone connected the buzzer is the entire user interface, so it has to
+// work off both radios — the strongest Flock signal there is (an SSID match,
+// weight 80) exists only on the Wi-Fi side, and used to make no sound at all
+// because the only triggerAlarm() calls lived in the BLE callback.
+//
+// Detections record the alert here instead of buzzing directly, and the 1 Hz
+// task acts on it. Two reasons: the Wi-Fi promiscuous callback must never block
+// (triggerAlarm takes a 10 ms mutex), and draining it once per tick naturally
+// rate-limits a dense area to one alert per second instead of a continuous
+// scream. Highest confidence seen in the interval wins.
+//
+// NOTE: this is inherently a *signature* alarm. The geospatial "is it bolted
+// down" test needs GPS, which lives in the phone until Tier 3, so headless can
+// only ever shout about brands it already knows. That's the deal, and it's
+// still worth having.
+static volatile int pendingAlertConf = 0;
+
+static void noteAlert(int confidence) {
+    if (confidence < CONF_LIST_MIN) return;
+    if (confidence > pendingAlertConf) pendingAlertConf = confidence;
 }
 
 /**
@@ -372,8 +400,7 @@ class WatchersScanCallbacks : public NimBLEAdvertisedDeviceCallbacks {
                         ESP_LOGI(TAG, "[SURVEILLANCE] MAC: %s, Rule: %s, Cat: %s, Conf: %d (%s), RSSI: %d",
                                  mac.c_str(), matchedRule.c_str(), matchedCategory.c_str(),
                                  confidence, newTarget.tier.c_str(), rssi);
-                        if (confidence >= 75) triggerAlarm();
-                        else triggerWarning();
+                        noteAlert(confidence);
                     }
                 }
             }
@@ -561,6 +588,7 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
                 if (wifiConfidence >= CONF_LIST_MIN) {
                     ESP_LOGI(TAG, "[SURVEILLANCE - WIFI] MAC: %s, Rule: %s, Conf: %d (%s), RSSI: %d",
                              mac.c_str(), matchedRule.c_str(), wifiConfidence, newTarget.tier.c_str(), rssi);
+                    noteAlert(wifiConfidence);
                 }
             }
             xSemaphoreGive(watchersMutex);
@@ -573,6 +601,16 @@ static void watchersPeriodicTask(void *pvParameters) {
     while (watchersRunning) {
         vTaskDelay(pdMS_TO_TICKS(1000));
         if (!watchersRunning) break;
+
+        // Sound anything the radios flagged since the last tick. Done here, off
+        // the detection callbacks, so the Wi-Fi promiscuous handler stays fast
+        // and a dense area gets one alert per second rather than a continuous
+        // tone. triggerAlarm() itself also refuses to retrigger while an alarm
+        // is still sounding.
+        int alert = pendingAlertConf;
+        pendingAlertConf = 0;
+        if (alert >= 75)              triggerAlarm();
+        else if (alert >= CONF_LIST_MIN) triggerWarning();
 
         // Prune stale targets. This mode used to be the only one that never
         // expired anything, so trackedTargets grew for the whole session.
@@ -849,6 +887,18 @@ String getWatchersSignaturesJson() {
     return "{\"status\":\"error\",\"message\":\"Invalid JSON structure\"}";
 }
 
+/**
+ * @brief Delete /data/signatures.json and reload, regenerating the built-in
+ * defaults. The counterpart to updateWatchersSignaturesJson(): once a rule set
+ * has been pushed there is otherwise no way back to the defaults short of a
+ * full factory reset (BOOT held 5 s), which also wipes the mode and target lock.
+ */
+void resetWatchersSignaturesToDefaults() {
+    LittleFS.remove(SIG_FILE_PATH);
+    loadWatchersSignatures();   // ensureSignaturesFileExists() rewrites defaults
+    ESP_LOGI(TAG, "Signature rules reset to built-in defaults.");
+}
+
 bool updateWatchersSignaturesJson(const String& jsonContent) {
     if (watchersMutex == NULL) {
         watchersMutex = xSemaphoreCreateMutex();
@@ -882,6 +932,14 @@ bool updateWatchersSignaturesJson(const String& jsonContent) {
     }
 
     JsonDocument outDoc;
+    // Stamp the current schema version. Without it ensureSignaturesFileExists()
+    // — which loadWatchersSignatures() calls below — reads version 0, decides
+    // the file predates the current defaults, and deletes it. That silently
+    // threw away every pushed rule set and made this command a no-op.
+    // A rule set pushed by a client running today's protocol is current by
+    // definition; it will still be regenerated if SIG_SCHEMA_VERSION is bumped
+    // later, which is the intended trade (stale poisoned defaults are worse).
+    outDoc["version"] = SIG_SCHEMA_VERSION;
     JsonArray outSigs = outDoc["signatures"].to<JsonArray>();
 
     for (JsonObject s : sigs) {

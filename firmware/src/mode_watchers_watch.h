@@ -67,6 +67,11 @@ String getWatchersSignaturesJson();
  * @param jsonContent New signature JSON string or object
  * @return true if updated and reloaded successfully, false otherwise
  */
+/**
+ * @brief Reset the signature rules to the built-in defaults
+ */
+void resetWatchersSignaturesToDefaults();
+
 bool updateWatchersSignaturesJson(const String& jsonContent);
 
 /**
