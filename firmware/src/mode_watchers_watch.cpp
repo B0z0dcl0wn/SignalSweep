@@ -18,6 +18,15 @@
 static const char *TAG = "WatchersWatch";
 static const char *SIG_FILE_PATH = "/data/signatures.json";
 
+// Bump whenever the DEFAULT rule set changes meaningfully. The file lives on
+// LittleFS and survives a firmware flash, so without this an already-deployed
+// device keeps its old rules for ever — which is how the purged Espressif /
+// unassigned / locally-administered OUIs would have quietly stayed in service
+// on every board that had already booted once.
+//   v2: removed a4:cf:12 + 3c:71:bf (Espressif, i.e. this very board's vendor
+//       block), cc:cc:cc (unassigned), 82:6b:f2 (locally-administered).
+#define SIG_SCHEMA_VERSION 2
+
 static SemaphoreHandle_t watchersMutex = NULL;
 static bool watchersRunning = false;
 static std::vector<WatcherSignature> loadedSignatures;
@@ -28,6 +37,24 @@ static TaskHandle_t watchersTaskHandle = NULL;
  * @brief Ensure /data/signatures.json exists on LittleFS, creating default rules if missing
  */
 static void ensureSignaturesFileExists() {
+    // Regenerate a file written by an older default rule set.
+    if (LittleFS.exists(SIG_FILE_PATH)) {
+        int fileVersion = 0;
+        File existing = LittleFS.open(SIG_FILE_PATH, "r");
+        if (existing) {
+            JsonDocument probe;
+            if (!deserializeJson(probe, existing)) {
+                fileVersion = probe["version"] | 0;
+            }
+            existing.close();
+        }
+        if (fileVersion < SIG_SCHEMA_VERSION) {
+            ESP_LOGW(TAG, "signatures.json is v%d, defaults are v%d — regenerating.",
+                     fileVersion, SIG_SCHEMA_VERSION);
+            LittleFS.remove(SIG_FILE_PATH);
+        }
+    }
+
     if (!LittleFS.exists(SIG_FILE_PATH)) {
         ESP_LOGI(TAG, "%s not found. Creating default signatures file...", SIG_FILE_PATH);
         if (!LittleFS.exists("/data")) {
@@ -36,6 +63,7 @@ static void ensureSignaturesFileExists() {
         File file = LittleFS.open(SIG_FILE_PATH, "w");
         if (file) {
             JsonDocument doc;
+            doc["version"] = SIG_SCHEMA_VERSION;
             JsonArray sigs = doc["signatures"].to<JsonArray>();
 
             auto addRule = [&](const char* name, const char* cat, const char* oui, const char* mfg, const char* dev, const char* uuid) {
@@ -48,15 +76,24 @@ static void ensureSignaturesFileExists() {
                 s["service_uuid"] = uuid;
             };
 
-            // GoFlockYourself Extended OUIs
+            // GoFlockYourself extended OUIs. Four entries from the original
+            // crowd-sourced list are deliberately absent because they cannot
+            // mean "Flock" and only generate false positives:
+            //   a4:cf:12, 3c:71:bf  Espressif — this board's own vendor block,
+            //                       so every ESP32 in range matched.
+            //   cc:cc:cc            not an assigned OUI at all.
+            //   82:6b:f2            locally-administered bit set (0x02) — that
+            //                       is a randomized-MAC prefix, i.e. phones.
+            // loadWatchersSignatures() also rejects locally-administered
+            // prefixes at load time so a pushed rule set can't reintroduce them.
             const char* flockOuis[] = {
                 "b4:1e:52", "70:c9:4e", "3c:91:80", "d8:f3:bc", "80:30:49", "b8:35:32",
                 "14:5a:fc", "74:4c:a1", "08:3a:88", "9c:2f:9d", "c0:35:32", "94:08:53",
                 "e4:aa:ea", "f4:6a:dd", "f8:a2:d6", "24:b2:b9", "00:f4:8d", "d0:39:57",
                 "e8:d0:fc", "e0:4f:43", "b8:1e:a4", "70:08:94", "58:8e:81", "ec:1b:bd",
-                "3c:71:bf", "58:00:e3", "90:35:ea", "5c:93:a2", "64:6e:69", "48:27:ea",
-                "a4:cf:12", "82:6b:f2", "04:0d:84", "1c:34:f1", "38:5b:44", "94:34:69",
-                "b4:e3:f9", "cc:cc:cc", "f0:82:c0", "e0:0a:f6"
+                "58:00:e3", "90:35:ea", "5c:93:a2", "64:6e:69", "48:27:ea",
+                "04:0d:84", "1c:34:f1", "38:5b:44", "94:34:69",
+                "b4:e3:f9", "f0:82:c0", "e0:0a:f6"
             };
             for (const char* oui : flockOuis) {
                 addRule("Flock Safety MAC", "Flock Safety", oui, "", "", "");
@@ -125,6 +162,11 @@ static void ensureSignaturesFileExists() {
 // 70-80) or two corroborating weak ones (OUI 30 + IE 30, or +15 cross-protocol).
 // ponytail: this is the noise floor; lower it if real devices are being missed.
 #define CONF_LIST_MIN   60
+
+// Now that the mode harvests everything rather than only signature hits, the
+// target list needs the same lifecycle every other mode already had.
+#define WATCHERS_STALE_MS    120000  // drop devices unheard for 2 min
+#define WATCHERS_MAX_REPORT  40      // per-push cap; selection is round-robin
 
 static String tierForConfidence(int confidence) {
     if (confidence >= 75) return "Confirmed";
@@ -273,7 +315,12 @@ class WatchersScanCallbacks : public NimBLEAdvertisedDeviceCallbacks {
             }
             if (confidence > 100) confidence = 100;
 
-            if (confidence >= CONF_LIST_MIN) {
+            // The confidence score is an annotation, not a gate: the phone
+            // classifies on geospatial persistence (a radio pinned to one place
+            // across repeat visits is infrastructure), which only works if it
+            // sees everything the radio hears — including vendors not on any
+            // list. CONF_LIST_MIN now only decides whether the buzzer fires.
+            {
                 bool found = false;
                 for (auto& target : trackedTargets) {
                     if (target.mac.equalsIgnoreCase(mac)) {
@@ -292,8 +339,12 @@ class WatchersScanCallbacks : public NimBLEAdvertisedDeviceCallbacks {
                         if (merged > target.confidence) target.confidence = merged;
                         target.tier = tierForConfidence(target.confidence);
                         if (devName.length() > 0) target.name = devName;
-                        target.type = matchedCategory;
-                        target.matchedRule = matchedRule;
+                        // Don't let a later non-matching advert wipe a category
+                        // an earlier rule match established.
+                        if (matchedCategory.length() > 0) {
+                            target.type = matchedCategory;
+                            target.matchedRule = matchedRule;
+                        }
                         found = true;
                         break;
                     }
@@ -312,15 +363,18 @@ class WatchersScanCallbacks : public NimBLEAdvertisedDeviceCallbacks {
                     newTarget.protocol = "BLE";
                     newTarget.confidence = confidence;
                     newTarget.tier = tierForConfidence(confidence);
+                    newTarget.lastReportedMs = 0;
                     trackedTargets.push_back(newTarget);
 
-                    ESP_LOGI(TAG, "[SURVEILLANCE] MAC: %s, Rule: %s, Cat: %s, Conf: %d (%s), RSSI: %d",
-                             mac.c_str(), matchedRule.c_str(), matchedCategory.c_str(),
-                             confidence, newTarget.tier.c_str(), rssi);
-
-                    // Only sound the full alarm for a high-confidence hit.
-                    if (confidence >= 75) triggerAlarm();
-                    else triggerWarning();
+                    // Log and alert only on a signature hit — everything else
+                    // is harvested silently for the phone to classify.
+                    if (confidence >= CONF_LIST_MIN) {
+                        ESP_LOGI(TAG, "[SURVEILLANCE] MAC: %s, Rule: %s, Cat: %s, Conf: %d (%s), RSSI: %d",
+                                 mac.c_str(), matchedRule.c_str(), matchedCategory.c_str(),
+                                 confidence, newTarget.tier.c_str(), rssi);
+                        if (confidence >= 75) triggerAlarm();
+                        else triggerWarning();
+                    }
                 }
             }
             xSemaphoreGive(watchersMutex);
@@ -377,6 +431,7 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
         int wifiConfidence = 0;
         int bestWeight = 0;
         String matchedRule = "";
+        String matchedCategory = "";
 
         // 1. Check OUI (weak signal)
         String mac = "";
@@ -399,7 +454,11 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
                     }
                     if (cleanMac.startsWith(cleanOui)) {
                         wifiConfidence += W_WIFI_OUI;
-                        if (W_WIFI_OUI > bestWeight) { bestWeight = W_WIFI_OUI; matchedRule = sig.name.length() > 0 ? sig.name : "WiFi OUI Match"; }
+                        if (W_WIFI_OUI > bestWeight) {
+                            bestWeight = W_WIFI_OUI;
+                            matchedRule = sig.name.length() > 0 ? sig.name : "WiFi OUI Match";
+                            matchedCategory = sig.category;
+                        }
                         break;
                     }
                 }
@@ -424,7 +483,10 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
                 if (!ieHit && id == 221 && elen >= 4 && body[b+2] == 0x50 && body[b+3] == 0x6F && body[b+4] == 0x9A) {
                     ieHit = true;
                     wifiConfidence += W_WIFI_IE;
-                    if (W_WIFI_IE > bestWeight) { bestWeight = W_WIFI_IE; matchedRule = "Lite-On Flock Vendor IE"; }
+                    // Deliberately does NOT set a category: 50:6F:9A is Lite-On's
+                    // general OUI, present in countless consumer WiFi chips. It
+                    // is a weak corroborating hint, not a vendor identification.
+                    if (W_WIFI_IE > bestWeight) { bestWeight = W_WIFI_IE; matchedRule = "Lite-On Vendor IE (weak)"; }
                 }
 
                 if (!ssidHit && id == 0 && elen > 0 && elen <= 32) {
@@ -435,7 +497,11 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
                     if (ssidStr.indexOf("flock") >= 0 || ssidStr.indexOf("fs_") >= 0 || ssidStr.indexOf("pigvision") >= 0) {
                         ssidHit = true;
                         wifiConfidence += W_WIFI_SSID;
-                        if (W_WIFI_SSID > bestWeight) { bestWeight = W_WIFI_SSID; matchedRule = "Flock SSID Signature"; }
+                        if (W_WIFI_SSID > bestWeight) {
+                            bestWeight = W_WIFI_SSID;
+                            matchedRule = "Flock SSID Signature";
+                            matchedCategory = "Flock Safety";   // SSID match IS vendor-specific
+                        }
                     }
                 }
 
@@ -445,7 +511,8 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
 
         if (wifiConfidence > 100) wifiConfidence = 100;
 
-        if (wifiConfidence >= CONF_LIST_MIN && xSemaphoreTake(watchersMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+        // Same as the BLE path: harvest everything, score is an annotation.
+        if (xSemaphoreTake(watchersMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
             bool found = false;
             uint32_t now = millis();
             for (auto& target : trackedTargets) {
@@ -464,8 +531,13 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
                     if (merged > 100) merged = 100;
                     if (merged > target.confidence) target.confidence = merged;
                     target.tier = tierForConfidence(target.confidence);
-                    target.type = "Flock Safety";
-                    target.matchedRule = matchedRule;
+                    // Label by what actually matched. The old code stamped
+                    // "Flock Safety" on every WiFi hit, so a Cradlepoint router
+                    // or a stray ESP32 was reported as a Flock camera.
+                    if (matchedRule.length() > 0) {
+                        target.type = matchedCategory;
+                        target.matchedRule = matchedRule;
+                    }
                     found = true;
                     break;
                 }
@@ -473,8 +545,8 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
             if (!found) {
                 WatcherTargetInfo newTarget;
                 newTarget.mac = mac;
-                newTarget.name = "Unknown Flock Node";
-                newTarget.type = "Flock Safety";
+                newTarget.name = "";
+                newTarget.type = matchedCategory;
                 newTarget.matchedRule = matchedRule;
                 newTarget.rssi = rssi;
                 newTarget.firstSeenMs = now;
@@ -483,10 +555,13 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
                 newTarget.protocol = "WiFi";
                 newTarget.confidence = wifiConfidence;
                 newTarget.tier = tierForConfidence(wifiConfidence);
+                newTarget.lastReportedMs = 0;
                 trackedTargets.push_back(newTarget);
 
-                ESP_LOGI(TAG, "[SURVEILLANCE - WIFI] MAC: %s, Rule: %s, Conf: %d (%s), RSSI: %d",
-                         mac.c_str(), matchedRule.c_str(), wifiConfidence, newTarget.tier.c_str(), rssi);
+                if (wifiConfidence >= CONF_LIST_MIN) {
+                    ESP_LOGI(TAG, "[SURVEILLANCE - WIFI] MAC: %s, Rule: %s, Conf: %d (%s), RSSI: %d",
+                             mac.c_str(), matchedRule.c_str(), wifiConfidence, newTarget.tier.c_str(), rssi);
+                }
             }
             xSemaphoreGive(watchersMutex);
         }
@@ -498,6 +573,20 @@ static void watchersPeriodicTask(void *pvParameters) {
     while (watchersRunning) {
         vTaskDelay(pdMS_TO_TICKS(1000));
         if (!watchersRunning) break;
+
+        // Prune stale targets. This mode used to be the only one that never
+        // expired anything, so trackedTargets grew for the whole session.
+        if (watchersMutex != NULL && xSemaphoreTake(watchersMutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+            uint32_t now = millis();
+            for (size_t i = 0; i < trackedTargets.size(); ) {
+                if (now - trackedTargets[i].lastSeenMs > WATCHERS_STALE_MS) {
+                    trackedTargets.erase(trackedTargets.begin() + i);
+                } else {
+                    i++;
+                }
+            }
+            xSemaphoreGive(watchersMutex);
+        }
 
         String jsonStr = getWatchersTargetsJson();
         sendBleSerial(jsonStr);
@@ -538,6 +627,7 @@ void loadWatchersSignatures() {
             sigs = doc.as<JsonArray>();
         }
 
+        int rejected = 0;
         for (JsonObject s : sigs) {
             WatcherSignature sig;
             sig.name = s["name"] | "";
@@ -546,8 +636,24 @@ void loadWatchersSignatures() {
             sig.mfgId = s["mfg_id"] | "";
             sig.deviceName = s["device_name"] | "";
             sig.serviceUuid = s["service_uuid"] | "";
+
+            // A prefix with the locally-administered bit (0x02) set is not a
+            // vendor OUI at all — it is the signature of a *randomized* MAC, so
+            // it matches random phones. Reject it however it got here, including
+            // via a rule set pushed from the app.
+            if (sig.oui.length() >= 2) {
+                char h[3] = { sig.oui[0], sig.oui[1], 0 };
+                long firstOctet = strtol(h, NULL, 16);
+                if (firstOctet & 0x02) {
+                    ESP_LOGW(TAG, "Rejecting locally-administered OUI rule '%s' (%s)",
+                             sig.name.c_str(), sig.oui.c_str());
+                    rejected++;
+                    continue;
+                }
+            }
             loadedSignatures.push_back(sig);
         }
+        if (rejected > 0) ESP_LOGW(TAG, "Rejected %d locally-administered OUI rule(s).", rejected);
         xSemaphoreGive(watchersMutex);
         ESP_LOGI(TAG, "Loaded %d Watcher signatures into memory.", (int)loadedSignatures.size());
     }
@@ -585,6 +691,11 @@ void startWatchersWatch() {
     // Start WiFi Promiscuous
     WiFi.mode(WIFI_STA);
     WiFi.disconnect();
+    // Filter in hardware. The callback only ever handles WIFI_PKT_MGMT, so
+    // without this every data/ctrl frame in the air reaches the ISR just to be
+    // dropped by the software check.
+    wifi_promiscuous_filter_t wfilter = { .filter_mask = WIFI_PROMIS_FILTER_MASK_MGMT };
+    esp_wifi_set_promiscuous_filter(&wfilter);
     esp_wifi_set_promiscuous(true);
     esp_wifi_set_promiscuous_rx_cb(&watchersWifiPromiscuousCallback);
     
@@ -632,6 +743,12 @@ void stopWatchersWatch() {
         pScan->stop();
         pScan->clearResults();
     }
+
+    // This mode used to leave promiscuous mode and the rx callback running
+    // after a mode switch; only watchersRunning=false kept the callback quiet.
+    esp_wifi_set_promiscuous(false);
+    esp_wifi_set_promiscuous_rx_cb(NULL);
+
     ESP_LOGI(TAG, "Watcher's Watch mode stopped.");
 }
 
@@ -653,18 +770,33 @@ String getWatchersTargetsJson() {
     if (watchersMutex != NULL && xSemaphoreTake(watchersMutex, pdMS_TO_TICKS(200)) == pdTRUE) {
         doc["count"] = trackedTargets.size();
 
-        std::vector<WatcherTargetInfo> sortedTargets = trackedTargets;
-        std::sort(sortedTargets.begin(), sortedTargets.end(), [](const WatcherTargetInfo& a, const WatcherTargetInfo& b) {
-            return a.confidence > b.confidence;
+        // Round-robin selection by staleness. Sorting by RSSI or confidence
+        // structurally starves exactly what this mode now hunts: a weak,
+        // persistent, unsignatured radio across the street. Signature hits are
+        // pinned so the UI/alarm stays live on them; everything else takes
+        // turns, so any device surfaces within ceil(n/WATCHERS_MAX_REPORT) sec.
+        std::vector<size_t> order(trackedTargets.size());
+        for (size_t i = 0; i < order.size(); i++) order[i] = i;
+        std::sort(order.begin(), order.end(), [](size_t a, size_t b) {
+            bool ha = trackedTargets[a].confidence >= CONF_LIST_MIN;
+            bool hb = trackedTargets[b].confidence >= CONF_LIST_MIN;
+            if (ha != hb) return ha;
+            return trackedTargets[a].lastReportedMs < trackedTargets[b].lastReportedMs;
         });
+        if (order.size() > WATCHERS_MAX_REPORT) order.resize(WATCHERS_MAX_REPORT);
 
+        uint32_t nowMs = millis();
         JsonArray targetsArr = doc["targets"].to<JsonArray>();
-        for (const auto& t : sortedTargets) {
+        for (size_t idx : order) {
+            WatcherTargetInfo& t = trackedTargets[idx];
+            t.lastReportedMs = nowMs;
             JsonObject obj = targetsArr.add<JsonObject>();
             obj["mac"] = t.mac;
-            obj["name"] = t.name;
-            obj["type"] = t.type;
-            obj["matched_rule"] = t.matchedRule;
+            // Most harvested devices match no rule, so skip the empty strings —
+            // at 40 targets/sec those bytes are pure BLE airtime.
+            if (t.name.length() > 0)        obj["name"] = t.name;
+            if (t.type.length() > 0)        obj["type"] = t.type;
+            if (t.matchedRule.length() > 0) obj["matched_rule"] = t.matchedRule;
             obj["rssi"] = t.rssi;
             obj["first_seen_ms"] = t.firstSeenMs;
             obj["last_seen_ms"] = t.lastSeenMs;

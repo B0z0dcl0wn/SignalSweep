@@ -27,7 +27,7 @@ static TaskHandle_t shadowHopTaskHandle = NULL;
 // what it can hear, let the app (which has the GPS) do the correlation.
 // ponytail: caps below keep the 1 Hz BLE-NUS push from drowning in a crowded
 // RF environment. Raise SHADOW_MAX_REPORT if the link proves it can take it.
-#define SHADOW_MAX_REPORT   40      // strongest N reported per push
+#define SHADOW_MAX_REPORT   40      // N reported per push (round-robin, see below)
 #define SHADOW_MIN_COUNT    2       // ignore one-off blips (noise)
 #define SHADOW_STALE_MS     120000  // drop devices unheard for 2 min
 
@@ -60,6 +60,7 @@ static void upsertSighting(const String& mac, const String& name, const char* pr
         s.firstSeenMs = now;
         s.lastSeenMs = now;
         s.count = 1;
+        s.lastReportedMs = 0;
         sightings.push_back(s);
     }
     xSemaphoreGive(shadowMutex);
@@ -156,7 +157,10 @@ void startShadow() {
     // wantDuplicates=true: report every advertisement, not one per MAC, so a
     // persistently-present device's count climbs (that's the whole signal here).
     pScan->setAdvertisedDeviceCallbacks(&shadowScanCallbacks, true);
-    pScan->setActiveScan(true);
+    // Passive: a scan request would transmit SCAN_REQ at everything in range,
+    // announcing this device to anyone watching for BLE scanners. Harvesting
+    // sightings needs only the advertisement, so the scan response buys nothing.
+    pScan->setActiveScan(false);
     pScan->setInterval(100);
     // 50% BLE window (not 99) leaves the shared radio airtime for WiFi
     // promiscuous — Shadow needs both, so it can't hog the radio for BLE.
@@ -166,6 +170,8 @@ void startShadow() {
     // WiFi: promiscuous + channel hop
     WiFi.mode(WIFI_STA);
     WiFi.disconnect();
+    wifi_promiscuous_filter_t wfilter = { .filter_mask = WIFI_PROMIS_FILTER_MASK_MGMT };
+    esp_wifi_set_promiscuous_filter(&wfilter);
     esp_wifi_set_promiscuous(true);
     esp_wifi_set_promiscuous_rx_cb(&shadowWifiPromiscuousCallback);
 
@@ -206,22 +212,31 @@ String getShadowSightingsJson() {
     doc["name"] = "MODE_SHADOW";
 
     if (shadowMutex != NULL && xSemaphoreTake(shadowMutex, pdMS_TO_TICKS(200)) == pdTRUE) {
-        std::vector<ShadowSighting> report;
-        for (const auto& s : sightings) {
-            if (s.count >= SHADOW_MIN_COUNT) report.push_back(s);
+        // Round-robin by staleness, not by RSSI. Sorting the report by signal
+        // strength let a crowd of loud stationary devices push a persistent
+        // distant tail out of the top 40 forever — the phone would never
+        // accumulate the sightings the whole mode depends on. Taking turns
+        // guarantees every device surfaces within ceil(n/SHADOW_MAX_REPORT) sec.
+        std::vector<size_t> order;
+        for (size_t i = 0; i < sightings.size(); i++) {
+            if (sightings[i].count >= SHADOW_MIN_COUNT) order.push_back(i);
         }
-        std::sort(report.begin(), report.end(),
-                  [](const ShadowSighting& a, const ShadowSighting& b) { return a.rssi > b.rssi; });
-        if (report.size() > SHADOW_MAX_REPORT) report.resize(SHADOW_MAX_REPORT);
+        std::sort(order.begin(), order.end(), [](size_t a, size_t b) {
+            return sightings[a].lastReportedMs < sightings[b].lastReportedMs;
+        });
+        if (order.size() > SHADOW_MAX_REPORT) order.resize(SHADOW_MAX_REPORT);
 
-        doc["count"] = report.size();
+        doc["count"] = order.size();
         doc["total_seen"] = sightings.size();
 
+        uint32_t nowMs = millis();
         JsonArray arr = doc["targets"].to<JsonArray>();
-        for (const auto& s : report) {
+        for (size_t idx : order) {
+            ShadowSighting& s = sightings[idx];
+            s.lastReportedMs = nowMs;
             JsonObject obj = arr.add<JsonObject>();
             obj["mac"] = s.mac;
-            obj["name"] = s.name;
+            if (s.name.length() > 0) obj["name"] = s.name;
             obj["protocol"] = s.protocol;
             obj["rssi"] = s.rssi;
             obj["first_seen_ms"] = s.firstSeenMs;

@@ -16,6 +16,7 @@ struct ShadowSighting {
     uint32_t firstSeenMs;
     uint32_t lastSeenMs;
     uint32_t count;
+    uint32_t lastReportedMs;  // round-robin cursor: oldest reported goes first
 };
 
 /**

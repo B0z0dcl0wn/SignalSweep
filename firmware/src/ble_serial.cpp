@@ -19,6 +19,57 @@ static NimBLECharacteristic *pTxCharacteristic = nullptr;
 static NimBLECharacteristic *pRxCharacteristic = nullptr;
 static bool deviceConnected = false;
 
+/**
+ * @brief (Re)start advertising the Nordic UART Service.
+ *
+ * The app discovers this device by the NUS service UUID, with a "SignalSweep"
+ * name prefix as fallback (see requestDevice in app.js), so both have to be in
+ * the advertisement for a connection to be possible at all.
+ *
+ * Do NOT call setAdvertisementData() here. It pushes its payload to the
+ * controller immediately AND sets NimBLE's m_customAdvData flag, after which
+ * start() skips building the advertisement from addServiceUUID()/name
+ * (NimBLEAdvertising.cpp: `if (!m_customAdvData && !m_advDataSet)`). Passing it
+ * an empty NimBLEAdvertisementData therefore advertises an empty payload — no
+ * UUID, no name, nothing for the app to match, and no way to connect. That is
+ * exactly what the old restoreBleSerialAdvertising() did; it only ever made
+ * sense as a way to undo the ble_spoof custom payload, and ble_spoof is gone.
+ *
+ * ponytail: the second branch is kept live for CONFIG_BT_NIMBLE_EXT_ADV (BT5 /
+ * Coded-PHY Remote ID scanning — see platformio.ini). It is NOT currently
+ * enabled and is NOT known to work; finish and test it before turning the flag
+ * on, because getting it wrong costs the control link to the whole device.
+ */
+static void startNusAdvertising() {
+#if CONFIG_BT_NIMBLE_EXT_ADV
+    NimBLEExtAdvertising *pAdvertising = NimBLEDevice::getAdvertising();
+    pAdvertising->stop(0);
+
+    NimBLEExtAdvertisement adv;
+    adv.setLegacyAdvertising(true);
+    adv.setConnectable(true);
+    adv.setScannable(true);
+    adv.setFlags(BLE_HS_ADV_F_DISC_GEN | BLE_HS_ADV_F_BREDR_UNSUP);
+    adv.setCompleteServices(NimBLEUUID(SERVICE_UUID));
+
+    // The name has to go in the scan response: flags (3 B) + a 128-bit service
+    // UUID (18 B) + "SignalSweep" (13 B) = 34 B, over the 31-byte legacy PDU.
+    NimBLEExtAdvertisement rsp;
+    rsp.setLegacyAdvertising(true);
+    rsp.setName("SignalSweep");
+
+    pAdvertising->setInstanceData(0, adv);
+    pAdvertising->setScanResponseData(0, rsp);
+    pAdvertising->start(0);
+#else
+    NimBLEAdvertising *pAdvertising = NimBLEDevice::getAdvertising();
+    pAdvertising->stop();
+    pAdvertising->addServiceUUID(SERVICE_UUID);
+    pAdvertising->setScanResponse(true);   // name rides in the scan response
+    pAdvertising->start();
+#endif
+}
+
 class ServerCallbacks : public NimBLEServerCallbacks {
     void onConnect(NimBLEServer* pServer) override {
         deviceConnected = true;
@@ -30,7 +81,7 @@ class ServerCallbacks : public NimBLEServerCallbacks {
         deviceConnected = false;
         ESP_LOGI(TAG, "BLE Client Disconnected - Restarting Advertising");
         playDisconnectionChirp();
-        NimBLEDevice::startAdvertising();
+        startNusAdvertising();
     }
 };
 
@@ -166,22 +217,9 @@ void bleSerialInit() {
 
     pService->start();
 
-    NimBLEAdvertising *pAdvertising = NimBLEDevice::getAdvertising();
-    pAdvertising->addServiceUUID(SERVICE_UUID);
-    pAdvertising->setScanResponse(true);
-    pAdvertising->start();
+    startNusAdvertising();
 
     ESP_LOGI(TAG, "BLE Nordic UART Service started and advertising.");
-}
-
-void restoreBleSerialAdvertising() {
-    NimBLEAdvertising *pAdvertising = NimBLEDevice::getAdvertising();
-    NimBLEAdvertisementData emptyAdvert;
-    pAdvertising->setAdvertisementData(emptyAdvert); // Unsets custom payload
-    pAdvertising->addServiceUUID(SERVICE_UUID);
-    pAdvertising->setScanResponse(true);
-    pAdvertising->start();
-    ESP_LOGI(TAG, "Restored BLE Serial Advertising.");
 }
 
 bool isBleSerialConnected() {

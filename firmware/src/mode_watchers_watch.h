@@ -31,6 +31,7 @@ struct WatcherTargetInfo {
     uint32_t count;
     int confidence;   // 0-100, accumulated across matching signals
     String tier;      // "Confirmed" | "Likely" | "Possible"
+    uint32_t lastReportedMs;  // round-robin cursor: oldest reported goes first
 };
 
 /**

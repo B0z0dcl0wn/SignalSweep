@@ -9,11 +9,6 @@
 void bleSerialInit();
 
 /**
- * @brief Restore Nordic UART Service (NUS) advertisement payload
- */
-void restoreBleSerialAdvertising();
-
-/**
  * @brief Send string data over BLE TX characteristic (Notify) in MTU-sized chunks
  * @param data String data to send
  */

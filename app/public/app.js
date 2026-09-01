@@ -16,7 +16,6 @@
         let map = null;
         let polyline = null;
         let warFlockingPath = [];
-        let warFlockingMarkers = {};
 
         function initMap() {
             if (!window.L) return;
@@ -73,6 +72,32 @@
         let globalPhoneLocation = null;
         let gpsInitialized = false;
 
+        // One GPS fix. `acc` is the reported accuracy radius in metres and is
+        // load-bearing: an urban-canyon fix can be 100 m+ off, and a bad fix that
+        // seeds a cluster becomes the coordinate we would publish to OSM.
+        function onGpsFix(coords) {
+            globalPhoneLocation = {
+                lat: coords.latitude,
+                lng: coords.longitude,
+                acc: (coords.accuracy == null ? 9999 : coords.accuracy)
+            };
+            noteVisitEpoch(globalPhoneLocation);
+
+            if (currentActiveMode === 2 && map && polyline) {
+                const latlng = [coords.latitude, coords.longitude];
+                // Only extend the trail once we've actually moved. Appending
+                // every fix let a stationary phone with jittery GPS grow this
+                // array without bound.
+                const last = warFlockingPath[warFlockingPath.length - 1];
+                if (!last || haversineM({ lat: last[0], lng: last[1] },
+                                        { lat: latlng[0], lng: latlng[1] }) > 10) {
+                    warFlockingPath.push(latlng);
+                    polyline.setLatLngs(warFlockingPath);
+                }
+                map.setView(latlng);
+            }
+        }
+
         function initGPS() {
             if (gpsInitialized) return;
             if (window.Geolocation) {
@@ -80,52 +105,63 @@
                     if (status.location === 'granted' || status.coarseLocation === 'granted') {
                         gpsInitialized = true;
                         window.Geolocation.watchPosition({ enableHighAccuracy: true }, (pos, err) => {
-                            if (pos) {
-                                globalPhoneLocation = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-                                if (currentActiveMode === 2 && map && polyline) {
-                                    const latlng = [pos.coords.latitude, pos.coords.longitude];
-                                    warFlockingPath.push(latlng);
-                                    polyline.setLatLngs(warFlockingPath);
-                                    map.setView(latlng);
-                                }
-                            }
+                            if (pos) onGpsFix(pos.coords);
                         });
                     } else {
                         console.error('Geolocation permission denied');
                         showToast('Location permission denied!', '✕');
                     }
                 }).catch(err => console.error(err));
+            } else if (navigator.geolocation) {
+                // Browser fallback. window.Geolocation only exists in the
+                // Capacitor build, so without this every geo feature (the map
+                // trail, the fixed/mobile classifier, true-bearing radar) was
+                // silently inert during `npm run dev`.
+                gpsInitialized = true;
+                navigator.geolocation.watchPosition(
+                    (pos) => onGpsFix(pos.coords),
+                    (err) => console.error('Geolocation error', err),
+                    { enableHighAccuracy: true }
+                );
             }
         }
 
-        function setupGeiger() {
-            const geigerContainer = document.getElementById('geiger-container');
-            const toggle = document.getElementById('geiger-toggle');
-
-            toggle.addEventListener('click', () => {
-                geigerEnabled = !geigerEnabled;
-                if (geigerEnabled) {
-                    toggle.classList.add('active');
-                    geigerContainer.classList.add('active');
-                } else {
-                    toggle.classList.remove('active');
-                    geigerContainer.classList.remove('active');
-                    updateGeigerUI(-100);
-                }
-            });
+        // Escape untrusted text before it goes into innerHTML. Device names,
+        // SSIDs and GATT ASCII values are chosen by the device being observed —
+        // i.e. by exactly the hostile hardware this app exists to point at — so
+        // none of it may reach the DOM as markup.
+        function esc(v) {
+            if (v == null) return '';
+            return String(v).replace(/[&<>"']/g, (c) => (
+                { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+            ));
         }
 
         let gattProfileCache = {};
         let lastBanditData = null;
 
-        // ---- Shadow (tail detection) -------------------------------------
-        // The device reports what it hears; the phone knows where it is. A tail
-        // is a MAC that reappears near you at several *separate places*, not one
-        // that's merely loud. So we bucket each sighting into a GPS cluster and
-        // score on how many distinct clusters a device shows up in.
-        const SHADOW_CLUSTER_M = 200;   // >200m apart = a different place
-        const SHADOW_ALERT_CLUSTERS = 3;
-        let shadowSeen = {};            // mac -> {clusters:[{lat,lng}], first,last,rssi,name,proto,count}
+        // ---- Shared sighting store ---------------------------------------
+        // The device reports what it hears; the phone knows where it is. Every
+        // mode's telemetry lands in ONE store, and the two questions this
+        // project actually asks are two queries against it:
+        //
+        //   seen in many separate places      -> mobile   (something tailing you)
+        //   seen in ONE place, on many visits -> fixed    (bolted to a pole)
+        //
+        // The "fixed" test is why Watcher's Watch no longer depends on the
+        // signature list to find a camera: a pole-mounted radio has a
+        // distinctive geospatial signature no matter who made it. Signature
+        // matches now ride along as corroboration and labelling only.
+        const SIGHT_CLUSTER_M       = 200;   // >200 m apart = a different place
+        const SIGHT_ACCURACY_MAX_M  = 50;    // ignore fixes vaguer than this
+        const SIGHT_FIXED_VISITS    = 2;     // visits to one place that confirm infrastructure
+        const SIGHT_ALERT_CLUSTERS  = 3;     // places that escalate a tail to "following you"
+        const SIGHT_STORE_KEY       = 'sightStore';
+        const SIGHT_PRUNE_SINGLE_MS = 24 * 60 * 60 * 1000;       // one-hit wonders: 24 h
+        const SIGHT_PRUNE_STALE_MS  = 30 * 24 * 60 * 60 * 1000;  // anything at all: 30 d
+
+        // mac -> { clusters:[{lat,lng,n,visits,epoch}], first,last,count,rssi,name,proto,conf,rule,tier }
+        let sightStore = {};
 
         function haversineM(a, b) {
             const R = 6371000, toRad = d => d * Math.PI / 180;
@@ -135,26 +171,78 @@
             return 2 * R * Math.asin(Math.sqrt(s));
         }
 
+        // A "visit" is you leaving and coming back, not you lingering. Sitting in
+        // a cafe for an hour must count once, or every radio in the building
+        // would confirm as infrastructure. Rather than re-measure every cluster
+        // on every fix, count the phone's own travel: each time YOU move more
+        // than a cluster radius, the epoch ticks. A device heard in epoch 5 and
+        // again in epoch 40 was seen on two separate visits; one heard only
+        // while you sat still stays on one.
+        let visitEpoch = 0;
+        let visitEpochOrigin = null;
+
+        function noteVisitEpoch(loc) {
+            if (!loc || loc.acc > SIGHT_ACCURACY_MAX_M) return;
+            if (!visitEpochOrigin) { visitEpochOrigin = loc; return; }
+            if (haversineM(visitEpochOrigin, loc) > SIGHT_CLUSTER_M) {
+                visitEpoch++;
+                visitEpochOrigin = loc;
+            }
+        }
+
         // Fold one sighting into a device's record. Returns the updated record.
-        function shadowRecord(store, mac, loc, now, extra) {
+        function sightRecord(store, mac, loc, now, extra) {
             const rec = store[mac] || { clusters: [], first: now, last: now, count: 0,
-                                        rssi: -99, name: '', proto: '' };
+                                        rssi: -99, name: '', proto: '', conf: 0, rule: '', tier: '' };
             rec.last = now;
             rec.count++;
             if (extra) {
                 if (extra.rssi != null) rec.rssi = extra.rssi;
-                if (extra.name) rec.name = extra.name;
+                if (extra.name)  rec.name  = extra.name;
                 if (extra.proto) rec.proto = extra.proto;
+                if (extra.rule)  rec.rule  = extra.rule;
+                if (extra.tier)  rec.tier  = extra.tier;
+                if (extra.conf != null && extra.conf > (rec.conf || 0)) rec.conf = extra.conf;
             }
-            if (loc && loc.lat != null && loc.lng != null) {
-                const near = rec.clusters.some(c => haversineM(c, loc) <= SHADOW_CLUSTER_M);
-                if (!near) rec.clusters.push({ lat: loc.lat, lng: loc.lng });
+
+            // A vague fix is worse than no fix: it silently smears a cluster,
+            // and the centroid is the coordinate we would publish to OSM.
+            if (loc && loc.lat != null && loc.lng != null && loc.acc <= SIGHT_ACCURACY_MAX_M) {
+                let hit = null;
+                for (const c of rec.clusters) {
+                    if (haversineM(c, loc) <= SIGHT_CLUSTER_M) { hit = c; break; }
+                }
+                if (hit) {
+                    // Re-centre as a running mean. Clusters used to be seed
+                    // points that never moved, so one bad early fix anchored a
+                    // camera to the wrong corner permanently.
+                    hit.lat = (hit.lat * hit.n + loc.lat) / (hit.n + 1);
+                    hit.lng = (hit.lng * hit.n + loc.lng) / (hit.n + 1);
+                    hit.n++;
+                    if (hit.epoch !== visitEpoch) { hit.visits++; hit.epoch = visitEpoch; }
+                } else {
+                    rec.clusters.push({ lat: loc.lat, lng: loc.lng, n: 1, visits: 1, epoch: visitEpoch });
+                }
             }
             store[mac] = rec;
             return rec;
         }
 
-        // 0-100. Distinct places dominate; span of time and total distance help.
+        // Kept under its old name because Shadow and the self-test call it.
+        function shadowRecord(store, mac, loc, now, extra) {
+            return sightRecord(store, mac, loc, now, extra);
+        }
+
+        // The whole classifier. Two branches, one store.
+        function classify(rec) {
+            if (!rec || !rec.clusters) return 'candidate';
+            if (rec.clusters.length >= 2) return 'mobile';
+            if (rec.clusters.length === 1 && rec.clusters[0].visits >= SIGHT_FIXED_VISITS) return 'fixed';
+            return 'candidate';
+        }
+
+        // 0-100 for the mobile branch. Distinct places dominate; span of time
+        // and total distance help.
         function shadowScore(rec, now) {
             const places = rec.clusters.length;
             if (places < 2) return 0;   // one place is a neighbour, not a tail
@@ -169,34 +257,204 @@
             return Math.max(0, Math.min(100, Math.round(score)));
         }
 
-        // ponytail: runnable self-check for the clustering/scoring above —
-        // window.__shadowSelfTest() in the console returns true if sane.
-        window.__shadowSelfTest = function () {
-            const s = {}, t0 = 0;
-            const A = { lat: 30.2200, lng: -92.0200 };          // origin
-            const B = { lat: 30.2400, lng: -92.0200 };          // ~2.2 km north
-            const C = { lat: 30.2600, lng: -92.0200 };          // ~4.4 km north
-            // stationary device: many hits, one place -> not a tail
-            for (let i = 0; i < 20; i++) shadowRecord(s, 'AA', A, t0 + i * 1000, { rssi: -50 });
-            const stationary = shadowScore(s['AA'], t0 + 20000);
-            // follower: same MAC at three distinct places over 20 min
-            shadowRecord(s, 'BB', A, t0, { rssi: -60 });
-            shadowRecord(s, 'BB', B, t0 + 600000, { rssi: -65 });
-            const two = shadowScore(s['BB'], t0 + 600000);
-            shadowRecord(s, 'BB', C, t0 + 1200000, { rssi: -62 });
-            const three = shadowScore(s['BB'], t0 + 1200000);
-            const nearby = haversineM(A, { lat: 30.2201, lng: -92.0200 }) < SHADOW_CLUSTER_M;
-            const ok = stationary === 0 && s['AA'].clusters.length === 1 &&
-                       s['BB'].clusters.length === 3 && three > two && two > 0 && nearby;
-            console.log('[shadow self-test]', { stationary, two, three,
-                        clustersAA: s['AA'].clusters.length, clustersBB: s['BB'].clusters.length, ok });
+        // ---- Persistence --------------------------------------------------
+        // Confirming a fixed installation takes repeat visits, which means days,
+        // which means the store has to outlive the process. Randomized MACs never
+        // earn a second visit, so pruning them keeps this in the hundreds of
+        // records rather than the thousands, and localStorage stays viable.
+        // ponytail: move to IndexedDB only if this actually overflows.
+        function sightPrune(store, now) {
+            let dropped = 0;
+            for (const mac of Object.keys(store)) {
+                const rec = store[mac];
+                const age = now - (rec.last || 0);
+                if (age > SIGHT_PRUNE_STALE_MS ||
+                    ((rec.count || 0) <= 1 && age > SIGHT_PRUNE_SINGLE_MS)) {
+                    delete store[mac];
+                    dropped++;
+                }
+            }
+            return dropped;
+        }
+
+        function sightStoreLoad() {
+            try {
+                const raw = JSON.parse(localStorage.getItem(SIGHT_STORE_KEY) || '{}');
+                sightStore = (raw && typeof raw === 'object') ? raw : {};
+            } catch (e) { sightStore = {}; }
+            sightPrune(sightStore, Date.now());
+        }
+
+        let sightSaveTimer = null;
+        function sightStoreSave() {
+            if (sightSaveTimer) return;          // throttle: at most one write per 10 s
+            sightSaveTimer = setTimeout(() => {
+                sightSaveTimer = null;
+                try {
+                    localStorage.setItem(SIGHT_STORE_KEY, JSON.stringify(sightStore));
+                } catch (e) {
+                    // Quota blown despite pruning: drop the weakest half rather
+                    // than silently failing every future write.
+                    console.warn('sightStore write failed, pruning harder', e);
+                    const macs = Object.keys(sightStore)
+                        .sort((a, b) => (sightStore[a].count || 0) - (sightStore[b].count || 0));
+                    macs.slice(0, Math.floor(macs.length / 2)).forEach(m => delete sightStore[m]);
+                    try { localStorage.setItem(SIGHT_STORE_KEY, JSON.stringify(sightStore)); } catch (e2) {}
+                }
+            }, 10000);
+        }
+
+        // ponytail: runnable self-check for the store, the visit logic, the
+        // classifier and the escaper. window.__sightStoreSelfTest() in the
+        // console (or `node app.js` headless) returns true if sane.
+        function __sightStoreSelfTest() {
+            const results = {};
+            const A = { lat: 30.2200, lng: -92.0200, acc: 10 };   // origin
+            const B = { lat: 30.2400, lng: -92.0200, acc: 10 };   // ~2.2 km north
+            const C = { lat: 30.2600, lng: -92.0200, acc: 10 };   // ~4.4 km north
+
+            const savedEpoch = visitEpoch, savedOrigin = visitEpochOrigin;
+            const reset = () => { visitEpoch = 0; visitEpochOrigin = null; };
+
+            // 1. Lingering in one place is ONE visit, however many hits.
+            reset();
+            let s1 = {};
+            for (let i = 0; i < 50; i++) {
+                noteVisitEpoch(A);
+                sightRecord(s1, 'AA', A, i * 1000, { rssi: -50 });
+            }
+            results.lingerVisits = s1['AA'].clusters[0].visits;      // expect 1
+            results.lingerKind = classify(s1['AA']);                 // expect 'candidate'
+
+            // 2. Leave and come back -> a second visit -> 'fixed'.
+            reset();
+            let s2 = {};
+            noteVisitEpoch(A); sightRecord(s2, 'CAM', A, 0, { rssi: -70 });
+            noteVisitEpoch(B);                       // travelled away: epoch ticks
+            noteVisitEpoch(A);                       // came back: ticks again
+            sightRecord(s2, 'CAM', A, 3600000, { rssi: -70 });
+            results.returnVisits = s2['CAM'].clusters[0].visits;     // expect 2
+            results.returnClusters = s2['CAM'].clusters.length;      // expect 1
+            results.returnKind = classify(s2['CAM']);                // expect 'fixed'
+
+            // 3. Heard in several distinct places -> mobile, not fixed.
+            reset();
+            let s3 = {};
+            noteVisitEpoch(A); sightRecord(s3, 'TAIL', A, 0, { rssi: -60 });
+            noteVisitEpoch(B); sightRecord(s3, 'TAIL', B, 600000, { rssi: -65 });
+            noteVisitEpoch(C); sightRecord(s3, 'TAIL', C, 1200000, { rssi: -62 });
+            results.tailClusters = s3['TAIL'].clusters.length;       // expect 3
+            results.tailKind = classify(s3['TAIL']);                 // expect 'mobile'
+            results.tailScore = shadowScore(s3['TAIL'], 1200000);    // expect > 0
+
+            // 4. A vague fix must not place a device at all.
+            reset();
+            let s4 = {};
+            sightRecord(s4, 'VAGUE', { lat: 30.22, lng: -92.02, acc: 500 }, 0, { rssi: -60 });
+            results.vagueClusters = s4['VAGUE'].clusters.length;     // expect 0
+            results.vagueKind = classify(s4['VAGUE']);               // expect 'candidate'
+
+            // 5. Centroid re-centres toward the mean instead of sticking to the
+            //    first (possibly bad) fix.
+            reset();
+            let s5 = {};
+            sightRecord(s5, 'DRIFT', { lat: 30.0000, lng: -92.0000, acc: 10 }, 0, {});
+            sightRecord(s5, 'DRIFT', { lat: 30.0010, lng: -92.0000, acc: 10 }, 1, {});
+            results.centroidLat = s5['DRIFT'].clusters[0].lat;       // expect ~30.0005
+            results.centroidMoved = Math.abs(s5['DRIFT'].clusters[0].lat - 30.0005) < 1e-6;
+
+            // 6. Pruning drops one-hit wonders older than a day, keeps repeats.
+            const now = Date.now();
+            const s6 = {
+                ONEHIT: { clusters: [], first: 0, last: now - 48 * 3600 * 1000, count: 1 },
+                REPEAT: { clusters: [], first: 0, last: now - 48 * 3600 * 1000, count: 9 },
+                ANCIENT: { clusters: [], first: 0, last: now - 40 * 24 * 3600 * 1000, count: 9 }
+            };
+            sightPrune(s6, now);
+            results.prunedOneHit = !('ONEHIT' in s6);                // expect true
+            results.keptRepeat = ('REPEAT' in s6);                   // expect true
+            results.prunedAncient = !('ANCIENT' in s6);              // expect true
+
+            // 7. A hostile device name cannot become markup.
+            const evil = '<img src=x onerror="alert(1)">';
+            results.escaped = esc(evil);
+            results.escapedSafe = results.escaped.indexOf('<') === -1 &&
+                                  results.escaped.indexOf('"') === -1;
+
+            visitEpoch = savedEpoch; visitEpochOrigin = savedOrigin;
+
+            const ok = results.lingerVisits === 1 &&
+                       results.lingerKind === 'candidate' &&
+                       results.returnVisits === 2 &&
+                       results.returnClusters === 1 &&
+                       results.returnKind === 'fixed' &&
+                       results.tailClusters === 3 &&
+                       results.tailKind === 'mobile' &&
+                       results.tailScore > 0 &&
+                       results.vagueClusters === 0 &&
+                       results.vagueKind === 'candidate' &&
+                       results.centroidMoved &&
+                       results.prunedOneHit && results.keptRepeat && results.prunedAncient &&
+                       results.escapedSafe;
+
+            results.ok = ok;
+            console.log('[sightStore self-test]', results);
             return ok;
-        };
+        }
+        if (typeof window !== 'undefined') window.__sightStoreSelfTest = __sightStoreSelfTest;
+
+        // Field-debugging helper: what does the store actually think right now?
+        // window.__sightDump()        -> everything, worst-to-best
+        // window.__sightDump('fixed') -> just the confirmed installations
+        function __sightDump(kind) {
+            const rows = Object.entries(sightStore).map(([mac, rec]) => ({
+                mac,
+                kind: classify(rec),
+                places: rec.clusters.length,
+                visits: rec.clusters.length === 1 ? rec.clusters[0].visits : '-',
+                hits: rec.count,
+                rssi: rec.rssi,
+                proto: rec.proto,
+                name: rec.name,
+                conf: rec.conf,
+                rule: rec.rule,
+                mine: shadowWhitelist.has(mac),
+                at: rec.clusters.length === 1
+                    ? rec.clusters[0].lat.toFixed(5) + ',' + rec.clusters[0].lng.toFixed(5) : ''
+            })).filter(r => !kind || r.kind === kind);
+            console.table(rows.sort((a, b) => b.hits - a.hits));
+            console.log('epoch=' + visitEpoch + ' (ticks each time YOU move >' + SIGHT_CLUSTER_M + ' m)',
+                        'stored=' + Object.keys(sightStore).length,
+                        'gps=', globalPhoneLocation);
+            return rows.length;
+        }
+        if (typeof window !== 'undefined') window.__sightDump = __sightDump;
+
+        // Ingest one telemetry batch from any mode into the shared store.
+        function sightIngest(targets, protoDefault) {
+            const now = Date.now();
+            const loc = globalPhoneLocation;
+            (targets || []).forEach(t => {
+                const mac = t.mac || '??';
+                if (shadowWhitelist.has(mac)) return;
+                sightRecord(sightStore, mac, loc, now, {
+                    rssi: t.rssi,
+                    name: t.name,
+                    proto: t.protocol || protoDefault,
+                    conf: t.confidence,
+                    rule: t.matched_rule,
+                    tier: t.tier
+                });
+            });
+            sightStoreSave();
+        }
 
         // Whitelist: your own gear (car AP, phone, earbuds) travels every place
-        // you do, so it always scores as a "tail". Mark it yours once and Shadow
-        // filters it out for good — what's left is genuinely foreign. Per-viewer,
-        // persisted on the phone.
+        // you do, so it always scores as a "tail" — and your home router sits at
+        // exactly one place you keep returning to, so it always confirms as
+        // "fixed". Marking it yours once suppresses it in BOTH branches, which
+        // is why the whitelist lives with the shared store rather than in
+        // Shadow. Per-viewer, persisted on the phone.
         let shadowWhitelist = new Set();
         try { shadowWhitelist = new Set(JSON.parse(localStorage.getItem('shadowWhitelist') || '[]')); } catch (e) {}
 
@@ -205,19 +463,29 @@
         }
         function shadowWhitelistAdd(mac) {
             shadowWhitelist.add(mac);
-            delete shadowSeen[mac];          // drop its history so it stops scoring
+            delete sightStore[mac];          // drop its history so it stops scoring
             shadowWhitelistSave();
-            showToast('Marked as yours — hidden from Shadow', '✓');
-            shadowRenderList();
+            sightStoreSave();
+            showToast('Marked as yours — hidden from now on', '✓');
+            if (currentActiveMode === 4) shadowRenderList();
+            else if (currentActiveMode === 2) watchersRenderList();
         }
         function shadowWhitelistClear() {
             shadowWhitelist.clear();
             shadowWhitelistSave();
             showToast('Whitelist cleared', '✓');
-            shadowRenderList();
+            if (currentActiveMode === 4) shadowRenderList();
+            else if (currentActiveMode === 2) watchersRenderList();
         }
         window.shadowWhitelistAdd = shadowWhitelistAdd;
         window.shadowWhitelistClear = shadowWhitelistClear;
+
+        // The 16-bit slice of a UUID in any form: '1802', '00001802-0000-...'.
+        function short16(uuid) {
+            if (!uuid) return '';
+            const u = String(uuid).toLowerCase();
+            return u.length >= 36 ? u.slice(4, 8) : u.replace(/^0+/, '').padStart(4, '0');
+        }
 
         function translateUUID(uuid) {
             const shortUuid = uuid.length === 36 ? uuid.split('-')[0].replace(/^0+/, '') : uuid;
@@ -258,17 +526,21 @@
                                     // Ring/Find: if the tracker exposes the Immediate Alert
                                     // Service (0x1802/0x2A06), offer a button to make it chirp
                                     // so it can be physically located and removed.
-                                    if (srv.uuid.toLowerCase() === '1802' && ch.uuid.toLowerCase() === '2a06') {
+                                    // NimBLE reports UUIDs in their full 128-bit
+                                    // form, so comparing against the bare 16-bit
+                                    // shorthand never matched and this button
+                                    // never appeared. Compare on the 16-bit slice.
+                                    if (short16(srv.uuid) === '1802' && short16(ch.uuid) === '2a06') {
                                         html += `<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                                                    <div><span style="color: var(--text-muted);">└─</span> ${chName} <span style="color: var(--text-muted); font-size: 0.65rem;">(${ch.uuid})</span></div>
-                                                    <button onclick="triggerBleWrite('${data.mac}', '${srv.uuid}', '${ch.uuid}', '02')" style="background: rgba(0, 242, 254, 0.15); border: 1px solid var(--accent-cyan); color: var(--accent-cyan); padding: 2px 8px; border-radius: 4px; cursor: pointer; font-size: 0.7rem; font-weight: bold;">🔔 RING / FIND</button>
+                                                    <div><span style="color: var(--text-muted);">└─</span> ${esc(chName)} <span style="color: var(--text-muted); font-size: 0.65rem;">(${esc(ch.uuid)})</span></div>
+                                                    <button onclick="triggerBleWrite('${esc(data.mac)}', '${esc(srv.uuid)}', '${esc(ch.uuid)}', '02')" style="background: rgba(0, 242, 254, 0.15); border: 1px solid var(--accent-cyan); color: var(--accent-cyan); padding: 2px 8px; border-radius: 4px; cursor: pointer; font-size: 0.7rem; font-weight: bold;">🔔 RING / FIND</button>
                                                  </div>`;
                                     } else {
-                                        html += `<div><span style="color: var(--text-muted);">└─</span> ${chName} <span style="color: var(--text-muted); font-size: 0.65rem;">(${ch.uuid})</span></div>`;
+                                        html += `<div><span style="color: var(--text-muted);">└─</span> ${esc(chName)} <span style="color: var(--text-muted); font-size: 0.65rem;">(${esc(ch.uuid)})</span></div>`;
                                         if (ch.value_hex) {
                                             html += `<div style="margin-left: 20px; margin-top: 2px;">`;
-                                            html += `<span style="color: var(--accent-amber);">HEX:</span> ${ch.value_hex}<br>`;
-                                            html += `<span style="color: var(--accent-cyan);">TXT:</span> ${ch.value_ascii}`;
+                                            html += `<span style="color: var(--accent-amber);">HEX:</span> ${esc(ch.value_hex)}<br>`;
+                                            html += `<span style="color: var(--accent-cyan);">TXT:</span> ${esc(ch.value_ascii)}`;
                                             html += `</div>`;
                                         }
                                     }
@@ -295,6 +567,9 @@
                 } else if (data.mode === 1) {
                     if (data.targets) {
                         lastBanditData = data;
+                        // Bandit's BLE sightings feed the shared store too, so a
+                        // tracker's location history survives a mode switch.
+                        sightIngest(data.targets, 'BLE');
                         renderTargets(1, data.targets);
                     }
                     // Clear Target is the only way out when the locked device
@@ -302,10 +577,15 @@
                     const btnClear = document.getElementById('btn-clear-lock');
                     if (btnClear) btnClear.style.display = data.locked_mac ? 'block' : 'none';
                 } else if (data.mode === 2) {
-                    // War Flocking: render the surveillance list (map trail is driven by GPS).
-                    if (data.targets) renderTargets(2, data.targets);
+                    // War Flocking: the firmware now harvests everything it hears
+                    // and the phone decides what is bolted down. Signature
+                    // confidence arrives as an annotation, not a filter.
+                    if (data.targets) renderWatchers(data.targets);
                 } else if (data.mode === 3) {
-                    // Sky Sweeper: render the drone list (radar blips handled in renderTargets).
+                    // Sky Sweeper: render the drone list (radar blips handled in
+                    // renderTargets). Deliberately NOT fed into the sighting
+                    // store — aircraft are neither fixed nor tailing you, and
+                    // their rotating MACs would just be noise in it.
                     if (data.targets) renderTargets(3, data.targets);
                 } else if (data.mode === 4) {
                     // Shadow: fold each sighting into its GPS cluster and render tails.
@@ -348,40 +628,68 @@
             }
         }
     
+        // Export confirmed fixed installations as OSM XML, one node per device
+        // at ITS OWN cluster centroid.
+        //
+        // The previous version never ran: it read a `trackedTargets` variable
+        // that does not exist in the app, so every click threw a ReferenceError.
+        // It also stamped every node with the phone's last position and labelled
+        // everything a Flock ALPR. Publishing a wrong vendor claim against a
+        // real coordinate to a shared map is worse than publishing nothing, so
+        // this only emits devices the geospatial test confirmed, and only adds a
+        // vendor tag when a signature actually matched at Confirmed level.
+        function xmlAttr(v) {
+            return String(v == null ? '' : v)
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;').replace(/'/g, '&apos;');
+        }
+
+        function collectFixedDevices() {
+            return Object.entries(sightStore)
+                .filter(([mac, rec]) => !shadowWhitelist.has(mac) && classify(rec) === 'fixed')
+                .map(([mac, rec]) => ({ mac, rec, cluster: rec.clusters[0] }));
+        }
+
         function exportOSM() {
-            const targets = Object.values(trackedTargets);
-            if (targets.length === 0) {
-                showToast('No targets logged yet.', '✕');
+            const fixed = collectFixedDevices();
+            if (fixed.length === 0) {
+                showToast('No confirmed fixed installations yet.', '✕');
                 return;
             }
 
-            let osm = `<?xml version='1.0' encoding='UTF-8'?>\n<osm version="0.6" generator="SignalSweep">\n`;
-            let idCounter = -1; // Negative IDs for new elements
+            let osm = '<?xml version="1.0" encoding="UTF-8"?>\n<osm version="0.6" generator="SignalSweep">\n';
+            let idCounter = -1;   // negative IDs mark not-yet-uploaded elements
 
-            targets.forEach(t => {
-                const lat = warFlockingPath.length > 0 ? warFlockingPath[warFlockingPath.length-1][0] : 0;
-                const lon = warFlockingPath.length > 0 ? warFlockingPath[warFlockingPath.length-1][1] : 0;
-                
-                osm += `  <node id="${idCounter}" lat="${lat}" lon="${lon}">\n`;
-                osm += `    <tag k="man_made" v="surveillance"/>\n`;
-                osm += `    <tag k="surveillance:type" v="ALPR"/>\n`;
-                osm += `    <tag k="manufacturer" v="Flock Safety"/>\n`;
-                osm += `    <tag k="name" v="${t.n || t.m}"/>\n`;
-                osm += `    <tag k="mac" v="${t.m}"/>\n`;
-                osm += `  </node>\n`;
+            fixed.forEach(({ mac, rec, cluster }) => {
+                osm += '  <node id="' + idCounter + '" lat="' + cluster.lat.toFixed(7) +
+                       '" lon="' + cluster.lng.toFixed(7) + '">\n';
+                // Always true of anything that got here: a radio fixed in place.
+                osm += '    <tag k="man_made" v="surveillance"/>\n';
+                // Only a Confirmed signature match earns a vendor/type claim.
+                if (rec.conf >= 75 && rec.rule) {
+                    osm += '    <tag k="surveillance:type" v="ALPR"/>\n';
+                    // The vendor category ("Flock Safety"), not the rule name.
+                    if (rec.cat) osm += '    <tag k="manufacturer" v="' + xmlAttr(rec.cat) + '"/>\n';
+                    osm += '    <tag k="signalsweep:rule" v="' + xmlAttr(rec.rule) + '"/>\n';
+                }
+                if (rec.name) osm += '    <tag k="name" v="' + xmlAttr(rec.name) + '"/>\n';
+                osm += '    <tag k="mac" v="' + xmlAttr(mac) + '"/>\n';
+                osm += '    <tag k="source" v="SignalSweep; ' + cluster.visits + ' visits, ' +
+                       rec.count + ' sightings"/>\n';
+                osm += '  </node>\n';
                 idCounter--;
             });
 
-            osm += `</osm>`;
-            
+            osm += '</osm>';
+
             const element = document.createElement('a');
             element.setAttribute('href', 'data:text/xml;charset=utf-8,' + encodeURIComponent(osm));
-            element.setAttribute('download', `flock_targets_${new Date().getTime()}.osm`);
+            element.setAttribute('download', 'signalsweep_fixed_' + new Date().getTime() + '.osm');
             element.style.display = 'none';
             document.body.appendChild(element);
             element.click();
             document.body.removeChild(element);
-            showToast('OSM Export Downloaded!', '✓');
+            showToast('Exported ' + fixed.length + ' confirmed installation(s).', '✓');
         }
 
         let bleDevice = null;
@@ -492,11 +800,11 @@
                 }
 
                 bleDevice = device;
-                try { localStorage.setItem('lastDeviceId', device.deviceId); } catch (e) {}
                 await subscribeNative(device.deviceId);
 
                 updateConnectionUI(true, 'BLE');
-                sendCommand({ get: 'status' });
+                // (No status request: the firmware has no "get" command — the
+                // current mode arrives on its next periodic push.)
             } catch (err) {
                 console.error('Native BLE Connect Failed:', err);
                 updateConnectionUI(false);
@@ -516,10 +824,10 @@
                 if (device) {
                     if (connectionType !== 'BLE' || !bleDevice) {
                         bleDevice = device;
-                        try { localStorage.setItem('lastDeviceId', device.deviceId); } catch (e) {}
                         try { await subscribeNative(device.deviceId); } catch (e) { /* already subscribed */ }
                         updateConnectionUI(true, 'BLE');
-                        sendCommand({ get: 'status' });
+                        // (No status request: the firmware has no "get" command — the
+                // current mode arrives on its next periodic push.)
                     }
                 } else if (connectionType === 'BLE') {
                     // We think we're connected but the link is really gone.
@@ -585,7 +893,8 @@
                 updateConnectionUI(true, 'BLE');
 
                 // Send request for current status/mode
-                sendCommand({ get: 'status' });
+                // (No status request: the firmware has no "get" command — the
+                // current mode arrives on its next periodic push.)
 
             } catch (err) {
                 console.error('Web Bluetooth connection failed:', err);
@@ -634,7 +943,8 @@
                 updateConnectionUI(true, 'SERIAL');
 
                 // Send request for current status/mode
-                sendCommand({ get: 'status' });
+                // (No status request: the firmware has no "get" command — the
+                // current mode arrives on its next periodic push.)
 
                 // Start async serial reading loop
                 readSerialLoop();
@@ -678,16 +988,6 @@
                     processIncomingData(trimmed);
                 }
             }
-        }
-
-        function handleDeviceData(data) {
-            if (typeof data.mode === 'number') {
-                updateActiveUI(data.mode);
-            }
-            if (Array.isArray(data.targets)) {
-                renderTargets(currentActiveMode >= 0 ? currentActiveMode : (data.mode || 1), data.targets);
-            }
-            // Removed periodic status toast to prevent spam
         }
 
         // Send Command to ESP32 over BLE or Serial
@@ -847,8 +1147,64 @@
             });
         }
 
+        // Remote ID broadcasts the OPERATOR's position, not just the aircraft's.
+        // That is the single most useful field in the whole standard for this
+        // project, and it used to arrive on the wire and be thrown away. Drone
+        // and pilot both get a marker, joined by a line so it is obvious which
+        // operator is flying which aircraft.
+        let droneMarkers = {};
+
+        function updateDroneMarkers(targets) {
+            if (!map || !window.L) return;
+            const seen = {};
+            (targets || []).forEach(t => {
+                const key = t.uas_id || t.basic_id || t.mac;
+                if (!key) return;
+                const dLat = (t.latitude != null) ? t.latitude : t.drone_lat;
+                const dLng = (t.longitude != null) ? t.longitude : t.drone_long;
+                const oLat = (t.operator_latitude != null) ? t.operator_latitude : t.pilot_lat;
+                const oLng = (t.operator_longitude != null) ? t.operator_longitude : t.pilot_long;
+                const hasDrone = dLat != null && dLng != null && (dLat !== 0 || dLng !== 0);
+                const hasPilot = oLat != null && oLng != null && (oLat !== 0 || oLng !== 0);
+                if (!hasDrone && !hasPilot) return;
+
+                seen[key] = true;
+                let m = droneMarkers[key];
+                if (!m) {
+                    m = droneMarkers[key] = {
+                        drone: window.L.circleMarker([0, 0], { radius: 6, color: '#00f2fe', fillOpacity: 0.9 }),
+                        pilot: window.L.circleMarker([0, 0], { radius: 7, color: '#ff4d4d', fillOpacity: 0.9 }),
+                        link: window.L.polyline([], { color: '#ff4d4d', weight: 1, dashArray: '4 4' })
+                    };
+                }
+                if (hasDrone) {
+                    m.drone.setLatLng([dLat, dLng]).addTo(map)
+                        .bindPopup('Drone ' + esc(key) + '<br>' + Number(dLat).toFixed(5) + ', ' + Number(dLng).toFixed(5));
+                } else if (map.hasLayer(m.drone)) { map.removeLayer(m.drone); }
+
+                if (hasPilot) {
+                    m.pilot.setLatLng([oLat, oLng]).addTo(map)
+                        .bindPopup('PILOT of ' + esc(key) + '<br>' + Number(oLat).toFixed(5) + ', ' + Number(oLng).toFixed(5) +
+                                   (t.operator_id ? '<br>ID: ' + esc(t.operator_id) : ''));
+                } else if (map.hasLayer(m.pilot)) { map.removeLayer(m.pilot); }
+
+                if (hasDrone && hasPilot) {
+                    m.link.setLatLngs([[dLat, dLng], [oLat, oLng]]).addTo(map);
+                } else if (map.hasLayer(m.link)) { map.removeLayer(m.link); }
+            });
+
+            // Drop markers for drones that have aged out of the target list.
+            Object.keys(droneMarkers).forEach(k => {
+                if (seen[k]) return;
+                const m = droneMarkers[k];
+                [m.drone, m.pilot, m.link].forEach(l => { if (map.hasLayer(l)) map.removeLayer(l); });
+                delete droneMarkers[k];
+            });
+        }
+
         function renderTargets(mode, targets) {
             detectedDevices = targets || [];
+            if (mode === 3) updateDroneMarkers(targets);
 
             const list = document.getElementById('targets-list');
             const radarContainer = document.getElementById('radar-container');
@@ -876,14 +1232,24 @@
                 let name = t.name || t.uas_id || t.type || 'Unknown Target';
                 if (mode === 2) name = t.name || 'Surveillance Device';
                 let mac = t.mac || '00:00:00:00:00:00';
+                // Everything below is chosen by the observed device, so it is
+                // escaped before it reaches innerHTML.
+                const nameHtml = esc(name);
+                const macHtml = esc(mac);
                 let rssi = t.rssi || -99;
                 let isLocked = t.is_locked ? 'locked' : '';
 
                 let details = '';
                 if (mode === 1) {
-                    details = `Type: ${t.type || 'Generic BLE'} | Count: ${t.count || 1}`;
+                    details = `Type: ${esc(t.type || 'Generic BLE')} | Count: ${esc(t.count || 1)}`;
                 } else if (mode === 3) {
-                    details = `Speed: ${t.speed || 0}m/s | Alt: ${t.altitude || 0}m | Pilot: ${t.operator_id || 'Unknown'} | Src: ${t.source || 'BLE'}`;
+                    // The pilot's own coordinates are the point of Remote ID —
+                    // show them, and drop a marker (see updatePilotMarkers).
+                    const opLat = (t.operator_latitude != null) ? t.operator_latitude : t.pilot_lat;
+                    const opLng = (t.operator_longitude != null) ? t.operator_longitude : t.pilot_long;
+                    const hasOp = opLat != null && opLng != null && (opLat !== 0 || opLng !== 0);
+                    const pilotPos = hasOp ? ` @ ${Number(opLat).toFixed(5)}, ${Number(opLng).toFixed(5)}` : '';
+                    details = `Speed: ${esc(t.speed || 0)}m/s | Alt: ${esc(t.altitude != null ? t.altitude : (t.drone_altitude || 0))}m | Pilot: ${esc(t.operator_id || 'Unknown')}${pilotPos} | Src: ${esc(t.source || 'BLE')}`;
                     
                     if (radarContainer) {
                         if (!radarAngles[mac]) radarAngles[mac] = Math.random() * Math.PI * 2;
@@ -911,7 +1277,7 @@
                         radarContainer.appendChild(blip);
                     }
                 } else if (mode === 2) {
-                    details = `Type: ${t.type || 'Flock/Raven'} | Count: ${t.count || 1}`;
+                    details = `Type: ${esc(t.type || 'Unclassified')} | Count: ${esc(t.count || 1)}`;
                 }
 
                 let gattHtml = '';
@@ -948,18 +1314,18 @@
                     const color = tier === 'Confirmed' ? 'var(--accent-red)'
                                 : tier === 'Likely' ? 'var(--accent-amber)'
                                 : 'var(--text-muted)';
-                    badgeHtml = `<span style="margin-left:8px; font-size:0.65rem; font-weight:bold; text-transform:uppercase; padding:2px 6px; border-radius:4px; border:1px solid ${color}; color:${color};">${tier} ${conf}%</span>`;
+                    badgeHtml = `<span style="margin-left:8px; font-size:0.65rem; font-weight:bold; text-transform:uppercase; padding:2px 6px; border-radius:4px; border:1px solid ${color}; color:${color};">${esc(tier)} ${esc(conf)}%</span>`;
                 } else if (mode === 1 && (t.is_separated || (t.stalking_score || 0) >= 40)) {
                     const sep = t.is_separated ? ' · separated' : '';
-                    badgeHtml = `<span style="margin-left:8px; font-size:0.65rem; font-weight:bold; text-transform:uppercase; padding:2px 6px; border-radius:4px; border:1px solid var(--accent-red); color:var(--accent-red);">⚠ Stalking ${t.stalking_score || 0}${sep}</span>`;
+                    badgeHtml = `<span style="margin-left:8px; font-size:0.65rem; font-weight:bold; text-transform:uppercase; padding:2px 6px; border-radius:4px; border:1px solid var(--accent-red); color:var(--accent-red);">⚠ Stalking ${esc(t.stalking_score || 0)}${sep}</span>`;
                 }
 
                 html += `
-                <div class="target-card ${mode === 1 ? isLocked : ''}" ${mode === 1 ? `onclick="lockTarget('${mac}', ${t.is_locked})"` : ''}>
+                <div class="target-card ${mode === 1 ? isLocked : ''}${mode === 1 ? ' js-lock-row' : ''}" ${mode === 1 ? `data-mac="${macHtml}" data-locked="${t.is_locked ? '1' : '0'}"` : ''}>
                     <div style="display: flex; justify-content: space-between; width: 100%; align-items: center;">
                         <div>
-                            <h3 style="color: var(--accent-cyan); margin-bottom: 0.3rem; font-size: 1.1rem;">${name}${badgeHtml}</h3>
-                            <div style="font-size: 0.8rem; color: var(--text-muted)">MAC: ${mac} | ${details}</div>
+                            <h3 style="color: var(--accent-cyan); margin-bottom: 0.3rem; font-size: 1.1rem;">${nameHtml}${badgeHtml}</h3>
+                            <div style="font-size: 0.8rem; color: var(--text-muted)">MAC: ${macHtml} | ${details}</div>
                         </div>
                         ${rssiSectionHtml}
                     </div>
@@ -969,76 +1335,169 @@
             list.innerHTML = html;
         }
 
-        // Shadow: fold a new batch of sightings into the running store, then render.
+        // ---- Rendering the two branches of the classifier -----------------
+        // Both lists are built from the same sightStore; they differ only in
+        // which side of classify() they show.
+
+        // Shared row chrome. `mac` goes into a data attribute, never into an
+        // onclick string, so a device cannot inject script through its address.
+        function sightRowOpen(mac, color) {
+            return '<div class="target-card js-sight-row" data-mac="' + esc(mac) +
+                   '" style="border-color:' + color + '; cursor:pointer;">';
+        }
+
+        function whitelistBar() {
+            if (shadowWhitelist.size === 0) return '';
+            return '<div style="text-align:center; padding:8px; margin-bottom:10px; font-size:0.75rem; color:var(--text-muted);">' +
+                   shadowWhitelist.size + ' device(s) marked yours · ' +
+                   '<a onclick="shadowWhitelistClear()" style="color:var(--accent-cyan); cursor:pointer; text-decoration:underline;">Clear</a></div>';
+        }
+
+        function noFixNotice(msg) {
+            return '<div class="mode-card" style="text-align:center; padding:2rem; color:var(--accent-amber); display:block; border-style:dashed;">' + esc(msg) + '</div>';
+        }
+
+        function emptyNotice(msg) {
+            return '<div class="mode-card" style="text-align:center; padding:2rem; color:var(--text-muted); display:block; border-style:dashed;">' + esc(msg) + '</div>';
+        }
+
+        // Delegated clicks: one listener for every generated row. Replaces the
+        // per-row onclick="...('<mac>')" strings, which interpolated a
+        // device-supplied value straight into executable code.
+        document.addEventListener('click', (ev) => {
+            if (!ev.target.closest) return;
+            const sightRow = ev.target.closest('.js-sight-row');
+            if (sightRow && sightRow.dataset.mac) {
+                shadowWhitelistAdd(sightRow.dataset.mac);
+                return;
+            }
+            const lockRow = ev.target.closest('.js-lock-row');
+            if (lockRow && lockRow.dataset.mac) {
+                lockTarget(lockRow.dataset.mac, lockRow.dataset.locked === '1');
+            }
+        });
+
+        // ---- Watcher's Watch (mode 2): the "fixed" branch -----------------
+        function renderWatchers(targets) {
+            sightIngest(targets, 'BLE');
+            watchersRenderList();
+        }
+
+        // A device pinned to ONE place across repeat visits is bolted to
+        // something. That test is vendor-agnostic, so this list finds cameras
+        // whose OUI is on no list anywhere; the signature match, when there is
+        // one, only labels what was already found geospatially.
+        function watchersRenderList() {
+            const list = document.getElementById('targets-list');
+            if (!list) return;
+            const loc = globalPhoneLocation;
+            const wl = whitelistBar();
+
+            if (!loc) {
+                list.innerHTML = wl + noFixNotice('Waiting for a GPS fix — drive or walk your route and anything bolted to a pole will confirm on the second pass.');
+                return;
+            }
+            if (loc.acc > SIGHT_ACCURACY_MAX_M) {
+                list.innerHTML = wl + noFixNotice('GPS accuracy is ' + Math.round(loc.acc) + ' m (need ' + SIGHT_ACCURACY_MAX_M + ' m). Sightings are still being collected but not placed — a vague fix would put a camera on the wrong corner.');
+                return;
+            }
+
+            const rows = Object.entries(sightStore)
+                .filter(([mac]) => !shadowWhitelist.has(mac))
+                .map(([mac, rec]) => ({ mac, rec, kind: classify(rec) }));
+
+            const fixed = rows.filter(r => r.kind === 'fixed')
+                .sort((a, b) => (b.rec.conf || 0) - (a.rec.conf || 0) ||
+                                (b.rec.clusters[0].visits - a.rec.clusters[0].visits));
+            const candidates = rows.filter(r => r.kind === 'candidate').length;
+
+            if (fixed.length === 0) {
+                list.innerHTML = wl + emptyNotice('Tracking ' + rows.length + ' device(s), ' + candidates +
+                    ' seen at one place so far. A device confirms as fixed infrastructure once you have passed it on ' +
+                    SIGHT_FIXED_VISITS + ' separate visits.');
+                return;
+            }
+
+            let html = wl;
+            fixed.forEach(({ mac, rec }) => {
+                const c = rec.clusters[0];
+                // Only a Confirmed signature match earns a vendor claim. The
+                // geospatial test says "this is infrastructure", not "this is a
+                // Flock camera" — and the wrong vendor name on a real location
+                // is worse than no name.
+                const named = (rec.conf >= 75 && rec.rule);
+                const color = named ? 'var(--accent-red)' : 'var(--accent-amber)';
+                const label = rec.name || (named ? rec.rule : 'Fixed installation');
+                const vendor = named ? '<span style="margin-left:8px; font-size:0.65rem; font-weight:bold; text-transform:uppercase; padding:2px 6px; border-radius:4px; border:1px solid ' + color + '; color:' + color + ';">' + esc(rec.tier || 'Confirmed') + '</span>' : '';
+                html += sightRowOpen(mac, color) +
+                    '<div style="display:flex; justify-content:space-between; width:100%; align-items:center;">' +
+                        '<div>' +
+                            '<h3 style="color:var(--accent-cyan); margin-bottom:0.3rem; font-size:1.1rem;">' + esc(label) + vendor + '</h3>' +
+                            '<div style="font-size:0.8rem; color:var(--text-muted)">MAC: ' + esc(mac) + ' | ' + esc(rec.proto || 'BLE') +
+                                ' | ' + c.visits + ' visits | ' + rec.count + ' hits' +
+                                (rec.rule ? ' | ' + esc(rec.rule) + ' (' + (rec.conf || 0) + ')' : ' | no signature match') + '</div>' +
+                            '<div style="font-size:0.7rem; color:var(--text-muted); margin-top:0.2rem;">' +
+                                c.lat.toFixed(5) + ', ' + c.lng.toFixed(5) + ' · tap if this is yours → hide it</div>' +
+                        '</div>' +
+                        '<div style="text-align:right;">' +
+                            '<div style="font-size:1.25rem; font-weight:bold; color:' + color + '">' + c.visits + '📍</div>' +
+                            '<div style="font-size:0.7rem; color:var(--text-muted)">' + esc(rec.rssi) + ' dBm</div>' +
+                        '</div>' +
+                    '</div></div>';
+            });
+            list.innerHTML = html;
+        }
+
+        // ---- Shadow (mode 4): the "mobile" branch -------------------------
         function renderShadow(sightings) {
-            shadowIngest(sightings);
+            sightIngest(sightings, 'BLE');
             shadowRenderList();
         }
 
-        // Fold sightings into the tail store, skipping anything the user has
-        // marked as their own.
-        function shadowIngest(sightings) {
-            const now = Date.now();
-            const loc = globalPhoneLocation;   // {lat,lng} from the phone GPS
-            (sightings || []).forEach(s => {
-                const mac = s.mac || '??';
-                if (shadowWhitelist.has(mac)) return;
-                shadowRecord(shadowSeen, mac, loc, now,
-                    { rssi: s.rssi, name: s.name, proto: s.protocol });
-            });
-        }
-
-        // Render the current store, ranked by how many distinct places each
-        // device has shadowed you. A small bar shows/clears your whitelist.
+        // Ranked by how many distinct places each device has shadowed you.
         function shadowRenderList() {
             const now = Date.now();
             const loc = globalPhoneLocation;
             const list = document.getElementById('targets-list');
             if (!list) return;
-
-            const wlBar = shadowWhitelist.size > 0
-                ? `<div style="text-align:center; padding:8px; margin-bottom:10px; font-size:0.75rem; color:var(--text-muted);">${shadowWhitelist.size} device(s) marked yours · <a onclick="shadowWhitelistClear()" style="color:var(--accent-cyan); cursor:pointer; text-decoration:underline;">Clear</a></div>`
-                : '';
+            const wl = whitelistBar();
 
             if (!loc) {
-                list.innerHTML = wlBar + '<div class="mode-card" style="text-align:center; padding:2rem; color:var(--accent-amber); display:block; border-style:dashed;">Waiting for GPS fix — move around and Shadow will flag anything that follows you.</div>';
+                list.innerHTML = wl + noFixNotice('Waiting for GPS fix — move around and Shadow will flag anything that follows you.');
                 return;
             }
 
-            const rows = Object.entries(shadowSeen)
+            const rows = Object.entries(sightStore)
                 .filter(([mac]) => !shadowWhitelist.has(mac))
                 .map(([mac, rec]) => ({ mac, rec, score: shadowScore(rec, now) }))
                 .sort((a, b) => b.score - a.score);
 
             const tails = rows.filter(r => r.score > 0);
             if (tails.length === 0) {
-                list.innerHTML = wlBar + `<div class="mode-card" style="text-align:center; padding:2rem; color:var(--text-muted); display:block; border-style:dashed;">Tracking ${rows.length} device(s) across your route… none seen in 2+ separate places yet.</div>`;
+                list.innerHTML = wl + emptyNotice('Tracking ' + rows.length + ' device(s) across your route… none seen in 2+ separate places yet.');
                 return;
             }
 
-            let html = wlBar;
+            let html = wl;
             tails.forEach(({ mac, rec, score }) => {
-                const alert = rec.clusters.length >= SHADOW_ALERT_CLUSTERS;
+                const alert = rec.clusters.length >= SIGHT_ALERT_CLUSTERS;
                 const color = alert ? 'var(--accent-red)' : 'var(--accent-amber)';
                 const label = rec.name || (rec.proto === 'WiFi' ? 'Wi-Fi device' : 'BLE device');
-                // Tapping a row is how you say "that's mine" — the top hits will
-                // be your own car/phone, so this is the primary interaction.
-                html += `
-                <div class="target-card" style="border-color:${color}; cursor:pointer;" onclick="shadowWhitelistAdd('${mac}')">
-                    <div style="display:flex; justify-content:space-between; width:100%; align-items:center;">
-                        <div>
-                            <h3 style="color:var(--accent-cyan); margin-bottom:0.3rem; font-size:1.1rem;">${label}
-                                <span style="margin-left:8px; font-size:0.65rem; font-weight:bold; text-transform:uppercase; padding:2px 6px; border-radius:4px; border:1px solid ${color}; color:${color};">${alert ? '⚠ Following you' : 'Watching'} ${score}</span>
-                            </h3>
-                            <div style="font-size:0.8rem; color:var(--text-muted)">MAC: ${mac} | ${rec.proto} | seen in ${rec.clusters.length} places | ${rec.count} hits</div>
-                            <div style="font-size:0.7rem; color:var(--accent-cyan); margin-top:0.2rem;">tap if this is yours → hide it</div>
-                        </div>
-                        <div style="text-align:right;">
-                            <div style="font-size:1.25rem; font-weight:bold; color:${color}">${rec.clusters.length}📍</div>
-                            <div style="font-size:0.7rem; color:var(--text-muted)">${rec.rssi} dBm</div>
-                        </div>
-                    </div>
-                </div>`;
+                html += sightRowOpen(mac, color) +
+                    '<div style="display:flex; justify-content:space-between; width:100%; align-items:center;">' +
+                        '<div>' +
+                            '<h3 style="color:var(--accent-cyan); margin-bottom:0.3rem; font-size:1.1rem;">' + esc(label) +
+                                '<span style="margin-left:8px; font-size:0.65rem; font-weight:bold; text-transform:uppercase; padding:2px 6px; border-radius:4px; border:1px solid ' + color + '; color:' + color + ';">' +
+                                (alert ? '⚠ Following you' : 'Watching') + ' ' + score + '</span></h3>' +
+                            '<div style="font-size:0.8rem; color:var(--text-muted)">MAC: ' + esc(mac) + ' | ' + esc(rec.proto) +
+                                ' | seen in ' + rec.clusters.length + ' places | ' + rec.count + ' hits</div>' +
+                            '<div style="font-size:0.7rem; color:var(--accent-cyan); margin-top:0.2rem;">tap if this is yours → hide it</div>' +
+                        '</div>' +
+                        '<div style="text-align:right;">' +
+                            '<div style="font-size:1.25rem; font-weight:bold; color:' + color + '">' + rec.clusters.length + '📍</div>' +
+                            '<div style="font-size:0.7rem; color:var(--text-muted)">' + esc(rec.rssi) + ' dBm</div>' +
+                        '</div>' +
+                    '</div></div>';
             });
             list.innerHTML = html;
         }
@@ -1090,7 +1549,12 @@
                 document.getElementById('btn-clear-lock').style.display = 'none';
                 
                 // Show/hide map depending on mode
-                document.getElementById('war-flocking-ui').style.display = (modeInt === 2) ? 'flex' : 'none';
+                // The map is shared by War Flocking (your trail + confirmed
+                // installations) and Sky Sweeper (drone + pilot markers).
+                document.getElementById('war-flocking-ui').style.display = (modeInt === 2 || modeInt === 3) ? 'flex' : 'none';
+                // The .osm export only means anything for fixed installations.
+                const btnOsm = document.getElementById('btn-export-osm');
+                if (btnOsm) btnOsm.style.display = (modeInt === 2) ? 'flex' : 'none';
                 if (modeInt === 2) {
                     initGPS();
                     if (!map) setTimeout(initMap, 100);
@@ -1100,12 +1564,17 @@
                 document.getElementById('sky-sweeper-ui').style.display = (modeInt === 3) ? 'flex' : 'none';
                 if (modeInt === 3) {
                     initGPS();
+                    // Sky Sweeper gets the map too: Remote ID broadcasts the
+                    // OPERATOR's position, and a pilot standing somewhere real
+                    // belongs on a map, not on a radar sweep.
+                    if (!map) setTimeout(initMap, 100);
                 }
 
-                // Shadow needs the phone's location to cluster sightings; start
-                // fresh each time you enter the mode.
+                // Shadow needs the phone's location to cluster sightings.
+                // The sighting store is deliberately NOT reset on mode entry:
+                // confirming a tail (or a fixed camera) takes repeat visits over
+                // days, and wiping it here made that impossible.
                 if (modeInt === 4) {
-                    shadowSeen = {};
                     initGPS();
                 }
             } else {
@@ -1162,6 +1631,9 @@
 
         // Initialize UI on page load
         document.addEventListener('DOMContentLoaded', () => {
+            // Restore the sighting history before anything renders: confirming a
+            // fixed installation depends on visits recorded on previous runs.
+            sightStoreLoad();
             checkApiSupport();
             // Reconcile first (the native link may have survived a page reload),
             // then prompt to connect only if we're really not connected.
