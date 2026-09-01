@@ -141,6 +141,19 @@ void processIncomingCommand(const String& rawCommand) {
             ESP_LOGI(TAG, "Command updated signature rules database");
         }
 
+        // 3b. Phone-raised alert: {"alert": 90}
+        // The signature list can only shout about brands it already knows. The
+        // geospatial verdict — a radio pinned to one place across repeat visits
+        // — needs GPS and history, so it can only be reached on the phone. This
+        // is how that verdict gets to the buzzer.
+        if (doc["alert"].is<int>()) {
+            int conf = doc["alert"].as<int>();
+            if (conf < 0) conf = 0;
+            if (conf > 100) conf = 100;
+            watchersNoteExternalAlert(conf);
+            ESP_LOGI(TAG, "Phone-raised alert, confidence %d", conf);
+        }
+
         // 4. Toggle Beacon Bandit Filter
         if (doc["filter"].is<bool>()) {
             bool filterActive = doc["filter"].as<bool>();

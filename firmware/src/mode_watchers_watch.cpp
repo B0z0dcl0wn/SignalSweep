@@ -167,6 +167,18 @@ static void ensureSignaturesFileExists() {
 // ponytail: this is the noise floor; lower it if real devices are being missed.
 #define CONF_LIST_MIN   60
 
+// Listing and alerting are different questions and must not share a threshold.
+// Confidence is a SUM, so two individually-meaningless hints add up to a
+// specific-looking score: a consumer device on a listed OUI (30) that also
+// carries the Lite-On vendor IE (30) lands on exactly 60 and used to sound the
+// buzzer. Field-confirmed: the alarm fired repeatedly on a route with no ALPR
+// anywhere near it. So the buzzer now tests the STRONGEST SINGLE signal
+// (`bestWeight`), not the sum — it must be one signal that identifies something
+// on its own (SSID 80, device name 70, service UUID 70), never a pile of
+// generic ones. The sum still drives the list and the tier, where being
+// generous is free.
+#define CONF_ALERT_MIN  70
+
 // Now that the mode harvests everything rather than only signature hits, the
 // target list needs the same lifecycle every other mode already had.
 #define WATCHERS_STALE_MS    120000  // drop devices unheard for 2 min
@@ -197,8 +209,18 @@ static String tierForConfidence(int confidence) {
 // still worth having.
 static volatile int pendingAlertConf = 0;
 
-static void noteAlert(int confidence) {
-    if (confidence < CONF_LIST_MIN) return;
+static void noteAlert(int weight) {
+    if (weight < CONF_ALERT_MIN) return;
+    if (weight > pendingAlertConf) pendingAlertConf = weight;
+}
+
+// The phone is the one that knows a radio is bolted to a pole: confirming a
+// fixed installation needs GPS and repeat visits, which live in the app. Give
+// it a way to sound the buzzer, so the device can finally alert on the thing
+// this project actually detects by, instead of only on brands it already knows.
+// Deliberately bypasses the signature gate — the caller's evidence is
+// geospatial, not a vendor match.
+void watchersNoteExternalAlert(int confidence) {
     if (confidence > pendingAlertConf) pendingAlertConf = confidence;
 }
 
@@ -400,7 +422,7 @@ class WatchersScanCallbacks : public NimBLEAdvertisedDeviceCallbacks {
                         ESP_LOGI(TAG, "[SURVEILLANCE] MAC: %s, Rule: %s, Cat: %s, Conf: %d (%s), RSSI: %d",
                                  mac.c_str(), matchedRule.c_str(), matchedCategory.c_str(),
                                  confidence, newTarget.tier.c_str(), rssi);
-                        noteAlert(confidence);
+                        noteAlert(bestWeight);   // strongest single signal, not the sum
                     }
                 }
             }
@@ -588,7 +610,7 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
                 if (wifiConfidence >= CONF_LIST_MIN) {
                     ESP_LOGI(TAG, "[SURVEILLANCE - WIFI] MAC: %s, Rule: %s, Conf: %d (%s), RSSI: %d",
                              mac.c_str(), matchedRule.c_str(), wifiConfidence, newTarget.tier.c_str(), rssi);
-                    noteAlert(wifiConfidence);
+                    noteAlert(bestWeight);   // strongest single signal, not the sum
                 }
             }
             xSemaphoreGive(watchersMutex);
@@ -609,8 +631,8 @@ static void watchersPeriodicTask(void *pvParameters) {
         // is still sounding.
         int alert = pendingAlertConf;
         pendingAlertConf = 0;
-        if (alert >= 75)              triggerAlarm();
-        else if (alert >= CONF_LIST_MIN) triggerWarning();
+        if (alert >= 75)               triggerAlarm();
+        else if (alert >= CONF_ALERT_MIN) triggerWarning();
 
         // Prune stale targets. This mode used to be the only one that never
         // expired anything, so trackedTargets grew for the whole session.

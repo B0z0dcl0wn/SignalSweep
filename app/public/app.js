@@ -583,7 +583,8 @@
             (targets || []).forEach(t => {
                 const mac = t.mac || '??';
                 if (shadowWhitelist.has(mac)) return;
-                sightRecord(sightStore, mac, loc, now, {
+                const before = sightStore[mac] ? classify(sightStore[mac]) : 'candidate';
+                const rec = sightRecord(sightStore, mac, loc, now, {
                     rssi: t.rssi,
                     name: t.name,
                     proto: t.protocol || protoDefault,
@@ -591,8 +592,32 @@
                     rule: t.matched_rule,
                     tier: t.tier
                 });
+                // The moment geography confirms something, tell the device so
+                // the buzzer fires. Firmware alone can only shout about brands
+                // on its list; this is the alert for everything else, which is
+                // the whole reason detection moved to the phone. Edge-triggered
+                // — once per device, not once per push.
+                if (before === 'candidate' && classify(rec) !== 'candidate') {
+                    noteFieldConfirmation(mac, classify(rec));
+                }
             });
             sightStoreSave();
+        }
+
+        // Fire the device buzzer for a geospatial confirmation, and say what it
+        // was on screen. Rate-limited: driving into a cluster of cameras should
+        // not turn the buzzer into a siren.
+        let lastFieldAlertMs = 0;
+        function noteFieldConfirmation(mac, kind) {
+            const now = Date.now();
+            if (now - lastFieldAlertMs < 5000) return;
+            lastFieldAlertMs = now;
+            // 'fixed' is an installation (alarm); 'mobile' is a possible tail
+            // (warning). The firmware maps >=75 to alarm, >=70 to warning.
+            sendCommand({ alert: kind === 'fixed' ? 90 : 70 });
+            showToast(kind === 'fixed'
+                ? 'CONFIRMED fixed installation: ' + mac
+                : 'Possible tail: ' + mac, '⚠');
         }
 
         // Whitelist: your own gear (car AP, phone, earbuds) travels every place
@@ -1234,6 +1259,9 @@
                 bleDevice = device;
                 await subscribeNative(device.deviceId);
 
+                rememberDevice(device.deviceId);
+                wantConnection = true;
+                reconnectDelay = 0;
                 updateConnectionUI(true, 'BLE');
                 // (No status request: the firmware has no "get" command — the
                 // current mode arrives on its next periodic push.)
@@ -1465,6 +1493,7 @@
         }
 
         async function disconnectDevice() {
+            cancelReconnect();   // user asked for this one; don't chase it
             if (bleDevice) {
                 if (bleDevice.gatt && bleDevice.gatt.connected) {
                     bleDevice.gatt.disconnect();
@@ -1487,6 +1516,78 @@
             onDeviceDisconnected();
         }
 
+        // ---- Auto-reconnect -----------------------------------------------
+        // The link dropping used to be terminal: onDeviceDisconnected painted a
+        // banner and gave up. On a drive that is fatal and silent — the phone is
+        // mounted, nobody sees the banner, and the whole trip records nothing.
+        // A field session was traced to exactly this: the link died 25 s after
+        // connecting and never came back, so 2 h of driving produced 8 s of data.
+        //
+        // requestDevice() can't be used to recover, because it opens a chooser
+        // the driver can't answer. But a remembered deviceId reconnects
+        // silently, so that is what gets persisted.
+        const LAST_DEVICE_KEY = 'lastBleDeviceId';
+        let wantConnection = false;      // false after a DELIBERATE disconnect
+        let reconnectTimer = null;
+        let reconnectDelay = 0;
+
+        function rememberDevice(deviceId) {
+            if (!deviceId) return;
+            try { localStorage.setItem(LAST_DEVICE_KEY, deviceId); } catch (e) {}
+        }
+
+        function cancelReconnect() {
+            wantConnection = false;
+            if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+            reconnectDelay = 0;
+        }
+
+        // Backoff, but capped: a field tool should keep trying for as long as it
+        // is switched on. Out of range for an hour then back in range must heal
+        // itself without the user noticing there was anything to heal.
+        function scheduleReconnect() {
+            if (!wantConnection || reconnectTimer) return;
+            reconnectDelay = Math.min(reconnectDelay ? reconnectDelay * 2 : 2000, 30000);
+            const secs = Math.round(reconnectDelay / 1000);
+            const el = document.getElementById('connStatusText');
+            if (el) el.textContent = 'RECONNECTING (' + secs + 's)...';
+            reconnectTimer = setTimeout(async () => {
+                reconnectTimer = null;
+                if (!wantConnection) return;
+                const ok = await tryReconnect();
+                if (!ok) scheduleReconnect();
+            }, reconnectDelay);
+        }
+
+        async function tryReconnect() {
+            try {
+                if (window.Capacitor && window.Capacitor.isNativePlatform() && window.BleClient) {
+                    // A device that is still connected stops advertising, so
+                    // check for an existing link before assuming it is gone.
+                    let id = null;
+                    try {
+                        const existing = await window.BleClient.getConnectedDevices([NUS_SERVICE_UUID]);
+                        if (existing && existing[0]) id = existing[0].deviceId;
+                    } catch (e) {}
+                    if (!id) { try { id = localStorage.getItem(LAST_DEVICE_KEY); } catch (e) {} }
+                    if (!id) return false;
+                    await window.BleClient.connect(id, () => onDeviceDisconnected());
+                    await subscribeNative(id);
+                    bleDevice = { deviceId: id };
+                    updateConnectionUI(true, 'BLE');
+                    reconnectDelay = 0;
+                    showToast('Reconnected', '\u2713');
+                    return true;
+                }
+                // ponytail: native only. Web Bluetooth is the `npm run dev`
+                // path, where a human is at the keyboard and can click Connect;
+                // the phone in a car mount is the case that actually needs this.
+            } catch (e) {
+                console.warn('reconnect attempt failed', e);
+            }
+            return false;
+        }
+
         function onDeviceDisconnected() {
             bleDevice = null;
             gattServer = null;
@@ -1496,6 +1597,8 @@
             serialReader = null;
             serialWriter = null;
             updateConnectionUI(false);
+            // Serial drops mean the cable is out; only BLE is worth chasing.
+            if (wantConnection) scheduleReconnect();
         }
 
         function updateActiveUI(activeMode) {

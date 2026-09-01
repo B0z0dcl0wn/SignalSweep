@@ -75,6 +75,46 @@ All notable changes to SignalSweep are recorded here.
   router or a stray ESP32 was reported as a Flock camera. The Lite-On vendor IE
   deliberately asserts no vendor at all.
 
+### Fixed — the app gave up on the device, and the buzzer cried wolf
+
+Both found by instrumenting a real field session rather than by reading code.
+A 2 h 17 m drive produced **8.1 seconds** of data: 37 devices, all `candidate`,
+all at one cluster (the driveway). Two independent faults, and between them they
+explain every previous "hundreds of miles, nothing found" trip.
+
+- **A dropped BLE link was terminal.** `onDeviceDisconnected()` set a banner,
+  toasted, and stopped — there was no reconnect anywhere in the app.
+  `reconcileConnection()` only re-syncs the UI on resume; it never re-establishes
+  a dead link. Forensics on the phone: `localStorage` last written 12:44:26, the
+  GATT client still *registered* until 15:01:54, no data in between. The link
+  died 25 s after connecting and nobody was looking at the banner, because the
+  phone was mounted on a dashboard. There is now a capped-backoff reconnect loop
+  (2 s doubling to 30 s, forever) driven off a persisted `deviceId` — a
+  `requestDevice()` chooser is useless to a driver, but a remembered id
+  reconnects silently. A deliberate disconnect cancels it, so the button still
+  means what it says.
+- **The buzzer alerted on the sum of vague hints.** Confidence accumulates, so a
+  consumer device on a listed OUI (30) that also carries the Lite-On vendor IE
+  (30) landed on exactly `CONF_LIST_MIN` (60) and sounded the alarm. Confirmed in
+  the field: it fired repeatedly on a route with no ALPR anywhere near it — the
+  Lite-On OUI `50:6F:9A` rides countless consumer Wi-Fi chips. Alerting now tests
+  the **strongest single signal** (`bestWeight >= CONF_ALERT_MIN`, 70), so it
+  takes one signal that identifies something on its own — an SSID (80), device
+  name (70) or service UUID (70) — never a pile of generic ones. The summed score
+  still drives the list and the tier, where being generous costs nothing.
+
+### Added — the buzzer follows the geospatial verdict
+
+- **`{"alert": 0-100}` over NUS**, handled by `processIncomingCommand()` and
+  backed by `watchersNoteExternalAlert()`. Detection moved to the phone because
+  only the phone has GPS, but the *alert* stayed in the firmware bolted to the
+  signature list — so the device could only ever shout about brands it already
+  knew, which is exactly the blindness the geospatial classifier exists to fix.
+  The app now fires this the moment `classify()` promotes a device out of
+  `candidate`: 90 (alarm) for a confirmed fixed installation, 70 (warning) for a
+  possible tail. Edge-triggered per device and rate-limited to one every 5 s, so
+  driving into a cluster of cameras does not turn the buzzer into a siren.
+
 ### Fixed — the sight store was deleting confirmed detections
 
 Confirming a fixed installation takes repeat visits across days, so weeks of

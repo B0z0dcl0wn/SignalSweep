@@ -79,4 +79,16 @@ bool updateWatchersSignaturesJson(const String& jsonContent);
  */
 void loadWatchersSignatures();
 
+/**
+ * @brief Sound the buzzer for something the PHONE confirmed geospatially.
+ *
+ * The device cannot tell a pole-mounted camera from a parked laptop — that
+ * takes GPS and repeat visits, which only the app has. This lets the app raise
+ * the alert, so the buzzer follows the detection method the project actually
+ * relies on rather than only the signature list.
+ *
+ * @param confidence 0-100; >=75 sounds the alarm, >=70 the warning tone
+ */
+void watchersNoteExternalAlert(int confidence);
+
 #endif // MODE_WATCHERS_WATCH_H
