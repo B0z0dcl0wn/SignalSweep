@@ -184,7 +184,11 @@ static void ensureSignaturesFileExists() {
 // list a device that clears 60 — i.e. one specific signal (SSID/UUID/name at
 // 70-80) or two corroborating weak ones (OUI 30 + IE 30, or +15 cross-protocol).
 // ponytail: this is the noise floor; lower it if real devices are being missed.
+// Overridable at build time (-D CONF_LIST_MIN=0) so a bench test can see the
+// full unfiltered harvest -- e.g. comparing antennas across two boards.
+#ifndef CONF_LIST_MIN
 #define CONF_LIST_MIN   60
+#endif
 
 // Listing and alerting are different questions and must not share a threshold.
 // Confidence is a SUM, so two individually-meaningless hints add up to a
