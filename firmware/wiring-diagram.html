@@ -1,0 +1,338 @@
+<title>SignalSweep Wiring</title>
+<meta name="description" content="How to wire the XIAO ESP32-S3 to the passive buzzer and 8-LED NeoPixel bar.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --bg: #eef1ee;
+    --surface: #ffffff;
+    --surface-2: #f5f8f5;
+    --ink: #16211c;
+    --muted: #5c6a64;
+    --line: #d8e0db;
+    --accent: #0f9d90;
+    --board: #0c3a33;
+    --board-ink: #dff0ec;
+    --wire-5v:   #cf363b;
+    --wire-gnd:  #6c7671;
+    --wire-data: #b97400;
+    --wire-sig:  #2f9e52;
+    --sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0e1512;
+      --surface: #151f1b;
+      --surface-2: #1a2621;
+      --ink: #e8efe9;
+      --muted: #8ba098;
+      --line: #26332d;
+      --accent: #2ec4b6;
+      --board: #0b332d;
+      --board-ink: #dff0ec;
+      --wire-5v:   #e5484d;
+      --wire-gnd:  #9aa4a0;
+      --wire-data: #f5a623;
+      --wire-sig:  #46c26a;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0e1512;
+    --surface: #151f1b;
+    --surface-2: #1a2621;
+    --ink: #e8efe9;
+    --muted: #8ba098;
+    --line: #26332d;
+    --accent: #2ec4b6;
+    --board: #0b332d;
+    --board-ink: #dff0ec;
+    --wire-5v:   #e5484d;
+    --wire-gnd:  #9aa4a0;
+    --wire-data: #f5a623;
+    --wire-sig:  #46c26a;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 940px; margin: 0 auto; padding: 40px 24px 72px; }
+
+  header.top { border-bottom: 1px solid var(--line); padding-bottom: 22px; margin-bottom: 30px; }
+  .eyebrow {
+    font-family: var(--mono); font-size: 12px; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--accent); margin: 0 0 8px;
+  }
+  h1 { font-size: clamp(28px, 5vw, 40px); font-weight: 700; margin: 0; letter-spacing: -0.02em; text-wrap: balance; }
+  .lede { color: var(--muted); margin: 10px 0 0; max-width: 62ch; }
+
+  .board-tag {
+    display: inline-flex; gap: 8px; align-items: center; margin-top: 16px;
+    font-family: var(--mono); font-size: 12.5px; color: var(--muted);
+  }
+  .board-tag b { color: var(--ink); font-weight: 600; }
+
+  section { margin-top: 40px; }
+  h2 {
+    font-size: 13px; font-family: var(--mono); font-weight: 600; letter-spacing: 0.12em;
+    text-transform: uppercase; color: var(--muted); margin: 0 0 16px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  h2::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+
+  /* Diagram */
+  figure { margin: 0; }
+  .diagram {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 16px;
+    padding: 20px; overflow-x: auto;
+  }
+  .diagram svg { display: block; width: 100%; height: auto; min-width: 620px; }
+  figcaption { color: var(--muted); font-size: 13.5px; margin-top: 12px; text-align: center; }
+
+  .svg-fill-surface { fill: var(--surface-2); }
+  .svg-stroke-line { stroke: var(--line); }
+  .svg-board { fill: var(--board); }
+  .t-ink { fill: var(--ink); font-family: var(--mono); }
+  .t-muted { fill: var(--muted); font-family: var(--mono); }
+  .t-board { fill: var(--board-ink); font-family: var(--mono); }
+  .pad { fill: var(--surface); stroke-width: 2; }
+  .w { fill: none; stroke-width: 3.5; stroke-linejoin: round; stroke-linecap: round; }
+  .w-5v { stroke: var(--wire-5v); }   .pin-5v { stroke: var(--wire-5v); }
+  .w-gnd { stroke: var(--wire-gnd); } .pin-gnd { stroke: var(--wire-gnd); }
+  .w-data { stroke: var(--wire-data); } .pin-data { stroke: var(--wire-data); }
+  .w-sig { stroke: var(--wire-sig); } .pin-sig { stroke: var(--wire-sig); }
+  .junction { fill: var(--wire-gnd); }
+
+  /* Legend */
+  .legend { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-top: 16px; }
+  .leg {
+    display: flex; align-items: center; gap: 12px; padding: 12px 14px;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+  }
+  .swatch { width: 26px; height: 5px; border-radius: 3px; flex: none; }
+  .leg .net { font-family: var(--mono); font-weight: 600; font-size: 14px; }
+  .leg .to { color: var(--muted); font-size: 12.5px; margin-left: auto; font-family: var(--mono); }
+
+  /* Pin table */
+  .tbl-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  th, td { text-align: left; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+  thead th {
+    font-family: var(--mono); font-size: 11.5px; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--muted); font-weight: 600;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  td.pad-cell { font-family: var(--mono); font-weight: 600; }
+  td .gpio { color: var(--muted); font-family: var(--mono); font-size: 12.5px; }
+  .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 8px; vertical-align: middle; }
+
+  /* Steps */
+  ol.steps { list-style: none; counter-reset: s; margin: 0; padding: 0; display: grid; gap: 14px; }
+  ol.steps li {
+    counter-increment: s; position: relative; padding: 14px 16px 14px 56px;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
+  }
+  ol.steps li::before {
+    content: counter(s); position: absolute; left: 14px; top: 13px;
+    width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center;
+    background: var(--accent); color: #04110e; font-family: var(--mono); font-weight: 600; font-size: 14px;
+  }
+  :root:not([data-theme="light"]) ol.steps li::before { color: #04110e; }
+  ol.steps b { font-weight: 600; }
+  code {
+    font-family: var(--mono); font-size: 0.88em; background: var(--surface-2);
+    border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px;
+  }
+
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 680px) { .cols { grid-template-columns: 1fr; } }
+  .callout { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; }
+  .callout h3 { margin: 0 0 8px; font-size: 15px; display: flex; gap: 8px; align-items: center; }
+  .callout h3 .k { font-family: var(--mono); font-size: 11px; padding: 2px 7px; border-radius: 5px; background: var(--surface-2); border: 1px solid var(--line); color: var(--muted); }
+  .callout ul { margin: 0; padding-left: 18px; color: var(--muted); font-size: 13.5px; }
+  .callout li { margin: 5px 0; }
+  .callout li b { color: var(--ink); }
+
+  a { color: var(--accent); }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <p class="eyebrow">SignalSweep · Hardware</p>
+    <h1>Wiring the detector</h1>
+    <p class="lede">One XIAO ESP32-S3, one passive buzzer, one 8-LED NeoPixel bar. The two signal pins below are fixed in <code>hardware_manager.h</code> — wire to match them.</p>
+    <span class="board-tag">Seeed XIAO ESP32-S3 · NeoPixel <b>D1 / GPIO2</b> · Buzzer <b>D2 / GPIO3</b></span>
+  </header>
+
+  <section>
+    <h2>Schematic</h2>
+    <div class="callout" style="margin-bottom:16px">
+      <h3>Reading your board <span class="k">D# = GPIO#</span></h3>
+      <ul>
+        <li>Seeed silk-screens the pads <b>D0–D10</b>; the firmware names the same pads by GPIO number. <b>D1 = GPIO2</b> (NeoPixel), <b>D2 = GPIO3</b> (buzzer).</li>
+        <li>The pad marked <b>VUSB</b> on the underside is the <b>5V</b> pad — USB bus voltage. Power pads (VUSB/GND/3V3) sit on the <b>opposite edge</b> from the D-pins.</li>
+      </ul>
+    </div>
+    <figure>
+      <div class="diagram">
+        <svg viewBox="0 0 780 540" role="img" aria-label="Wiring schematic, XIAO ESP32-S3 top view with USB-C at top. Data pins D1 (GPIO2) and D2 (GPIO3) are on the left edge; the power group 5V/VUSB, GND, 3V3 is at the top of the right edge next to the USB, with D10 down to D7 below them. Red runs 5V to the NeoPixel bar; grey shares ground to the bar and the buzzer; amber runs from D1 to the bar DIN; green wraps over the top from D2 to the buzzer positive terminal.">
+          <defs>
+            <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" fill="context-stroke"></path>
+            </marker>
+          </defs>
+
+          <!-- ===== Wires (drawn first, sit under components) ===== -->
+          <!-- 5V: XIAO 5V (top-right) -> down -> bar VCC -->
+          <polyline class="w w-5v" points="400,150 420,150 420,443 466,443"></polyline>
+          <!-- GND: pad -> junction -> up to buzzer minus -->
+          <polyline class="w w-gnd" points="400,184 434,184 434,158 560,158"></polyline>
+          <!-- GND: junction -> down -> bar GND (top pad) -->
+          <polyline class="w w-gnd" points="434,184 434,405 466,405"></polyline>
+          <circle class="junction" cx="434" cy="184" r="4.5"></circle>
+          <!-- Signal: D2 (left edge) wraps OVER the top -> buzzer plus -->
+          <polyline class="w w-sig" points="250,218 215,218 215,80 540,80 540,120 560,120" marker-end="url(#arrow)"></polyline>
+          <!-- Data: D1 (left edge) -> across below the board -> bar IN -->
+          <polyline class="w w-data" points="250,184 200,184 200,424 466,424" marker-end="url(#arrow)"></polyline>
+
+          <!-- ===== XIAO board (top view, USB-C up — both edges as on the real board) ===== -->
+          <rect class="svg-board" x="250" y="120" width="150" height="248" rx="12"></rect>
+          <rect class="svg-board svg-stroke-line" x="306" y="112" width="38" height="12" rx="3" style="stroke-width:1.5"></rect>
+          <text class="t-board" x="325" y="106" text-anchor="middle" font-size="10.5">USB-C</text>
+          <text class="t-board" x="325" y="335" text-anchor="middle" font-size="12" font-weight="600">seeed XIAO</text>
+          <text class="t-board" x="325" y="349" text-anchor="middle" font-size="9.5" opacity="0.85">ESP32-S3</text>
+
+          <!-- LEFT edge pads: D0..D6 top->bottom (D1 data, D2 signal highlighted) -->
+          <circle class="pad" cx="250" cy="150" r="4" style="stroke:var(--muted)"></circle>
+          <text class="t-muted" x="262" y="154" font-size="10">D0</text>
+          <circle class="pad pin-data" cx="250" cy="184" r="5.5"></circle>
+          <text class="t-board" x="262" y="188" font-size="11.5" font-weight="700">D1 · G2</text>
+          <circle class="pad pin-sig" cx="250" cy="218" r="5.5"></circle>
+          <text class="t-board" x="262" y="222" font-size="11.5" font-weight="700">D2 · G3</text>
+          <circle class="pad" cx="250" cy="252" r="4" style="stroke:var(--muted)"></circle>
+          <text class="t-muted" x="262" y="256" font-size="10">D3</text>
+          <circle class="pad" cx="250" cy="286" r="4" style="stroke:var(--muted)"></circle>
+          <text class="t-muted" x="262" y="290" font-size="10">D4</text>
+          <circle class="pad" cx="250" cy="320" r="4" style="stroke:var(--muted)"></circle>
+          <text class="t-muted" x="262" y="324" font-size="10">D5</text>
+          <circle class="pad" cx="250" cy="354" r="4" style="stroke:var(--muted)"></circle>
+          <text class="t-muted" x="262" y="358" font-size="10">D6</text>
+
+          <!-- RIGHT edge pads: 5V(VUSB),GND,3V3 by the USB, then D10..D7 -->
+          <circle class="pad pin-5v" cx="400" cy="150" r="5.5"></circle>
+          <text class="t-board" x="388" y="154" text-anchor="end" font-size="11.5" font-weight="700">5V·VUSB</text>
+          <circle class="pad pin-gnd" cx="400" cy="184" r="5.5"></circle>
+          <text class="t-board" x="388" y="188" text-anchor="end" font-size="11.5" font-weight="700">GND</text>
+          <circle class="pad" cx="400" cy="218" r="4" style="stroke:var(--muted)"></circle>
+          <text class="t-muted" x="388" y="222" text-anchor="end" font-size="10">3V3</text>
+          <circle class="pad" cx="400" cy="252" r="4" style="stroke:var(--muted)"></circle>
+          <text class="t-muted" x="388" y="256" text-anchor="end" font-size="10">D10</text>
+          <circle class="pad" cx="400" cy="286" r="4" style="stroke:var(--muted)"></circle>
+          <text class="t-muted" x="388" y="290" text-anchor="end" font-size="10">D9</text>
+          <circle class="pad" cx="400" cy="320" r="4" style="stroke:var(--muted)"></circle>
+          <text class="t-muted" x="388" y="324" text-anchor="end" font-size="10">D8</text>
+          <circle class="pad" cx="400" cy="354" r="4" style="stroke:var(--muted)"></circle>
+          <text class="t-muted" x="388" y="358" text-anchor="end" font-size="10">D7</text>
+
+          <!-- ===== Passive buzzer ===== -->
+          <rect class="svg-fill-surface svg-stroke-line" x="558" y="95" width="126" height="86" rx="10" style="stroke-width:1.5"></rect>
+          <circle class="svg-stroke-line" cx="632" cy="138" r="24" fill="none" style="stroke-width:1.5"></circle>
+          <circle class="t-muted" cx="632" cy="138" r="3.5"></circle>
+          <text class="t-ink" x="620" y="114" text-anchor="start" font-size="11" font-weight="600">PASSIVE</text>
+          <text class="t-ink" x="620" y="172" text-anchor="start" font-size="11" font-weight="600">BUZZER</text>
+          <circle class="pad pin-sig" cx="558" cy="120" r="4.5"></circle>
+          <text class="t-ink" x="568" y="117" font-size="13" font-weight="700">+</text>
+          <circle class="pad pin-gnd" cx="558" cy="158" r="4.5"></circle>
+          <text class="t-ink" x="568" y="163" font-size="14" font-weight="700">−</text>
+
+          <!-- ===== NeoPixel 8-LED bar ===== -->
+          <rect class="svg-fill-surface svg-stroke-line" x="466" y="392" width="286" height="74" rx="9" style="stroke-width:1.5"></rect>
+          <g>
+            <rect x="506" y="418" width="18" height="20" rx="3" fill="#e5484d" opacity="0.85"></rect>
+            <rect x="534" y="418" width="18" height="20" rx="3" fill="#f5a623" opacity="0.85"></rect>
+            <rect x="562" y="418" width="18" height="20" rx="3" fill="#f7e05e" opacity="0.85"></rect>
+            <rect x="590" y="418" width="18" height="20" rx="3" fill="#46c26a" opacity="0.85"></rect>
+            <rect x="618" y="418" width="18" height="20" rx="3" fill="#2ec4b6" opacity="0.85"></rect>
+            <rect x="646" y="418" width="18" height="20" rx="3" fill="#3a8ee6" opacity="0.85"></rect>
+            <rect x="674" y="418" width="18" height="20" rx="3" fill="#7b6cf0" opacity="0.85"></rect>
+            <rect x="702" y="418" width="18" height="20" rx="3" fill="#c556c0" opacity="0.85"></rect>
+          </g>
+          <circle class="pad pin-gnd"  cx="466" cy="405" r="4.5"></circle>
+          <text class="t-ink" x="476" y="408" font-size="10">GND</text>
+          <circle class="pad pin-data" cx="466" cy="424" r="4.5"></circle>
+          <text class="t-ink" x="476" y="427" font-size="10.5" font-weight="700">IN</text>
+          <circle class="pad pin-5v"   cx="466" cy="443" r="4.5"></circle>
+          <text class="t-ink" x="476" y="446" font-size="10">VCC</text>
+          <circle class="pad" cx="466" cy="462" r="4" style="stroke:var(--muted)"></circle>
+          <text class="t-muted" x="476" y="465" font-size="9.5">GND</text>
+          <text class="t-muted" x="748" y="386" text-anchor="end" font-size="10.5">OUT →</text>
+          <text class="t-muted" x="612" y="486" text-anchor="middle" font-size="10">data flows IN → OUT · wire the IN end · both GND pads are one net</text>
+        </svg>
+      </div>
+      <figcaption>Top view, USB-C up. Data pins (D1, D2) run down the left edge; the power group (5V/VUSB, GND, 3V3) sits at the top of the right edge next to the USB. Grey shows the one junction, where ground splits to feed both the bar and the buzzer.</figcaption>
+    </figure>
+
+    <div class="legend">
+      <div class="leg"><span class="swatch" style="background:var(--wire-5v)"></span><span class="net">5V</span><span class="to">VUSB pad → bar 5V</span></div>
+      <div class="leg"><span class="swatch" style="background:var(--wire-gnd)"></span><span class="net">GND</span><span class="to">shared → bar + buzzer</span></div>
+      <div class="leg"><span class="swatch" style="background:var(--wire-data)"></span><span class="net">DATA</span><span class="to">D1/GPIO2 → IN</span></div>
+      <div class="leg"><span class="swatch" style="background:var(--wire-sig)"></span><span class="net">SIGNAL</span><span class="to">D2/GPIO3 → buzzer +</span></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Pin map</h2>
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr><th>XIAO pad</th><th>Net</th><th>Connects to</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="pad-cell">D1 <span class="gpio">GPIO2</span></td><td><span class="dot" style="background:var(--wire-data)"></span>Data</td><td>NeoPixel <b>IN</b> (DIN)</td></tr>
+          <tr><td class="pad-cell">D2 <span class="gpio">GPIO3</span></td><td><span class="dot" style="background:var(--wire-sig)"></span>Signal</td><td>Buzzer <b>+</b></td></tr>
+          <tr><td class="pad-cell">5V <span class="gpio">VUSB</span></td><td><span class="dot" style="background:var(--wire-5v)"></span>Power</td><td>NeoPixel <b>5V / VCC</b></td></tr>
+          <tr><td class="pad-cell">GND</td><td><span class="dot" style="background:var(--wire-gnd)"></span>Ground</td><td>NeoPixel <b>GND</b> (either pad) + buzzer <b>−</b> (shared)</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>Assembly</h2>
+    <ol class="steps">
+      <li><b>Power the LED bar from 5V.</b> XIAO <code>5V</code> → bar <code>VCC/5V</code>, XIAO <code>GND</code> → bar <code>GND</code>. The 5V pad is USB bus power — what you run on.</li>
+      <li><b>Data line.</b> XIAO <code>D1 (GPIO2)</code> → bar <code>DIN</code>. Follow the arrows on the bar's silkscreen; wire the <b>input</b> end. Optional 330–470 Ω resistor sits in series right at DIN.</li>
+      <li><b>Buzzer.</b> XIAO <code>D2 (GPIO3)</code> → buzzer <b>+</b>, XIAO <code>GND</code> → buzzer <b>−</b>. A small passive buzzer (&lt;30 mA) drives straight off the pin. <i>3-pin module?</i> VCC→3V3, GND→GND, I/O→D2.</li>
+      <li><b>Share the ground.</b> Bar GND and buzzer − both land on the single XIAO GND pad. That shared return is the grey junction in the diagram.</li>
+      <li><b>Verify.</b> Re-flash with <code>python flash.py --tier 1 --port COM3</code>. On boot you get a jingle and an LED blink; a match then flashes the strip and plays that category's buzzer pattern.</li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>Watch for</h2>
+    <div class="cols">
+      <div class="callout">
+        <h3>Power budget <span class="k">≈480 mA</span></h3>
+        <ul>
+          <li>8× WS2812 at full white peaks near <b>480 mA</b>. SignalSweep only flashes short colored bursts, so USB 5V is fine.</li>
+          <li>Add a <b>1000 µF cap</b> across the bar's 5V↔GND to absorb inrush when all eight snap on.</li>
+        </ul>
+      </div>
+      <div class="callout">
+        <h3>Gotchas <span class="k">clones</span></h3>
+        <ul>
+          <li><b>3.3 V data</b> into a 5 V-powered clone bar usually works; if LED 1 flickers, add the series resistor or power the bar from <b>3V3</b> instead.</li>
+          <li><b>Wrong end</b> (wiring DOUT) lights nothing — flip to DIN.</li>
+          <li><b>Active buzzer</b> = one fixed pitch: you'll hear each pattern's rhythm but not its tones. Passive is the intended part.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+</div>
