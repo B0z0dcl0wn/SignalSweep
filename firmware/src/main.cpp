@@ -47,7 +47,7 @@ void setup() {
     // 1. Initialize Nordic UART Service (NUS) over NimBLE
     bleSerialInit();
 
-    // 2. Initialize Mode Manager state machine & FreeRTOS task queue
+    // 2. Persist hardware tier and start the always-on detector.
     modeManagerInit();
 }
 
@@ -74,10 +74,10 @@ static void factoryReset() {
 }
 
 void loop() {
-    // BOOT button: tap (on release) resets to MODE_SELECTOR, hold 5s wipes to
-    // factory defaults. The reset acts on release so a hold can be told apart
-    // from a tap. Red flash + warning tone every second while held is the
-    // "let go now" signal — releasing early aborts.
+    // BOOT button: hold 5s wipes to factory defaults (there is no selector to
+    // tap back to anymore — one always-on detector). Red flash + warning tone
+    // every second while held is the "let go now" signal; releasing early
+    // aborts.
     static uint32_t pressStartMs = 0;
     static uint32_t lastWarnSec = 0;
 
@@ -100,7 +100,6 @@ void loop() {
         }
     } else if (pressStartMs != 0) {
         pressStartMs = 0;
-        setOperatingMode(MODE_SELECTOR);
     }
 
     // Process incoming commands from USB Hardware Serial

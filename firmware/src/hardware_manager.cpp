@@ -8,7 +8,7 @@
 
 static const char *TAG = "HardwareManager";
 
-static Adafruit_NeoPixel strip(1, NEOPIXEL_PIN, NEO_GRB + NEO_KHZ800);
+static Adafruit_NeoPixel strip(NEOPIXEL_COUNT, NEOPIXEL_PIN, NEO_GRB + NEO_KHZ800);
 static SemaphoreHandle_t hwMutex = NULL;
 static TaskHandle_t hwTaskHandle = NULL;
 
@@ -242,7 +242,7 @@ static void HardwareManagerTask(void *pvParameters) {
             }
 
             if (currentPixelColor != lastPixelColor) {
-                strip.setPixelColor(0, currentPixelColor);
+                strip.fill(currentPixelColor);
                 strip.show();
                 lastPixelColor = currentPixelColor;
             }
@@ -264,7 +264,7 @@ void hardwareInit() {
 
     strip.begin();
     strip.setBrightness(50);
-    strip.setPixelColor(0, strip.Color(0, 200, 255));
+    strip.fill(strip.Color(0, 200, 255));
     strip.show();
 
     Preferences prefs;
@@ -408,4 +408,90 @@ void triggerWarning() {
         }
         xSemaphoreGive(hwMutex);
     }
+}
+
+AlertCategory alertCategoryFromName(const char* category) {
+    if (!category) return ALERT_GENERIC;
+    String c = String(category);
+    c.toLowerCase();
+    if (c.indexOf("drone") >= 0 || c.indexOf("remote id") >= 0 || c.indexOf("uas") >= 0)
+        return ALERT_DRONE;
+    if (c.indexOf("track") >= 0 || c.indexOf("airtag") >= 0 || c.indexOf("tile") >= 0 ||
+        c.indexOf("tag") >= 0 || c.indexOf("beacon") >= 0)
+        return ALERT_TRACKER;
+    if (c.indexOf("body") >= 0 || c.indexOf("axon") >= 0 || c.indexOf("cam") >= 0)
+        return ALERT_BODYCAM;
+    if (c.indexOf("flock") >= 0 || c.indexOf("alpr") >= 0 || c.indexOf("plate") >= 0 ||
+        c.indexOf("surveil") >= 0)
+        return ALERT_ALPR;
+    return ALERT_GENERIC;
+}
+
+void triggerCategoryAlert(AlertCategory cat) {
+    if (hwMutex == NULL) return;
+    if (xSemaphoreTake(hwMutex, pdMS_TO_TICKS(10)) != pdTRUE) return;
+    // One pattern at a time: the category pattern IS a jingle, so an in-flight
+    // jingle (or full alarm) owns the buzzer until it finishes. The 1 Hz
+    // detector task already rate-limits to one call/sec, so a dense area gets
+    // one clear word per second, not an overlapping scream. Must NOT set
+    // alarmActive — that flag drives the police-siren tone which runs after the
+    // jingle block each loop and would stomp the pattern.
+    if (!jinglePlaying && !alarmActive) {
+        jingleIndex = 0;
+        noteStartTime = 0;
+        uint8_t r = 255, g = 0, b = 0;   // default red
+        switch (cat) {
+            case ALERT_ALPR:  // two long beeps
+                activeJingle[0] = {1200, 250};
+                activeJingle[1] = {0, 130};
+                activeJingle[2] = {1200, 250};
+                jingleLength = 3;
+                r = 255; g = 0; b = 0;
+                break;
+            case ALERT_BODYCAM:  // long-short-short
+                activeJingle[0] = {900, 260};
+                activeJingle[1] = {0, 80};
+                activeJingle[2] = {900, 90};
+                activeJingle[3] = {0, 70};
+                activeJingle[4] = {900, 90};
+                jingleLength = 5;
+                r = 255; g = 40; b = 0;
+                break;
+            case ALERT_DRONE:  // rising trill
+                activeJingle[0] = {1000, 60};
+                activeJingle[1] = {1400, 60};
+                activeJingle[2] = {1800, 60};
+                activeJingle[3] = {2300, 110};
+                jingleLength = 4;
+                r = 0; g = 120; b = 255;
+                break;
+            case ALERT_TRACKER:  // fast ticking
+                activeJingle[0] = {2000, 45};
+                activeJingle[1] = {0, 55};
+                activeJingle[2] = {2000, 45};
+                activeJingle[3] = {0, 55};
+                activeJingle[4] = {2000, 45};
+                activeJingle[5] = {0, 55};
+                activeJingle[6] = {2000, 45};
+                jingleLength = 7;
+                r = 255; g = 0; b = 200;
+                break;
+            case ALERT_GENERIC:
+            default:  // plain warning (matched, unknown category)
+                activeJingle[0] = {800, 150};
+                activeJingle[1] = {600, 200};
+                jingleLength = 2;
+                r = 255; g = 165; b = 0;
+                break;
+        }
+        jinglePlaying = true;
+        // Colour the NeoPixel for the whole pattern so the flash matches the
+        // sound (jingle engine drives the tone; this just tints the LED).
+        uint32_t total = 0;
+        for (uint8_t i = 0; i < jingleLength; i++) total += activeJingle[i].durationMs;
+        flashActive = true;
+        flashR = r; flashG = g; flashB = b;
+        flashEndTime = millis() + total;
+    }
+    xSemaphoreGive(hwMutex);
 }

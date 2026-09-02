@@ -2,7 +2,53 @@
 
 All notable changes to SignalSweep are recorded here.
 
-## [Unreleased] — 2026-09-01
+## [Unreleased] — 2026-09-01 — Peel back to a simple beeper
+
+A deliberate reversal of the geospatial direction below, on two grounds: opsec
+(the passive location history was a liability if the phone was ever found) and
+simplicity (five modes were one behaviour — "match a known signature, beep" —
+wearing different filters).
+
+### Removed — the passive trail
+
+- **Deleted the geospatial `sightStore`, the Leaflet map, the OSM history
+  export, and all passive `watchPosition` logging.** The app kept a record of
+  everywhere the device had been; a found phone betrayed the owner's movements.
+  It now keeps **no history** — a live scope of what's matching right now,
+  cleared on disconnect.
+- **Collapsed five firmware modes into one always-on detector.** Removed the
+  mode selector, the FreeRTOS mode queue, per-mode NVS, and the
+  `mode_shadow` / `mode_beacon_bandit` / `mode_sky_sweeper` files plus the
+  vendored `opendroneid.c` / `wifi.c` ODID decoder (~2,100 lines). The app
+  bundle dropped from 179 kB to 19 kB (Leaflet gone).
+
+### Changed — hardware
+
+- **NeoPixel moved to an external 8-LED strip on GPIO2** (`NEOPIXEL_PIN 2`,
+  `NEOPIXEL_COUNT 8` in `hardware_manager.h`), up from the single onboard LED on
+  GPIO21. Buzzer stays on GPIO3. Category alert colours now light the whole
+  strip.
+
+### Added — headless identification + consented evidence
+
+- **The buzzer pattern is the identification.** One detector runs BLE + WiFi
+  concurrently and matches Flock/ALPR/camera, Axon body cams, drone Remote ID
+  (BLE `0xFFFA` / WiFi vendor IE), and Apple Find My / Tile / SmartTag trackers.
+  Each category sounds a distinct pattern (`triggerCategoryAlert`): ALPR two
+  long beeps, body cam long-short-short, drone rising trill, tracker fast
+  ticking — so a dash-mounted device tells you *what* is near with no screen.
+- **The firmware confidence gate now governs the beep and the reported list.**
+  With the phone classifier gone, the `W_*` weights are the anti-false-alarm
+  gate (this inverts the old "never gate in firmware" rule, which existed only
+  to feed the classifier).
+- **Opt-in, per-device, encrypted location pins.** Recording defaults OFF. When
+  on and a known device is detected, the phone asks — per device — whether to
+  drop a pin. A Yes captures one GPS fix (never a track) and stores it as
+  AES-GCM ciphertext behind a PIN (Web Crypto, no dependency). Detecting/beeping
+  never needs the PIN; it gates only viewing/export. OSM export survives, scoped
+  to those consented camera pins (that's DeFlock, not a movement leak).
+
+## [Superseded] — 2026-09-01
 
 ### Changed — detection methodology
 

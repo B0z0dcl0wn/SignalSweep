@@ -841,6 +841,34 @@
     <script type="module" src="/src/main.js"></script>
 </head>
 <body>
+    <style>
+        /* Live scope + controls (single-detector UI) */
+        .toolbar { display:flex; flex-wrap:wrap; gap:10px; margin:1rem 0; }
+        .ctrl-btn { flex:1; min-width:130px; padding:0.7rem 1rem; border-radius:10px;
+            border:1px solid rgba(255,255,255,0.12); background:rgba(255,255,255,0.04);
+            color:var(--text-main,#e6edf6); font-weight:600; cursor:pointer; font-size:0.85rem; }
+        .ctrl-btn.on { border-color:var(--accent-emerald,#34d399); color:var(--accent-emerald,#34d399);
+            background:rgba(52,211,153,0.08); }
+        .scope-row { display:flex; align-items:center; justify-content:space-between;
+            background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.07);
+            border-radius:10px; padding:0.75rem 0.9rem; margin-bottom:0.6rem; }
+        .scope-title { font-size:1rem; font-weight:700; color:var(--text-main,#e6edf6); }
+        .scope-cat { font-size:0.7rem; font-weight:700; text-transform:uppercase; margin-left:6px; }
+        .scope-sub { font-size:0.75rem; color:var(--text-muted,#8b98a9); margin-top:0.25rem; word-break:break-all; }
+        .scope-signal { text-align:right; margin-left:12px; white-space:nowrap; }
+        .scope-bars { font-size:1rem; letter-spacing:2px; }
+        .scope-rssi { font-size:0.7rem; color:var(--text-muted,#8b98a9); }
+        .scope-empty { text-align:center; padding:2rem 1rem; color:var(--text-muted,#8b98a9);
+            border:1px dashed rgba(255,255,255,0.12); border-radius:10px; line-height:1.5; }
+        .scope-del { background:rgba(239,68,68,0.15); border:1px solid var(--accent-red,#ef4444);
+            color:var(--accent-red,#ef4444); border-radius:6px; cursor:pointer; padding:4px 10px; margin-left:10px; }
+        .pin-input { width:100%; padding:0.8rem; font-size:1.4rem; letter-spacing:0.3rem; text-align:center;
+            border-radius:10px; border:1px solid rgba(255,255,255,0.15); background:rgba(0,0,0,0.3);
+            color:#fff; margin:0.5rem 0; }
+        .sig-input { width:100%; min-height:220px; font-family:monospace; font-size:0.8rem; padding:0.8rem;
+            border-radius:10px; border:1px solid rgba(255,255,255,0.15); background:rgba(0,0,0,0.3); color:#cfe; }
+        .modal-actions .ctrl-btn { flex:1; }
+    </style>
 
     <div class="container">
         <!-- Header -->
@@ -848,25 +876,23 @@
             <div class="brand">
                 <div class="radar-icon">
                     <svg viewBox="0 0 24 24">
-                        <circle cx="12" cy="12" r="9"/>
-                        <circle cx="12" cy="12" r="5"/>
-                        <circle cx="12" cy="12" r="1"/>
-                        <path d="M12 12L19 5"/>
+                        <circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/>
+                        <circle cx="12" cy="12" r="1"/><path d="M12 12L19 5"/>
                     </svg>
                 </div>
                 <div class="brand-text">
                     <h1>SignalSweep</h1>
-                    <p>Unified Blue Architecture</p>
+                    <p>Surveillance detector</p>
                 </div>
             </div>
             <div style="display: flex; gap: 10px;">
-                <button class="btn-help" onclick="document.getElementById('settings-modal').classList.add('active')" style="background: none; border: none; color: white; cursor: pointer; padding: 10px;">
+                <button class="btn-help" onclick="document.getElementById('settings-modal').classList.add('active')" style="background:none;border:none;color:white;cursor:pointer;padding:10px;">
                     <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <circle cx="12" cy="12" r="3"></circle>
                         <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
                     </svg>
                 </button>
-                <button class="btn-help" onclick="document.getElementById('help-modal').classList.add('active')" style="background: none; border: none; color: white; cursor: pointer; padding: 10px;">
+                <button class="btn-help" onclick="document.getElementById('help-modal').classList.add('active')" style="background:none;border:none;color:white;cursor:pointer;padding:10px;">
                     <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <circle cx="12" cy="12" r="10"></circle>
                         <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
@@ -876,290 +902,131 @@
             </div>
         </header>
 
-            <div class="header-controls">
-                <div class="status-badge" id="statusBadge" onclick="openConnModal()">
-                    <div class="pulse-dot" id="pulseDot"></div>
-                    <div class="status-info">
-                        DEVICE: <span class="active-mode-label" id="connStatusText">DISCONNECTED</span>
-                    </div>
-                </div>
-
-                <div class="status-badge" id="gpsBadge" title="GPS accuracy. Fixes vaguer than 50 m are discarded, so nothing is recorded above that.">
-                    <div class="status-info">
-                        GPS: <span class="active-mode-label" id="gpsAccText">NO FIX</span>
-                    </div>
-                </div>
-
-                <button class="btn-header-conn" id="btnConnectHeader" onclick="openConnModal()">
-                    Connect Device
-                </button>
-                <button class="btn-disconnect" id="btnDisconnectHeader" onclick="disconnectDevice()">
-                    Disconnect
-                </button>
+        <div class="header-controls">
+            <div class="status-badge" id="statusBadge" onclick="openConnModal()">
+                <div class="pulse-dot" id="pulseDot"></div>
+                <div class="status-info">DEVICE: <span class="active-mode-label" id="connStatusText">DISCONNECTED</span></div>
             </div>
-        </header>
+            <button class="btn-header-conn" id="btnConnectHeader" onclick="openConnModal()">Connect Device</button>
+            <button class="btn-disconnect" id="btnDisconnectHeader" onclick="disconnectDevice()">Disconnect</button>
+        </div>
 
         <!-- Disconnected Alert Banner -->
         <div class="conn-alert-banner" id="connBanner">
             <div class="conn-alert-text">
                 <svg viewBox="0 0 24 24">
                     <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
-                    <line x1="12" y1="9" x2="12" y2="13"/>
-                    <line x1="12" y1="17" x2="12.01" y2="17"/>
+                    <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
                 </svg>
-                <span><strong>Device Disconnected:</strong> Connect via Web Bluetooth or USB Serial to control modes and stream live telemetry.</span>
+                <span><strong>Device disconnected.</strong> It still beeps on its own — connect the phone only for a live view, tuning, or to record a location.</span>
             </div>
-            <button class="btn-header-conn" style="padding: 0.4rem 0.9rem; font-size: 0.8rem;" onclick="openConnModal()">
-                Connect Now
-            </button>
+            <button class="btn-header-conn" style="padding:0.4rem 0.9rem; font-size:0.8rem;" onclick="openConnModal()">Connect Now</button>
         </div>
 
-        <!-- Main Mode Grid -->
-        <div class="grid-title">Operating Mode Selection</div>
-
-        <div class="modes-grid">
-            <!-- Mode 0: Mode Selector -->
-            <div class="mode-card" id="card-0" onclick="switchMode(0)">
-                <div>
-                    <div class="card-header">
-                        <div class="card-icon">
-                            <svg viewBox="0 0 24 24">
-                                <rect x="4" y="4" width="6" height="6" rx="1"/>
-                                <rect x="14" y="4" width="6" height="6" rx="1"/>
-                                <rect x="4" y="14" width="6" height="6" rx="1"/>
-                                <rect x="14" y="14" width="6" height="6" rx="1"/>
-                            </svg>
-                        </div>
-                        <span class="tag">System / Standby</span>
-                    </div>
-                    <div class="card-body">
-                        <h2>Mode Selector</h2>
-                        <p>Standby mode. Low-power idle state waiting for mode configuration commands over BLE / Serial.</p>
-                    </div>
-                </div>
-                <button class="btn-select" id="btn-0">
-                    <span id="btn-text-0">Activate Mode 0</span>
-                </button>
-            </div>
-
-            <!-- Mode 1: Beacon Bandit -->
-            <div class="mode-card" id="card-1" onclick="switchMode(1)">
-            <div>
-                <div class="card-header">
-                    <div class="card-icon">
-                        <svg viewBox="0 0 24 24">
-                            <path d="M5 12.55a11 11 0 0 1 14.08 0"/>
-                            <path d="M1.42 9a16 16 0 0 1 21.16 0"/>
-                            <path d="M8.53 16.11a6 6 0 0 1 6.95 0"/>
-                            <line x1="12" y1="20" x2="12.01" y2="20"/>
-                        </svg>
-                    </div>
-                    <span class="tag">Anti-Stalking</span>
-                </div>
-                <div class="card-body">
-                    <h2>Beacon Bandit</h2>
-                    <p>BLE tracker detection for Apple AirTags, Tile, Samsung SmartTags, and Chipolo. Lock onto a suspicious tag and ring it to physically locate and remove it.</p>
-                </div>
-            </div>
-            <button class="btn-select" id="btn-1">
-                <span id="btn-text-1">Activate Mode 1</span>
-            </button>
+        <!-- Controls -->
+        <div class="toolbar">
+            <button class="ctrl-btn" id="btn-record" onclick="toggleRecording()">○ Recording: OFF</button>
+            <button class="ctrl-btn on" id="btn-buzzer" onclick="toggleBuzzer()">🔊 Buzzer: ON</button>
+            <button class="ctrl-btn" onclick="openPins()">📍 Pins</button>
+            <button class="ctrl-btn" onclick="openSignatures()">✎ Signatures</button>
         </div>
 
-        <div class="mode-card" id="card-2" onclick="switchMode(2)">
-            <div>
-                <div class="card-header">
-                    <div class="card-icon">
-                        <svg viewBox="0 0 24 24">
-                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-                            <circle cx="12" cy="12" r="3"/>
-                        </svg>
-                    </div>
-                    <span class="tag">Surveillance Mapping</span>
-                </div>
-                <div class="card-body">
-                    <h2>Watchers Watch</h2>
-                    <p>Detects hidden Flock Safety ALPRs (Solar Penguin Packs) and Axon Enterprise Body Cameras / TASER Signal triggers via BLE fingerprints.</p>
-                </div>
-            </div>
-            <button class="btn-select" id="btn-2">
-                    <span id="btn-text-2">Activate Mode 2</span>
-                </button>
-            </div>
-
-            <!-- Mode 3: Sky Sweeper -->
-            <div class="mode-card" id="card-3" onclick="switchMode(3)">
-                <div>
-                    <div class="card-header">
-                        <div class="card-icon">
-                            <svg viewBox="0 0 24 24">
-                                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
-                            </svg>
-                        </div>
-                        <span class="tag">Airspace Defense</span>
-                    </div>
-                    <div class="card-body">
-                        <h2>Sky Sweeper</h2>
-                        <p>ASTM F3411 Remote ID drone sniffer (Wi-Fi NAN/Beacon + BLE). Captures real-time drone telemetry, operator location, and ID frames.</p>
-                    </div>
-                </div>
-                <button class="btn-select" id="btn-3">
-                    <span id="btn-text-3">Activate Mode 3</span>
-                </button>
-            </div>
-
-            <!-- Mode 4: Shadow -->
-            <div class="mode-card" id="card-4" onclick="switchMode(4)">
-                <div>
-                    <div class="card-header">
-                        <div class="card-icon">
-                            <svg viewBox="0 0 24 24">
-                                <path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 4v6l4 2"/>
-                            </svg>
-                        </div>
-                        <span class="tag">Counter-Tail</span>
-                    </div>
-                    <div class="card-body">
-                        <h2>Shadow</h2>
-                        <p>Are you being followed? Logs every BLE/Wi-Fi device against your GPS trail and flags any that reappear near you across multiple separate locations.</p>
-                    </div>
-                </div>
-                <button class="btn-select" id="btn-4">
-                    <span id="btn-text-4">Activate Mode 4</span>
-                </button>
-            </div>
-        </div>
-
-        <!-- Mode Specific Data -->
-        <div class="mode-data" id="mode-data-container" style="display: none;">
-            <div class="grid-title" id="mode-data-title">Live Targets</div>
-            
-            
-            <div id="war-flocking-ui" style="display: none; width: 100%; flex-direction: column; gap: 10px; margin-bottom: 20px;">
-                <div id="offline-progress-wrapper" style="display: none; width: 100%; height: 4px; background: rgba(255,255,255,0.1); border-radius: 2px; overflow: hidden;">
-                    <div id="offline-progress-bar" style="width: 0%; height: 100%; background: linear-gradient(90deg, #00f2fe, #4facfe); transition: width 0.1s;"></div>
-                </div>
-                <div id="map-container" style="width: 100%; height: 350px; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.1);"></div>
-                <div style="display: flex; gap: 10px; width: 100%;">
-                <button id="btn-export-osm" onclick="exportOSM()" style="padding: 12px; border-radius: 8px; border: none; background: linear-gradient(90deg, #00f2fe, #4facfe); color: #090d16; font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 10px; flex: 1;">
-                    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-                    Export .osm
-                </button>
-                <button id="btn-fullscreen-map" onclick="toggleMapFullscreen()" style="padding: 12px; border-radius: 8px; border: 1px solid var(--accent-cyan); background: transparent; color: var(--accent-cyan); font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 10px; flex: 1;">
-                    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg>
-                    Toggle Fullscreen
-                </button>
-                </div>
-                <div id="alpr-row" style="display: flex; gap: 10px; width: 100%; align-items: center;">
-                <button id="btn-alpr-check" onclick="fetchAlprNodes()" style="padding: 12px; border-radius: 8px; border: 1px solid var(--accent-emerald); background: transparent; color: var(--accent-emerald); font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 10px; flex: 1;">
-                    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"></circle><path d="M3 12h18M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18z"></path></svg>
-                    Check vs. OSM
-                </button>
-                </div>
-                <p style="font-size: 0.72rem; color: var(--text-muted); margin: 6px 0 0; line-height: 1.4;">
-                    Compares confirmed detections against ALPRs already mapped in
-                    OpenStreetMap. <span style="color: #f472b6;">Pink = you found one nobody has mapped.</span>
-                    Green = corroborated. Grey = mapped but never heard.
-                    Sends the current map area to Overpass, so it only runs when you press it.
-                </p>
-            </div>
-
-            <div id="sky-sweeper-ui" style="display: none; width: 100%; flex-direction: column; align-items: center; margin-bottom: 20px;">
-                <div class="radar-container" id="radar-container">
-                    <div class="radar-grid"></div>
-                    <div class="radar-ring radar-ring-1"></div>
-                    <div class="radar-ring radar-ring-2"></div>
-                    <!-- Blips injected here -->
-                </div>
-                <div class="radar-status">Scanning 2.4GHz & BLE Spectrum</div>
-            </div>
-
-
-            <div class="filter-container" id="bandit-filter-container" style="display: none;">
-                <div class="filter-label">
-                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
-                        <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
-                    </svg>
-                    Strict Tracker Filter (Hide Generic BLE)
-                </div>
-                <label class="switch">
-                    <input type="checkbox" id="filterToggle" checked onchange="toggleFilter(this.checked)">
-                    <span class="slider"></span>
-                </label>
-            </div>
-
-            <!-- AI Export -->
-            <div style="display: flex; gap: 10px; margin-bottom: 15px; justify-content: flex-end; align-items: center; background: rgba(255,255,255,0.05); padding: 0.75rem 1rem; border-radius: 8px;">
-                <button id="btn-clear-lock" onclick="clearTargetLock()" class="btn-conn-option" style="display: none; width: auto; padding: 0.5rem 1rem; margin: 0; border-color: var(--accent-red); color: var(--accent-red);">
-                    Clear Target
-                </button>
-                <button onclick="exportAIDebrief()" class="btn-conn-option" style="width: auto; padding: 0.5rem 1rem; margin: 0; border-color: var(--accent-purple); color: var(--accent-purple);">
-                    Export AI Debrief
-                </button>
-            </div>
-            
-            <div class="targets-list" id="targets-list">
-                <!-- Target cards populated by JS -->
-            </div>
-        </div>
+        <!-- Live scope -->
+        <div class="grid-title">Live Scope <span style="color:var(--text-muted);font-weight:normal;font-size:0.8rem;">— matching now (<span id="scope-count">0</span>)</span></div>
+        <div class="targets-list" id="targets-list"></div>
     </div>
 
-    <!-- Connection Modal Overlay -->
+    <!-- Connection Modal -->
     <div class="modal-overlay" id="connModal">
         <div class="modal-card">
             <button class="modal-close-btn" onclick="closeConnModal()">&times;</button>
             <div class="modal-header">
                 <div class="modal-icon-glow">
-                    <svg viewBox="0 0 24 24">
-                        <path d="M6.5 6.5l11 11M12 2v20l5.5-5.5L12 11l5.5-5.5L12 2z"/>
-                    </svg>
+                    <svg viewBox="0 0 24 24"><path d="M6.5 6.5l11 11M12 2v20l5.5-5.5L12 11l5.5-5.5L12 2z"/></svg>
                 </div>
                 <h2>Connect SignalSweep</h2>
                 <p>Select your interface to pair with the ESP32 hardware node.</p>
             </div>
-
             <div class="modal-actions">
                 <button class="btn-conn-option primary" onclick="connectWebBluetooth()">
                     <div class="btn-left">
-                        <svg viewBox="0 0 24 24">
-                            <path d="M6.5 6.5l11 11M12 2v20l5.5-5.5L12 11l5.5-5.5L12 2z"/>
-                        </svg>
-                        <div style="text-align: left;">
+                        <svg viewBox="0 0 24 24"><path d="M6.5 6.5l11 11M12 2v20l5.5-5.5L12 11l5.5-5.5L12 2z"/></svg>
+                        <div style="text-align:left;">
                             <div>Connect via Web Bluetooth</div>
-                            <div style="font-size: 0.75rem; font-weight: normal; opacity: 0.8;">Nordic UART Service (NUS)</div>
+                            <div style="font-size:0.75rem;font-weight:normal;opacity:0.8;">Nordic UART Service (NUS)</div>
                         </div>
                     </div>
                     <span class="btn-arrow">&rarr;</span>
                 </button>
-
                 <button class="btn-conn-option" onclick="connectWebSerial()">
                     <div class="btn-left">
-                        <svg viewBox="0 0 24 24">
-                            <rect x="4" y="4" width="16" height="12" rx="2"/>
-                            <line x1="8" y1="20" x2="16" y2="20"/>
-                            <line x1="12" y1="16" x2="12" y2="20"/>
-                        </svg>
-                        <div style="text-align: left;">
+                        <svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="12" rx="2"/><line x1="8" y1="20" x2="16" y2="20"/><line x1="12" y1="16" x2="12" y2="20"/></svg>
+                        <div style="text-align:left;">
                             <div>Connect via WebSerial (USB)</div>
-                            <div style="font-size: 0.75rem; font-weight: normal; opacity: 0.8;">115200 Baud Serial Stream</div>
+                            <div style="font-size:0.75rem;font-weight:normal;opacity:0.8;">115200 Baud Serial Stream</div>
                         </div>
                     </div>
                     <span class="btn-arrow">&rarr;</span>
                 </button>
             </div>
-
             <div class="api-support-info">
-                <div class="api-badge-row">
-                    <span>Web Bluetooth API:</span>
-                    <span class="api-badge" id="bleSupportBadge">Checking...</span>
-                </div>
-                <div class="api-badge-row">
-                    <span>WebSerial API:</span>
-                    <span class="api-badge" id="serialSupportBadge">Checking...</span>
-                </div>
-                <div style="margin-top: 0.5rem; line-height: 1.4; color: var(--text-muted);">
-                    Note: Web Bluetooth & WebSerial require Chrome, Edge, or Opera over HTTPS or localhost.
-                </div>
+                <div class="api-badge-row"><span>Web Bluetooth API:</span><span class="api-badge" id="bleSupportBadge">Checking...</span></div>
+                <div class="api-badge-row"><span>WebSerial API:</span><span class="api-badge" id="serialSupportBadge">Checking...</span></div>
+                <div style="margin-top:0.5rem;line-height:1.4;color:var(--text-muted);">Note: Web Bluetooth &amp; WebSerial require Chrome, Edge, or Opera over HTTPS or localhost.</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Consent Modal -->
+    <div class="modal-overlay" id="consent-modal">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h2>Record location?</h2>
+                <p id="consent-text"></p>
+            </div>
+            <div class="modal-actions" style="display:flex;gap:10px;">
+                <button class="ctrl-btn" onclick="consentDismiss()">No</button>
+                <button class="ctrl-btn on" onclick="consentYes()">Yes, pin it</button>
+            </div>
+            <p style="font-size:0.75rem;color:var(--text-muted);text-align:center;margin-top:0.5rem;">Only this device's location is saved, encrypted behind your PIN.</p>
+        </div>
+    </div>
+
+    <!-- PIN Gate Modal -->
+    <div class="modal-overlay" id="pin-gate-modal">
+        <div class="modal-card">
+            <button class="modal-close-btn" onclick="closePinGate()">&times;</button>
+            <div class="modal-header"><h2 id="pin-gate-title">Enter PIN</h2></div>
+            <input class="pin-input" id="pin-input" type="password" inputmode="numeric" autocomplete="off" placeholder="••••" onkeydown="if(event.key==='Enter')submitPin()">
+            <div id="pin-error" style="color:var(--accent-red,#ef4444);font-size:0.8rem;text-align:center;min-height:1em;"></div>
+            <div class="modal-actions"><button class="ctrl-btn on" onclick="submitPin()">Unlock</button></div>
+            <p style="font-size:0.75rem;color:var(--text-muted);text-align:center;margin-top:0.5rem;">Detecting and beeping never needs a PIN. This only protects your recorded pins. Forget it and the pins are unrecoverable — by design.</p>
+        </div>
+    </div>
+
+    <!-- Pins Modal -->
+    <div class="modal-overlay" id="pins-modal">
+        <div class="modal-card">
+            <button class="modal-close-btn" onclick="document.getElementById('pins-modal').classList.remove('active')">&times;</button>
+            <div class="modal-header"><h2>Recorded Pins</h2><p>Devices you chose to mark. Nothing else is stored.</p></div>
+            <div id="pins-body" style="max-height:50vh;overflow-y:auto;margin-bottom:1rem;"></div>
+            <div class="modal-actions" style="display:flex;gap:10px;flex-wrap:wrap;">
+                <button class="ctrl-btn" onclick="exportPinsFile()">Export JSON</button>
+                <button class="ctrl-btn" onclick="exportPinsOSM()">Export OSM</button>
+                <button class="ctrl-btn" style="border-color:var(--accent-red,#ef4444);color:var(--accent-red,#ef4444)" onclick="wipePinsConfirm()">Wipe All</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Signatures Modal -->
+    <div class="modal-overlay" id="sig-modal">
+        <div class="modal-card">
+            <button class="modal-close-btn" onclick="document.getElementById('sig-modal').classList.remove('active')">&times;</button>
+            <div class="modal-header"><h2>Signature Rules</h2><p>What the device listens for. Paste a JSON array of rules and send it, or reset to the built-in set.</p></div>
+            <textarea class="sig-input" id="sig-input" placeholder='[ { "name": "Axon Body Camera", "category": "Axon", "oui": "00:25:df", "mfg_id": "", "device_name": "", "service_uuid": "" } ]'></textarea>
+            <div class="modal-actions" style="display:flex;gap:10px;">
+                <button class="ctrl-btn" onclick="resetSignatures()">Reset to defaults</button>
+                <button class="ctrl-btn on" onclick="saveSignatures()">Send to device</button>
             </div>
         </div>
     </div>
@@ -1168,66 +1035,55 @@
     <div id="settings-modal" class="modal-overlay">
         <div class="modal-card">
             <button class="modal-close-btn" onclick="document.getElementById('settings-modal').classList.remove('active')">&times;</button>
-            <div class="modal-header">
-                <h2>Settings</h2>
-                <p>Power Management</p>
-            </div>
-            <div class="modal-actions" style="color: var(--text-main);">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding: 10px; background: rgba(255,255,255,0.05); border-radius: 8px;">
+            <div class="modal-header"><h2>Settings</h2><p>Radios</p></div>
+            <div class="modal-actions" style="color:var(--text-main);">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;padding:10px;background:rgba(255,255,255,0.05);border-radius:8px;">
                     <span>BLE Scanning</span>
                     <div>
-                        <button onclick="sendCommand({raw: 'CMD:BLE_SCAN:ON'})" style="padding: 6px 12px; margin-right: 5px; background: var(--accent-emerald); border: none; border-radius: 6px; color: #000; font-weight: bold; cursor: pointer;">ON</button>
-                        <button onclick="sendCommand({raw: 'CMD:BLE_SCAN:OFF'})" style="padding: 6px 12px; background: rgba(239, 68, 68, 0.2); border: 1px solid var(--accent-red); border-radius: 6px; color: var(--accent-red); font-weight: bold; cursor: pointer;">OFF</button>
+                        <button onclick="sendCommand({raw:'CMD:BLE_SCAN:ON'})" style="padding:6px 12px;margin-right:5px;background:var(--accent-emerald);border:none;border-radius:6px;color:#000;font-weight:bold;cursor:pointer;">ON</button>
+                        <button onclick="sendCommand({raw:'CMD:BLE_SCAN:OFF'})" style="padding:6px 12px;background:rgba(239,68,68,0.2);border:1px solid var(--accent-red);border-radius:6px;color:var(--accent-red);font-weight:bold;cursor:pointer;">OFF</button>
                     </div>
                 </div>
-                <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px; background: rgba(255,255,255,0.05); border-radius: 8px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;padding:10px;background:rgba(255,255,255,0.05);border-radius:8px;">
                     <span>WiFi Scanning</span>
                     <div>
-                        <button onclick="sendCommand({raw: 'CMD:WIFI_SCAN:ON'})" style="padding: 6px 12px; margin-right: 5px; background: var(--accent-emerald); border: none; border-radius: 6px; color: #000; font-weight: bold; cursor: pointer;">ON</button>
-                        <button onclick="sendCommand({raw: 'CMD:WIFI_SCAN:OFF'})" style="padding: 6px 12px; background: rgba(239, 68, 68, 0.2); border: 1px solid var(--accent-red); border-radius: 6px; color: var(--accent-red); font-weight: bold; cursor: pointer;">OFF</button>
+                        <button onclick="sendCommand({raw:'CMD:WIFI_SCAN:ON'})" style="padding:6px 12px;margin-right:5px;background:var(--accent-emerald);border:none;border-radius:6px;color:#000;font-weight:bold;cursor:pointer;">ON</button>
+                        <button onclick="sendCommand({raw:'CMD:WIFI_SCAN:OFF'})" style="padding:6px 12px;background:rgba(239,68,68,0.2);border:1px solid var(--accent-red);border-radius:6px;color:var(--accent-red);font-weight:bold;cursor:pointer;">OFF</button>
                     </div>
                 </div>
-
-                <p style="margin: 22px 0 8px; font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em;">Detection History</p>
-                <p style="margin: 0 0 10px; font-size: 0.8rem; color: var(--text-muted);">
-                    Confirming a fixed camera takes repeat visits over days. That history only
-                    exists on this phone &mdash; back it up before a wipe or a new handset.
+                <p style="margin:22px 0 8px;font-size:0.8rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.08em;">Opsec</p>
+                <p style="margin:0;font-size:0.8rem;color:var(--text-muted);line-height:1.5;">
+                    This app keeps no history of what it detected or where you went. The only thing stored is location pins you explicitly confirm, encrypted behind your PIN. Manage them under <strong>Pins</strong>.
                 </p>
-                <div style="display: flex; gap: 10px;">
-                    <button onclick="exportSightStore()" class="btn-conn-option" style="width: auto; flex: 1; margin: 0; padding: 0.6rem 1rem; border-color: var(--accent-cyan); color: var(--accent-cyan);">Back Up</button>
-                    <button onclick="importSightStore()" class="btn-conn-option" style="width: auto; flex: 1; margin: 0; padding: 0.6rem 1rem; border-color: var(--accent-purple); color: var(--accent-purple);">Restore</button>
-                </div>
-                <input type="file" id="sight-import-file" accept="application/json,.json" style="display: none;" onchange="onSightImportFile(this)">
             </div>
         </div>
     </div>
 
-    <!-- Toast Component -->
-    <div id="toast">
-        <span id="toast-icon">✓</span>
-        <span id="toast-msg">Operating mode updated</span>
+    <!-- Toast -->
+    <div id="toast"><span id="toast-icon">✓</span><span id="toast-msg"></span></div>
+
+    <!-- Help Modal -->
+    <div id="help-modal" class="modal-overlay">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h2>How SignalSweep works</h2>
+                <button class="modal-close-btn" onclick="document.getElementById('help-modal').classList.remove('active')">&times;</button>
+            </div>
+            <div class="modal-body" style="color:var(--text-muted);line-height:1.6;">
+                <p><strong>Turn it on, pocket it or dash-mount it.</strong> The device scans BLE and WiFi and beeps when it hears known surveillance hardware. You don't need the phone for it to work.</p>
+                <h3 style="color:white;margin-top:15px;">The buzzer tells you what it is</h3>
+                <p>📷 <strong>ALPR / camera</strong> — two long beeps<br>
+                   🎥 <strong>Body cam</strong> — long-short-short<br>
+                   🛸 <strong>Drone (Remote ID)</strong> — rising trill<br>
+                   📍 <strong>Tracker</strong> — fast ticking</p>
+                <h3 style="color:white;margin-top:15px;">The phone (optional)</h3>
+                <p>Connect for a live view of what's matching right now, to tune the alarm, or to edit the signature list. Nothing is stored when you close it.</p>
+                <h3 style="color:white;margin-top:15px;">Recording is opt-in</h3>
+                <p>Turn <strong>Recording</strong> on and the app asks, per device, whether to save its location. Those pins are the only thing kept — encrypted behind your PIN, so a lost phone reveals nothing.</p>
+            </div>
+        </div>
     </div>
 
     <script defer src="/app.js"></script>
-    <div id="help-modal" class="modal-overlay">
-        <div class="modal">
-            <div class="modal-header">
-                <h2>SignalSweep Documentation</h2>
-                <button class="btn-close" onclick="document.getElementById('help-modal').classList.remove('active')">
-                    <svg viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"></path></svg>
-                </button>
-            </div>
-            <div class="modal-body" style="color: var(--text-muted); line-height: 1.6;">
-                <h3 style="color: white; margin-top: 0;">Mode 1: Beacon Bandit</h3>
-                <p><strong>Anti-Stalking:</strong> Sweeps for personal Bluetooth trackers including Apple AirTags, Samsung SmartTags, Tile, and Chipolo devices. Lock onto a suspicious tracker and use <em>Ring / Find</em> to make it chirp (via its Immediate Alert Service) so you can physically locate and remove it.</p>
-                
-                <h3 style="color: white; margin-top: 15px;">Mode 2: Watchers Watch</h3>
-                <p><strong>Surveillance Mapping:</strong> Actively hunts for hidden surveillance technology. Detects Flock Safety ALPRs (Solar Penguin Packs) via Random Static Address fingerprints, and Axon Enterprise Body Cameras / TASER Signal triggers (UUIDs fe6c/fe6d).</p>
-                
-                <h3 style="color: white; margin-top: 15px;">Mode 3: Sky Sweeper</h3>
-                <p><strong>Airspace Defense:</strong> Pocket AWACS drone sniffer. Leverages ASTM F3411 Remote ID (Wi-Fi NAN/Beacon + BLE) to capture real-time drone telemetry, altitude, speed, and the pilot's exact GPS coordinates.</p>
-            </div>
-        </div>
-    </div>
 </body>
 </html>

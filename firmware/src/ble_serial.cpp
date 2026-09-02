@@ -1,8 +1,6 @@
 #include "ble_serial.h"
 #include "mode_manager.h"
-#include "mode_beacon_bandit.h"
 #include "mode_watchers_watch.h"
-#include "mode_sky_sweeper.h"
 #include <NimBLEDevice.h>
 #include <ArduinoJson.h>
 #include <esp_log.h>
@@ -106,95 +104,25 @@ void processIncomingCommand(const String& rawCommand) {
     DeserializationError error = deserializeJson(doc, rawCommand.c_str());
 
     if (!error) {
-        // 1. Trigger mode change: {"mode": 1}, or a bare number "1" (which
-        // parses as valid JSON, so it lands here rather than the raw fallback).
-        // (raw-text "mode 1" for manual serial is handled in the fallback below)
-        int modeVal = -1;
-        if (doc["mode"].is<int>()) {
-            modeVal = doc["mode"].as<int>();
-        } else if (doc.is<int>()) {
-            modeVal = doc.as<int>();
-        }
-        if (modeVal >= 0 && modeVal <= 4) {
-            setOperatingMode(static_cast<OperatingMode>(modeVal));
-            ESP_LOGI(TAG, "Command triggered mode change to: %d", modeVal);
-        }
-
-        // 2. Trigger target lock: {"lock": "AA:BB:CC:DD:EE:FF"} or bare {"mac": "..."}.
-        // "mac" also carries the ble_write target (section 5), so only treat it
-        // as a lock when there's no "action" — otherwise a ble_write spuriously
-        // re-locks the target.
-        if (!doc["action"].is<const char*>() && !doc["action"].is<String>() &&
-            (doc["mac"].is<const char*>() || doc["mac"].is<String>())) {
-            String targetMac = doc["mac"].as<String>();
-            setBanditLockTarget(targetMac);
-            ESP_LOGI(TAG, "Command set target lock MAC: %s", targetMac.c_str());
-        } else if (doc["lock"].is<const char*>() || doc["lock"].is<String>()) {
-            String targetMac = doc["lock"].as<String>();
-            setBanditLockTarget(targetMac);
-            ESP_LOGI(TAG, "Command set target lock MAC: %s", targetMac.c_str());
-        }
-
-        // 3. Trigger signature updates if signatures JSON object/array is received
+        // 1. Signature updates: {"signatures": [...]}. The signature list is the
+        // whole detector now — one always-on mode, so there is no mode command.
         if (doc["signatures"].is<JsonArray>()) {
             updateWatchersSignaturesJson(rawCommand);
             ESP_LOGI(TAG, "Command updated signature rules database");
         }
 
-        // 3b. Phone-raised alert: {"alert": 90}
-        // The signature list can only shout about brands it already knows. The
-        // geospatial verdict — a radio pinned to one place across repeat visits
-        // — needs GPS and history, so it can only be reached on the phone. This
-        // is how that verdict gets to the buzzer.
-        if (doc["alert"].is<int>()) {
-            int conf = doc["alert"].as<int>();
-            if (conf < 0) conf = 0;
-            if (conf > 100) conf = 100;
-            watchersNoteExternalAlert(conf);
-            ESP_LOGI(TAG, "Phone-raised alert, confidence %d", conf);
-        }
-
-        // 4. Toggle Beacon Bandit Filter
-        if (doc["filter"].is<bool>()) {
-            bool filterActive = doc["filter"].as<bool>();
-            setBanditFilter(filterActive);
-        }
-
-        // 5. GATT write: backs the defensive "Ring/Find" action, which writes
-        // the Immediate Alert Service (0x1802/0x2A06) to make a suspected
-        // tracker chirp so it can be physically located.
-        if (doc["action"].is<const char*>() || doc["action"].is<String>()) {
-            String action = doc["action"].as<String>();
-
-            if (action == "ble_write") {
-                if (getCurrentMode() == MODE_BEACON_BANDIT) {
-                    String targetMac = doc["mac"].as<String>();
-                    String srv = doc["service"].as<String>();
-                    String chr = doc["char"].as<String>();
-                    String val = doc["val"].as<String>();
-                    executeBleWrite(targetMac, srv, chr, val);
-                } else {
-                    ESP_LOGW(TAG, "ble_write is only allowed in Beacon Bandit mode.");
-                }
-            }
+        // 2. Alarm tuning: {"buzzer": true|false} mutes/unmutes the headless
+        // buzzer from the phone (Mode B alarm tuning).
+        if (doc["buzzer"].is<bool>()) {
+            setBuzzerEnabled(doc["buzzer"].as<bool>());
+            ESP_LOGI(TAG, "Buzzer %s by command", doc["buzzer"].as<bool>() ? "enabled" : "muted");
         }
     } else {
-        // Raw text fallback parsing (e.g. "mode 1", "lock AA:BB:CC:DD:EE:FF").
-        // Bare digits like "1" are valid JSON, so they're handled above, not here.
+        // Raw text fallback parsing (manual serial).
         String rawStr = rawCommand;
         rawStr.trim();
 
-        if (rawStr.startsWith("mode ") || rawStr.startsWith("mode=")) {
-            int modeVal = rawStr.substring(5).toInt();
-            if (modeVal >= 0 && modeVal <= 4) {
-                setOperatingMode(static_cast<OperatingMode>(modeVal));
-                ESP_LOGI(TAG, "Raw string triggered mode change to: %d", modeVal);
-            }
-        } else if (rawStr.startsWith("lock ") || rawStr.startsWith("mac=")) {
-            String targetMac = rawStr.substring(5);
-            setBanditLockTarget(targetMac);
-            ESP_LOGI(TAG, "Raw string set target lock MAC: %s", targetMac.c_str());
-        } else if (rawStr == "CMD:SIGS:RESET") {
+        if (rawStr == "CMD:SIGS:RESET") {
             // Restore the built-in signature rules, undoing a pushed rule set
             // without the full factory reset (which also wipes mode + lock).
             resetWatchersSignaturesToDefaults();

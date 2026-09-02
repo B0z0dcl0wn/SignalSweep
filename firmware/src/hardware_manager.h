@@ -5,8 +5,9 @@
 #include "mode_manager.h"
 
 // Hardware Pin Definitions for XIAO ESP32-S3
-#define NEOPIXEL_PIN 21
-#define BUZZER_PIN   3
+#define NEOPIXEL_PIN 2   // D1 pad (GPIO2)
+#define NEOPIXEL_COUNT 8 // External 8-LED strip
+#define BUZZER_PIN   3   // D2 pad (GPIO3)
 
 /**
  * @brief Initialize NeoPixel and Buzzer hardware and start background FreeRTOS task
@@ -78,5 +79,29 @@ void triggerAlarm();
  * @brief Trigger a softer visual/audio warning for possible targets
  */
 void triggerWarning();
+
+// The headless buzzer is the whole UI: a different pattern per device category
+// is how you know what's near without looking (dash-mount / pocket). The phone
+// spells it out in text; the ear learns these four "words".
+enum AlertCategory {
+    ALERT_ALPR = 0,   // Flock / ALPR / fixed camera — two long beeps
+    ALERT_BODYCAM,    // Axon-style body cam        — long-short-short
+    ALERT_DRONE,      // Remote-ID drone            — rising trill
+    ALERT_TRACKER,    // AirTag-style tracker       — fast ticking
+    ALERT_GENERIC     // matched, category unknown  — plain warning
+};
+
+/**
+ * @brief Map a signature/detector category string to an AlertCategory.
+ * Keyword-tolerant so signature `category` labels ("Flock Safety", "Axon Body
+ * Cam", "Remote ID Drone", …) route to the right buzzer word without an exact
+ * table. The one place category→sound is decided.
+ */
+AlertCategory alertCategoryFromName(const char* category);
+
+/**
+ * @brief Sound the buzzer pattern for a device category (headless identification).
+ */
+void triggerCategoryAlert(AlertCategory cat);
 
 #endif // HARDWARE_MANAGER_H

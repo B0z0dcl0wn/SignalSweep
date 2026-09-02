@@ -2,12 +2,12 @@
 #define MODE_MANAGER_H
 
 #include <Arduino.h>
-#include <freertos/FreeRTOS.h>
-#include <freertos/queue.h>
 
-/**
- * @brief Operating modes for SignalSweep
- */
+// SignalSweep is one always-on detector. OperatingMode survives only because
+// the hardware manager keys its idle LED colour and jingle defaults off it;
+// MODE_WATCHERS_WATCH is the single detection mode. The other values are kept
+// so the hardware manager's switch statements still compile with their existing
+// cases, and are otherwise unused.
 enum OperatingMode {
     MODE_SELECTOR = 0,
     MODE_BEACON_BANDIT = 1,
@@ -34,14 +34,9 @@ OperatingMode getCurrentMode();
 bool setOperatingMode(OperatingMode newMode);
 
 /**
- * @brief Initialize Mode Manager queue and task
+ * @brief Persist the hardware tier and start the detector.
  */
 void modeManagerInit();
-
-/**
- * @brief FreeRTOS task to monitor and handle mode state transitions
- */
-void ModeManagerTask(void *pvParameters);
 
 /**
  * @brief Pause/resume BLE scanning globally

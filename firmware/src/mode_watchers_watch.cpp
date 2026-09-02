@@ -14,6 +14,7 @@
 #include <vector>
 #include <algorithm>
 #include "hardware_manager.h"
+#include "capabilities.h"
 
 static const char *TAG = "WatchersWatch";
 static const char *SIG_FILE_PATH = "/data/signatures.json";
@@ -27,7 +28,10 @@ static const char *SIG_FILE_PATH = "/data/signatures.json";
 //       block), cc:cc:cc (unassigned), 82:6b:f2 (locally-administered).
 //   v3: removed mfg_id 0x01 ("Flock XUNTONG"). 0x0001 is Nokia's assigned
 //       Bluetooth Company ID; on the bench it matched Govee bulbs.
-#define SIG_SCHEMA_VERSION 3
+//   v4: added Tracker category (Tile / Samsung SmartTag service UUIDs). AirTag
+//       "offline finding" is matched in code, not here (needs a payload type
+//       byte the rule schema can't express). Feeds the Tracker buzzer word.
+#define SIG_SCHEMA_VERSION 4
 
 static SemaphoreHandle_t watchersMutex = NULL;
 static bool watchersRunning = false;
@@ -132,6 +136,16 @@ static void ensureSignaturesFileExists() {
             addRule("Sierra Wireless Infrastructure", "Fleet / Infrastructure", "00:f0:8a", "", "", "");
             addRule("Sierra Wireless Infrastructure", "Fleet / Infrastructure", "00:07:e2", "", "", "");
 
+            // Trackers (planted-on-you category). Keyed on service UUID, which
+            // the matcher already handles. AirTag is matched in code (its Find
+            // My advert carries no service UUID — just Apple mfr data + a type
+            // byte the rule schema can't express). Headless can only say "a
+            // tracker is near", not "it's following you" — that needed the
+            // geospatial history removed for opsec. Still worth the beep.
+            addRule("Tile Tracker", "Tracker", "", "", "", "feed");
+            addRule("Tile Tracker", "Tracker", "", "", "", "feec");
+            addRule("Samsung SmartTag", "Tracker", "", "", "", "fd5a");
+
             serializeJsonPretty(doc, file);
             file.close();
             ESP_LOGI(TAG, "Default signatures created successfully.");
@@ -160,6 +174,11 @@ static void ensureSignaturesFileExists() {
 #define W_WIFI_IE  30
 #define W_WIFI_SSID 80
 #define W_CORROBORATION 15   // same MAC seen on both BLE and WiFi
+// Protocol matches are unambiguous: an ASTM Remote-ID beacon IS a drone, an
+// Apple Find My "offline finding" advert IS a tracker. Presence alone is the
+// detection — no need to decode operator GPS just to sound the buzzer.
+#define W_DRONE      90
+#define W_TRACKER    80
 // A single weak, non-Flock-specific signal (a broad OUI prefix, or the Lite-On
 // vendor IE that rides countless consumer WiFi chips) is noise on its own. Only
 // list a device that clears 60 — i.e. one specific signal (SSID/UUID/name at
@@ -208,20 +227,17 @@ static String tierForConfidence(int confidence) {
 // only ever shout about brands it already knows. That's the deal, and it's
 // still worth having.
 static volatile int pendingAlertConf = 0;
+// Which buzzer "word" the winning signal earns. The strongest single signal in
+// the interval sets both the confidence and the category, so the sound matches
+// what actually tripped the alarm.
+static volatile AlertCategory pendingAlertCat = ALERT_GENERIC;
 
-static void noteAlert(int weight) {
+static void noteAlert(int weight, const char* category) {
     if (weight < CONF_ALERT_MIN) return;
-    if (weight > pendingAlertConf) pendingAlertConf = weight;
-}
-
-// The phone is the one that knows a radio is bolted to a pole: confirming a
-// fixed installation needs GPS and repeat visits, which live in the app. Give
-// it a way to sound the buzzer, so the device can finally alert on the thing
-// this project actually detects by, instead of only on brands it already knows.
-// Deliberately bypasses the signature gate — the caller's evidence is
-// geospatial, not a vendor match.
-void watchersNoteExternalAlert(int confidence) {
-    if (confidence > pendingAlertConf) pendingAlertConf = confidence;
+    if (weight > pendingAlertConf) {
+        pendingAlertConf = weight;
+        pendingAlertCat = alertCategoryFromName(category);
+    }
 }
 
 /**
@@ -327,6 +343,43 @@ static int matchDeviceAgainstRule(NimBLEAdvertisedDevice* dev, const WatcherSign
     return weight > 100 ? 100 : weight;
 }
 
+// Presence-only protocol detectors. We don't decode the drone's operator GPS or
+// the AirTag's rotating key — presence of the protocol is the whole signal for a
+// headless "look around" beep. (The full Open Drone ID decoder lived in Sky
+// Sweeper; kept in git history if rich detail is ever wanted on the phone.)
+
+// True if a BLE advert carries the ASTM Remote ID service (UUID 0xFFFA in AD
+// type 0x16, Service Data - 16-bit UUID) — i.e. a drone broadcasting Remote ID.
+static bool bleIsDroneRemoteId(NimBLEAdvertisedDevice* dev) {
+    uint8_t* payload = dev->getPayload();
+    size_t len = dev->getPayloadLength();
+    if (!payload || len < 4) return false;
+    size_t offset = 0;
+    while (offset + 1 < len) {
+        uint8_t adLen = payload[offset];
+        if (adLen == 0 || offset + 1 + adLen > len) break;
+        uint8_t adType = payload[offset + 1];
+        if (adType == 0x16 && adLen >= 3) {
+            uint16_t uuid = payload[offset + 2] | (payload[offset + 3] << 8);
+            if (uuid == 0xFFFA) return true;
+        }
+        offset += (adLen + 1);
+    }
+    return false;
+}
+
+// True if a BLE advert is an Apple "Find My" offline-finding beacon (an AirTag
+// or other Find My tracker). Apple manufacturer data (company 0x004C) with
+// message type 0x12. Deliberately NOT a bare 0x004C match — that is every
+// iPhone/AirPod in range.
+static bool bleIsAirtag(NimBLEAdvertisedDevice* dev) {
+    if (!dev->haveManufacturerData()) return false;
+    std::string mfg = dev->getManufacturerData();
+    if (mfg.length() < 3) return false;
+    uint16_t company = static_cast<uint8_t>(mfg[0]) | (static_cast<uint8_t>(mfg[1]) << 8);
+    return company == 0x004C && static_cast<uint8_t>(mfg[2]) == 0x12;
+}
+
 /**
  * @brief NimBLE Scan Callbacks for Watcher's Watch
  */
@@ -363,6 +416,25 @@ class WatchersScanCallbacks : public NimBLEAdvertisedDeviceCallbacks {
                     }
                 }
             }
+
+            // Protocol detectors (not signature rules): presence alone is a
+            // strong, unambiguous match, so they set the category directly.
+            if (bleIsDroneRemoteId(advertisedDevice)) {
+                confidence += W_DRONE;
+                if (W_DRONE > bestWeight) {
+                    bestWeight = W_DRONE;
+                    matchedRule = "Remote ID Drone";
+                    matchedCategory = "Drone";
+                }
+            } else if (bleIsAirtag(advertisedDevice)) {
+                confidence += W_TRACKER;
+                if (W_TRACKER > bestWeight) {
+                    bestWeight = W_TRACKER;
+                    matchedRule = "Apple Find My Tracker";
+                    matchedCategory = "Tracker";
+                }
+            }
+
             if (confidence > 100) confidence = 100;
 
             // The confidence score is an annotation, not a gate: the phone
@@ -422,7 +494,7 @@ class WatchersScanCallbacks : public NimBLEAdvertisedDeviceCallbacks {
                         ESP_LOGI(TAG, "[SURVEILLANCE] MAC: %s, Rule: %s, Cat: %s, Conf: %d (%s), RSSI: %d",
                                  mac.c_str(), matchedRule.c_str(), matchedCategory.c_str(),
                                  confidence, newTarget.tier.c_str(), rssi);
-                        noteAlert(bestWeight);   // strongest single signal, not the sum
+                        noteAlert(bestWeight, matchedCategory.c_str());   // strongest single signal + its category
                     }
                 }
             }
@@ -538,6 +610,19 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
                     if (W_WIFI_IE > bestWeight) { bestWeight = W_WIFI_IE; matchedRule = "Lite-On Vendor IE (weak)"; }
                 }
 
+                // Drone Remote ID over WiFi Beacon: ASTM (90:3A:E6) or French
+                // (FA:0B:BC) vendor IE. Presence = a drone broadcasting nearby.
+                if (id == 221 && elen >= 4 &&
+                    ((body[b+2] == 0x90 && body[b+3] == 0x3A && body[b+4] == 0xE6) ||
+                     (body[b+2] == 0xFA && body[b+3] == 0x0B && body[b+4] == 0xBC))) {
+                    wifiConfidence += W_DRONE;
+                    if (W_DRONE > bestWeight) {
+                        bestWeight = W_DRONE;
+                        matchedRule = "Remote ID Drone";
+                        matchedCategory = "Drone";
+                    }
+                }
+
                 if (!ssidHit && id == 0 && elen > 0 && elen <= 32) {
                     char ssid[33] = {0};
                     memcpy(ssid, body + b + 2, elen);
@@ -610,7 +695,7 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
                 if (wifiConfidence >= CONF_LIST_MIN) {
                     ESP_LOGI(TAG, "[SURVEILLANCE - WIFI] MAC: %s, Rule: %s, Conf: %d (%s), RSSI: %d",
                              mac.c_str(), matchedRule.c_str(), wifiConfidence, newTarget.tier.c_str(), rssi);
-                    noteAlert(bestWeight);   // strongest single signal, not the sum
+                    noteAlert(bestWeight, matchedCategory.c_str());   // strongest single signal + its category
                 }
             }
             xSemaphoreGive(watchersMutex);
@@ -630,9 +715,12 @@ static void watchersPeriodicTask(void *pvParameters) {
         // tone. triggerAlarm() itself also refuses to retrigger while an alarm
         // is still sounding.
         int alert = pendingAlertConf;
+        AlertCategory alertCat = pendingAlertCat;
         pendingAlertConf = 0;
-        if (alert >= 75)               triggerAlarm();
-        else if (alert >= CONF_ALERT_MIN) triggerWarning();
+        // The buzzer pattern is the identification: each category is a distinct
+        // "word" you learn by ear. Confidence already gated the alert in
+        // noteAlert(); here we just sound whichever category won the interval.
+        if (alert >= CONF_ALERT_MIN) triggerCategoryAlert(alertCat);
 
         // Prune stale targets. This mode used to be the only one that never
         // expired anything, so trackedTargets grew for the whole session.
@@ -825,24 +913,28 @@ String getWatchersTargetsJson() {
     JsonDocument doc;
     doc["status"] = "success";
     doc["mode"] = 2;
-    doc["name"] = "MODE_WATCHERS_WATCH";
+    doc["name"] = "MODE_DETECTOR";
+    // Carried on every push so flash.py --auto can read the tier back over
+    // serial (the old selector heartbeat that used to carry it is gone).
+    doc["tier"] = getTier();
 
     if (watchersMutex != NULL && xSemaphoreTake(watchersMutex, pdMS_TO_TICKS(200)) == pdTRUE) {
-        doc["count"] = trackedTargets.size();
 
-        // Round-robin selection by staleness. Sorting by RSSI or confidence
-        // structurally starves exactly what this mode now hunts: a weak,
-        // persistent, unsignatured radio across the street. Signature hits are
-        // pinned so the UI/alarm stays live on them; everything else takes
-        // turns, so any device surfaces within ceil(n/WATCHERS_MAX_REPORT) sec.
-        std::vector<size_t> order(trackedTargets.size());
-        for (size_t i = 0; i < order.size(); i++) order[i] = i;
+        // Report only signature matches. The phone used to classify the full
+        // harvest geospatially (a radio pinned to one place across visits =
+        // infrastructure), so the device shipped every MAC it heard. That
+        // classifier — and its location history — is gone for opsec, so the
+        // live scope now shows exactly what tripped the detector: confirmed
+        // matches, nothing else. Round-robin by staleness still fairly rotates
+        // when matches exceed the per-push cap (rare).
+        std::vector<size_t> order;
+        for (size_t i = 0; i < trackedTargets.size(); i++) {
+            if (trackedTargets[i].confidence >= CONF_LIST_MIN) order.push_back(i);
+        }
         std::sort(order.begin(), order.end(), [](size_t a, size_t b) {
-            bool ha = trackedTargets[a].confidence >= CONF_LIST_MIN;
-            bool hb = trackedTargets[b].confidence >= CONF_LIST_MIN;
-            if (ha != hb) return ha;
             return trackedTargets[a].lastReportedMs < trackedTargets[b].lastReportedMs;
         });
+        doc["count"] = order.size();
         if (order.size() > WATCHERS_MAX_REPORT) order.resize(WATCHERS_MAX_REPORT);
 
         uint32_t nowMs = millis();

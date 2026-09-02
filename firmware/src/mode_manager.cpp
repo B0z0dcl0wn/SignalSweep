@@ -1,193 +1,49 @@
 #include "mode_manager.h"
-#include "mode_beacon_bandit.h"
 #include "mode_watchers_watch.h"
-#include "mode_sky_sweeper.h"
-#include "mode_shadow.h"
 #include "hardware_manager.h"
 #include "ble_serial.h"
 #include "capabilities.h"
 #include <Preferences.h>
-#include <ArduinoJson.h>
 #include <esp_log.h>
 #include <NimBLEDevice.h>
 #include <esp_wifi.h>
 
 static const char *TAG = "ModeManager";
 
-static OperatingMode currentMode = MODE_SELECTOR;
-static QueueHandle_t modeChangeQueue = NULL;
-static TaskHandle_t modeManagerTaskHandle = NULL;
+// SignalSweep is one always-on detector now. The five-mode state machine (a
+// FreeRTOS queue, a selector, per-mode NVS) was overhead on top of a single
+// idea: match a known signature and beep. What survives here is the thin
+// bootstrap — persist the hardware tier, start the detector — plus the
+// radio pause hooks the BLE server uses while a client (dis)connects.
+// OperatingMode stays as a type because the hardware manager keys its LED and
+// jingle defaults off it; there is only ever one detection mode.
 
 const char* getModeName(OperatingMode mode) {
-    switch (mode) {
-        case MODE_SELECTOR:       return "MODE_SELECTOR";
-        case MODE_BEACON_BANDIT:  return "MODE_BEACON_BANDIT";
-        case MODE_WATCHERS_WATCH: return "MODE_WATCHERS_WATCH";
-        case MODE_SKY_SWEEPER:    return "MODE_SKY_SWEEPER";
-        case MODE_SHADOW:         return "MODE_SHADOW";
-        default:                  return "UNKNOWN_MODE";
-    }
+    return "MODE_DETECTOR";
 }
 
 OperatingMode getCurrentMode() {
-    return currentMode;
+    return MODE_WATCHERS_WATCH;
 }
 
 bool setOperatingMode(OperatingMode newMode) {
-    if (modeChangeQueue == NULL) {
-        ESP_LOGE(TAG, "Mode change queue not initialized!");
-        return false;
-    }
-    
-    if (xQueueSend(modeChangeQueue, &newMode, pdMS_TO_TICKS(100)) == pdPASS) {
-        ESP_LOGI(TAG, "Mode change requested -> %s", getModeName(newMode));
-        return true;
-    }
-    
-    ESP_LOGE(TAG, "Failed to queue mode change -> %s", getModeName(newMode));
-    return false;
-}
-
-static void shutdownCurrentMode(OperatingMode mode) {
-    ESP_LOGI(TAG, "Cleanly shutting down previous mode: %s", getModeName(mode));
-    switch (mode) {
-        case MODE_BEACON_BANDIT:
-            stopBeaconBandit();
-            break;
-        case MODE_WATCHERS_WATCH:
-            stopWatchersWatch();
-            break;
-        case MODE_SKY_SWEEPER:
-            stopSkySweeper();
-            break;
-        case MODE_SHADOW:
-            stopShadow();
-            break;
-        default:
-            break;
-    }
-}
-
-static void startNewMode(OperatingMode mode) {
-    ESP_LOGI(TAG, "Starting new mode: %s", getModeName(mode));
-    hardwareSetMode(mode);
-    switch (mode) {
-        case MODE_SELECTOR:
-            ESP_LOGI(TAG, "Entering Selector Mode");
-            break;
-        case MODE_BEACON_BANDIT:
-            ESP_LOGI(TAG, "Entering Beacon Bandit Mode");
-            startBeaconBandit();
-            break;
-        case MODE_WATCHERS_WATCH:
-            ESP_LOGI(TAG, "Entering Watchers Watch Mode");
-            startWatchersWatch();
-            break;
-        case MODE_SKY_SWEEPER:
-            ESP_LOGI(TAG, "Entering Sky Sweeper Mode");
-            startSkySweeper();
-            break;
-        case MODE_SHADOW:
-            ESP_LOGI(TAG, "Entering Shadow Mode");
-            startShadow();
-            break;
-    }
-}
-
-void ModeManagerTask(void *pvParameters) {
-    (void)pvParameters;
-    OperatingMode requestedMode;
-
-    ESP_LOGI(TAG, "ModeManagerTask initialized. Starting in default mode: %s", getModeName(currentMode));
-    startNewMode(currentMode);
-
-    for (;;) {
-        // Monitor FreeRTOS queue for mode change requests with 1000ms timeout
-        if (xQueueReceive(modeChangeQueue, &requestedMode, pdMS_TO_TICKS(1000)) == pdTRUE) {
-            if (requestedMode != currentMode) {
-                ESP_LOGI(TAG, "Mode transition triggered: %s -> %s", 
-                         getModeName(currentMode), getModeName(requestedMode));
-                
-                // Cleanly shut down previous mode without restarting ESP
-                shutdownCurrentMode(currentMode);
-
-                // Update current mode state
-                currentMode = requestedMode;
-
-                // Save new mode to non-volatile storage
-                Preferences prefs;
-                prefs.begin("ouispy-mode", false);
-                prefs.putInt("mode", static_cast<int>(currentMode));
-                prefs.end();
-
-                // Start new mode
-                startNewMode(currentMode);
-
-                // Send immediate status notification via BLE Serial and WebSerial
-                JsonDocument doc;
-                doc["status"] = "success";
-                doc["mode"] = static_cast<int>(currentMode);
-                doc["name"] = getModeName(currentMode);
-                String msg;
-                serializeJson(doc, msg);
-                sendBleSerial(msg);
-                Serial.println(msg);
-            } else {
-                ESP_LOGI(TAG, "Already in mode %s, ignoring duplicate mode change request", getModeName(requestedMode));
-            }
-        } else {
-            // Periodic status push when in MODE_SELECTOR (other modes have their own periodic tasks)
-            if (currentMode == MODE_SELECTOR) {
-                JsonDocument doc;
-                doc["status"] = "success";
-                doc["mode"] = 0;
-                doc["name"] = getModeName(MODE_SELECTOR);
-                doc["tier"] = getTier();
-                String msg;
-                serializeJson(doc, msg);
-                sendBleSerial(msg);
-                Serial.println(msg);
-            }
-        }
-    }
+    // No-op: there is only one mode. Kept so any stray caller still links.
+    return true;
 }
 
 void modeManagerInit() {
-    // Load last saved mode from non-volatile storage
-    Preferences prefs;
-    prefs.begin("ouispy-mode", true);
-    int savedMode = prefs.getInt("mode", MODE_SELECTOR);
-    if (savedMode >= 0 && savedMode <= 4) {
-        currentMode = static_cast<OperatingMode>(savedMode);
-    }
-    prefs.end();
-
     // Board self-ID: persist the compiled hardware tier so a future
     // flash.py --auto can read it back over serial (see capabilities.h).
+    Preferences prefs;
     prefs.begin("ouispy-hw", false);
     prefs.putInt("tier", getTier());
     prefs.end();
     ESP_LOGI(TAG, "Hardware tier: %d", getTier());
 
-    // Create FreeRTOS queue for mode change events
-    modeChangeQueue = xQueueCreate(5, sizeof(OperatingMode));
-    if (modeChangeQueue == NULL) {
-        ESP_LOGE(TAG, "Failed to create mode change queue!");
-        return;
-    }
-
-    // Create the ModeManager task on Core 1
-    xTaskCreatePinnedToCore(
-        ModeManagerTask,
-        "ModeManagerTask",
-        4096,
-        NULL,
-        1,
-        &modeManagerTaskHandle,
-        1
-    );
-
-    ESP_LOGI(TAG, "Mode Manager initialized successfully.");
+    // Boot straight into the detector — no selector, no mode queue.
+    hardwareSetMode(MODE_WATCHERS_WATCH);
+    startWatchersWatch();
+    ESP_LOGI(TAG, "Detector started.");
 }
 
 void pauseBle(bool pause) {
@@ -197,22 +53,13 @@ void pauseBle(bool pause) {
             pScan->stop();
             ESP_LOGI(TAG, "BLE Scanning paused");
         } else {
-            if (currentMode == MODE_WATCHERS_WATCH || currentMode == MODE_BEACON_BANDIT || currentMode == MODE_SHADOW) {
-                pScan->start(0, nullptr, false);
-                ESP_LOGI(TAG, "BLE Scanning resumed");
-            }
+            pScan->start(0, nullptr, false);
+            ESP_LOGI(TAG, "BLE Scanning resumed");
         }
     }
 }
 
 void pauseWifi(bool pause) {
-    if (pause) {
-        esp_wifi_set_promiscuous(false);
-        ESP_LOGI(TAG, "Wi-Fi Promiscuous Scanning paused");
-    } else {
-        if (currentMode == MODE_SKY_SWEEPER || currentMode == MODE_SHADOW) {
-            esp_wifi_set_promiscuous(true);
-            ESP_LOGI(TAG, "Wi-Fi Promiscuous Scanning resumed");
-        }
-    }
+    esp_wifi_set_promiscuous(pause ? false : true);
+    ESP_LOGI(TAG, "Wi-Fi Promiscuous Scanning %s", pause ? "paused" : "resumed");
 }
