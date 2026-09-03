@@ -14,6 +14,7 @@ When working in this repository, please adhere to the following rules:
 ### General
 1. **Directory Context**: Always pay attention to whether a task requires changes in `firmware/` or `app/`. Avoid bleeding logic between them unless updating the BLE communication protocol in both places.
 2. **Readability**: Prioritize clean, well-documented code. Add comments to complex logic, especially for hardware interactions and BLE characteristics.
+3. **Read `CLAUDE.md` first.** It is the design record for this repository: what the device is for, and the specific traps that have already cost a working build (the advertising payload API, the LittleFS mount, the telemetry budget, receive-only's disconnect gate). It is not Claude-specific.
 
 ### Firmware (`firmware/`)
 1. Use modern C++ standards supported by the PlatformIO ESP32 toolchain.

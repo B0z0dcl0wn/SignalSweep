@@ -2,6 +2,64 @@
 
 All notable changes to SignalSweep are recorded here.
 
+## [Unreleased] — 2026-09-03 — Receive-only: the detector stops announcing itself
+
+### Added — receive-only mode
+
+A counter-surveillance tool that advertises "SignalSweep" on the air announces
+its presence to anyone else running a scanner, including the hardware it exists
+to find. Receive-only stops advertising and drops the connection, leaving the
+BLE radio doing nothing but listening.
+
+The driver is emissions, not airtime. The scanner already runs a 50% duty cycle
+and the real contention is Wi-Fi promiscuous against the BLE scan on one shared
+radio, so shutting down the GATT server buys very little there. It buys the
+whole answer to "does this thing broadcast?"
+
+**It is not the buzzer mute, and it is not deaf.** "Silent" already means
+`{"buzzer":false}`, which is untouched: the detector keeps scanning, keeps
+matching, keeps sounding its per-category patterns, and keeps mirroring
+telemetry to USB. Active scanning stays on too — scan responses carry device
+names and the name-matching rules depend on them, so going fully passive would
+blind the detector to save one packet.
+
+Turn it on from **Settings → Emissions → Go quiet**, or with `{"rx_only":true}`
+/ `CMD:RXONLY:ON` over serial. The setting survives a power cycle, so a board
+left quiet comes back quiet.
+
+### Added — three ways back in, so lockout is impossible
+
+- **Tap BOOT** on the device: advertises for two minutes, then goes quiet again
+  on its own if nothing connected. An accidental press in a pocket must not
+  leave the board broadcasting all afternoon. Connecting inside the window
+  un-quiets it properly.
+- **`CMD:RXONLY:OFF`** over USB serial.
+- **Hold BOOT for 5 seconds**, the existing factory reset, unchanged.
+
+This is also why there is no Android USB-serial control path: Web Serial does
+not exist on Android, and the button removes the need for a cable.
+
+### Added — connecting over USB asks whether to go quiet
+
+On the cable there is no reason to keep broadcasting, but it is the operator's
+call rather than an automatic one. Quieting on any attached USB host would make
+a board on a bench port permanently unreachable by phone.
+
+### Added — you can see that it is quiet
+
+Receive-only is invisible by definition, and a device that appears broken is
+worse than one that is. The idle blink goes dim blue instead of green, with the
+existing chirps on entering and leaving.
+
+### Fixed — going quiet would have re-advertised immediately
+
+`ServerCallbacks::onDisconnect` restarted advertising unconditionally, so
+dropping the client on the way into receive-only would have put the device
+straight back on the air — broken in the one way nothing in the interface could
+have shown you. It is now gated. Proven on the two-board bench: with board A
+quiet, board B saw zero of 63 pushes containing A, while A went on detecting B
+and beeping headless.
+
 ## [Unreleased] — 2026-09-02 — SSIDs, a radio filter, and Wi-Fi foxhunting
 
 ### Added — network names
