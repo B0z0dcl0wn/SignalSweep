@@ -7,6 +7,7 @@
 #include <esp_wifi.h>
 #include <ArduinoJson.h>
 #include <LittleFS.h>
+#include <Preferences.h>
 #include <esp_log.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
@@ -56,6 +57,10 @@ static TaskHandle_t watchersTaskHandle = NULL;
 // planted tracker down by ear. Everything else keeps detecting and beeping
 // normally — this is a single variable, not a mode: no queue, no NVS, no
 // selector, none of the state machine the last pass deleted.
+// Persisted. The whole point of hunting is to unplug the board from the laptop,
+// put it on a USB battery, and walk away from the phone — which is a power
+// cycle. A lock that evaporated on reboot could only ever be used while
+// tethered to the thing you were trying to walk away from.
 static String huntMac = "";
 // Ring is requested from the BLE write callback but performed on the 1 Hz task:
 // a GATT connect must not run on the NimBLE callback stack, and it has to stop
@@ -67,14 +72,20 @@ static String pendingRingMac = "";
 // something interesting, lock it, walk it down — and it is the one case where
 // the reported list deliberately ignores CONF_LIST_MIN.
 //
-// It is NOT persisted. A reboot always comes back quiet, because a device left
-// in this state floods the tightest budget on the board for no reason.
-//
 // It must never touch the ALERT gate. CONF_ALERT_MIN still governs the buzzer,
 // so foxhunting shows you every phone in the room without beeping at any of
 // them. Reporting everything is cheap; beeping at everything is the failure
 // mode this whole design exists to avoid.
+//
+// Persisted, like everything else the operator sets. The extra payload only
+// costs anything while a phone is subscribed — sendBleSerial() returns early
+// with no client — so the earlier "always boot quiet" argument was protecting
+// a budget that isn't being spent when nobody is listening.
 static bool scanAll = false;
+
+// Whether the clicker is currently sounding. Tracked separately from huntMac so
+// the hunt can stay armed while the target is out of earshot.
+static bool huntAudible = false;
 /**
  * @brief Ensure /data/signatures.json exists on LittleFS, creating default rules if missing
  */
@@ -245,6 +256,10 @@ static void ensureSignaturesFileExists() {
 // Now that the mode harvests everything rather than only signature hits, the
 // target list needs the same lifecycle every other mode already had.
 #define WATCHERS_STALE_MS    120000  // drop devices unheard for 2 min
+// How long the hunted target may go unheard before the clicker falls silent.
+// Long enough to survive a few missed advertising intervals while you turn a
+// corner; short enough that walking out of range stops the noise promptly.
+#define HUNT_SILENCE_MS 8000
 #define WATCHERS_MAX_REPORT  40      // per-push cap; selection is round-robin
 
 static String tierForConfidence(int confidence) {
@@ -271,6 +286,9 @@ static String tierForConfidence(int confidence) {
 // only ever shout about brands it already knows. That's the deal, and it's
 // still worth having.
 static volatile int pendingAlertConf = 0;
+// Buzzer alerts sounded since boot. Read back via CMD:CFG so the headless path
+// can be verified after the fact -- see the comment in getAlertCount().
+static volatile uint32_t alertsFired = 0;
 // Which buzzer "word" the winning signal earns. The strongest single signal in
 // the interval sets both the confidence and the category, so the sound matches
 // what actually tripped the alarm.
@@ -282,6 +300,28 @@ static void noteAlert(int weight, const char* category) {
         pendingAlertConf = weight;
         pendingAlertCat = alertCategoryFromName(category);
     }
+}
+
+// Sound for a target the first time it proves itself, whether or not we had
+// already started tracking it.
+//
+// This used to live only on the "new target" path, which silently lost real
+// detections: a BLE device usually splits its data across the advertisement and
+// the scan response, and the name — the strongest signal most rules have — often
+// arrives only in the second one. The target was therefore created unmatched by
+// the first packet, and the packet that actually identified it took the
+// "already tracking" path, which never alerted. Drive past a camera, watch it
+// appear in the list, hear nothing. Same for any device matched by a rule
+// pushed after it was first seen.
+//
+// The flag lives on the target, so a device beeps once per appearance rather
+// than once per advert; it clears naturally when the target goes stale and is
+// pruned (WATCHERS_STALE_MS), so something you drive past twice beeps twice.
+static void noteAlertForTarget(WatcherTargetInfo& t, int bestWeight, const String& category) {
+    if (t.alerted) return;
+    if (bestWeight < CONF_ALERT_MIN) return;
+    t.alerted = true;
+    noteAlert(bestWeight, category.c_str());
 }
 
 /**
@@ -586,6 +626,7 @@ class WatchersScanCallbacks : public NimBLEAdvertisedDeviceCallbacks {
                             target.matchedRule = matchedRule;
                         }
                         if (droneDecoded) applyDroneData(target, bleUas);
+                        noteAlertForTarget(target, bestWeight, matchedCategory);
                         found = true;
                         break;
                     }
@@ -608,14 +649,15 @@ class WatchersScanCallbacks : public NimBLEAdvertisedDeviceCallbacks {
                     if (droneDecoded) applyDroneData(newTarget, bleUas);
                     trackedTargets.push_back(newTarget);
 
-                    // Log and alert only on a signature hit — everything else
-                    // is harvested silently for the phone to classify.
+                    // Log only on a signature hit; everything else is tracked
+                    // silently. The buzzer decision is noteAlertForTarget's,
+                    // and it tests the strongest single signal, not the sum.
                     if (confidence >= CONF_LIST_MIN) {
                         ESP_LOGI(TAG, "[SURVEILLANCE] MAC: %s, Rule: %s, Cat: %s, Conf: %d (%s), RSSI: %d",
                                  mac.c_str(), matchedRule.c_str(), matchedCategory.c_str(),
                                  confidence, newTarget.tier.c_str(), rssi);
-                        noteAlert(bestWeight, matchedCategory.c_str());   // strongest single signal + its category
                     }
+                    noteAlertForTarget(trackedTargets.back(), bestWeight, matchedCategory);
                 }
             }
             xSemaphoreGive(watchersMutex);
@@ -666,6 +708,7 @@ static void upsertDroneTarget(const String& mac, int rssi, const char* proto,
             t.type = "Drone";
             t.matchedRule = "Remote ID Drone";
             applyDroneData(t, d);
+            noteAlertForTarget(t, W_DRONE, "Drone");
             found = true;
             break;
         }
@@ -687,7 +730,7 @@ static void upsertDroneTarget(const String& mac, int rssi, const char* proto,
         trackedTargets.push_back(t);
         ESP_LOGI(TAG, "[DRONE - %s] MAC: %s, UAS: %s, RSSI: %d",
                  proto, mac.c_str(), t.uasId.c_str(), rssi);
-        noteAlert(W_DRONE, "Drone");
+        noteAlertForTarget(trackedTargets.back(), W_DRONE, "Drone");
     }
     xSemaphoreGive(watchersMutex);
 }
@@ -871,6 +914,7 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
                         target.matchedRule = matchedRule;
                     }
                     if (droneDecoded) applyDroneData(target, wifiUas);
+                    noteAlertForTarget(target, bestWeight, matchedCategory);
                     found = true;
                     break;
                 }
@@ -895,16 +939,54 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
                 if (wifiConfidence >= CONF_LIST_MIN) {
                     ESP_LOGI(TAG, "[SURVEILLANCE - WIFI] MAC: %s, Rule: %s, Conf: %d (%s), RSSI: %d",
                              mac.c_str(), matchedRule.c_str(), wifiConfidence, newTarget.tier.c_str(), rssi);
-                    noteAlert(bestWeight, matchedCategory.c_str());   // strongest single signal + its category
                 }
+                noteAlertForTarget(trackedTargets.back(), bestWeight, matchedCategory);
             }
             xSemaphoreGive(watchersMutex);
         }
     }
 }
 
+// Operator state lives here so the board comes back exactly as it was left.
+// A detector wired into a car loses power every time the engine stops; one on a
+// battery pack loses it whenever the pack is swapped. Neither is a reason to
+// forget what it was told to do.
+#define STATE_NVS_NS "ouispy-st"
+
+static void persistState() {
+    Preferences prefs;
+    if (!prefs.begin(STATE_NVS_NS, false)) {
+        ESP_LOGW(TAG, "Could not open %s — state will not survive a reboot", STATE_NVS_NS);
+        return;
+    }
+    if (huntMac.length() > 0) prefs.putString("hunt", huntMac);
+    else                      prefs.remove("hunt");
+    prefs.putBool("scanall", scanAll);
+    prefs.end();
+}
+
+void restoreWatchersState() {
+    Preferences prefs;
+    if (!prefs.begin(STATE_NVS_NS, true)) return;
+    String mac = prefs.getString("hunt", "");
+    bool all = prefs.getBool("scanall", false);
+    prefs.end();
+
+    scanAll = all;
+    huntMac = mac;
+    huntMac.toUpperCase();
+    if (huntMac.length() > 0) {
+        // Armed, but silent until the target is actually heard — see the
+        // recency check in the 1 Hz task. Clicking on boot for something that
+        // may be miles away would be a lie.
+        ESP_LOGI(TAG, "Restored hunt target %s", huntMac.c_str());
+    }
+    if (scanAll) ESP_LOGI(TAG, "Restored report filter: OFF (reporting everything)");
+}
+
 void setScanAll(bool enabled) {
     scanAll = enabled;
+    persistState();
     ESP_LOGI(TAG, "Report filter %s", enabled ? "OFF (reporting everything)" : "ON (matches only)");
 }
 
@@ -912,18 +994,22 @@ bool getScanAll() {
     return scanAll;
 }
 
+uint32_t getAlertCount() {
+    return alertsFired;
+}
+
 void setHuntTarget(const String& mac) {
     huntMac = mac;
     huntMac.toUpperCase();
-    if (huntMac.length() > 0) {
-        // -90 is the "far away" end of the clicker's range; the first advert
-        // from the target replaces it within a scan interval.
-        setGeigerTargetLock(true, -90);
-        ESP_LOGI(TAG, "Hunting %s", huntMac.c_str());
-    } else {
-        setGeigerTargetLock(false);
-        ESP_LOGI(TAG, "Hunt cleared");
-    }
+    persistState();
+    // Silence now; the 1 Hz task starts the clicker within a second if the
+    // target is actually being heard. Turning it on here instead would leave
+    // huntAudible false while the clicker ran, and the recency check would then
+    // see "no change" and never be able to silence it again.
+    huntAudible = false;
+    setGeigerTargetLock(false);
+    ESP_LOGI(TAG, "%s", huntMac.length() > 0
+             ? ("Hunting " + huntMac).c_str() : "Hunt cleared");
 }
 
 String getHuntTarget() {
@@ -994,7 +1080,16 @@ static void watchersPeriodicTask(void *pvParameters) {
         // The buzzer pattern is the identification: each category is a distinct
         // "word" you learn by ear. Confidence already gated the alert in
         // noteAlert(); here we just sound whichever category won the interval.
-        if (alert >= CONF_ALERT_MIN) triggerCategoryAlert(alertCat);
+        if (alert >= CONF_ALERT_MIN) {
+            triggerCategoryAlert(alertCat);
+            alertsFired++;
+            // The buzzer is the entire interface when nothing is connected, and
+            // "did it actually beep?" is otherwise unanswerable without
+            // standing next to it. ESP_LOGI is compiled out at
+            // CORE_DEBUG_LEVEL=0, so this is a plain print, and it costs
+            // nothing when no USB host is attached.
+            if (Serial) Serial.printf("[ALERT] category=%d weight=%d\n", (int)alertCat, alert);
+        }
 
         // Ring runs here, on a real task with a real stack, never on the BLE
         // write callback that asked for it.
@@ -1013,6 +1108,29 @@ static void watchersPeriodicTask(void *pvParameters) {
                     trackedTargets.erase(trackedTargets.begin() + i);
                 } else {
                     i++;
+                }
+            }
+
+            // Click only while the target is actually being heard. The hunt
+            // itself stays armed across silence and across reboots; what stops
+            // is the noise. Otherwise a board restored from NVS — or one whose
+            // target has gone out of range — would tick in your pocket at the
+            // "very far away" rate for hours, which reads as "still tracking
+            // it" when it means nothing of the sort.
+            if (huntMac.length() > 0) {
+                bool heard = false;
+                for (const auto& t : trackedTargets) {
+                    if (t.mac.equalsIgnoreCase(huntMac) &&
+                        now - t.lastSeenMs <= HUNT_SILENCE_MS) {
+                        heard = true;
+                        break;
+                    }
+                }
+                if (heard != huntAudible) {
+                    huntAudible = heard;
+                    setGeigerTargetLock(heard, -90);
+                    ESP_LOGI(TAG, "Hunt %s: %s", huntMac.c_str(),
+                             heard ? "target heard, clicking" : "target lost, silent");
                 }
             }
             xSemaphoreGive(watchersMutex);
@@ -1106,6 +1224,7 @@ void startWatchersWatch() {
     }
 
     loadWatchersSignatures();
+    restoreWatchersState();
 
     ESP_LOGI(TAG, "Starting NimBLE scanner for Watcher's Watch...");
 

@@ -579,7 +579,13 @@
                     ingestTargets(data.targets);
                     renderScope();
                 }
-                if (data.cfg) applyConfigToSettings(data);
+                if (data.cfg) {
+                    applyConfigToSettings(data);
+                    // A board that has been running headless may already be
+                    // hunting something or have its filter off. Adopt that on
+                    // connect rather than waiting for the first push.
+                    syncDeviceState(data);
+                }
                 // The device is the authority on its own state. After a
                 // reconnect the app may believe it is hunting something the
                 // board has long since forgotten (it does not persist either

@@ -89,6 +89,11 @@ String getBleConfigJson() {
     doc["cfg"] = true;
     doc["ble_name"] = getBleDeviceName();
     doc["rand_mac"] = getRandomMacEnabled();
+    // Operator state, so a phone connecting to a board that has been running
+    // headless learns what it was already doing rather than assuming defaults.
+    doc["hunt"] = getHuntTarget();
+    doc["scan_all"] = getScanAll();
+    doc["alerts"] = getAlertCount();
     String out;
     serializeJson(doc, out);
     return out;

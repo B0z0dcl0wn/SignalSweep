@@ -2,6 +2,61 @@
 
 All notable changes to SignalSweep are recorded here.
 
+## [Unreleased] — 2026-09-02 — Everything the operator sets now survives a power cycle
+
+The device is headless and unattended. Wired into a car it loses power every
+time the engine stops; the foxhunt workflow is unplug from the laptop, move to a
+USB battery, and walk away from the phone — also a power cycle. State that
+evaporated on reboot could only be used while tethered to the thing you were
+trying to leave behind.
+
+### Fixed — the hunt target and the report filter are persisted
+
+Both now live in NVS (`ouispy-st`) and are restored by `startWatchersWatch()`.
+The filter had been deliberately session-only on the grounds that it floods the
+telemetry budget; that argument protected a budget that isn't being spent, since
+`sendBleSerial()` returns early with no client subscribed. Verified across real
+power cycles: set, reboot, still set; cleared, reboot, still cleared.
+
+Already persisted and unaffected: signature rules, buzzer mute, BLE name and
+random-address flag, hardware tier. `pendingRingMac` stays transient — it is a
+one-shot action, not a setting.
+
+### Fixed — a detection could be listed without ever sounding the buzzer
+
+The alert call lived only on the "new target" path. A BLE device splits its data
+between the advertisement and the scan response, and the name — the strongest
+signal most rules have — frequently arrives only in the second one. The target
+was therefore created unmatched by the first packet, and the packet that
+actually identified it took the "already tracking" path, which never alerted:
+drive past a camera, watch it appear in the list, hear nothing. Any rule pushed
+after a device was first seen had the same problem.
+
+`noteAlertForTarget()` now owns the decision and records it on the target, so a
+device beeps once per appearance rather than once per advert. The flag clears
+when the target goes stale and is pruned, so something you drive past twice
+beeps twice. Applies to both radios and to the drone path.
+
+### Added — the clicker goes quiet when the hunted target is out of earshot
+
+The hunt stays armed across silence and across reboots; what stops is the noise.
+Without this, a board restored from NVS — or one whose target has gone out of
+range — would tick in your pocket at the "very far away" rate indefinitely,
+which reads as "still tracking it" when it means nothing of the sort. Eight
+seconds of silence stops the clicking; hearing the target again resumes it.
+
+### Added — evidence that the headless path actually works
+
+With nothing connected, the buzzer's only witness is a noise in another room,
+and a serial print made seconds after boot is lost while the USB CDC port
+re-enumerates — exactly when a freshly powered detector does its alerting.
+`getAlertCount()` counts alerts since boot and `CMD:CFG` reports it, along with
+the hunt target and filter state so a phone connecting to a board that has been
+running headless adopts what it was already doing.
+
+Bench result: rule pushed, power cycled, left alone, then read back — one alert
+fired after the power cycle with no phone and no USB host listening.
+
 ## [Unreleased] — 2026-09-02 — Foxhunting, a location readout, and an interface that looks like an instrument
 
 ### Added — the filter switch and the foxhunt readout

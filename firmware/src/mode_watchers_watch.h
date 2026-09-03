@@ -32,6 +32,10 @@ struct WatcherTargetInfo {
     int confidence;   // 0-100, accumulated across matching signals
     String tier;      // "Confirmed" | "Likely" | "Possible"
     uint32_t lastReportedMs;  // round-robin cursor: oldest reported goes first
+    // Has this device already sounded the buzzer since it appeared? The alert
+    // belongs to the device, not to the moment it was first heard -- see the
+    // comment on noteAlertForTarget() in the .cpp.
+    bool alerted = false;
 
     // Decoded ASTM F3411 Remote ID, populated only for drones (hasDrone).
     // Everything else leaves this zeroed and it never reaches the wire — the
@@ -110,13 +114,28 @@ String getHuntTarget();
 
 /**
  * @brief Report every tracked device rather than only signature matches, for
- * foxhunting an unlisted device. Session-only, never persisted, and it does
- * NOT affect the buzzer — CONF_ALERT_MIN still gates every alert.
+ * foxhunting an unlisted device. Persisted. Does NOT affect the buzzer —
+ * CONF_ALERT_MIN still gates every alert.
  */
 void setScanAll(bool enabled);
 
+/**
+ * @brief Reload the hunt target and report filter from NVS. Called by
+ * startWatchersWatch() so the board resumes exactly what it was doing before
+ * it lost power.
+ */
+void restoreWatchersState();
+
 /** @brief True while the report filter is off. */
 bool getScanAll();
+
+/**
+ * @brief How many times the buzzer has sounded a category alert since boot.
+ * The headless path has no other witness: with no phone attached the only
+ * evidence is a noise in another room, and a serial print made seconds after
+ * boot is lost while the USB CDC port re-enumerates.
+ */
+uint32_t getAlertCount();
 
 /**
  * @brief Queue a "ring the tracker" for this MAC. Performed on the 1 Hz task,
