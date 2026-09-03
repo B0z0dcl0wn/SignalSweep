@@ -860,6 +860,7 @@
         .scope-head { display:flex; align-items:center; gap:0.6rem; margin:0 0 0.7rem; }
         .scope-head h2 { font-size:1rem; font-weight:700; color:#e8eef7; margin:0; }
         .scope-head-n { font-size:0.78rem; color:var(--ss-dim); margin-right:auto; }
+        .scope-drop { font-size:0.72rem; color:var(--accent-amber); }
         .scope-sub { font-size:0.75rem; color:var(--text-muted,#8b98a9); margin-top:0.25rem; word-break:break-all; }
         .scope-signal { text-align:right; margin-left:12px; white-space:nowrap; }
         .scope-bars { font-size:1rem; letter-spacing:2px; }
@@ -1095,6 +1096,7 @@
         <div class="scope-head">
             <h2>Live scope</h2>
             <span class="scope-head-n"><span id="scope-count">0</span> now</span>
+            <span class="scope-drop" id="scope-drop" style="display:none"></span>
             <button class="scope-act" id="btn-view" onclick="toggleView()">Map</button>
         </div>
 

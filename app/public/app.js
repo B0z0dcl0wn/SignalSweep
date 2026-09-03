@@ -193,11 +193,24 @@
                 const tab = document.querySelector('#bands .band[data-lens="' + keys[i] + '"]');
                 if (tab) tab.classList.toggle('live', bandRows.length > 0);
             }
-            renderFoxhunt();
+            // The foxhunt panel draws to a canvas and touches elements that may
+            // not exist in every context. It must never be able to take the
+            // device list down with it -- the list is the part you actually
+            // need on screen.
+            try { renderFoxhunt(); } catch (e) { console.warn('foxhunt render failed:', e); }
 
             const rows = liveRows();
             const countEl = document.getElementById('scope-count');
             if (countEl) countEl.textContent = rows.length;
+            const dropEl = document.getElementById('scope-drop');
+            if (dropEl) {
+                // Only worth showing when a real fraction is being lost; the odd
+                // dropped push is normal and not worth alarming anyone about.
+                const total = rxOk + rxDropped;
+                const bad = total > 10 && rxDropped / total > 0.1;
+                dropEl.style.display = bad ? 'inline' : 'none';
+                if (bad) dropEl.textContent = Math.round(100 * rxDropped / total) + '% of updates lost';
+            }
 
             if (viewMode === 'map') { renderMap(rows); return; }
 
@@ -408,7 +421,11 @@
         // interpolated into an onclick string.
         document.addEventListener('click', function (ev) {
             if (!ev.target || !ev.target.closest) return;
-            const tab = ev.target.closest('#lens-row .lens-tab');
+            // Must match the band-strip markup in index.html. This selector
+            // was left pointing at the old '#lens-row .lens-tab' when the tabs
+            // were rebuilt as '#bands .band', which silently made every tab
+            // dead: no error, no visual difference, just nothing happening.
+            const tab = ev.target.closest('#bands .band');
             if (tab) { setLens(tab.getAttribute('data-lens')); return; }
             const act = ev.target.closest('.scope-act');
             if (!act) return;
@@ -572,9 +589,18 @@
         // =====================================================================
         //  Incoming telemetry
         // =====================================================================
+        // BLE notifications are unacknowledged, and a telemetry push is split
+        // across many of them. Lose one chunk and the reassembled line is
+        // truncated JSON, so the whole second's data is discarded -- which looks
+        // exactly like "the device found nothing". Count it and show it, rather
+        // than logging to a console nobody has open on a phone.
+        let rxDropped = 0;
+        let rxOk = 0;
+
         function processIncomingData(dataStr) {
             try {
                 const data = JSON.parse(dataStr);
+                rxOk++;
                 if (data.targets) {
                     ingestTargets(data.targets);
                     renderScope();
@@ -592,7 +618,9 @@
                 // flag across a reboot), so take what the telemetry says.
                 if ('targets' in data) syncDeviceState(data);
             } catch (e) {
-                console.warn('Data parse error:', e);
+                rxDropped++;
+                console.warn('Data parse error (dropped ' + rxDropped + ' of ' +
+                             (rxDropped + rxOk) + '):', e);
             }
         }
 

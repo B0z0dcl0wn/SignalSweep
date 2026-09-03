@@ -2,6 +2,38 @@
 
 All notable changes to SignalSweep are recorded here.
 
+## [Unreleased] — 2026-09-02 — The band tabs were dead, and filter-off pushes were too big to arrive
+
+### Fixed — clicking a band tab did nothing
+
+The delegated click listener still matched `#lens-row .lens-tab` after the tabs
+were rebuilt as `#bands .band` in the interface pass. Nothing threw and nothing
+logged; the tabs simply did not respond, so the list was permanently stuck on
+Everything. `node app/selftest.js` now cross-checks every id-anchored selector in
+`app.js` against the ids in `index.html` before running anything else, and that
+check fails on exactly this bug when reintroduced.
+
+### Fixed — with the filter off, the app showed nothing at all
+
+A filter-off push was ~4.4 KB, which is about 19 BLE notifications. Those are
+unacknowledged and a push is reassembled from all of them, so losing any single
+chunk truncates the JSON and the app discards that whole second — which looks
+precisely like "the device is finding nothing".
+
+Two changes bring it to ~1.4 KB and 6 notifications:
+
+- Unmatched rows no longer carry `count`, `confidence` and `tier`. The app
+  renders none of those for a device that matched nothing; they were tripling
+  the size of the row that dominates a filter-off push.
+- The per-push cap drops from 40 to 18 while the filter is off. Selection stays
+  round-robin by staleness, never by RSSI, so nothing is starved — every device
+  still comes round, over about two seconds instead of one.
+
+The app now also counts pushes it failed to parse and says so on screen once
+more than one in ten is being lost, rather than logging to a console nobody has
+open on a phone. A render error in the foxhunt panel can no longer take the
+device list down with it.
+
 ## [Unreleased] — 2026-09-02 — Everything the operator sets now survives a power cycle
 
 The device is headless and unattended. Wired into a car it loses power every

@@ -261,6 +261,7 @@ static void ensureSignaturesFileExists() {
 // corner; short enough that walking out of range stops the noise promptly.
 #define HUNT_SILENCE_MS 8000
 #define WATCHERS_MAX_REPORT  40      // per-push cap; selection is round-robin
+#define WATCHERS_MAX_REPORT_ALL 18   // per-push cap while the filter is off
 
 static String tierForConfidence(int confidence) {
     if (confidence >= 75) return "Confirmed";
@@ -1342,7 +1343,13 @@ String getWatchersTargetsJson() {
             return trackedTargets[a].lastReportedMs < trackedTargets[b].lastReportedMs;
         });
         doc["count"] = order.size();
-        if (order.size() > WATCHERS_MAX_REPORT) order.resize(WATCHERS_MAX_REPORT);
+        // The cap is lower while the filter is off. Selection stays round-robin
+        // by staleness, never by RSSI, so nothing is starved -- every device
+        // still comes round, just over a few seconds instead of one. That trade
+        // is worth it: an oversized push is not slower, it is *lost*, because
+        // one dropped BLE notification discards the entire batch.
+        size_t cap = scanAll ? WATCHERS_MAX_REPORT_ALL : WATCHERS_MAX_REPORT;
+        if (order.size() > cap) order.resize(cap);
 
         uint32_t nowMs = millis();
         JsonArray targetsArr = doc["targets"].to<JsonArray>();
@@ -1358,12 +1365,27 @@ String getWatchersTargetsJson() {
             if (t.matchedRule.length() > 0) obj["matched_rule"] = t.matchedRule;
             obj["rssi"] = t.rssi;
             // first_seen_ms / last_seen_ms deliberately not sent: the app
-            // tracks its own wall-clock timing in sightStore and ignored these,
-            // and at ~40 targets they were about a quarter of the payload.
-            obj["count"] = t.count;
+            // tracks its own wall-clock timing and ignored these, and at ~40
+            // targets they were about a quarter of the payload.
             obj["protocol"] = t.protocol.length() > 0 ? t.protocol : "BLE";
-            obj["confidence"] = t.confidence;
-            obj["tier"] = t.tier.length() > 0 ? t.tier : "Possible";
+
+            // A device that matched nothing is only in this list because the
+            // filter is off, and the app shows it as an address, a protocol and
+            // a signal — it renders no count, no confidence and no tier for it.
+            // Sending them anyway tripled the size of the row that dominates a
+            // filter-off push.
+            //
+            // This matters more than the byte count suggests. BLE notifications
+            // are unacknowledged and a push is split across many of them, so a
+            // single dropped chunk truncates the JSON and the app discards the
+            // whole second — which looks exactly like "the device found
+            // nothing". Fewer, smaller notifications is the difference between
+            // the filter-off view working and appearing empty.
+            if (t.confidence > 0) {
+                obj["count"] = t.count;
+                obj["confidence"] = t.confidence;
+                obj["tier"] = t.tier.length() > 0 ? t.tier : "Possible";
+            }
 
             // Decoded Remote ID, drones only. Telemetry is the tightest budget
             // on this board, so each field ships once and only when it holds a
