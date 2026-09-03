@@ -1029,7 +1029,33 @@
             if (nameEl && typeof cfg.ble_name === 'string') nameEl.value = cfg.ble_name;
             if (rndEl) rndEl.checked = !!cfg.rand_mac;
             setRxOnlyUi(!!cfg.rx_only);
+            setRadioUi(cfg);
         }
+
+        // The device is the authority on the radios too: the toggles never
+        // paint themselves optimistically, they paint what the last cfg reply
+        // said, and the firmware answers every BLE_SCAN/WIFI_SCAN command with
+        // a fresh one. Absent keys (older firmware) leave the button alone.
+        function setRadioUi(cfg) {
+            const paint = (id, on) => {
+                const b = document.getElementById(id);
+                if (!b || typeof on !== 'boolean') return;
+                b.textContent = on ? 'Scanning' : 'Paused';
+                b.classList.toggle('on', on);
+                b.classList.toggle('off', !on);
+                b.dataset.on = on ? '1' : '0';
+            };
+            paint('btn-ble-scan', cfg.ble_scan);
+            paint('btn-wifi-scan', cfg.wifi_scan);
+        }
+
+        function toggleRadio(id, cmdPrefix) {
+            const b = document.getElementById(id);
+            const on = !b || b.dataset.on !== '0';
+            sendCommand({ raw: cmdPrefix + (on ? ':OFF' : ':ON') });
+        }
+        function toggleBleScan()  { toggleRadio('btn-ble-scan', 'CMD:BLE_SCAN'); }
+        function toggleWifiScan() { toggleRadio('btn-wifi-scan', 'CMD:WIFI_SCAN'); }
 
         // The device is the authority on this; the app only mirrors what the
         // last CMD:CFG said.
@@ -1039,7 +1065,11 @@
             const label = document.getElementById('cfg-rxonly');
             if (label) label.textContent = quiet ? 'receive-only' : 'advertising';
             const btn = document.getElementById('btn-rxonly');
-            if (btn) btn.textContent = quiet ? 'Advertise' : 'Go quiet';
+            if (btn) {
+                btn.textContent = quiet ? 'Advertise' : 'Go quiet';
+                btn.classList.toggle('on', quiet);
+                btn.classList.toggle('off', !quiet);
+            }
         }
 
         // Deliberately a toggle, not a one-way door. Over BLE, going quiet
@@ -1187,6 +1217,21 @@
                 if (serialBtn) serialBtn.hidden = true;
             }
         }
+
+        // Backdrop click and Escape close whatever modal is open. Settings is
+        // tall enough to scroll on a phone, which can push the x off the top of
+        // the screen -- a modal you can scroll must have a way out that does not
+        // depend on scrolling back up. The PIN gate is included deliberately:
+        // dismissing it just leaves the store locked.
+        document.addEventListener('click', (e) => {
+            if (e.target.classList && e.target.classList.contains('modal-overlay')) {
+                e.target.classList.remove('active');
+            }
+        });
+        document.addEventListener('keydown', (e) => {
+            if (e.key !== 'Escape') return;
+            document.querySelectorAll('.modal-overlay.active').forEach(m => m.classList.remove('active'));
+        });
 
         function openConnModal()  { document.getElementById('connModal').classList.add('active'); }
         function closeConnModal() { document.getElementById('connModal').classList.remove('active'); }

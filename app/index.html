@@ -529,9 +529,16 @@
             -webkit-backdrop-filter: blur(12px);
             z-index: 999;
             display: flex;
-            align-items: center;
+            /* The overlay scrolls, not the card: the close button is absolutely
+               positioned inside the card, so scrolling the card would leave it
+               pinned over the content. flex-start + `margin:auto 0` on the card
+               keeps a short modal centred and lets a tall one scroll. */
+            align-items: flex-start;
             justify-content: center;
-            padding: 1rem;
+            overflow-y: auto;
+            overscroll-behavior: contain;
+            -webkit-overflow-scrolling: touch;
+            padding: max(1rem, env(safe-area-inset-top)) 1rem max(1rem, env(safe-area-inset-bottom));
             opacity: 0;
             pointer-events: none;
             transition: opacity 0.3s ease;
@@ -549,6 +556,7 @@
             border-radius: 20px;
             max-width: 520px;
             width: 100%;
+            margin: auto 0;
             padding: 2.25rem;
             position: relative;
             transform: translateY(20px);
@@ -878,6 +886,29 @@
         .sig-input { width:100%; min-height:220px; font-family:monospace; font-size:0.8rem; padding:0.8rem;
             border-radius:10px; border:1px solid rgba(255,255,255,0.15); background:rgba(0,0,0,0.3); color:#cfe; }
         .modal-actions .ctrl-btn { flex:1; }
+
+        /* Settings modal. One spacing rhythm (`* + *`), one row style, one
+           toggle style -- the sections used to be inline-styled one by one
+           inside a flex column, so every gap was gap+margin and no two agreed. */
+        .set-body { color:var(--text-main); }
+        .set-body > * + * { margin-top:0.75rem; }
+        .set-body > .set-label { margin-top:1.75rem; }
+        .set-body > .set-label:first-child { margin-top:0; }
+        .set-label { font-size:0.75rem; font-weight:700; color:var(--text-muted);
+            text-transform:uppercase; letter-spacing:0.08em; }
+        .set-note { font-size:0.78rem; color:var(--text-muted); line-height:1.5; }
+        .set-row { display:flex; justify-content:space-between; align-items:center; gap:10px;
+            padding:0.7rem 0.85rem; background:rgba(255,255,255,0.05);
+            border:1px solid var(--card-border); border-radius:10px; font-size:0.9rem; }
+        .set-toggle { flex:none; padding:6px 14px; border-radius:6px; font-weight:700;
+            font-size:0.8rem; cursor:pointer; transition:all 0.2s ease; }
+        .set-toggle.on  { background:var(--accent-emerald); border:1px solid var(--accent-emerald); color:#000; }
+        .set-toggle.off { background:rgba(239,68,68,0.2); border:1px solid var(--accent-red); color:var(--accent-red); }
+        .set-text { width:100%; padding:0.7rem 0.85rem; font-size:1rem; border-radius:10px;
+            border:1px solid rgba(255,255,255,0.15); background:rgba(0,0,0,0.3); color:#fff; }
+        .set-check { display:flex; gap:10px; align-items:flex-start; cursor:pointer; font-size:0.82rem; line-height:1.5; }
+        .set-check input { margin-top:3px; flex:none; }
+        .set-warn { display:block; color:var(--accent-red,#ef4444); font-size:0.75rem; margin-top:4px; }
 
         /* ------------------------------------------------------------------
            Band selector + foxhunt instrument.
@@ -1273,50 +1304,48 @@
     <div id="settings-modal" class="modal-overlay">
         <div class="modal-card">
             <button class="modal-close-btn" onclick="document.getElementById('settings-modal').classList.remove('active')">&times;</button>
-            <div class="modal-header"><h2>Settings</h2><p>Radios</p></div>
-            <div class="modal-actions" style="color:var(--text-main);">
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;padding:10px;background:rgba(255,255,255,0.05);border-radius:8px;">
-                    <span>BLE Scanning</span>
-                    <div>
-                        <button onclick="sendCommand({raw:'CMD:BLE_SCAN:ON'})" style="padding:6px 12px;margin-right:5px;background:var(--accent-emerald);border:none;border-radius:6px;color:#000;font-weight:bold;cursor:pointer;">ON</button>
-                        <button onclick="sendCommand({raw:'CMD:BLE_SCAN:OFF'})" style="padding:6px 12px;background:rgba(239,68,68,0.2);border:1px solid var(--accent-red);border-radius:6px;color:var(--accent-red);font-weight:bold;cursor:pointer;">OFF</button>
-                    </div>
-                </div>
-                <div style="display:flex;justify-content:space-between;align-items:center;padding:10px;background:rgba(255,255,255,0.05);border-radius:8px;">
-                    <span>WiFi Scanning</span>
-                    <div>
-                        <button onclick="sendCommand({raw:'CMD:WIFI_SCAN:ON'})" style="padding:6px 12px;margin-right:5px;background:var(--accent-emerald);border:none;border-radius:6px;color:#000;font-weight:bold;cursor:pointer;">ON</button>
-                        <button onclick="sendCommand({raw:'CMD:WIFI_SCAN:OFF'})" style="padding:6px 12px;background:rgba(239,68,68,0.2);border:1px solid var(--accent-red);border-radius:6px;color:var(--accent-red);font-weight:bold;cursor:pointer;">OFF</button>
-                    </div>
-                </div>
-                <p style="margin:22px 0 8px;font-size:0.8rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.08em;">Emissions</p>
-                <p style="margin:0 0 10px;font-size:0.78rem;color:var(--text-muted);line-height:1.5;">
-                    <strong>Receive-only</strong> stops the device announcing itself &mdash; no advertising, no connection. It keeps scanning and keeps beeping; this is not the buzzer mute. Over Bluetooth <strong>this connection will drop</strong> &mdash; tap the BOOT button on the device to bring it back for two minutes. Over a USB cable nothing drops: only the radio goes quiet, and you can turn it back on here.
+            <div class="modal-header"><h2>Settings</h2><p>Radios, emissions and identity.</p></div>
+            <div class="set-body">
+                <h3 class="set-label">Radios</h3>
+                <p class="set-note">
+                    Both come back on after a power cycle &mdash; pausing one is for this session only.
+                    The device is the authority here: these read back what it reported.
                 </p>
-                <div style="display:flex;justify-content:space-between;align-items:center;padding:10px;background:rgba(255,255,255,0.05);border-radius:8px;">
-                    <span>Currently: <strong id="cfg-rxonly">advertising</strong></span>
-                    <button id="btn-rxonly" onclick="toggleReceiveOnly()" style="padding:6px 12px;background:rgba(239,68,68,0.2);border:1px solid var(--accent-red);border-radius:6px;color:var(--accent-red);font-weight:bold;cursor:pointer;">Go quiet</button>
+                <div class="set-row">
+                    <span>Bluetooth LE</span>
+                    <button class="set-toggle on" id="btn-ble-scan" onclick="toggleBleScan()">Scanning</button>
+                </div>
+                <div class="set-row">
+                    <span>Wi&#8209;Fi</span>
+                    <button class="set-toggle on" id="btn-wifi-scan" onclick="toggleWifiScan()">Scanning</button>
                 </div>
 
-                <p style="margin:22px 0 8px;font-size:0.8rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.08em;">Device identity</p>
-                <p style="margin:0 0 10px;font-size:0.78rem;color:var(--text-muted);line-height:1.5;">
+                <h3 class="set-label">Emissions</h3>
+                <p class="set-note">
+                    <strong>Receive-only</strong> stops the device announcing itself &mdash; no advertising, no connection. It keeps scanning and keeps beeping; this is not the buzzer mute. Over Bluetooth <strong>this connection will drop</strong> &mdash; tap the BOOT button on the device to bring it back for two minutes. Over a USB cable nothing drops: only the radio goes quiet, and you can turn it back on here.
+                </p>
+                <div class="set-row">
+                    <span>Currently: <strong id="cfg-rxonly">advertising</strong></span>
+                    <button class="set-toggle off" id="btn-rxonly" onclick="toggleReceiveOnly()">Go quiet</button>
+                </div>
+
+                <h3 class="set-label">Device identity</h3>
+                <p class="set-note">
                     The app finds the device by its service UUID, so renaming it never breaks discovery. Useful for telling two boards apart &mdash; or for not announcing what it is.
                 </p>
-                <input class="pin-input" id="cfg-name" type="text" maxlength="20" autocomplete="off"
-                       placeholder="SignalSweep"
-                       style="font-size:1rem;letter-spacing:normal;text-align:left;">
-                <label style="display:flex;gap:10px;align-items:flex-start;margin:12px 0;cursor:pointer;">
-                    <input type="checkbox" id="cfg-randmac" style="margin-top:3px;flex:none;">
-                    <span style="font-size:0.82rem;line-height:1.5;">Randomize BLE address each boot
-                        <span style="display:block;color:var(--accent-red,#ef4444);font-size:0.75rem;margin-top:4px;">
+                <input class="set-text" id="cfg-name" type="text" maxlength="20" autocomplete="off" placeholder="SignalSweep">
+                <label class="set-check">
+                    <input type="checkbox" id="cfg-randmac">
+                    <span>Randomize BLE address each boot
+                        <span class="set-warn">
                             Breaks silent auto&#8209;reconnect. The phone remembers the device by its address, so after every reboot you must pick it from the dialog again &mdash; no use on a dash mount.
                         </span>
                     </span>
                 </label>
                 <button class="ctrl-btn" style="width:100%;" onclick="saveIdentity()">Save &amp; restart device</button>
 
-                <p style="margin:22px 0 8px;font-size:0.8rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.08em;">Opsec</p>
-                <p style="margin:0;font-size:0.8rem;color:var(--text-muted);line-height:1.5;">
+                <h3 class="set-label">Opsec</h3>
+                <p class="set-note">
                     This app keeps no history of what it detected or where you went. The only thing stored is location pins you explicitly confirm, encrypted behind your PIN. Manage them under <strong>Pins</strong>.
                 </p>
             </div>

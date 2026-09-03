@@ -105,6 +105,14 @@ void applyRandomMac() {
              addr[5], addr[4], addr[3], addr[2], addr[1], addr[0]);
 }
 
+// Whether the operator has paused a radio from the app. Deliberately NOT read
+// out of pauseBle()/pauseWifi(): performRing() pauses the BLE scan for the
+// duration of a ring, and reporting that would show the scanner as off for a
+// second every time you ring a tracker. Not persisted, like scan_all — a reboot
+// always comes back with both radios scanning.
+static bool bleScanOn  = true;
+static bool wifiScanOn = true;
+
 String getBleConfigJson() {
     JsonDocument doc;
     doc["cfg"] = true;
@@ -115,6 +123,8 @@ String getBleConfigJson() {
     doc["hunt"] = getHuntTarget();
     doc["scan_all"] = getScanAll();
     doc["rx_only"] = rxOnly;
+    doc["ble_scan"] = bleScanOn;
+    doc["wifi_scan"] = wifiScanOn;
     doc["alerts"] = getAlertCount();
     String out;
     serializeJson(doc, out);
@@ -415,12 +425,20 @@ void processIncomingCommand(const String& rawCommand) {
             resetWatchersSignaturesToDefaults();
         } else if (rawStr == "CMD:BLE_SCAN:OFF") {
             pauseBle(true);
+            bleScanOn = false;
+            sendConfigReply();
         } else if (rawStr == "CMD:BLE_SCAN:ON") {
             pauseBle(false);
+            bleScanOn = true;
+            sendConfigReply();
         } else if (rawStr == "CMD:WIFI_SCAN:OFF") {
             pauseWifi(true);
+            wifiScanOn = false;
+            sendConfigReply();
         } else if (rawStr == "CMD:WIFI_SCAN:ON") {
             pauseWifi(false);
+            wifiScanOn = true;
+            sendConfigReply();
         } else if (rawStr == "CMD:RXONLY:ON") {
             setRxOnly(true, true);
         } else if (rawStr == "CMD:RXONLY:OFF") {

@@ -2,6 +2,62 @@
 
 All notable changes to SignalSweep are recorded here.
 
+## [Unreleased] — 2026-09-03 — A Settings page you can reach the bottom of
+
+### Fixed — modals were not scrollable at all
+
+`.modal-overlay` is a fixed 100vh flexbox and `.modal-card` had no `max-height`
+and no `overflow`, so any modal taller than the screen spilled off both ends
+with nothing to scroll. Settings is the tallest and showed it first, but Help
+and Signature Rules had the same bug on a phone.
+
+The overlay is now the scroller, not the card — the close button is absolutely
+positioned *inside* the card, so scrolling the card would have pinned the x over
+the content. `align-items:flex-start` plus `margin:auto 0` on the card keeps a
+short modal centred and lets a tall one scroll, with safe-area padding top and
+bottom. Escape and a backdrop click now close any open modal: the x can scroll
+off the top, and a modal you have to scroll needs a way out that does not depend
+on scrolling back up.
+
+### Changed — Settings reads as one page instead of four inline-styled fragments
+
+The body was wrapped in `.modal-actions` (`flex-direction:column; gap:1rem`), so
+every element got a gap *plus* its own margin and no two sections agreed on
+spacing. Each row and button carried its own duplicated inline style blob. All of
+that is now five small classes — `.set-label`, `.set-note`, `.set-row`,
+`.set-toggle`, `.set-text` — and one spacing rule. The header subtitle said
+"Radios" while the modal also held Emissions, Identity and Opsec. Every id is
+unchanged; `app/selftest.js` cross-checks them against `app.js`.
+
+### Added — the radios report their own state
+
+The BLE and WiFi ON/OFF button pairs were fire-and-forget: nothing anywhere said
+whether a radio was actually paused, so both buttons always looked identical and
+the modal could never show what the device was doing.
+
+`CMD:CFG` now carries `ble_scan` / `wifi_scan`, and each `CMD:BLE_SCAN:*` /
+`CMD:WIFI_SCAN:*` answers with a fresh config reply, so the app shows one
+state-bearing toggle per radio painted from the device — the same
+device-is-the-authority rule as `hunt`, `scan_all` and `rx_only`.
+
+The flag is set in the command handlers, deliberately **not** inside
+`pauseBle()`: `performRing()` pauses the BLE scan for the length of a ring, and
+reading the state from there would report the scanner as off every time you rang
+a tracker. Bench-verified on COM3 — 342 `CMD:CFG` samples taken across a ring
+with `ble_scan` true throughout, both radios back to scanning after a reset.
+
+### Fixed — the `scan_all` documentation was backwards
+
+`CLAUDE.md` claimed the foxhunt filter was not persisted and that "a reboot
+always comes back quiet". `setScanAll()` has always called `persistState()`, and
+`restoreWatchersState()` reads it back. The code is right — the foxhunt workflow
+is unplug-and-walk-away, and a filter that reset on a battery swap would only be
+usable while tethered to the laptop you were leaving. The docs now say so, along
+with the consequence: a board can come back still unfiltered, which is why the
+filter-off list is capped at 18 rather than 40.
+
+---
+
 ## [Unreleased] — 2026-09-03 — The phone can drive the device over USB
 
 ### Added — native USB serial on Android

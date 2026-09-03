@@ -117,12 +117,18 @@ The same JSON commands the app sends over BLE also work over USB serial, one
 per line, plus a few raw ones:
 
 ```
-CMD:CFG            name, address mode, hunt target, filter and receive-only state, alert count
+CMD:CFG            name, address mode, hunt target, filter, receive-only and
+                   per-radio scan state, alert count
 CMD:SIGS:RESET     restore the built-in signature rules
 CMD:RXONLY:ON|OFF  enter / leave receive-only
-CMD:BLE_SCAN:ON|OFF
+CMD:BLE_SCAN:ON|OFF    pause / resume one radio; each replies with a fresh CMD:CFG
 CMD:WIFI_SCAN:ON|OFF
 ```
+
+A paused radio is reported as `ble_scan` / `wifi_scan` in `CMD:CFG`, and the
+flag is set by these commands only — ringing a tracker pauses the BLE scan for
+a moment internally and deliberately does not show up here. Neither survives a
+power cycle: a board always boots with both radios scanning.
 
 `CMD:CFG`'s `alerts` counter is how you prove the headless path works: push a
 rule, power cycle, wait, then read the count back. Nonzero means it sounded
