@@ -66,7 +66,8 @@
                 liveMatches[t.mac] = {
                     mac: t.mac, name: t.name || '', type: t.type || '',
                     rule: t.matched_rule || '', rssi: t.rssi,
-                    protocol: t.protocol || 'BLE', confidence: t.confidence || 0,
+                    protocol: t.protocol || 'BLE', ssid: t.ssid || '',
+                    confidence: t.confidence || 0,
                     tier: t.tier || '', ts: now,
                     // Decoded ASTM Remote ID, present only on drones. The
                     // firmware omits any field it does not actually know, so
@@ -111,20 +112,61 @@
             renderScope();
         }
 
+        // Which band a row belongs in.
+        //
+        // Three distinct states, and conflating them was putting ordinary
+        // hardware under "Cameras":
+        //   * no type and no rule      -> matched nothing at all
+        //   * a rule but no type       -> matched something the firmware
+        //                                 deliberately refuses to attribute,
+        //                                 i.e. the Lite-On vendor IE, which is
+        //                                 in countless consumer Wi-Fi chips.
+        //                                 Real example: Nest cameras listed as
+        //                                 "Cameras" off a prefix that only
+        //                                 means "this chipset".
+        //   * a type                   -> a real vendor category
+        // Only the last belongs in a category band.
+        function bandOf(m) {
+            if (!m.type && !m.rule) return 'none';
+            if (!m.type) return 'weak';
+            return categoryOf(m.type).key;
+        }
+
+        // Radio filter. When you are looking for one kind of thing, the other
+        // radio's devices are noise -- and with the filter off most of the list
+        // is Wi-Fi access points.
+        let radio = 'any';   // 'any' | 'BLE' | 'WiFi'
+
+        function setRadio(key) {
+            radio = key;
+            document.querySelectorAll('#radios .radio-tab').forEach(function (el) {
+                el.setAttribute('aria-selected',
+                    el.getAttribute('data-radio') === key ? 'true' : 'false');
+            });
+            renderScope();
+        }
+
+        // A device seen on both radios counts as either.
+        function matchesRadio(m) {
+            if (radio === 'any') return true;
+            return String(m.protocol || '').indexOf(radio) >= 0;
+        }
+
         // Live rows: heard recently, matching the current lens, strongest first.
         function liveRows(forLens) {
             const now = Date.now();
             const k = forLens || lens;
             return Object.values(liveMatches)
                 .filter(function (m) { return now - m.ts < LIVE_STALE_MS; })
+                .filter(matchesRadio)
                 .filter(function (m) {
                     if (k === 'all') return true;
-                    const c = categoryOf(m.type || m.rule).key;
+                    const c = bandOf(m);
                     // "Surveillance" is the umbrella over what the buzzer says
-                    // as two separate words (ALPR and body cam); one tab covers
-                    // both, plus anything matched whose category we can't name.
+                    // as two separate words (ALPR and body cam), plus a vendor
+                    // category we have no keyword for (SoundThinking, Raven).
+                    // It does NOT include 'weak' -- see bandOf().
                     if (k === 'alpr') return c === 'alpr' || c === 'bodycam' || c === 'other';
-                    if (k === 'none') return c === 'none';
                     return c === k;
                 })
                 .sort(function (a, b) { return (b.rssi || -999) - (a.rssi || -999); });
@@ -159,11 +201,17 @@
             // interesting that is on no list, then go and physically find it.
             if (cat.key !== 'tracker' && !foxhuntMode) return '';
             const hunting = !!huntMac && huntMac.toUpperCase() === String(m.mac).toUpperCase();
+            // Ring is a GATT write to a Bluetooth characteristic. On a device
+            // only ever heard over Wi-Fi there is nothing to connect to, so the
+            // button would be a guaranteed failure dressed up as an option.
+            const hasBle = String(m.protocol || '').indexOf('BLE') >= 0;
             return '<div class="scope-actions">' +
                 '<button class="scope-act' + (hunting ? ' hunting' : '') +
                     '" data-act="hunt" data-mac="' + esc(m.mac) + '">' +
                     (hunting ? '\u25c9 Hunting \u2014 stop' : '\u25ce Hunt') + '</button>' +
-                '<button class="scope-act" data-act="ring" data-mac="' + esc(m.mac) + '">\ud83d\udd14 Ring</button>' +
+                (hasBle
+                    ? '<button class="scope-act" data-act="ring" data-mac="' + esc(m.mac) + '">\ud83d\udd14 Ring</button>'
+                    : '') +
             '</div>';
         }
 
@@ -228,26 +276,33 @@
             let html = '';
             for (const m of rows) {
                 const cat = categoryOf(m.type || m.rule);
-                // An unmatched device has no label to fall back on, so name it
-                // by its address rather than inventing a word for it.
-                const title = m.name || m.rule || cat.label || m.mac;
+                // Name it by whatever a person would recognise: its own name,
+                // then the network it is announcing, then the rule it tripped,
+                // then its address. Never invent a word for it.
+                const title = m.name || m.ssid || m.rule || cat.label || m.mac;
                 // With the filter off the list contains devices that matched
                 // nothing. Saying so is the difference between a tool and a
                 // scaremonger: a listed device is not a detection.
-                const unmatched = cat.key === 'none';
+                const band = bandOf(m);
+                const unmatched = band === 'none';
+                const weak = band === 'weak';
                 html += '<div class="scope-row' + (unmatched ? ' unmatched' : '') +
                         '" style="border-left:4px solid ' + cat.color + '">' +
                     '<div class="scope-main">' +
                         '<div class="scope-title">' + (cat.icon ? cat.icon + ' ' : '') + esc(title) +
-                            (unmatched ? '' :
+                            // A weak hint has no vendor to name -- cat.label is
+                            // just the rule text, which already appears below.
+                            (unmatched || weak ? '' :
                                 ' <span class="scope-cat" style="color:' + cat.color + '">' + esc(cat.label) + '</span>') +
                             (unmatched ? '<span class="unmatched-tag">no match</span>' : '') +
-                            (m.tier && !unmatched ? '<span class="tier-badge" style="color:' + cat.color + '">' + esc(m.tier) + '</span>' : '') +
+                            (weak ? '<span class="unmatched-tag">weak hint</span>' : '') +
+                            (m.tier && !unmatched && !weak ? '<span class="tier-badge" style="color:' + cat.color + '">' + esc(m.tier) + '</span>' : '') +
                         '</div>' +
                         // Don't print the address twice when it is also the title.
                         '<div class="scope-sub">' +
                             (title === m.mac ? '' : '<span class="mono">' + esc(m.mac) + '</span> \u00b7 ') +
                             esc(m.protocol) +
+                            (m.ssid && m.ssid !== title ? ' \u00b7 ' + esc(m.ssid) : '') +
                             (m.rule ? ' \u00b7 ' + esc(m.rule) : '') +
                             (unmatched ? '' : ' \u00b7 conf ' + (m.confidence | 0)) + '</div>' +
                     '</div>' +
@@ -287,6 +342,9 @@
                 btn.classList.toggle('on', foxhuntMode);
                 btn.textContent = foxhuntMode ? '\u25c9 Filter: off' : '\u25ce Filter: matches';
             }
+            const radios = document.getElementById('radios');
+            if (radios) radios.style.display = foxhuntMode ? 'grid' : 'none';
+            if (!foxhuntMode) setRadio('any');
             if (!foxhuntMode && huntMac) stopHunt();
             showToast(foxhuntMode ? 'Showing everything the radios hear'
                                   : 'Showing signature matches only',
@@ -427,6 +485,8 @@
             // dead: no error, no visual difference, just nothing happening.
             const tab = ev.target.closest('#bands .band');
             if (tab) { setLens(tab.getAttribute('data-lens')); return; }
+            const rt = ev.target.closest('#radios .radio-tab');
+            if (rt) { setRadio(rt.getAttribute('data-radio')); return; }
             const act = ev.target.closest('.scope-act');
             if (!act) return;
             const mac = act.getAttribute('data-mac');
@@ -979,6 +1039,9 @@
             const devAll = !!data.scan_all;
             if (devAll !== foxhuntMode) {
                 foxhuntMode = devAll;
+                const radios = document.getElementById('radios');
+                if (radios) radios.style.display = foxhuntMode ? 'grid' : 'none';
+                if (!foxhuntMode) setRadio('any');
                 const btn = document.getElementById('btn-foxhunt');
                 if (btn) {
                     btn.classList.toggle('on', foxhuntMode);
@@ -1521,6 +1584,40 @@
                 recordEnabled = false;
                 consentQueue = [];
                 handledMacs.clear();
+
+                // Radio filter, SSID display, and the weak-hint band.
+                foxhuntMode = true;
+                liveMatches = {};
+                ingestTargets([
+                    { mac: 'CC:00:01', type: 'Flock Safety', matched_rule: 'Flock Safety MAC',
+                      rssi: -50, protocol: 'BLE', confidence: 85, tier: 'Confirmed' },
+                    // The real-world case: a consumer camera on Lite-On silicon.
+                    // It matched a rule, but the firmware deliberately declines
+                    // to name a vendor, so it must NOT land under Cameras.
+                    { mac: 'CC:00:02', matched_rule: 'Lite-On Vendor IE (weak)',
+                      rssi: -60, protocol: 'WiFi', ssid: 'NestCam_5G', confidence: 30 },
+                    { mac: 'CC:00:03', rssi: -70, protocol: 'WiFi', ssid: 'HomeNet' },
+                    { mac: 'CC:00:04', type: 'Tracker', matched_rule: 'Apple Find My Tracker',
+                      rssi: -80, protocol: 'BLE', confidence: 80, tier: 'Confirmed' }
+                ]);
+                results.weakIsNotACamera = bandOf(liveMatches['CC:00:02']) === 'weak' &&
+                                           liveRows('alpr').length === 1;
+                results.ssidCarried = liveMatches['CC:00:02'].ssid === 'NestCam_5G';
+
+                setRadio('WiFi');
+                results.radioWifi = liveRows('all').length === 2;
+                setRadio('BLE');
+                results.radioBle = liveRows('all').length === 2;
+                setRadio('any');
+                results.radioAny = liveRows('all').length === 4;
+
+                // Ring is a Bluetooth write: never offer it on a Wi-Fi-only row.
+                const wifiOnly = actionRow(liveMatches['CC:00:03'], categoryOf(''));
+                const bleRow = actionRow(liveMatches['CC:00:04'], categoryOf('Tracker'));
+                results.noRingOnWifi = wifiOnly.indexOf('data-act="ring"') === -1 &&
+                                       wifiOnly.indexOf('data-act="hunt"') > 0;
+                results.ringOnBle = bleRow.indexOf('data-act="ring"') > 0;
+                foxhuntMode = false;
 
                 // Disconnect drops the whole live set, not just the view.
                 clearLiveState();

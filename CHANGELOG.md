@@ -2,6 +2,56 @@
 
 All notable changes to SignalSweep are recorded here.
 
+## [Unreleased] — 2026-09-02 — SSIDs, a radio filter, and Wi-Fi foxhunting
+
+### Added — network names
+
+Wi-Fi rows now carry the SSID the device is announcing, and are titled by it
+when they have no other name. A network name is the one field that lets a person
+recognise their own hardware; a vendor prefix does not. Captured from beacons
+and probe responses only — a probe *request* names the network a client is
+looking for, which says nothing about the device sending it.
+
+### Added — radio filter
+
+Both radios / Bluetooth / Wi-Fi, shown only while the report filter is off,
+where most of the list is access points and picking one radio actually matters.
+A device heard on both counts as either.
+
+### Added — foxhunting works over Wi-Fi
+
+Two things the Bluetooth path got for free had to be built:
+
+- The clicker cannot be driven from the promiscuous callback, which must never
+  block on the hardware mutex. The sample is parked in a volatile and the 1 Hz
+  task applies it.
+- More importantly, the channel hopper meant hearing a given access point about
+  one dwell in thirteen, so the clicker went quiet every time it moved on. While
+  a Wi-Fi target is hunted the hopper parks on its channel. Detection of
+  everything else pauses for the duration, which is the deal you accept when you
+  lock onto one target.
+
+### Changed — Ring is hidden on Wi-Fi-only devices
+
+Ring is a GATT write to a Bluetooth characteristic. On a device only ever heard
+over Wi-Fi there is nothing to connect to, so the button was a guaranteed
+failure dressed up as an option.
+
+### Fixed — a weak Lite-On hint was being counted as a camera
+
+Reported from the field: two "Cameras" in a house with no ALPR. The Lite-On
+vendor IE (50:6F:9A) scores 30 and deliberately sets *no* vendor category,
+because that prefix is in countless consumer Wi-Fi chips. But the app derived a
+row's band from `type || rule`, so a hit with no type fell through to the generic
+bucket, which the Surveillance band includes. Confirmed on the bench: the two
+devices carrying it here are a T-Mobile gateway (`TMOBILE-B430`) and a Sony
+television (`DIRECT-ss-BRAVIA`).
+
+Rows are now placed by `bandOf()`, which separates three states the old code
+conflated: matched nothing, matched a rule the firmware refuses to attribute
+("weak hint"), and matched a real vendor category. Only the last counts toward a
+category band.
+
 ## [Unreleased] — 2026-09-02 — The band tabs were dead, and filter-off pushes were too big to arrive
 
 ### Fixed — clicking a band tab did nothing

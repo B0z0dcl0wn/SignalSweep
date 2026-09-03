@@ -86,6 +86,21 @@ static bool scanAll = false;
 // Whether the clicker is currently sounding. Tracked separately from huntMac so
 // the hunt can stay armed while the target is out of earshot.
 static bool huntAudible = false;
+
+// Hunting a Wi-Fi device needs two things the BLE path gets for free.
+//
+// First, the RSSI cannot be handed to the clicker from the promiscuous
+// callback: updateGeigerRssi() takes the hardware mutex, and that callback must
+// never block. So the sample is parked in a volatile here and the 1 Hz task
+// applies it.
+//
+// Second, and more importantly, the channel hopper means we only hear a given
+// access point while parked on its channel -- roughly one dwell in thirteen.
+// That is fine for sweeping and useless for walking a signal down, so while a
+// Wi-Fi target is being hunted the hopper stops and stays on its channel.
+static volatile int huntWifiRssi = 0;
+static volatile uint32_t huntWifiRssiMs = 0;
+static volatile int huntChannel = 0;
 /**
  * @brief Ensure /data/signatures.json exists on LittleFS, creating default rules if missing
  */
@@ -683,8 +698,19 @@ static void watchersWifiChannelHopperTask(void *pvParameters) {
     while (watchersRunning) {
         vTaskDelay(pdMS_TO_TICKS(150));
         if (!watchersRunning) break;
-        esp_wifi_set_channel(channels[chIndex], WIFI_SECOND_CHAN_NONE);
-        chIndex = (chIndex + 1) % (int)(sizeof(channels) / sizeof(channels[0]));
+        // Parked while hunting a Wi-Fi device. Sweeping thirteen channels means
+        // hearing a given access point about one dwell in thirteen, which is
+        // fine for finding things and useless for walking one down: the clicker
+        // would go quiet every time the hopper moved on. Detection of everything
+        // else pauses for the duration, which is the deal you accept when you
+        // lock onto one target.
+        int parked = huntChannel;
+        if (huntMac.length() > 0 && parked >= 1 && parked <= 14) {
+            esp_wifi_set_channel(parked, WIFI_SECOND_CHAN_NONE);
+        } else {
+            esp_wifi_set_channel(channels[chIndex], WIFI_SECOND_CHAN_NONE);
+            chIndex = (chIndex + 1) % (int)(sizeof(channels) / sizeof(channels[0]));
+        }
     }
     watchersWifiHopTaskHandle = NULL;
     vTaskDelete(NULL);
@@ -784,12 +810,22 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
         String matchedRule = "";
         String matchedCategory = "";
         bool droneDecoded = false;
+        String foundSsid = "";
 
         // 1. Check OUI (weak signal)
         String mac = "";
         char macBuf[20];
         snprintf(macBuf, sizeof(macBuf), "%02X:%02X:%02X:%02X:%02X:%02X", addr2[0], addr2[1], addr2[2], addr2[3], addr2[4], addr2[5]);
         mac = String(macBuf);
+
+        // Hunt hints. Volatile writes only -- no mutex, no buzzer call: this is
+        // the promiscuous callback and it must not block. The 1 Hz task applies
+        // the RSSI to the clicker and the hopper reads the channel.
+        if (huntMac.length() > 0 && huntMac.equalsIgnoreCase(mac)) {
+            huntWifiRssi = rssi;
+            huntWifiRssiMs = millis();
+            huntChannel = packet->rx_ctrl.channel;
+        }
         String cleanMac = "";
         for (size_t i = 0; i < mac.length(); i++) {
             char c = mac[i];
@@ -865,12 +901,18 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
                     }
                 }
 
-                if (!ssidHit && id == 0 && elen > 0 && elen <= 32) {
+                if (id == 0 && elen > 0 && elen <= 32) {
                     char ssid[33] = {0};
                     memcpy(ssid, body + b + 2, elen);
+                    // Keep the name as broadcast, for display. Only beacons and
+                    // probe responses advertise the sender's own network; a
+                    // probe request names the network a client is hunting for,
+                    // which says nothing about the device sending it.
+                    if (fsubtype == 8 || fsubtype == 5) foundSsid = String(ssid);
                     String ssidStr = String(ssid);
                     ssidStr.toLowerCase();
-                    if (ssidStr.indexOf("flock") >= 0 || ssidStr.indexOf("fs_") >= 0 || ssidStr.indexOf("pigvision") >= 0) {
+                    if (!ssidHit &&
+                        (ssidStr.indexOf("flock") >= 0 || ssidStr.indexOf("fs_") >= 0 || ssidStr.indexOf("pigvision") >= 0)) {
                         ssidHit = true;
                         wifiConfidence += W_WIFI_SSID;
                         if (W_WIFI_SSID > bestWeight) {
@@ -914,6 +956,7 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
                         target.type = matchedCategory;
                         target.matchedRule = matchedRule;
                     }
+                    if (foundSsid.length() > 0) target.ssid = foundSsid;
                     if (droneDecoded) applyDroneData(target, wifiUas);
                     noteAlertForTarget(target, bestWeight, matchedCategory);
                     found = true;
@@ -931,6 +974,7 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
                 newTarget.lastSeenMs = now;
                 newTarget.count = 1;
                 newTarget.protocol = "WiFi";
+                newTarget.ssid = foundSsid;
                 newTarget.confidence = wifiConfidence;
                 newTarget.tier = tierForConfidence(wifiConfidence);
                 newTarget.lastReportedMs = 0;
@@ -995,6 +1039,10 @@ bool getScanAll() {
     return scanAll;
 }
 
+int getHuntChannel() {
+    return huntChannel;
+}
+
 uint32_t getAlertCount() {
     return alertsFired;
 }
@@ -1008,6 +1056,8 @@ void setHuntTarget(const String& mac) {
     // huntAudible false while the clicker ran, and the recency check would then
     // see "no change" and never be able to silence it again.
     huntAudible = false;
+    huntChannel = 0;
+    huntWifiRssiMs = 0;
     setGeigerTargetLock(false);
     ESP_LOGI(TAG, "%s", huntMac.length() > 0
              ? ("Hunting " + huntMac).c_str() : "Hunt cleared");
@@ -1126,6 +1176,14 @@ static void watchersPeriodicTask(void *pvParameters) {
                         heard = true;
                         break;
                     }
+                }
+                // A Wi-Fi target's RSSI arrives via the volatile above rather
+                // than straight into the clicker, so apply the freshest sample
+                // here. BLE targets already drove it directly from the scan
+                // callback, which is a normal task and may take the mutex.
+                if (heard && huntWifiRssiMs != 0 &&
+                    now - huntWifiRssiMs <= HUNT_SILENCE_MS) {
+                    updateGeigerRssi(huntWifiRssi);
                 }
                 if (heard != huntAudible) {
                     huntAudible = heard;
@@ -1368,6 +1426,9 @@ String getWatchersTargetsJson() {
             // tracks its own wall-clock timing and ignored these, and at ~40
             // targets they were about a quarter of the payload.
             obj["protocol"] = t.protocol.length() > 0 ? t.protocol : "BLE";
+            // Worth its bytes even in a filter-off push: a network name is the
+            // one field that lets a person recognise their own hardware.
+            if (t.ssid.length() > 0) obj["ssid"] = t.ssid;
 
             // A device that matched nothing is only in this list because the
             // filter is off, and the app shows it as an address, a protocol and

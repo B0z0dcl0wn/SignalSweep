@@ -25,6 +25,11 @@ struct WatcherTargetInfo {
     String type;
     String matchedRule;
     String protocol;
+    // The network name a Wi-Fi device is announcing. Far more identifying to a
+    // human than a MAC -- "Nest_ABC" tells you what a row is at a glance, where
+    // a vendor prefix does not. Beacons and probe responses only: a probe
+    // REQUEST carries the network the client is looking for, not its own.
+    String ssid;
     int rssi;
     uint32_t firstSeenMs;
     uint32_t lastSeenMs;
@@ -128,6 +133,13 @@ void restoreWatchersState();
 
 /** @brief True while the report filter is off. */
 bool getScanAll();
+
+/**
+ * @brief Wi-Fi channel the hunted target was last heard on, or 0 if unknown.
+ * The channel hopper parks here while hunting -- see the comment in
+ * watchersWifiChannelHopperTask().
+ */
+int getHuntChannel();
 
 /**
  * @brief How many times the buzzer has sounded a category alert since boot.

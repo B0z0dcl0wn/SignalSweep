@@ -952,6 +952,18 @@
         .band[aria-selected="true"]::before { content:""; position:absolute;
             inset:0 0 auto 0; height:2px; background:var(--band); }
 
+        /* Radio filter: quieter than the band strip on purpose. It narrows what
+           is already on screen rather than naming a category, so it reads as a
+           control, not a fifth band. */
+        .radios { display:grid; grid-template-columns:repeat(3,1fr); gap:1px;
+            background:var(--ss-line); border:1px solid var(--ss-line);
+            border-radius:8px; overflow:hidden; margin:0 0 0.8rem; }
+        .radio-tab { background:var(--ss-panel); border:0; padding:0.45rem 0.4rem;
+            font:inherit; font-size:0.75rem; font-weight:600; color:var(--ss-dim);
+            cursor:pointer; }
+        .radio-tab[aria-selected="true"] { background:#141c2c; color:#e8eef7; }
+        .radio-tab:focus-visible { outline:2px solid var(--accent-cyan); outline-offset:-2px; }
+
         /* ---- Foxhunt: the one place this app raises its voice --------------
            Walking a hidden transmitter down by signal strength is the most
            characteristic thing this product does, so it gets a full instrument
@@ -1123,6 +1135,14 @@
                 <span class="band-l">Drones</span>
                 <span class="band-m"><i id="m-drone"></i></span>
             </button>
+        </div>
+
+        <!-- Radio filter. Only shown with the report filter off, where most of
+             the list is Wi-Fi access points and picking one radio matters. -->
+        <div class="radios" id="radios" role="tablist" style="display:none;">
+            <button class="radio-tab" role="tab" aria-selected="true" data-radio="any">Both radios</button>
+            <button class="radio-tab" role="tab" aria-selected="false" data-radio="BLE">Bluetooth</button>
+            <button class="radio-tab" role="tab" aria-selected="false" data-radio="WiFi">Wi&#8209;Fi</button>
         </div>
 
         <!-- Foxhunt readout, shown only while a target is locked. -->
