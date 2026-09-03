@@ -868,6 +868,34 @@
         .sig-input { width:100%; min-height:220px; font-family:monospace; font-size:0.8rem; padding:0.8rem;
             border-radius:10px; border:1px solid rgba(255,255,255,0.15); background:rgba(0,0,0,0.3); color:#cfe; }
         .modal-actions .ctrl-btn { flex:1; }
+
+        /* Lens tabs. These are a client-side filter over the live list, NOT the
+           old firmware mode selector — the detector always watches everything. */
+        .lens-row { display:flex; gap:6px; margin:0.9rem 0 0.6rem; flex-wrap:wrap; }
+        .lens-tab { flex:1; min-width:76px; padding:0.5rem 0.4rem; border-radius:8px; cursor:pointer;
+            border:1px solid rgba(255,255,255,0.10); background:rgba(255,255,255,0.03);
+            color:var(--text-muted,#8b98a9); font-weight:700; font-size:0.75rem; text-align:center; }
+        .lens-tab.active { color:var(--text-main,#e6edf6); border-color:currentColor;
+            background:rgba(255,255,255,0.07); }
+        .lens-tab .lens-n { opacity:0.7; font-weight:600; }
+
+        .scope-row { flex-wrap:wrap; }
+        .scope-detail { flex-basis:100%; font-size:0.75rem; color:var(--text-muted,#8b98a9);
+            margin-top:0.5rem; line-height:1.5; }
+        .scope-detail b { color:var(--text-main,#e6edf6); font-weight:600; }
+        .scope-actions { flex-basis:100%; display:flex; gap:8px; margin-top:0.6rem; }
+        .scope-act { padding:0.35rem 0.7rem; border-radius:6px; cursor:pointer; font-size:0.72rem;
+            font-weight:700; border:1px solid rgba(255,255,255,0.15);
+            background:rgba(255,255,255,0.05); color:var(--text-main,#e6edf6); }
+        .scope-act.hunting { border-color:#ff3ac8; color:#ff3ac8; background:rgba(255,58,200,0.12); }
+        .tier-badge { font-size:0.65rem; font-weight:700; text-transform:uppercase; padding:2px 6px;
+            border-radius:4px; margin-left:6px; border:1px solid currentColor; }
+
+        /* Map. Live only — see the comment above initMap() in app.js. */
+        #map { height:min(60vh,420px); border-radius:12px; margin-bottom:0.6rem;
+            border:1px solid rgba(255,255,255,0.10); background:#0b0f14; }
+        .map-note { font-size:0.72rem; color:var(--text-muted,#8b98a9); line-height:1.5;
+            margin-bottom:0.6rem; }
     </style>
 
     <div class="container">
@@ -932,7 +960,23 @@
         </div>
 
         <!-- Live scope -->
-        <div class="grid-title">Live Scope <span style="color:var(--text-muted);font-weight:normal;font-size:0.8rem;">— matching now (<span id="scope-count">0</span>)</span></div>
+        <div class="grid-title">Live Scope <span style="color:var(--text-muted);font-weight:normal;font-size:0.8rem;">— matching now (<span id="scope-count">0</span>)</span>
+            <button class="ctrl-btn" id="btn-view" onclick="toggleView()" style="float:right;flex:0;min-width:0;padding:0.35rem 0.8rem;font-size:0.75rem;">🗺 Map</button>
+        </div>
+
+        <!-- Lens tabs: a filter over what the detector already found. Switching
+             one sends nothing to the device — it is always watching all of them. -->
+        <div class="lens-row" id="lens-row">
+            <div class="lens-tab active" data-lens="all">All <span class="lens-n" id="n-all">0</span></div>
+            <div class="lens-tab" data-lens="alpr" style="color:#ef4444">Surveillance <span class="lens-n" id="n-alpr">0</span></div>
+            <div class="lens-tab" data-lens="tracker" style="color:#ff3ac8">Trackers <span class="lens-n" id="n-tracker">0</span></div>
+            <div class="lens-tab" data-lens="drone" style="color:#3aa0ff">Drones <span class="lens-n" id="n-drone">0</span></div>
+        </div>
+
+        <div id="map-wrap" style="display:none;">
+            <div id="map"></div>
+            <div class="map-note" id="map-note"></div>
+        </div>
         <div class="targets-list" id="targets-list"></div>
     </div>
 

@@ -15,6 +15,11 @@
 #include <algorithm>
 #include "hardware_manager.h"
 #include "capabilities.h"
+#include "mode_manager.h"
+extern "C" {
+#include "opendroneid.h"
+#include "odid_wifi.h"
+}
 
 static const char *TAG = "WatchersWatch";
 static const char *SIG_FILE_PATH = "/data/signatures.json";
@@ -31,13 +36,31 @@ static const char *SIG_FILE_PATH = "/data/signatures.json";
 //   v4: added Tracker category (Tile / Samsung SmartTag service UUIDs). AirTag
 //       "offline finding" is matched in code, not here (needs a payload type
 //       byte the rule schema can't express). Feeds the Tracker buzzer word.
-#define SIG_SCHEMA_VERSION 4
+//   v5: removed the Raven rules — device names "raven"/"penguin" and service
+//       UUIDs 3100/3200/3300/3400/3500. Both scored at or above CONF_ALERT_MIN
+//       (W_NAME/W_UUID = 70), so a single one could fire the buzzer on its own,
+//       and both are far too generic to carry that: "raven" and "penguin" are
+//       ordinary product words matched as substrings, and a four-hex-digit UUID
+//       is substring-matched against every UUID a device advertises. Same
+//       failure shape as the mfg 0x01 rule that labelled Govee bulbs "Flock".
+#define SIG_SCHEMA_VERSION 5
 
 static SemaphoreHandle_t watchersMutex = NULL;
 static bool watchersRunning = false;
 static std::vector<WatcherSignature> loadedSignatures;
 static std::vector<WatcherTargetInfo> trackedTargets;
 static TaskHandle_t watchersTaskHandle = NULL;
+
+// Hunt: the one opt-in behaviour change on an otherwise always-on detector.
+// While a MAC is hunted, its RSSI drives the Geiger clicker so you can walk a
+// planted tracker down by ear. Everything else keeps detecting and beeping
+// normally — this is a single variable, not a mode: no queue, no NVS, no
+// selector, none of the state machine the last pass deleted.
+static String huntMac = "";
+// Ring is requested from the BLE write callback but performed on the 1 Hz task:
+// a GATT connect must not run on the NimBLE callback stack, and it has to stop
+// the scan first.
+static String pendingRingMac = "";
 /**
  * @brief Ensure /data/signatures.json exists on LittleFS, creating default rules if missing
  */
@@ -107,14 +130,17 @@ static void ensureSignaturesFileExists() {
             // SoundThinking / ShotSpotter
             addRule("SoundThinking", "SoundThinking", "d4:11:d6", "", "", "");
 
-            // Raven UUIDs
-            const char* ravenUuids[] = {"3100", "3200", "3300", "3400", "3500"};
-            for (const char* uuid : ravenUuids) {
-                addRule("Raven Surveillance", "Raven", "", "", "", uuid);
-            }
+            // NOTE: the Raven service-UUID rules (3100/3200/3300/3400/3500)
+            // were removed at v5. service_uuid is substring-matched against
+            // every UUID a device advertises, so a four-hex-digit needle hits
+            // constantly — and at W_UUID (70) a single hit is enough to beep.
+            // A UUID rule has to be specific enough to stand alone, because
+            // that is exactly what CONF_ALERT_MIN lets it do.
 
-            // Device Name Keywords
-            const char* bleNames[] = {"flock", "raven", "penguin", "pigvision", "fs_"};
+            // Device Name Keywords. "raven" and "penguin" were dropped at v5:
+            // ordinary words, matched as substrings, scoring W_NAME (70) — i.e.
+            // self-sufficient to sound the alarm on someone's bluetooth speaker.
+            const char* bleNames[] = {"flock", "pigvision", "fs_"};
             for (const char* name : bleNames) {
                 addRule("Flock BLE Name", "Flock Safety", "", "", name, "");
             }
@@ -347,14 +373,61 @@ static int matchDeviceAgainstRule(NimBLEAdvertisedDevice* dev, const WatcherSign
     return weight > 100 ? 100 : weight;
 }
 
-// Presence-only protocol detectors. We don't decode the drone's operator GPS or
-// the AirTag's rotating key — presence of the protocol is the whole signal for a
-// headless "look around" beep. (The full Open Drone ID decoder lived in Sky
-// Sweeper; kept in git history if rich detail is ever wanted on the phone.)
+// Protocol detectors. The tracker check is presence-only (an AirTag's payload
+// is a rotating public key; there is nothing to decode). The drone check is a
+// full ASTM F3411 decode via the stock opendroneid reference implementation —
+// Remote ID is a broadcast standard whose whole point is to be readable, so a
+// drone hands us its serial, its position and the operator's position for free.
+//
+// ODID_UAS_Data is ~1 KB. Both callbacks run on tight stacks (the NimBLE scan
+// task and the Wi-Fi promiscuous callback), so these are file-static rather
+// than locals. bleUas is only touched inside the watchersMutex block; wifiUas
+// only from the single-threaded promiscuous callback. Do not cross them.
+static ODID_UAS_Data bleUas;
+static ODID_UAS_Data wifiUas;
 
-// True if a BLE advert carries the ASTM Remote ID service (UUID 0xFFFA in AD
-// type 0x16, Service Data - 16-bit UUID) — i.e. a drone broadcasting Remote ID.
-static bool bleIsDroneRemoteId(NimBLEAdvertisedDevice* dev) {
+// True if a decode produced anything worth reporting.
+static bool odidUseful(const ODID_UAS_Data& d) {
+    return d.BasicIDValid[0] || d.LocationValid || d.SystemValid ||
+           d.OperatorIDValid || d.SelfIDValid;
+}
+
+// Feed one ODID payload to the decoder, picking packed vs single message.
+static void odidDecodeInto(ODID_UAS_Data& out, const uint8_t* data, size_t len) {
+    if (len == 0) return;
+    if ((data[0] & 0xF0) == (ODID_MESSAGETYPE_PACKED << 4)) {
+        odid_message_process_pack(&out, (uint8_t*)data, len);
+    } else {
+        decodeOpenDroneID(&out, (uint8_t*)data);
+    }
+}
+
+// Copy a decoded frame onto a target. Fields are only overwritten when this
+// frame actually carried them — Remote ID arrives as a stream of different
+// message types, so a Location-only frame must not blank the serial we learned
+// from an earlier Basic ID frame.
+static void applyDroneData(WatcherTargetInfo& t, const ODID_UAS_Data& d) {
+    t.hasDrone = true;
+    if (d.BasicIDValid[0] && d.BasicID[0].UASID[0]) t.uasId = String(d.BasicID[0].UASID);
+    if (d.OperatorIDValid && d.OperatorID.OperatorId[0])  t.operatorId = String(d.OperatorID.OperatorId);
+    if (d.SelfIDValid && d.SelfID.Desc[0])                t.selfId = String(d.SelfID.Desc);
+    if (d.LocationValid) {
+        t.droneLat  = d.Location.Latitude;
+        t.droneLng  = d.Location.Longitude;
+        t.altMsl    = d.Location.AltitudeGeo;
+        t.heightAgl = d.Location.Height;
+        t.speed     = d.Location.SpeedHorizontal;
+        t.heading   = d.Location.Direction;
+    }
+    if (d.SystemValid) {
+        t.opLat = d.System.OperatorLatitude;
+        t.opLng = d.System.OperatorLongitude;
+    }
+}
+
+// Decode ASTM Remote ID out of a BLE advert (UUID 0xFFFA in AD type 0x16,
+// Service Data - 16-bit UUID). Returns true and fills `out` on a useful decode.
+static bool bleDecodeRemoteId(NimBLEAdvertisedDevice* dev, ODID_UAS_Data& out) {
     uint8_t* payload = dev->getPayload();
     size_t len = dev->getPayloadLength();
     if (!payload || len < 4) return false;
@@ -365,7 +438,25 @@ static bool bleIsDroneRemoteId(NimBLEAdvertisedDevice* dev) {
         uint8_t adType = payload[offset + 1];
         if (adType == 0x16 && adLen >= 3) {
             uint16_t uuid = payload[offset + 2] | (payload[offset + 3] << 8);
-            if (uuid == 0xFFFA) return true;
+            if (uuid == 0xFFFA) {
+                // Optionally followed by the Open Drone ID application code
+                // (0x0D); skip it when present.
+                const uint8_t* data;
+                size_t dataLen;
+                if (adLen >= 4 && payload[offset + 4] == 0x0D) {
+                    data = &payload[offset + 5];
+                    dataLen = adLen - 4;
+                } else {
+                    data = &payload[offset + 4];
+                    dataLen = adLen - 3;
+                }
+                memset(&out, 0, sizeof(out));
+                odidDecodeInto(out, data, dataLen);
+                // A malformed or unsupported frame still means "a drone is
+                // broadcasting Remote ID here", which is the alert-worthy fact.
+                // Report presence either way; the decoded detail is a bonus.
+                return true;
+            }
         }
         offset += (adLen + 1);
     }
@@ -399,6 +490,13 @@ class WatchersScanCallbacks : public NimBLEAdvertisedDeviceCallbacks {
         uint32_t now = millis();
         String devName = advertisedDevice->haveName() ? String(advertisedDevice->getName().c_str()) : "";
 
+        // Hunting: every advert from the target refreshes the click rate. Done
+        // before the mutex so a busy detector never delays the feedback you are
+        // physically walking on.
+        if (huntMac.length() > 0 && huntMac.equalsIgnoreCase(mac)) {
+            updateGeigerRssi(rssi);
+        }
+
         if (xSemaphoreTake(watchersMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
             // Accumulate confidence across every rule this device matches, so
             // corroborating signals (e.g. OUI + service UUID) add up. Keep the
@@ -423,7 +521,9 @@ class WatchersScanCallbacks : public NimBLEAdvertisedDeviceCallbacks {
 
             // Protocol detectors (not signature rules): presence alone is a
             // strong, unambiguous match, so they set the category directly.
-            if (bleIsDroneRemoteId(advertisedDevice)) {
+            bool droneDecoded = false;
+            if (bleDecodeRemoteId(advertisedDevice, bleUas)) {
+                droneDecoded = odidUseful(bleUas);
                 confidence += W_DRONE;
                 if (W_DRONE > bestWeight) {
                     bestWeight = W_DRONE;
@@ -471,6 +571,7 @@ class WatchersScanCallbacks : public NimBLEAdvertisedDeviceCallbacks {
                             target.type = matchedCategory;
                             target.matchedRule = matchedRule;
                         }
+                        if (droneDecoded) applyDroneData(target, bleUas);
                         found = true;
                         break;
                     }
@@ -490,6 +591,7 @@ class WatchersScanCallbacks : public NimBLEAdvertisedDeviceCallbacks {
                     newTarget.confidence = confidence;
                     newTarget.tier = tierForConfidence(confidence);
                     newTarget.lastReportedMs = 0;
+                    if (droneDecoded) applyDroneData(newTarget, bleUas);
                     trackedTargets.push_back(newTarget);
 
                     // Log and alert only on a signature hit — everything else
@@ -531,6 +633,51 @@ static void watchersWifiChannelHopperTask(void *pvParameters) {
     vTaskDelete(NULL);
 }
 
+// Insert/update a target known only from a Remote ID decode. Used by the Wi-Fi
+// NAN action-frame path, which carries no SSID, no vendor IE and no OUI worth
+// scoring — the decode itself is the whole identification.
+static void upsertDroneTarget(const String& mac, int rssi, const char* proto,
+                              const ODID_UAS_Data& d) {
+    if (watchersMutex == NULL) return;
+    if (xSemaphoreTake(watchersMutex, pdMS_TO_TICKS(10)) != pdTRUE) return;
+    uint32_t now = millis();
+    bool found = false;
+    for (auto& t : trackedTargets) {
+        if (t.mac.equalsIgnoreCase(mac)) {
+            t.rssi = rssi;
+            t.lastSeenMs = now;
+            t.count++;
+            if (W_DRONE > t.confidence) t.confidence = W_DRONE;
+            t.tier = tierForConfidence(t.confidence);
+            t.type = "Drone";
+            t.matchedRule = "Remote ID Drone";
+            applyDroneData(t, d);
+            found = true;
+            break;
+        }
+    }
+    if (!found) {
+        WatcherTargetInfo t;
+        t.mac = mac;
+        t.type = "Drone";
+        t.matchedRule = "Remote ID Drone";
+        t.rssi = rssi;
+        t.firstSeenMs = now;
+        t.lastSeenMs = now;
+        t.count = 1;
+        t.protocol = proto;
+        t.confidence = W_DRONE;
+        t.tier = tierForConfidence(W_DRONE);
+        t.lastReportedMs = 0;
+        applyDroneData(t, d);
+        trackedTargets.push_back(t);
+        ESP_LOGI(TAG, "[DRONE - %s] MAC: %s, UAS: %s, RSSI: %d",
+                 proto, mac.c_str(), t.uasId.c_str(), rssi);
+        noteAlert(W_DRONE, "Drone");
+    }
+    xSemaphoreGive(watchersMutex);
+}
+
 static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type_t type) {
     if (!watchersRunning) return;
     if (type != WIFI_PKT_MGMT) return;
@@ -548,7 +695,28 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
     
     uint8_t *addr1 = payload + 4;
     uint8_t *addr2 = payload + 10;
-    
+
+    // Remote ID over Wi-Fi NAN: an Action frame addressed to the ASTM NAN
+    // cluster 51:6F:9A:01:00:00. The opendroneid helper validates and unpacks
+    // the whole frame, including the transmitter MAC (which is inside the
+    // service descriptor, not the 802.11 header).
+    {
+        static const uint8_t nanDest[6] = {0x51, 0x6F, 0x9A, 0x01, 0x00, 0x00};
+        if (memcmp(nanDest, addr1, 6) == 0) {
+            memset(&wifiUas, 0, sizeof(wifiUas));
+            char nanMacRaw[6] = {0};
+            if (odid_wifi_receive_message_pack_nan_action_frame(&wifiUas, nanMacRaw, payload, length) == 0
+                && odidUseful(wifiUas)) {
+                char nanMacBuf[20];
+                snprintf(nanMacBuf, sizeof(nanMacBuf), "%02X:%02X:%02X:%02X:%02X:%02X",
+                         (uint8_t)nanMacRaw[0], (uint8_t)nanMacRaw[1], (uint8_t)nanMacRaw[2],
+                         (uint8_t)nanMacRaw[3], (uint8_t)nanMacRaw[4], (uint8_t)nanMacRaw[5]);
+                upsertDroneTarget(String(nanMacBuf), rssi, "WiFi", wifiUas);
+            }
+            return;
+        }
+    }
+
     // Probe Request (subtype 4) or Beacon (subtype 8) or Probe Response (subtype 5)
     if (ftype == 0 && (fsubtype == 4 || fsubtype == 5 || fsubtype == 8)) {
         if (watchersMutex == NULL) return;
@@ -557,6 +725,7 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
         int bestWeight = 0;
         String matchedRule = "";
         String matchedCategory = "";
+        bool droneDecoded = false;
 
         // 1. Check OUI (weak signal)
         String mac = "";
@@ -615,8 +784,8 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
                 }
 
                 // Drone Remote ID over WiFi Beacon: ASTM (90:3A:E6) or French
-                // (FA:0B:BC) vendor IE. Presence = a drone broadcasting nearby.
-                if (id == 221 && elen >= 4 &&
+                // (FA:0B:BC) vendor IE, decoded in full.
+                if (id == 221 && elen >= 6 &&
                     ((body[b+2] == 0x90 && body[b+3] == 0x3A && body[b+4] == 0xE6) ||
                      (body[b+2] == 0xFA && body[b+3] == 0x0B && body[b+4] == 0xBC))) {
                     wifiConfidence += W_DRONE;
@@ -624,6 +793,17 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
                         bestWeight = W_DRONE;
                         matchedRule = "Remote ID Drone";
                         matchedCategory = "Drone";
+                    }
+                    // The ODID payload starts after OUI (3) + vendor type (1) +
+                    // message counter (1). Length comes from this element's own
+                    // elen — Sky Sweeper used "everything to end of frame",
+                    // which fed the decoder every subsequent IE plus the FCS as
+                    // if it were drone payload.
+                    int odidLen = (int)elen - 5;
+                    if (odidLen > 0) {
+                        memset(&wifiUas, 0, sizeof(wifiUas));
+                        odidDecodeInto(wifiUas, body + b + 7, (size_t)odidLen);
+                        droneDecoded = odidUseful(wifiUas);
                     }
                 }
 
@@ -676,6 +856,7 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
                         target.type = matchedCategory;
                         target.matchedRule = matchedRule;
                     }
+                    if (droneDecoded) applyDroneData(target, wifiUas);
                     found = true;
                     break;
                 }
@@ -694,6 +875,7 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
                 newTarget.confidence = wifiConfidence;
                 newTarget.tier = tierForConfidence(wifiConfidence);
                 newTarget.lastReportedMs = 0;
+                if (droneDecoded) applyDroneData(newTarget, wifiUas);
                 trackedTargets.push_back(newTarget);
 
                 if (wifiConfidence >= CONF_LIST_MIN) {
@@ -705,6 +887,64 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
             xSemaphoreGive(watchersMutex);
         }
     }
+}
+
+void setHuntTarget(const String& mac) {
+    huntMac = mac;
+    huntMac.toUpperCase();
+    if (huntMac.length() > 0) {
+        // -90 is the "far away" end of the clicker's range; the first advert
+        // from the target replaces it within a scan interval.
+        setGeigerTargetLock(true, -90);
+        ESP_LOGI(TAG, "Hunting %s", huntMac.c_str());
+    } else {
+        setGeigerTargetLock(false);
+        ESP_LOGI(TAG, "Hunt cleared");
+    }
+}
+
+String getHuntTarget() {
+    return huntMac;
+}
+
+void requestRing(const String& mac) {
+    pendingRingMac = mac;
+    pendingRingMac.toUpperCase();
+}
+
+// Make a suspected tracker announce itself, so you can find the thing that is
+// following you. Deliberately not a general GATT write primitive: the MAC is
+// the only parameter, and the service (Immediate Alert 0x1802), characteristic
+// (Alert Level 0x2A06) and value (0x02 = high alert) are fixed here. The old
+// build exposed arbitrary service/char/hex writes plus an advertisement
+// spoofer; both are gone and should stay gone.
+static void performRing(const String& mac) {
+    ESP_LOGI(TAG, "Ringing %s", mac.c_str());
+    // A GATT connection needs the radio to itself. pauseBle() is the same hook
+    // the NUS server uses; the scan restarts in the same call below whatever
+    // happens, so a failed connect can never leave the detector deaf.
+    pauseBle(true);
+
+    NimBLEClient* client = NimBLEDevice::createClient();
+    bool ok = false;
+    if (client) {
+        NimBLEAddress addr(std::string(mac.c_str()), BLE_ADDR_RANDOM);
+        if (client->connect(addr, false)) {
+            NimBLERemoteService* svc = client->getService(NimBLEUUID((uint16_t)0x1802));
+            if (svc) {
+                NimBLERemoteCharacteristic* ch = svc->getCharacteristic(NimBLEUUID((uint16_t)0x2A06));
+                if (ch) {
+                    uint8_t high = 0x02;
+                    ok = ch->writeValue(&high, 1, false);
+                }
+            }
+            client->disconnect();
+        }
+        NimBLEDevice::deleteClient(client);
+    }
+    ESP_LOGI(TAG, "Ring %s: %s", mac.c_str(), ok ? "sent" : "failed");
+
+    pauseBle(false);
 }
 
 static void watchersPeriodicTask(void *pvParameters) {
@@ -725,6 +965,14 @@ static void watchersPeriodicTask(void *pvParameters) {
         // "word" you learn by ear. Confidence already gated the alert in
         // noteAlert(); here we just sound whichever category won the interval.
         if (alert >= CONF_ALERT_MIN) triggerCategoryAlert(alertCat);
+
+        // Ring runs here, on a real task with a real stack, never on the BLE
+        // write callback that asked for it.
+        if (pendingRingMac.length() > 0) {
+            String target = pendingRingMac;
+            pendingRingMac = "";
+            performRing(target);
+        }
 
         // Prune stale targets. This mode used to be the only one that never
         // expired anything, so trackedTargets grew for the whole session.
@@ -961,6 +1209,30 @@ String getWatchersTargetsJson() {
             obj["protocol"] = t.protocol.length() > 0 ? t.protocol : "BLE";
             obj["confidence"] = t.confidence;
             obj["tier"] = t.tier.length() > 0 ? t.tier : "Possible";
+
+            // Decoded Remote ID, drones only. Telemetry is the tightest budget
+            // on this board, so each field ships once and only when it holds a
+            // real value — ODID's sentinels (0/0 for position, -1000 m, 361 deg)
+            // mean "unknown" and are dropped rather than sent. Sky Sweeper used
+            // to emit every field twice under two names for app compatibility;
+            // one name per field here.
+            if (t.hasDrone) {
+                if (t.uasId.length() > 0)      obj["uas_id"] = t.uasId;
+                if (t.operatorId.length() > 0) obj["operator_id"] = t.operatorId;
+                if (t.selfId.length() > 0)     obj["self_id"] = t.selfId;
+                if (t.droneLat != 0.0 || t.droneLng != 0.0) {
+                    obj["lat"] = t.droneLat;
+                    obj["lng"] = t.droneLng;
+                }
+                if (t.altMsl    > -1000) obj["alt"] = t.altMsl;
+                if (t.heightAgl > -1000) obj["agl"] = t.heightAgl;
+                if (t.speed     > 0)     obj["speed"] = t.speed;
+                if (t.heading   < 361)   obj["heading"] = t.heading;
+                if (t.opLat != 0.0 || t.opLng != 0.0) {
+                    obj["op_lat"] = t.opLat;
+                    obj["op_lng"] = t.opLng;
+                }
+            }
         }
         xSemaphoreGive(watchersMutex);
     } else {

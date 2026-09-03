@@ -62,27 +62,121 @@
                     mac: t.mac, name: t.name || '', type: t.type || '',
                     rule: t.matched_rule || '', rssi: t.rssi,
                     protocol: t.protocol || 'BLE', confidence: t.confidence || 0,
-                    tier: t.tier || '', ts: now
+                    tier: t.tier || '', ts: now,
+                    // Decoded ASTM Remote ID, present only on drones. The
+                    // firmware omits any field it does not actually know, so
+                    // undefined here means "unknown", never "zero".
+                    uasId: t.uas_id, operatorId: t.operator_id, selfId: t.self_id,
+                    lat: t.lat, lng: t.lng, alt: t.alt, agl: t.agl,
+                    speed: t.speed, heading: t.heading,
+                    opLat: t.op_lat, opLng: t.op_lng
                 };
                 maybeOfferRecord(liveMatches[t.mac]);
             }
         }
 
-        function renderScope() {
-            const list = document.getElementById('targets-list');
-            if (!list) return;
-            const now = Date.now();
-            // Drop stale, then sort strongest-first.
-            const rows = Object.values(liveMatches)
-                .filter(m => now - m.ts < LIVE_STALE_MS)
-                .sort((a, b) => (b.rssi || -999) - (a.rssi || -999));
+        // ---- Lens: a filter over what the detector already found -----------
+        // This is what replaces the old four-mode selector, and the important
+        // difference is that it changes nothing on the device. The firmware is
+        // one always-on detector watching every category at once; switching
+        // lens sends no command and cannot make it miss anything. (The old
+        // build's modes were largely one detector wearing different filters --
+        // this is that idea, minus the state machine.)
+        let lens = 'all';
+        let viewMode = 'list';   // 'list' | 'map'
 
+        function setLens(key) {
+            lens = key;
+            document.querySelectorAll('#lens-row .lens-tab').forEach(function (el) {
+                el.classList.toggle('active', el.getAttribute('data-lens') === key);
+            });
+            renderScope();
+        }
+
+        function toggleView() {
+            viewMode = (viewMode === 'list') ? 'map' : 'list';
+            const wrap = document.getElementById('map-wrap');
+            const list = document.getElementById('targets-list');
+            const btn  = document.getElementById('btn-view');
+            if (wrap) wrap.style.display = (viewMode === 'map') ? 'block' : 'none';
+            if (list) list.style.display = (viewMode === 'map') ? 'none' : 'block';
+            if (btn)  btn.textContent = (viewMode === 'map') ? '\u2630 List' : '\ud83d\uddfa Map';
+            if (viewMode === 'map') initMap();
+            renderScope();
+        }
+
+        // Live rows: heard recently, matching the current lens, strongest first.
+        function liveRows(forLens) {
+            const now = Date.now();
+            const k = forLens || lens;
+            return Object.values(liveMatches)
+                .filter(function (m) { return now - m.ts < LIVE_STALE_MS; })
+                .filter(function (m) {
+                    if (k === 'all') return true;
+                    const c = categoryOf(m.type || m.rule).key;
+                    // "Surveillance" is the umbrella over what the buzzer says
+                    // as two separate words (ALPR and body cam); one tab covers
+                    // both, plus anything matched whose category we can't name.
+                    if (k === 'alpr') return c === 'alpr' || c === 'bodycam' || c === 'other';
+                    return c === k;
+                })
+                .sort(function (a, b) { return (b.rssi || -999) - (a.rssi || -999); });
+        }
+
+        // One line of extra detail per category. Drones earn the most, because
+        // Remote ID is a broadcast standard that hands us real values.
+        function detailLine(m, cat) {
+            const bits = [];
+            if (cat.key === 'drone') {
+                if (m.uasId)      bits.push('UAS <b>' + esc(m.uasId) + '</b>');
+                if (m.operatorId) bits.push('Operator <b>' + esc(m.operatorId) + '</b>');
+                if (m.selfId)     bits.push(esc(m.selfId));
+                if (m.alt   != null) bits.push('Alt <b>' + Math.round(m.alt) + ' m</b>');
+                if (m.agl   != null) bits.push('AGL <b>' + Math.round(m.agl) + ' m</b>');
+                if (m.speed != null) bits.push('<b>' + Number(m.speed).toFixed(1) + ' m/s</b>');
+                if (m.heading != null) bits.push('Hdg <b>' + Math.round(m.heading) + '\u00b0</b>');
+                if (m.lat != null && m.lng != null)
+                    bits.push('at <b>' + Number(m.lat).toFixed(5) + ', ' + Number(m.lng).toFixed(5) + '</b>');
+                if (m.opLat != null && m.opLng != null)
+                    bits.push('pilot at <b>' + Number(m.opLat).toFixed(5) + ', ' + Number(m.opLng).toFixed(5) + '</b>');
+            }
+            if (!bits.length) return '';
+            return '<div class="scope-detail">' + bits.join(' \u00b7 ') + '</div>';
+        }
+
+        // Trackers get the two things you actually want when something may be
+        // following you: walk it down, or make it announce itself.
+        function actionRow(m, cat) {
+            if (cat.key !== 'tracker') return '';
+            const hunting = !!huntMac && huntMac.toUpperCase() === String(m.mac).toUpperCase();
+            return '<div class="scope-actions">' +
+                '<button class="scope-act' + (hunting ? ' hunting' : '') +
+                    '" data-act="hunt" data-mac="' + esc(m.mac) + '">' +
+                    (hunting ? '\u25c9 Hunting \u2014 stop' : '\u25ce Hunt') + '</button>' +
+                '<button class="scope-act" data-act="ring" data-mac="' + esc(m.mac) + '">\ud83d\udd14 Ring</button>' +
+            '</div>';
+        }
+
+        function renderScope() {
+            // Keep the per-lens counters honest whichever view is showing.
+            const keys = ['all', 'alpr', 'tracker', 'drone'];
+            for (let i = 0; i < keys.length; i++) {
+                const el = document.getElementById('n-' + keys[i]);
+                if (el) el.textContent = liveRows(keys[i]).length;
+            }
+
+            const rows = liveRows();
             const countEl = document.getElementById('scope-count');
             if (countEl) countEl.textContent = rows.length;
 
+            if (viewMode === 'map') { renderMap(rows); return; }
+
+            const list = document.getElementById('targets-list');
+            if (!list) return;
+
             if (rows.length === 0) {
                 list.innerHTML = '<div class="scope-empty">' +
-                    (connectionType ? 'Listening… nothing matched right now. If the buzzer sounds, look around.'
+                    (connectionType ? 'Listening\u2026 nothing matched right now. If the buzzer sounds, look around.'
                                     : 'Connect the device to see live matches. It still beeps on its own without the phone.') +
                     '</div>';
                 return;
@@ -95,17 +189,188 @@
                 html += '<div class="scope-row" style="border-left:4px solid ' + cat.color + '">' +
                     '<div class="scope-main">' +
                         '<div class="scope-title">' + cat.icon + ' ' + esc(title) +
-                            ' <span class="scope-cat" style="color:' + cat.color + '">' + esc(cat.label) + '</span></div>' +
-                        '<div class="scope-sub">' + esc(m.mac) + ' · ' + esc(m.protocol) +
-                            (m.rule ? ' · ' + esc(m.rule) : '') + ' · conf ' + (m.confidence | 0) + '</div>' +
+                            ' <span class="scope-cat" style="color:' + cat.color + '">' + esc(cat.label) + '</span>' +
+                            (m.tier ? '<span class="tier-badge" style="color:' + cat.color + '">' + esc(m.tier) + '</span>' : '') +
+                        '</div>' +
+                        '<div class="scope-sub">' + esc(m.mac) + ' \u00b7 ' + esc(m.protocol) +
+                            (m.rule ? ' \u00b7 ' + esc(m.rule) : '') + ' \u00b7 conf ' + (m.confidence | 0) + '</div>' +
                     '</div>' +
                     '<div class="scope-signal">' +
                         '<div class="scope-bars" style="color:' + cat.color + '">' + signalBars(m.rssi) + '</div>' +
                         '<div class="scope-rssi">' + esc(m.rssi) + ' dBm</div>' +
                     '</div>' +
+                    detailLine(m, cat) +
+                    actionRow(m, cat) +
                 '</div>';
             }
             list.innerHTML = html;
+        }
+
+        // ---- Hunt / Ring ----------------------------------------------------
+        // Hunt is the one thing the app can change about firmware behaviour: the
+        // device's buzzer becomes an RSSI-driven Geiger clicker for that MAC so
+        // you can physically walk it down. Detection never stops meanwhile.
+        let huntMac = '';
+
+        function huntTarget(mac) {
+            huntMac = (huntMac.toUpperCase() === String(mac).toUpperCase()) ? '' : String(mac);
+            sendCommand({ hunt: huntMac });   // "" clears; see ble_serial.cpp
+            showToast(huntMac ? 'Hunting ' + huntMac : 'Hunt cleared', huntMac ? '\u25c9' : '\u25cb');
+            renderScope();
+        }
+
+        function ringTarget(mac) {
+            sendCommand({ ring: String(mac) });
+            showToast('Ring sent \u2014 listen for it', '\ud83d\udd14');
+        }
+
+        // Delegated, because a MAC is device-supplied text and must never be
+        // interpolated into an onclick string.
+        document.addEventListener('click', function (ev) {
+            if (!ev.target || !ev.target.closest) return;
+            const tab = ev.target.closest('#lens-row .lens-tab');
+            if (tab) { setLens(tab.getAttribute('data-lens')); return; }
+            const act = ev.target.closest('.scope-act');
+            if (!act) return;
+            const mac = act.getAttribute('data-mac');
+            if (act.getAttribute('data-act') === 'hunt') huntTarget(mac);
+            else if (act.getAttribute('data-act') === 'ring') ringTarget(mac);
+        });
+
+        // =====================================================================
+        //  Live map. Live ONLY.
+        // =====================================================================
+        // The map came back; the trail it used to come with did not. Rules that
+        // hold here, and the reason each one exists:
+        //
+        //   * ONE-SHOT position only (getFix), never watchPosition. A passive
+        //     position watch is a location history in RAM, and a location
+        //     history is the thing this whole redesign exists to not have.
+        //   * No breadcrumb polyline. Same reason.
+        //   * No offline tile cache. Cached tiles persist on disk and record
+        //     which areas you downloaded -- a weak trail, but a real one.
+        //   * Nothing here is written to storage, and it all clears on
+        //     disconnect along with liveMatches.
+        //
+        // What gets drawn:
+        //   * You: a small dot at your last fix.
+        //   * Drones: a solid marker at their DECODED coordinate. That number is
+        //     real -- the aircraft broadcast it.
+        //   * Everything else: a dashed circle of RSSI-estimated radius around
+        //     YOU. Deliberately not a marker, because we do not know where the
+        //     thing is; we only know roughly how far. A pin would be a lie.
+        //   * Saved pins: only once unlocked. Detecting never asks for the PIN.
+        let map = null, meLayer = null, liveLayer = null, pinLayer = null;
+        let mapFix = null;   // {lat, lng, acc} -- last one-shot fix, memory only
+
+        // Very rough log-distance path loss. Good enough to say "close" vs "far"
+        // and nothing more, which is exactly what the dashed ring claims.
+        // ponytail: fixed exponent; add a calibration knob if it reads badly in
+        // the field, since real environments vary far more than this model does.
+        function rssiMeters(rssi) {
+            const r = Number(rssi);
+            if (!isFinite(r)) return 100;
+            const m = Math.pow(10, (-59 - r) / 20);
+            return Math.max(5, Math.min(400, m * 10));
+        }
+
+        function initMap() {
+            if (map || !window.L) return;
+            const el = document.getElementById('map');
+            if (!el) return;
+            map = window.L.map(el, { zoomControl: true, attributionControl: true })
+                    .setView([0, 0], 2);
+            window.L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+                maxZoom: 19,
+                attribution: '&copy; OpenStreetMap, &copy; CARTO'
+            }).addTo(map);
+            meLayer   = window.L.layerGroup().addTo(map);
+            liveLayer = window.L.layerGroup().addTo(map);
+            pinLayer  = window.L.layerGroup().addTo(map);
+            recenterMap();
+        }
+
+        async function recenterMap() {
+            try {
+                const fix = await getFix();
+                mapFix = { lat: fix.lat, lng: fix.lng, acc: fix.acc };
+                if (map) map.setView([mapFix.lat, mapFix.lng], 16);
+                renderScope();
+            } catch (e) {
+                showToast('No location fix available', '!');
+            }
+        }
+
+        function renderMap(rows) {
+            if (!map || !window.L) return;
+            meLayer.clearLayers();
+            liveLayer.clearLayers();
+
+            if (mapFix) {
+                window.L.circleMarker([mapFix.lat, mapFix.lng], {
+                    radius: 6, color: '#34d399', fillColor: '#34d399', fillOpacity: 0.9, weight: 2
+                }).addTo(meLayer).bindPopup('You');
+                if (mapFix.acc) {
+                    window.L.circle([mapFix.lat, mapFix.lng], {
+                        radius: mapFix.acc, color: '#34d399', weight: 1, opacity: 0.3, fill: false
+                    }).addTo(meLayer);
+                }
+            }
+
+            let ringed = 0;
+            for (const m of rows) {
+                const cat = categoryOf(m.type || m.rule);
+                const title = esc(m.name || m.rule || cat.label);
+                if (m.lat != null && m.lng != null) {
+                    // A real, broadcast coordinate: it gets a real marker.
+                    window.L.circleMarker([m.lat, m.lng], {
+                        radius: 8, color: cat.color, fillColor: cat.color, fillOpacity: 0.85, weight: 2
+                    }).addTo(liveLayer).bindPopup(cat.icon + ' ' + title + '<br>' + esc(m.mac));
+                    if (m.opLat != null && m.opLng != null) {
+                        window.L.circleMarker([m.opLat, m.opLng], {
+                            radius: 6, color: cat.color, fillColor: '#000', fillOpacity: 0.6, weight: 2
+                        }).addTo(liveLayer).bindPopup('Operator of ' + title);
+                    }
+                } else if (mapFix) {
+                    // Distance only. Dashed, unfilled, centred on you -- it must
+                    // never read as "the thing is here".
+                    window.L.circle([mapFix.lat, mapFix.lng], {
+                        radius: rssiMeters(m.rssi), color: cat.color, weight: 1.5,
+                        dashArray: '6 6', fill: false, opacity: 0.8
+                    }).addTo(liveLayer).bindPopup(cat.icon + ' ' + title + '<br>' + esc(m.mac) +
+                        '<br>within ~' + Math.round(rssiMeters(m.rssi)) + ' m (signal strength only)');
+                    ringed++;
+                }
+            }
+
+            renderMapPins();
+
+            const note = document.getElementById('map-note');
+            if (note) {
+                note.innerHTML = (mapFix ? '' : 'No fix yet. ') +
+                    'Solid markers are broadcast coordinates (drones). ' +
+                    'Dashed rings are distance-from-you estimates from signal strength \u2014 ' +
+                    'not locations. ' + (ringed ? ringed + ' ring(s). ' : '') +
+                    '<button class="scope-act" style="margin-left:6px" onclick="recenterMap()">\u27f3 Recenter</button>' +
+                    (pinsCache.length ? '' : ' <span style="opacity:0.7">Saved pins appear once unlocked.</span>');
+            }
+        }
+
+        // Saved pins are drawn only when the store is already unlocked in this
+        // session. Opening the map must never prompt for the PIN -- the PIN
+        // gates viewing and export, and nothing else.
+        function renderMapPins() {
+            if (!pinLayer || !window.L) return;
+            pinLayer.clearLayers();
+            if (!pinKey) return;
+            for (const pin of pinsCache) {
+                if (pin.lat == null || pin.lng == null) continue;
+                const cat = categoryOf(pin.category || pin.rule);
+                window.L.marker([pin.lat, pin.lng]).addTo(pinLayer)
+                    .bindPopup('\ud83d\udccd ' + esc(pin.name || pin.rule || cat.label) +
+                               '<br>' + esc(pin.mac) +
+                               '<br>' + esc(new Date(pin.ts).toLocaleString()));
+            }
         }
 
         // Repaint on a timer so stale rows fade even when no new data arrives.
@@ -734,8 +999,29 @@
         function onDeviceDisconnected() {
             bleDevice = null; gattServer = null; rxCharacteristic = null; txCharacteristic = null;
             serialPort = null; serialReader = null; serialWriter = null;
+            clearLiveState();
             updateConnectionUI(false);
             if (wantConnection) scheduleReconnect();
+        }
+
+        // Drop everything the device told us. This is the "no passive trail"
+        // property actually being enforced rather than merely described: rows
+        // aged out of the VIEW after LIVE_STALE_MS, but liveMatches itself kept
+        // every MAC, name and RSSI of the whole session in memory -- and now it
+        // would also hold decoded drone and operator coordinates. Nothing here
+        // was ever written to disk, but a session-long list in a live tab is
+        // still a list, so it goes when the link does.
+        //
+        // Deliberately NOT cleared: handledMacs (the per-device "already asked
+        // about recording" set), because a flapping BLE link would otherwise
+        // re-prompt for consent on every reconnect.
+        function clearLiveState() {
+            liveMatches = {};
+            mapFix = null;
+            huntMac = '';
+            if (liveLayer) liveLayer.clearLayers();
+            if (meLayer) meLayer.clearLayers();
+            renderScope();
         }
 
         function showToast(msg, icon = '✓') {
@@ -791,6 +1077,37 @@
                 results.catTracker = categoryOf('Apple Find My Tracker').key === 'tracker';
                 results.catBodycam = categoryOf('Axon').key === 'bodycam';
                 results.catAlpr    = categoryOf('Flock Safety').key === 'alpr';
+
+                // Lens filtering. The lens must never be able to hide a match
+                // from its own tab, and 'all' must never hide anything -- the
+                // detector sees everything, so the UI has to be able to show
+                // everything. Also checks that the drone block survives ingest.
+                liveMatches = {};
+                ingestTargets([
+                    { mac: 'AA:00:01', type: 'Flock Safety',           rssi: -50, confidence: 80 },
+                    { mac: 'AA:00:02', type: 'Axon',                   rssi: -60, confidence: 80 },
+                    { mac: 'AA:00:03', type: 'Tracker',                rssi: -70, confidence: 80 },
+                    { mac: 'AA:00:04', type: 'Drone', uas_id: 'X7',    rssi: -80, confidence: 90,
+                      lat: 30.2, lng: -92.0, op_lat: 30.1, op_lng: -92.1, alt: 120, speed: 4.5 }
+                ]);
+                results.lensAll     = liveRows('all').length === 4;
+                results.lensDrone   = liveRows('drone').length === 1;
+                results.lensTracker = liveRows('tracker').length === 1;
+                // Surveillance is the umbrella over ALPR + body cam.
+                results.lensAlpr    = liveRows('alpr').length === 2;
+                // Strongest-first ordering is what the list relies on.
+                results.lensSorted  = liveRows('all')[0].mac === 'AA:00:01';
+                const drone = liveMatches['AA:00:04'];
+                results.droneFields = drone.uasId === 'X7' && drone.lat === 30.2 &&
+                                      drone.opLat === 30.1 && drone.alt === 120;
+                // Detail line renders the decoded values, escaped.
+                results.droneDetail = detailLine(drone, categoryOf('Drone')).indexOf('X7') > 0;
+                // A device-chosen name must never reach the DOM as markup.
+                results.escapesName = esc('<img src=x onerror=1>').indexOf('<') === -1;
+                // Disconnect drops the whole live set, not just the view.
+                clearLiveState();
+                results.clearsOnDisconnect = Object.keys(liveMatches).length === 0;
+
                 // Crypto round-trip: create → save → reload → unlock
                 await createPinStore('1234');
                 pinsCache.push({ mac: 'AA:BB', category: 'ALPR / Camera', lat: 30.2, lng: -92.0, acc: 5, ts: 1 });

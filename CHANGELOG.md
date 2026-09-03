@@ -2,6 +2,133 @@
 
 All notable changes to SignalSweep are recorded here.
 
+## [Unreleased] — 2026-09-02 — Put back what we missed, not what was wrong
+
+The previous pass was right about the two things that hurt — a passive location
+trail on a seizable phone, and a signature list that cried wolf — and wrong
+about how much it had to delete to fix them. This restores the map, the
+category tabs, the per-target detail and the full Remote ID decoder, without
+restoring the trail, the false positives, or the mode state machine.
+
+The old build was resurrected into `SingalSweep_OLD/` as a reference for this
+merge. Nothing was copied from it unexamined; the "Kept dead" section below is
+the point of the exercise.
+
+### Added — full ASTM F3411 Remote ID decode
+
+- The drone check was presence-only ("a drone is broadcasting near you"). It now
+  **decodes**: UAS serial, operator ID, self-ID text, the aircraft's own
+  latitude/longitude/altitude/AGL/speed/heading, and the **operator's**
+  position. Remote ID is a broadcast standard whose whole purpose is to be
+  readable, so this is all handed to us in the clear.
+- Three paths: BLE service data `0xFFFA`, Wi-Fi beacon vendor IE (`90:3A:E6`
+  ASTM / `FA:0B:BC`), and Wi-Fi NAN action frames to `51:6F:9A:01:00:00`. The
+  vendored upstream `opendroneid.c` + `odid_wifi.c` are back, unmodified.
+- **Fixed a buffer over-read while porting it.** Sky Sweeper computed the
+  beacon IE payload length as "everything to the end of the frame", which fed
+  the decoder every subsequent information element plus the FCS as if it were
+  drone payload. The length now comes from the element's own `elen`.
+- `ODID_UAS_Data` is ~1 KB and both detection paths run on tight callback
+  stacks, so the decode buffers are file-static, one per radio.
+- Telemetry cost is contained: the drone block ships only on targets that
+  actually decoded one, each field is emitted once (Sky Sweeper sent every
+  value twice under two names), and any field still holding an ODID "unknown"
+  sentinel — 0/0 for a position, -1000 m, 361° — is dropped rather than sent.
+
+### Added — Hunt and Ring
+
+- `{"hunt":"<mac>"}` points the buzzer's Geiger clicker at one MAC: the click
+  rate rises as you close on it, so a planted tracker can be walked down by
+  ear. `{"hunt":""}` clears it. The clicker itself already existed in
+  `hardware_manager.cpp` with zero callers; this wires it up rather than
+  rewriting it. **Detection never stops** — every other category keeps
+  beeping normally while you hunt.
+- `{"ring":"<mac>"}` makes a suspected tracker announce itself: one GATT write
+  to Immediate Alert (`0x1802` / `0x2A06` / `0x02`). **The MAC is the only
+  parameter** — service, characteristic and value are fixed in the firmware.
+  The old build exposed arbitrary service/characteristic/hex writes next to an
+  advertisement spoofer; that shape is what made it an offensive tool, and it
+  is not coming back through this door.
+- Ring runs on the 1 Hz task, never on the NimBLE write callback that requested
+  it, and is bracketed by `pauseBle(true/false)` so a failed connect can't
+  leave the detector deaf.
+
+### Added — lens tabs, richer cards, live map
+
+- Four tabs (All / Surveillance / Trackers / Drones) replace the old mode
+  selector. Critically they are a **filter over what the detector already
+  reported**, not modes: switching one sends nothing to the device, so the
+  detector can never stop watching a category because the UI is looking
+  elsewhere. That was the real content of the old five modes — one detector
+  wearing different filters — minus the state machine.
+- Cards now show the confidence tier badge, and drones render their decoded
+  serial, operator, altitude, speed, heading and coordinates. Tracker cards get
+  Hunt and Ring buttons. Every device-supplied string goes through `esc()`, and
+  MACs ride in `data-mac` attributes read by a delegated listener — never
+  interpolated into an `onclick`.
+- The Leaflet map is back, live-only. Drones get a **solid marker at their
+  broadcast coordinate**, because that number is real. Everything else gets a
+  **dashed, unfilled ring of RSSI-estimated radius centred on you** — we know
+  roughly how far, never where, and a pin would be a lie. Saved pins overlay
+  only when the store is already unlocked; opening the map never prompts for
+  the PIN.
+
+### Fixed
+
+- **`liveMatches` was never actually cleared on disconnect.** It was documented
+  as cleared and behaved as if it were — rows aged out of the view after 8 s —
+  but the object retained every MAC, name and RSSI for the life of the tab, and
+  would now also have held decoded drone and operator coordinates. Nothing was
+  ever written to disk, but a session-long list in a live tab is still a list.
+  `onDeviceDisconnected()` now calls `clearLiveState()`. `handledMacs` is
+  deliberately not cleared, or a flapping link re-prompts for recording consent
+  on every reconnect.
+
+### Removed — signature defaults v5
+
+Two more rules of the same class as the `mfg_id 0x01` entry that labelled Govee
+bulbs "Flock Safety". Both scored at or above `CONF_ALERT_MIN` (70), meaning
+either could sound the alarm entirely on its own:
+
+- **Device names `raven` and `penguin`** — ordinary product words, matched as
+  case-insensitive substrings, at `W_NAME` 70. Enough to beep at someone's
+  bluetooth speaker.
+- **Service UUIDs `3100` / `3200` / `3300` / `3400` / `3500`** — four hex
+  digits, substring-matched against every UUID a device advertises, at
+  `W_UUID` 70. A UUID rule has to be specific enough to stand alone, because
+  `CONF_ALERT_MIN` is exactly what lets it.
+
+`SIG_SCHEMA_VERSION` bumped to 5 so already-deployed boards actually pick this
+up — the file survives a flash, which is the whole reason the version exists.
+Either rule can be pushed back from the app's signature editor if wanted;
+removing them from the *defaults* removes the misfire, not the capability.
+
+### Kept dead — deliberately not restored from the old build
+
+- The 40-entry "GoFlockYourself" OUI list's four worst members: `a4:cf:12` and
+  `3c:71:bf` (Espressif — this board's own vendor block), `cc:cc:cc` (not an
+  assigned OUI), `82:6b:f2` (locally-administered bit set, i.e. a randomized
+  phone MAC). The load-time rejection of locally-administered prefixes stays.
+- `mfg_id 0x01` "Flock XUNTONG" — Bluetooth Company ID `0x0001` is Nokia's.
+- `ble_spoof` and arbitrary GATT writes. GATT interrogation was also left out.
+- The `sightStore`, the geospatial classifier, the OSM ALPR cross-check,
+  passive `watchPosition`, and the breadcrumb polyline.
+- `leaflet.offline` and its tile cache — cached tiles persist on disk and
+  record which areas you downloaded. Dependency dropped from `package.json`.
+- The firmware mode state machine: `modeChangeQueue`, `MODE_SELECTOR`,
+  per-mode NVS, the BOOT-button-to-selector.
+- `CONFIG_BT_NIMBLE_EXT_ADV`, still off, still warned about.
+- The canvas radar view. The live map does the same job with real coordinates;
+  the old radar placed most blips at a random per-MAC angle, which reads as a
+  bearing but isn't.
+
+### Note for the next port
+
+`odid_wifi.c` (the old tree's `wifi.c`) looks like the unused upstream Wi-Fi
+helper and is not: it implements both `odid_message_process_pack()` and
+`odid_wifi_receive_message_pack_nan_action_frame()`. Omitting it fails at link,
+not at compile.
+
 ## [Unreleased] — 2026-09-01 — Peel back to a simple beeper
 
 A deliberate reversal of the geospatial direction below, on two grounds: opsec

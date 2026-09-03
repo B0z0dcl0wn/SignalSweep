@@ -117,6 +117,26 @@ void processIncomingCommand(const String& rawCommand) {
             setBuzzerEnabled(doc["buzzer"].as<bool>());
             ESP_LOGI(TAG, "Buzzer %s by command", doc["buzzer"].as<bool>() ? "enabled" : "muted");
         }
+
+        // 3. Hunt: {"hunt":"AA:BB:CC:DD:EE:FF"} locks the Geiger clicker onto
+        // one MAC so you can walk it down; {"hunt":null} clears. This is the
+        // only firmware behaviour the app can change — detection itself keeps
+        // running for everything else.
+        // Clearing is {"hunt":""} rather than null: ArduinoJson reports an
+        // absent key and a null value identically, so an empty string is the
+        // one form that can't be confused with "no hunt field in this command".
+        if (doc["hunt"].is<const char*>()) {
+            setHuntTarget(String(doc["hunt"].as<const char*>()));
+        }
+
+        // 4. Ring: {"ring":"AA:BB:CC:DD:EE:FF"} makes a suspected tracker
+        // announce itself. The MAC is the ONLY parameter — service,
+        // characteristic and value are fixed in performRing(). Do not grow this
+        // into a general GATT write; that (and the advertisement spoofer next
+        // to it) is exactly what was cut for being an offensive primitive.
+        if (doc["ring"].is<const char*>()) {
+            requestRing(String(doc["ring"].as<const char*>()));
+        }
     } else {
         // Raw text fallback parsing (manual serial).
         String rawStr = rawCommand;

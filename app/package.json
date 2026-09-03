@@ -18,7 +18,6 @@
     "@capacitor/app": "^8.1.1",
     "@capacitor/core": "^8.5.0",
     "@capacitor/geolocation": "^8.2.2",
-    "leaflet": "^1.9.4",
-    "leaflet.offline": "^3.2.1"
+    "leaflet": "^1.9.4"
   }
 }
