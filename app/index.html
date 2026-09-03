@@ -853,7 +853,13 @@
             background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.07);
             border-radius:10px; padding:0.75rem 0.9rem; margin-bottom:0.6rem; }
         .scope-title { font-size:1rem; font-weight:700; color:var(--text-main,#e6edf6); }
-        .scope-cat { font-size:0.7rem; font-weight:700; text-transform:uppercase; margin-left:6px; }
+        .scope-cat { font-size:0.72rem; font-weight:700; margin-left:6px; }
+        /* .status-badge sets display:flex, which beats the hidden attribute --
+           so hiding it needs a rule, not just the attribute. */
+        .status-badge[hidden] { display:none; }
+        .scope-head { display:flex; align-items:center; gap:0.6rem; margin:0 0 0.7rem; }
+        .scope-head h2 { font-size:1rem; font-weight:700; color:#e8eef7; margin:0; }
+        .scope-head-n { font-size:0.78rem; color:var(--ss-dim); margin-right:auto; }
         .scope-sub { font-size:0.75rem; color:var(--text-muted,#8b98a9); margin-top:0.25rem; word-break:break-all; }
         .scope-signal { text-align:right; margin-left:12px; white-space:nowrap; }
         .scope-bars { font-size:1rem; letter-spacing:2px; }
@@ -869,31 +875,138 @@
             border-radius:10px; border:1px solid rgba(255,255,255,0.15); background:rgba(0,0,0,0.3); color:#cfe; }
         .modal-actions .ctrl-btn { flex:1; }
 
-        /* Lens tabs. These are a client-side filter over the live list, NOT the
-           old firmware mode selector — the detector always watches everything. */
-        .lens-row { display:flex; gap:6px; margin:0.9rem 0 0.6rem; flex-wrap:wrap; }
-        .lens-tab { flex:1; min-width:76px; padding:0.5rem 0.4rem; border-radius:8px; cursor:pointer;
-            border:1px solid rgba(255,255,255,0.10); background:rgba(255,255,255,0.03);
-            color:var(--text-muted,#8b98a9); font-weight:700; font-size:0.75rem; text-align:center; }
-        .lens-tab.active { color:var(--text-main,#e6edf6); border-color:currentColor;
-            background:rgba(255,255,255,0.07); }
-        .lens-tab .lens-n { opacity:0.7; font-weight:600; }
+        /* ------------------------------------------------------------------
+           Band selector + foxhunt instrument.
+
+           The device's real interface is a buzzer speaking four patterns, one
+           per category. Everything below is built from those same four "words",
+           so what you read matches what you heard: red = fixed camera / ALPR,
+           orange = body cam, blue = drone, magenta = tracker. The colour is
+           load-bearing, not decoration -- it is the only way a glance at a
+           dash-mounted phone answers "which one was that".
+
+           Monospace is used ONLY for measured values (MAC, dBm, coordinates,
+           IDs): figures that have to align in a column and must not be
+           misread, 0 against O. Everything else is the UI sans. No webfont
+           anywhere on purpose -- a detector is most needed where there is no
+           network to fetch one.
+           ------------------------------------------------------------------ */
+        :root {
+            --ss-panel:  #0d1320;
+            --ss-line:   rgba(140,170,210,0.14);
+            --ss-dim:    #7d8a9e;
+            --ss-live:   #3ddc84;
+            --band-alpr:    #ef4444;
+            --band-bodycam: #ff7a1a;
+            --band-drone:   #3aa0ff;
+            --band-tracker: #ff3ac8;
+            --ss-ink: #e8eef7;
+            --mono: ui-monospace, "Cascadia Mono", "SF Mono", Menlo, Consolas, monospace;
+        }
+        .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+        /* Status strip: device / GPS / recording, each with its own state dot.
+           Three separate cells rather than one run-on line, because they fail
+           independently and you need to see which one went dark. */
+        .statstrip { display:grid; grid-template-columns:repeat(3,1fr); gap:1px;
+            background:var(--ss-line); border:1px solid var(--ss-line);
+            border-radius:10px; overflow:hidden; margin:0.9rem 0; }
+        .statcell { background:var(--ss-panel); padding:0.55rem 0.7rem; min-width:0; }
+        .statcell-k { font-size:0.62rem; color:var(--ss-dim); letter-spacing:0.06em; }
+        .statcell-v { display:flex; align-items:center; gap:7px; margin-top:3px;
+            font-size:0.82rem; font-weight:600; white-space:nowrap;
+            overflow:hidden; text-overflow:ellipsis; }
+        .statdot { width:7px; height:7px; border-radius:50%; flex:none;
+            background:var(--ss-dim); box-shadow:0 0 7px currentColor; }
+        .statdot.ok   { background:var(--ss-live);    color:var(--ss-live); }
+        .statdot.warn { background:var(--accent-amber); color:var(--accent-amber); }
+        .statdot.bad  { background:var(--accent-red);   color:var(--accent-red); }
+        .statdot.off  { background:#3a465a; color:transparent; }
+
+        /* Band selector. Each segment carries its own live signal meter, so a
+           hot band is visible while you are looking at a different one -- the
+           reason these are four channels of a receiver and not four nav tabs. */
+        .bands { display:grid; grid-template-columns:repeat(4,1fr); gap:1px;
+            background:var(--ss-line); border:1px solid var(--ss-line);
+            border-radius:10px; overflow:hidden; margin:0 0 0.8rem; }
+        .band { background:var(--ss-panel); border:0; padding:0.6rem 0.5rem 0;
+            cursor:pointer; text-align:left; color:var(--ss-dim);
+            display:flex; flex-direction:column; gap:2px; min-width:0;
+            font:inherit; position:relative; }
+        .band:focus-visible { outline:2px solid var(--band); outline-offset:-2px; }
+        .band-n { font-family:var(--mono); font-variant-numeric:tabular-nums;
+            font-size:1.45rem; font-weight:600; line-height:1;
+            color:#4a5769; transition:color .18s; }
+        .band-l { font-size:0.7rem; font-weight:600; letter-spacing:0.01em;
+            white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        /* Signal meter: width tracks the strongest thing in this band right
+           now. Flat and dark means nothing there, which is information. */
+        .band-m { height:3px; margin:0.45rem -0.5rem 0; background:rgba(255,255,255,0.05); }
+        .band-m i { display:block; height:100%; width:0; background:var(--band);
+            transition:width .35s ease; }
+        .band.live .band-n { color:var(--band); }
+        .band.live .band-l { color:#c7d2e0; }
+        .band[aria-selected="true"] { background:#141c2c; color:var(--ss-ink,#e8eef7); }
+        .band[aria-selected="true"] .band-l { color:#e8eef7; }
+        .band[aria-selected="true"]::before { content:""; position:absolute;
+            inset:0 0 auto 0; height:2px; background:var(--band); }
+
+        /* ---- Foxhunt: the one place this app raises its voice --------------
+           Walking a hidden transmitter down by signal strength is the most
+           characteristic thing this product does, so it gets a full instrument
+           rather than a row in a list: the number large enough to read at
+           arm's length on a dashboard, and a trace of the last ~40 samples so
+           you can see whether the last few steps helped. */
+        .fox { border:1px solid var(--band-tracker); border-radius:12px;
+            background:linear-gradient(180deg,rgba(255,58,200,0.10),transparent 60%),var(--ss-panel);
+            padding:1rem; margin-bottom:0.9rem; }
+        .fox-top { display:flex; justify-content:space-between; align-items:baseline; gap:10px; }
+        .fox-name { font-weight:700; font-size:0.95rem; color:#e8eef7;
+            overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .fox-mac { font-family:var(--mono); font-size:0.72rem; color:var(--ss-dim); }
+        .fox-read { display:flex; align-items:baseline; gap:0.5rem; margin:0.4rem 0 0.1rem; }
+        .fox-rssi { font-family:var(--mono); font-variant-numeric:tabular-nums;
+            font-size:3.4rem; font-weight:600; line-height:1;
+            color:var(--band-tracker); letter-spacing:-0.02em; }
+        .fox-unit { font-family:var(--mono); font-size:0.9rem; color:var(--ss-dim); }
+        .fox-trend { margin-left:auto; font-size:0.85rem; font-weight:700; }
+        .fox-trace { width:100%; height:56px; display:block; margin:0.5rem 0 0.7rem; }
+        .fox-actions { display:flex; gap:8px; }
+        .fox-actions .scope-act { flex:1; text-align:center; padding:0.55rem; }
+        .fox-hint { font-size:0.72rem; color:var(--ss-dim); line-height:1.5; margin-top:0.6rem; }
 
         .scope-row { flex-wrap:wrap; }
-        .scope-detail { flex-basis:100%; font-size:0.75rem; color:var(--text-muted,#8b98a9);
+        .scope-detail { flex-basis:100%; font-size:0.75rem; color:var(--ss-dim);
             margin-top:0.5rem; line-height:1.5; }
-        .scope-detail b { color:var(--text-main,#e6edf6); font-weight:600; }
+        .scope-detail b { color:#e8eef7; font-weight:600; font-family:var(--mono); }
         .scope-actions { flex-basis:100%; display:flex; gap:8px; margin-top:0.6rem; }
         .scope-act { padding:0.35rem 0.7rem; border-radius:6px; cursor:pointer; font-size:0.72rem;
-            font-weight:700; border:1px solid rgba(255,255,255,0.15);
-            background:rgba(255,255,255,0.05); color:var(--text-main,#e6edf6); }
-        .scope-act.hunting { border-color:#ff3ac8; color:#ff3ac8; background:rgba(255,58,200,0.12); }
-        .tier-badge { font-size:0.65rem; font-weight:700; text-transform:uppercase; padding:2px 6px;
+            font-weight:700; border:1px solid var(--ss-line);
+            background:rgba(255,255,255,0.05); color:#e8eef7; }
+        .scope-act:hover { border-color:rgba(140,170,210,0.35); }
+        .scope-act.hunting { border-color:var(--band-tracker); color:var(--band-tracker);
+            background:rgba(255,58,200,0.12); }
+        .tier-badge { font-size:0.65rem; font-weight:700; padding:2px 6px;
             border-radius:4px; margin-left:6px; border:1px solid currentColor; }
+        /* An unmatched row exists only because the filter is off. Say so, so a
+           listed device is never mistaken for a detection. */
+        .scope-row.unmatched { border-left-color:#3a465a !important; opacity:0.82; }
+        .scope-row.unmatched .scope-title { font-weight:600; font-size:0.9rem; color:#b8c4d4;
+            font-family:var(--mono); }
+        .unmatched-tag { font-size:0.65rem; font-weight:600; color:var(--ss-dim);
+            border:1px dashed var(--ss-line); border-radius:4px; padding:1px 5px; margin-left:6px; }
 
         /* Map. Live only — see the comment above initMap() in app.js. */
         #map { height:min(60vh,420px); border-radius:12px; margin-bottom:0.6rem;
             border:1px solid rgba(255,255,255,0.10); background:#0b0f14; }
+        /* Darken the OSM raster in the browser instead of paying for a dark
+           basemap. Only the tiles are inverted -- markers and the RSSI rings
+           sit in their own pane and keep their real category colours. */
+        #map .leaflet-tile-pane {
+            filter: invert(1) hue-rotate(180deg) brightness(0.86) contrast(0.92) saturate(0.55);
+        }
+        #map .leaflet-control-attribution { background:rgba(0,0,0,0.6); color:#8b98a9; }
+        #map .leaflet-control-attribution a { color:#9fb4cc; }
         .map-note { font-size:0.72rem; color:var(--text-muted,#8b98a9); line-height:1.5;
             margin-bottom:0.6rem; }
     </style>
@@ -931,9 +1044,11 @@
         </header>
 
         <div class="header-controls">
-            <div class="status-badge" id="statusBadge" onclick="openConnModal()">
+            <!-- Device state lives in the status strip below; these stay only
+                 because updateConnectionUI() writes to them. -->
+            <div class="status-badge" id="statusBadge" hidden>
                 <div class="pulse-dot" id="pulseDot"></div>
-                <div class="status-info">DEVICE: <span class="active-mode-label" id="connStatusText">DISCONNECTED</span></div>
+                <div class="status-info"><span id="connStatusText"></span></div>
             </div>
             <button class="btn-header-conn" id="btnConnectHeader" onclick="openConnModal()">Connect Device</button>
             <button class="btn-disconnect" id="btnDisconnectHeader" onclick="disconnectDevice()">Disconnect</button>
@@ -951,26 +1066,80 @@
             <button class="btn-header-conn" style="padding:0.4rem 0.9rem; font-size:0.8rem;" onclick="openConnModal()">Connect Now</button>
         </div>
 
+        <!-- Status strip: three things that fail independently. -->
+        <div class="statstrip">
+            <div class="statcell">
+                <div class="statcell-k">Device</div>
+                <div class="statcell-v"><span class="statdot off" id="st-dev-dot"></span><span id="st-dev">Not connected</span></div>
+            </div>
+            <div class="statcell" title="Location is taken as a single fix when you confirm a pin, or when you recenter the map. It is never tracked continuously.">
+                <div class="statcell-k">Location</div>
+                <div class="statcell-v"><span class="statdot off" id="st-gps-dot"></span><span id="st-gps">Off</span></div>
+            </div>
+            <div class="statcell">
+                <div class="statcell-k">Recording</div>
+                <div class="statcell-v"><span class="statdot off" id="st-rec-dot"></span><span id="st-rec">Off</span></div>
+            </div>
+        </div>
+
         <!-- Controls -->
         <div class="toolbar">
             <button class="ctrl-btn" id="btn-record" onclick="toggleRecording()">○ Recording: OFF</button>
             <button class="ctrl-btn on" id="btn-buzzer" onclick="toggleBuzzer()">🔊 Buzzer: ON</button>
+            <button class="ctrl-btn" id="btn-foxhunt" onclick="toggleFoxhunt()">◎ Filter: matches</button>
             <button class="ctrl-btn" onclick="openPins()">📍 Pins</button>
             <button class="ctrl-btn" onclick="openSignatures()">✎ Signatures</button>
         </div>
 
         <!-- Live scope -->
-        <div class="grid-title">Live Scope <span style="color:var(--text-muted);font-weight:normal;font-size:0.8rem;">— matching now (<span id="scope-count">0</span>)</span>
-            <button class="ctrl-btn" id="btn-view" onclick="toggleView()" style="float:right;flex:0;min-width:0;padding:0.35rem 0.8rem;font-size:0.75rem;">🗺 Map</button>
+        <div class="scope-head">
+            <h2>Live scope</h2>
+            <span class="scope-head-n"><span id="scope-count">0</span> now</span>
+            <button class="scope-act" id="btn-view" onclick="toggleView()">Map</button>
         </div>
 
-        <!-- Lens tabs: a filter over what the detector already found. Switching
-             one sends nothing to the device — it is always watching all of them. -->
-        <div class="lens-row" id="lens-row">
-            <div class="lens-tab active" data-lens="all">All <span class="lens-n" id="n-all">0</span></div>
-            <div class="lens-tab" data-lens="alpr" style="color:#ef4444">Surveillance <span class="lens-n" id="n-alpr">0</span></div>
-            <div class="lens-tab" data-lens="tracker" style="color:#ff3ac8">Trackers <span class="lens-n" id="n-tracker">0</span></div>
-            <div class="lens-tab" data-lens="drone" style="color:#3aa0ff">Drones <span class="lens-n" id="n-drone">0</span></div>
+        <!-- Band selector: four channels of one receiver. Switching sends
+             nothing to the device -- it is always watching all four. -->
+        <div class="bands" id="bands" role="tablist">
+            <button class="band" role="tab" aria-selected="true" data-lens="all" style="--band:var(--accent-cyan)">
+                <span class="band-n" id="n-all">0</span>
+                <span class="band-l">Everything</span>
+                <span class="band-m"><i id="m-all"></i></span>
+            </button>
+            <button class="band" role="tab" aria-selected="false" data-lens="alpr" style="--band:var(--band-alpr)">
+                <span class="band-n" id="n-alpr">0</span>
+                <span class="band-l">Cameras</span>
+                <span class="band-m"><i id="m-alpr"></i></span>
+            </button>
+            <button class="band" role="tab" aria-selected="false" data-lens="tracker" style="--band:var(--band-tracker)">
+                <span class="band-n" id="n-tracker">0</span>
+                <span class="band-l">Trackers</span>
+                <span class="band-m"><i id="m-tracker"></i></span>
+            </button>
+            <button class="band" role="tab" aria-selected="false" data-lens="drone" style="--band:var(--band-drone)">
+                <span class="band-n" id="n-drone">0</span>
+                <span class="band-l">Drones</span>
+                <span class="band-m"><i id="m-drone"></i></span>
+            </button>
+        </div>
+
+        <!-- Foxhunt readout, shown only while a target is locked. -->
+        <div class="fox" id="fox" style="display:none;">
+            <div class="fox-top">
+                <span class="fox-name" id="fox-name">Locked</span>
+                <span class="fox-mac" id="fox-mac"></span>
+            </div>
+            <div class="fox-read">
+                <span class="fox-rssi" id="fox-rssi">--</span>
+                <span class="fox-unit">dBm</span>
+                <span class="fox-trend" id="fox-trend"></span>
+            </div>
+            <canvas class="fox-trace" id="fox-trace"></canvas>
+            <div class="fox-actions">
+                <button class="scope-act" onclick="ringTarget(currentHuntMac())">Make it ring</button>
+                <button class="scope-act hunting" onclick="stopHunt()">Stop hunting</button>
+            </div>
+            <div class="fox-hint">The device is clicking now — faster as you close in. Walk, don't watch the screen.</div>
         </div>
 
         <div id="map-wrap" style="display:none;">

@@ -252,6 +252,14 @@ void processIncomingCommand(const String& rawCommand) {
             requestReboot();
         }
 
+        // 3c. Foxhunt filter: {"scan_all":bool} reports everything the radios
+        // hear instead of only signature matches, so you can lock onto and walk
+        // down a device that is on no list. Listing only — the buzzer stays
+        // gated by CONF_ALERT_MIN either way.
+        if (doc["scan_all"].is<bool>()) {
+            setScanAll(doc["scan_all"].as<bool>());
+        }
+
         // 4. Ring: {"ring":"AA:BB:CC:DD:EE:FF"} makes a suspected tracker
         // announce itself. The MAC is the ONLY parameter — service,
         // characteristic and value are fixed in performRing(). Do not grow this

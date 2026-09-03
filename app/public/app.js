@@ -25,6 +25,11 @@
         // routes to the right bucket.
         function categoryOf(type) {
             const c = String(type || '').toLowerCase();
+            // Nothing matched. This is its own state, not a weak match: with
+            // the filter off most of the list is ordinary hardware, and folding
+            // it into the generic bucket titled every unnamed phone "Match"
+            // behind a warning triangle, then counted it under Cameras.
+            if (!c) return { key: 'none', label: '', color: '#3a465a', icon: '' };
             if (c.indexOf('drone') >= 0 || c.indexOf('remote id') >= 0 || c.indexOf('uas') >= 0)
                 return { key: 'drone',   label: 'Drone',      color: '#3aa0ff', icon: '🛸' };
             if (c.indexOf('track') >= 0 || c.indexOf('airtag') >= 0 || c.indexOf('tile') >= 0 ||
@@ -87,8 +92,9 @@
 
         function setLens(key) {
             lens = key;
-            document.querySelectorAll('#lens-row .lens-tab').forEach(function (el) {
-                el.classList.toggle('active', el.getAttribute('data-lens') === key);
+            document.querySelectorAll('#bands .band').forEach(function (el) {
+                el.setAttribute('aria-selected',
+                    el.getAttribute('data-lens') === key ? 'true' : 'false');
             });
             renderScope();
         }
@@ -118,6 +124,7 @@
                     // as two separate words (ALPR and body cam); one tab covers
                     // both, plus anything matched whose category we can't name.
                     if (k === 'alpr') return c === 'alpr' || c === 'bodycam' || c === 'other';
+                    if (k === 'none') return c === 'none';
                     return c === k;
                 })
                 .sort(function (a, b) { return (b.rssi || -999) - (a.rssi || -999); });
@@ -147,7 +154,10 @@
         // Trackers get the two things you actually want when something may be
         // following you: walk it down, or make it announce itself.
         function actionRow(m, cat) {
-            if (cat.key !== 'tracker') return '';
+            // Trackers always offer it. With the filter off, anything does --
+            // that is the whole point of turning the filter off: find something
+            // interesting that is on no list, then go and physically find it.
+            if (cat.key !== 'tracker' && !foxhuntMode) return '';
             const hunting = !!huntMac && huntMac.toUpperCase() === String(m.mac).toUpperCase();
             return '<div class="scope-actions">' +
                 '<button class="scope-act' + (hunting ? ' hunting' : '') +
@@ -157,13 +167,33 @@
             '</div>';
         }
 
+        // Map RSSI to a 0-1 meter fill. -95 dBm is the noise floor in practice,
+        // -35 is "in the same room"; anything outside that is clamped.
+        function rssiFrac(rssi) {
+            const r = Number(rssi);
+            if (!isFinite(r)) return 0;
+            return Math.max(0, Math.min(1, (r + 95) / 60));
+        }
+
         function renderScope() {
-            // Keep the per-lens counters honest whichever view is showing.
+            // Each band shows its own count and the strongest signal in it right
+            // now, whether or not it is the selected band. That is the point of
+            // the strip: you can be reading Drones and still see that something
+            // just got loud in Trackers.
             const keys = ['all', 'alpr', 'tracker', 'drone'];
             for (let i = 0; i < keys.length; i++) {
+                const bandRows = liveRows(keys[i]);
                 const el = document.getElementById('n-' + keys[i]);
-                if (el) el.textContent = liveRows(keys[i]).length;
+                if (el) el.textContent = bandRows.length;
+                const meter = document.getElementById('m-' + keys[i]);
+                const strongest = bandRows.length
+                    ? Math.max.apply(null, bandRows.map(function (m) { return Number(m.rssi) || -999; }))
+                    : null;
+                if (meter) meter.style.width = (strongest == null ? 0 : rssiFrac(strongest) * 100) + '%';
+                const tab = document.querySelector('#bands .band[data-lens="' + keys[i] + '"]');
+                if (tab) tab.classList.toggle('live', bandRows.length > 0);
             }
+            renderFoxhunt();
 
             const rows = liveRows();
             const countEl = document.getElementById('scope-count');
@@ -185,19 +215,32 @@
             let html = '';
             for (const m of rows) {
                 const cat = categoryOf(m.type || m.rule);
-                const title = m.name || m.rule || cat.label;
-                html += '<div class="scope-row" style="border-left:4px solid ' + cat.color + '">' +
+                // An unmatched device has no label to fall back on, so name it
+                // by its address rather than inventing a word for it.
+                const title = m.name || m.rule || cat.label || m.mac;
+                // With the filter off the list contains devices that matched
+                // nothing. Saying so is the difference between a tool and a
+                // scaremonger: a listed device is not a detection.
+                const unmatched = cat.key === 'none';
+                html += '<div class="scope-row' + (unmatched ? ' unmatched' : '') +
+                        '" style="border-left:4px solid ' + cat.color + '">' +
                     '<div class="scope-main">' +
-                        '<div class="scope-title">' + cat.icon + ' ' + esc(title) +
-                            ' <span class="scope-cat" style="color:' + cat.color + '">' + esc(cat.label) + '</span>' +
-                            (m.tier ? '<span class="tier-badge" style="color:' + cat.color + '">' + esc(m.tier) + '</span>' : '') +
+                        '<div class="scope-title">' + (cat.icon ? cat.icon + ' ' : '') + esc(title) +
+                            (unmatched ? '' :
+                                ' <span class="scope-cat" style="color:' + cat.color + '">' + esc(cat.label) + '</span>') +
+                            (unmatched ? '<span class="unmatched-tag">no match</span>' : '') +
+                            (m.tier && !unmatched ? '<span class="tier-badge" style="color:' + cat.color + '">' + esc(m.tier) + '</span>' : '') +
                         '</div>' +
-                        '<div class="scope-sub">' + esc(m.mac) + ' \u00b7 ' + esc(m.protocol) +
-                            (m.rule ? ' \u00b7 ' + esc(m.rule) : '') + ' \u00b7 conf ' + (m.confidence | 0) + '</div>' +
+                        // Don't print the address twice when it is also the title.
+                        '<div class="scope-sub">' +
+                            (title === m.mac ? '' : '<span class="mono">' + esc(m.mac) + '</span> \u00b7 ') +
+                            esc(m.protocol) +
+                            (m.rule ? ' \u00b7 ' + esc(m.rule) : '') +
+                            (unmatched ? '' : ' \u00b7 conf ' + (m.confidence | 0)) + '</div>' +
                     '</div>' +
                     '<div class="scope-signal">' +
                         '<div class="scope-bars" style="color:' + cat.color + '">' + signalBars(m.rssi) + '</div>' +
-                        '<div class="scope-rssi">' + esc(m.rssi) + ' dBm</div>' +
+                        '<div class="scope-rssi mono">' + esc(m.rssi) + ' dBm</div>' +
                     '</div>' +
                     detailLine(m, cat) +
                     actionRow(m, cat) +
@@ -211,12 +254,149 @@
         // device's buzzer becomes an RSSI-driven Geiger clicker for that MAC so
         // you can physically walk it down. Detection never stops meanwhile.
         let huntMac = '';
+        let foxhuntMode = false;      // filter off: list everything, hunt anything
+        // Signal strength for the locked target over the last ~40 samples. In
+        // memory, cleared when the hunt stops or the link drops. It is a signal
+        // trace, not a track -- there is no position in it.
+        let huntTrace = [];
+        const HUNT_TRACE_MAX = 40;
+
+        function currentHuntMac() { return huntMac; }
+
+        function toggleFoxhunt() {
+            foxhuntMode = !foxhuntMode;
+            // Listing only. The buzzer stays gated by the firmware's alert
+            // threshold either way, so turning the filter off shows you every
+            // phone in the room without beeping at a single one.
+            sendCommand({ scan_all: foxhuntMode });
+            const btn = document.getElementById('btn-foxhunt');
+            if (btn) {
+                btn.classList.toggle('on', foxhuntMode);
+                btn.textContent = foxhuntMode ? '\u25c9 Filter: off' : '\u25ce Filter: matches';
+            }
+            if (!foxhuntMode && huntMac) stopHunt();
+            showToast(foxhuntMode ? 'Showing everything the radios hear'
+                                  : 'Showing signature matches only',
+                      foxhuntMode ? '\u25c9' : '\u25ce');
+            renderScope();
+        }
 
         function huntTarget(mac) {
-            huntMac = (huntMac.toUpperCase() === String(mac).toUpperCase()) ? '' : String(mac);
-            sendCommand({ hunt: huntMac });   // "" clears; see ble_serial.cpp
-            showToast(huntMac ? 'Hunting ' + huntMac : 'Hunt cleared', huntMac ? '\u25c9' : '\u25cb');
+            const same = huntMac && huntMac.toUpperCase() === String(mac).toUpperCase();
+            if (same) { stopHunt(); return; }
+            huntMac = String(mac);
+            huntTrace = [];
+            sendCommand({ hunt: huntMac });
+            showToast('Locked on \u2014 the device is clicking now', '\u25c9');
             renderScope();
+        }
+
+        function stopHunt() {
+            huntMac = '';
+            huntTrace = [];
+            sendCommand({ hunt: '' });   // "" clears; see ble_serial.cpp
+            showToast('Hunt stopped', '\u25cb');
+            renderScope();
+        }
+
+        // The foxhunt instrument. Big enough to read at arm's length, because
+        // you are meant to be walking and listening to the device, not staring
+        // at the phone.
+        function renderFoxhunt() {
+            const panel = document.getElementById('fox');
+            if (!panel) return;
+            if (!huntMac) { panel.style.display = 'none'; return; }
+            panel.style.display = 'block';
+
+            const m = liveMatches[huntMac] ||
+                      liveMatches[Object.keys(liveMatches).find(function (k) {
+                          return k.toUpperCase() === huntMac.toUpperCase();
+                      })];
+
+            const nameEl  = document.getElementById('fox-name');
+            const macEl   = document.getElementById('fox-mac');
+            const rssiEl  = document.getElementById('fox-rssi');
+            const trendEl = document.getElementById('fox-trend');
+            if (macEl) macEl.textContent = huntMac;
+
+            if (!m) {
+                if (nameEl)  nameEl.textContent = 'Lost signal';
+                if (rssiEl)  rssiEl.textContent = '--';
+                if (trendEl) { trendEl.textContent = 'no signal'; trendEl.style.color = 'var(--ss-dim)'; }
+                drawTrace();
+                return;
+            }
+
+            const cat = categoryOf(m.type || m.rule);
+            if (nameEl) nameEl.textContent = m.name || m.rule || cat.label;
+            if (rssiEl) rssiEl.textContent = m.rssi;
+
+            // Only append when the device actually reported again, so standing
+            // still doesn't fill the trace with duplicates of one sample.
+            const last = huntTrace.length ? huntTrace[huntTrace.length - 1] : null;
+            if (!last || last.ts !== m.ts) {
+                huntTrace.push({ rssi: Number(m.rssi), ts: m.ts });
+                if (huntTrace.length > HUNT_TRACE_MAX) huntTrace.shift();
+            }
+
+            // Warmer/colder from the last handful of samples against the ones
+            // before them. 3 dB is roughly the smallest change worth acting on;
+            // below that the reading is just multipath noise.
+            if (trendEl) {
+                const t = huntTrace.map(function (p) { return p.rssi; });
+                if (t.length < 6) {
+                    trendEl.textContent = 'reading\u2026';
+                    trendEl.style.color = 'var(--ss-dim)';
+                } else {
+                    const avg = (a) => a.reduce(function (x, y) { return x + y; }, 0) / a.length;
+                    const delta = avg(t.slice(-4)) - avg(t.slice(-10, -4));
+                    if (delta > 3)       { trendEl.textContent = 'warmer';  trendEl.style.color = 'var(--ss-live)'; }
+                    else if (delta < -3) { trendEl.textContent = 'colder';  trendEl.style.color = 'var(--accent-amber)'; }
+                    else                 { trendEl.textContent = 'holding'; trendEl.style.color = 'var(--ss-dim)'; }
+                }
+            }
+            drawTrace();
+        }
+
+        function drawTrace() {
+            const cv = document.getElementById('fox-trace');
+            if (!cv || !cv.getContext) return;
+            const dpr = window.devicePixelRatio || 1;
+            const w = cv.clientWidth, h = cv.clientHeight;
+            if (!w || !h) return;
+            if (cv.width !== w * dpr || cv.height !== h * dpr) {
+                cv.width = w * dpr; cv.height = h * dpr;
+            }
+            const ctx = cv.getContext('2d');
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            ctx.clearRect(0, 0, w, h);
+
+            // Baseline so an empty trace still reads as an instrument at rest
+            // rather than a broken element.
+            ctx.strokeStyle = 'rgba(140,170,210,0.18)';
+            ctx.lineWidth = 1;
+            ctx.beginPath(); ctx.moveTo(0, h - 0.5); ctx.lineTo(w, h - 0.5); ctx.stroke();
+            if (huntTrace.length < 2) return;
+
+            const step = w / (HUNT_TRACE_MAX - 1);
+            const y = (r) => h - 2 - rssiFrac(r) * (h - 4);
+            const x0 = w - (huntTrace.length - 1) * step;
+
+            ctx.beginPath();
+            huntTrace.forEach(function (p, i) {
+                const x = x0 + i * step;
+                if (i === 0) ctx.moveTo(x, y(p.rssi)); else ctx.lineTo(x, y(p.rssi));
+            });
+            ctx.strokeStyle = '#ff3ac8';
+            ctx.lineWidth = 2;
+            ctx.lineJoin = 'round';
+            ctx.stroke();
+
+            ctx.lineTo(x0 + (huntTrace.length - 1) * step, h);
+            ctx.lineTo(x0, h);
+            ctx.closePath();
+            ctx.fillStyle = 'rgba(255,58,200,0.14)';
+            ctx.fill();
         }
 
         function ringTarget(mac) {
@@ -280,9 +460,13 @@
             if (!el) return;
             map = window.L.map(el, { zoomControl: true, attributionControl: true })
                     .setView([0, 0], 2);
-            window.L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+            // Standard OSM tiles, darkened in CSS rather than a ready-made dark
+            // basemap: CARTO's dark_all now returns "API KEY REQUIRED" stamped
+            // across every tile, and a detector should not depend on a keyed
+            // service to draw a map at all.
+            window.L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
                 maxZoom: 19,
-                attribution: '&copy; OpenStreetMap, &copy; CARTO'
+                attribution: '&copy; OpenStreetMap contributors'
             }).addTo(map);
             meLayer   = window.L.layerGroup().addTo(map);
             liveLayer = window.L.layerGroup().addTo(map);
@@ -375,6 +559,15 @@
 
         // Repaint on a timer so stale rows fade even when no new data arrives.
         setInterval(renderScope, 1500);
+        // Paint the resting state immediately: an unpainted status strip looks
+        // like a hung app, and the resting state ("nothing connected, location
+        // off, not recording") is the honest answer on first load.
+        if (typeof document !== 'undefined' && document.addEventListener) {
+            document.addEventListener('DOMContentLoaded', function () {
+                renderStatusStrip();
+                renderScope();
+            });
+        }
 
         // =====================================================================
         //  Incoming telemetry
@@ -387,6 +580,11 @@
                     renderScope();
                 }
                 if (data.cfg) applyConfigToSettings(data);
+                // The device is the authority on its own state. After a
+                // reconnect the app may believe it is hunting something the
+                // board has long since forgotten (it does not persist either
+                // flag across a reboot), so take what the telemetry says.
+                if ('targets' in data) syncDeviceState(data);
             } catch (e) {
                 console.warn('Data parse error:', e);
             }
@@ -456,6 +654,55 @@
             pinKey = null; pinSalt = null; pinsCache = [];
         }
 
+        // ---- Location status ------------------------------------------------
+        // A fix vaguer than this is worse than no fix: a pin is evidence of
+        // where a camera is, and one saved at plus-or-minus 200 m points at the
+        // wrong building. The old build discarded such fixes silently, so a
+        // whole drive could record nothing while looking healthy. Show it.
+        const FIX_ACCURACY_MAX_M = 50;
+
+        // Deliberately NOT a live GPS state: there is no watchPosition here, so
+        // this reports the last one-shot fix and nothing more. "Off" genuinely
+        // means nothing has asked for location yet, which is the resting state.
+        let gpsState = { state: 'off', acc: null };
+
+        function setGpsState(state, acc) {
+            gpsState = { state: state, acc: (acc == null ? null : acc) };
+            renderStatusStrip();
+        }
+
+        function gpsDisplay() {
+            switch (gpsState.state) {
+                case 'locating': return { dot: 'warn', text: 'Locating\u2026' };
+                case 'denied':   return { dot: 'bad',  text: 'Permission denied' };
+                case 'failed':   return { dot: 'bad',  text: 'No fix' };
+                case 'fix': {
+                    const a = Math.round(gpsState.acc);
+                    return (gpsState.acc <= FIX_ACCURACY_MAX_M)
+                        ? { dot: 'ok',   text: '\u00b1' + a + ' m' }
+                        : { dot: 'warn', text: '\u00b1' + a + ' m \u2014 too vague to pin' };
+                }
+                default: return { dot: 'off', text: 'Off' };
+            }
+        }
+
+        function renderStatusStrip() {
+            const set = (dotId, textId, cls, text) => {
+                const d = document.getElementById(dotId);
+                const t = document.getElementById(textId);
+                if (d) d.className = 'statdot ' + cls;
+                if (t) t.textContent = text;
+            };
+            set('st-dev-dot', 'st-dev',
+                connectionType ? 'ok' : 'off',
+                connectionType ? 'Connected' : 'Not connected');
+            const g = gpsDisplay();
+            set('st-gps-dot', 'st-gps', g.dot, g.text);
+            set('st-rec-dot', 'st-rec',
+                recordEnabled ? 'ok' : 'off',
+                recordEnabled ? 'On' : 'Off');
+        }
+
         // One-shot location (never watchPosition — no passive trail).
         function getFix() {
             return new Promise((resolve, reject) => {
@@ -463,12 +710,24 @@
                     lat: pos.coords.latitude, lng: pos.coords.longitude,
                     acc: pos.coords.accuracy
                 });
+                setGpsState('locating');
+                const done = (pos) => { setGpsState('fix', pos.coords.accuracy); ok(pos); };
+                const failed = (err) => {
+                    // A refused permission and a cold lock that timed out need
+                    // opposite responses: one is a settings problem, the other
+                    // is worth standing still outside for another few seconds.
+                    const denied = err && (err.code === 1 ||
+                        /denied|permission/i.test(err.message || ''));
+                    setGpsState(denied ? 'denied' : 'failed');
+                    reject(err);
+                };
                 if (window.Geolocation && window.Geolocation.getCurrentPosition) {
                     window.Geolocation.getCurrentPosition({ enableHighAccuracy: true, timeout: 15000 })
-                        .then(ok).catch(reject);
+                        .then(done).catch(failed);
                 } else if (navigator.geolocation) {
-                    navigator.geolocation.getCurrentPosition(ok, reject, { enableHighAccuracy: true, timeout: 15000 });
+                    navigator.geolocation.getCurrentPosition(done, failed, { enableHighAccuracy: true, timeout: 15000 });
                 } else {
+                    setGpsState('failed');
                     reject(new Error('No geolocation available'));
                 }
             });
@@ -477,6 +736,7 @@
         // ---- Consent flow ----
         function toggleRecording() {
             recordEnabled = !recordEnabled;
+            setTimeout(renderStatusStrip, 0);
             try { localStorage.setItem(RECORD_PREF_KEY, recordEnabled ? '1' : '0'); } catch (e) {}
             const btn = document.getElementById('btn-record');
             if (btn) {
@@ -488,6 +748,10 @@
 
         function maybeOfferRecord(match) {
             if (!recordEnabled) return;
+            // With the filter off the device reports everything it hears, and
+            // without this the app would ask permission to pin every phone on
+            // the street. Pins are for things that actually matched.
+            if (!match.type && !match.rule) return;
             if (handledMacs.has(match.mac)) return;
             handledMacs.add(match.mac);
             consentQueue.push(match);
@@ -497,11 +761,17 @@
         function showNextConsent() {
             const m = consentQueue[0];
             if (!m) return;
+            // Called from inside the ingest loop, so a missing element must not
+            // throw: that would abandon the rest of the telemetry batch and
+            // leave the live list half-populated.
+            const textEl = document.getElementById('consent-text');
+            if (!textEl) return;
             const cat = categoryOf(m.type || m.rule);
-            document.getElementById('consent-text').innerHTML =
+            textEl.innerHTML =
                 'Record <strong style="color:' + cat.color + '">' + esc(cat.label) + '</strong> here?<br>' +
                 '<span style="color:var(--text-muted); font-size:0.85rem">' + esc(m.name || m.rule || m.mac) + '</span>';
-            document.getElementById('consent-modal').classList.add('active');
+            const modal = document.getElementById('consent-modal');
+            if (modal) modal.classList.add('active');
         }
 
         function consentDismiss() {
@@ -515,6 +785,14 @@
             document.getElementById('consent-modal').classList.remove('active');
             try {
                 const fix = await getFix();
+                if (fix.acc > FIX_ACCURACY_MAX_M && !confirm(
+                        'This fix is only accurate to about ' + Math.round(fix.acc) +
+                        ' m, so the pin could land on the wrong block. Save it anyway?')) {
+                    showToast('Pin not saved', '✕');
+                    consentQueue.shift();
+                    if (consentQueue.length) setTimeout(showNextConsent, 300);
+                    return;
+                }
                 // Ensure the store is unlocked / created before writing.
                 if (!pinKey) {
                     pendingPinAction = async () => { await writePin(m, fix); };
@@ -658,6 +936,23 @@
             if (rndEl) rndEl.checked = !!cfg.rand_mac;
         }
 
+        function syncDeviceState(data) {
+            const devHunt = data.hunt || '';
+            if (devHunt.toUpperCase() !== huntMac.toUpperCase()) {
+                huntMac = devHunt;
+                huntTrace = [];
+            }
+            const devAll = !!data.scan_all;
+            if (devAll !== foxhuntMode) {
+                foxhuntMode = devAll;
+                const btn = document.getElementById('btn-foxhunt');
+                if (btn) {
+                    btn.classList.toggle('on', foxhuntMode);
+                    btn.textContent = foxhuntMode ? '◉ Filter: off' : '◎ Filter: matches';
+                }
+            }
+        }
+
         function requestConfig() {
             sendCommand({ raw: 'CMD:CFG' });
         }
@@ -753,6 +1048,7 @@
                 btnDisconnectHeader.style.display = 'block';
                 connBanner.style.display = 'none';
                 closeConnModal();
+                renderStatusStrip();
                 showToast(`Connected via ${type}`, '✓');
                 // Ask the device what it is called. Done here rather than at
                 // each of the five connect sites, and after a beat so the NUS
@@ -765,6 +1061,7 @@
                 btnConnectHeader.style.display = 'flex';
                 btnDisconnectHeader.style.display = 'none';
                 connBanner.style.display = 'flex';
+                renderStatusStrip();
                 showToast('Device disconnected', '✕');
             }
         }
@@ -1059,6 +1356,7 @@
             liveMatches = {};
             mapFix = null;
             huntMac = '';
+            huntTrace = [];
             if (liveLayer) liveLayer.clearLayers();
             if (meLayer) meLayer.clearLayers();
             renderScope();
@@ -1144,9 +1442,56 @@
                 results.droneDetail = detailLine(drone, categoryOf('Drone')).indexOf('X7') > 0;
                 // A device-chosen name must never reach the DOM as markup.
                 results.escapesName = esc('<img src=x onerror=1>').indexOf('<') === -1;
+                // Location badge states. "Off" and "no fix" mean opposite
+                // things -- one is resting, one is a problem -- and a vague fix
+                // has to be called out rather than shown as a good one.
+                setGpsState('off');       results.gpsOff      = gpsDisplay().dot === 'off';
+                setGpsState('locating');  results.gpsLocating = gpsDisplay().dot === 'warn';
+                setGpsState('denied');    results.gpsDenied   = gpsDisplay().dot === 'bad';
+                setGpsState('fix', 12);   results.gpsGood     = gpsDisplay().dot === 'ok';
+                setGpsState('fix', 250);
+                results.gpsVague = gpsDisplay().dot === 'warn' &&
+                                   gpsDisplay().text.indexOf('too vague') > 0;
+                setGpsState('off');
+
+                // Meter scaling: clamped at both ends, monotonic in between.
+                results.meterScale = rssiFrac(-999) === 0 && rssiFrac(0) === 1 &&
+                                     rssiFrac(-40) > rssiFrac(-80);
+
+                // With the filter off, an unmatched device must be listed but
+                // never dressed up as a detection, and must never trigger a
+                // request to pin it.
+                foxhuntMode = true;
+                recordEnabled = true;
+                consentQueue = [];
+                handledMacs.clear();
+                liveMatches = {};
+                ingestTargets([
+                    { mac: 'BB:00:01', rssi: -55, confidence: 0 },              // unmatched
+                    { mac: 'BB:00:02', rssi: -60, confidence: 80, type: 'Tracker' }
+                ]);
+                results.pinsOnlyMatches = consentQueue.length === 1 &&
+                                          consentQueue[0].mac === 'BB:00:02';
+                // An unmatched device is its own state: no category, no icon,
+                // and above all not counted as a camera.
+                results.noMatchIsOwnBand = categoryOf('').key === 'none' &&
+                                           categoryOf('').icon === '' &&
+                                           liveRows('alpr').length === 0 &&
+                                           liveRows('all').length === 2;
+                // Hunt is offered on anything while the filter is off.
+                results.huntAnyInFoxhunt =
+                    actionRow(liveMatches['BB:00:01'], categoryOf('')).indexOf('data-act="hunt"') > 0;
+                foxhuntMode = false;
+                results.huntTrackersOnly =
+                    actionRow(liveMatches['BB:00:01'], categoryOf('')) === '';
+                recordEnabled = false;
+                consentQueue = [];
+                handledMacs.clear();
+
                 // Disconnect drops the whole live set, not just the view.
                 clearLiveState();
-                results.clearsOnDisconnect = Object.keys(liveMatches).length === 0;
+                results.clearsOnDisconnect = Object.keys(liveMatches).length === 0 &&
+                                             huntTrace.length === 0 && huntMac === '';
 
                 // Crypto round-trip: create → save → reload → unlock
                 await createPinStore('1234');

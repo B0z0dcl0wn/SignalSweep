@@ -12,6 +12,7 @@ global.localStorage = {
 global.document = {
     addEventListener: noop,
     getElementById: () => null,
+    querySelector: () => null,
     querySelectorAll: () => [],
     createElement: () => ({ setAttribute: noop, style: {}, click: noop, classList: { add: noop, remove: noop } }),
     body: { appendChild: noop, removeChild: noop }

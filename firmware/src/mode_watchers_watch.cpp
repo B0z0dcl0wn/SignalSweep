@@ -61,6 +61,20 @@ static String huntMac = "";
 // a GATT connect must not run on the NimBLE callback stack, and it has to stop
 // the scan first.
 static String pendingRingMac = "";
+
+// Foxhunt / "filter off": report every tracked device, not just signature
+// matches. This is the old Beacon Bandit behaviour — turn the filter off, find
+// something interesting, lock it, walk it down — and it is the one case where
+// the reported list deliberately ignores CONF_LIST_MIN.
+//
+// It is NOT persisted. A reboot always comes back quiet, because a device left
+// in this state floods the tightest budget on the board for no reason.
+//
+// It must never touch the ALERT gate. CONF_ALERT_MIN still governs the buzzer,
+// so foxhunting shows you every phone in the room without beeping at any of
+// them. Reporting everything is cheap; beeping at everything is the failure
+// mode this whole design exists to avoid.
+static bool scanAll = false;
 /**
  * @brief Ensure /data/signatures.json exists on LittleFS, creating default rules if missing
  */
@@ -889,6 +903,15 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
     }
 }
 
+void setScanAll(bool enabled) {
+    scanAll = enabled;
+    ESP_LOGI(TAG, "Report filter %s", enabled ? "OFF (reporting everything)" : "ON (matches only)");
+}
+
+bool getScanAll() {
+    return scanAll;
+}
+
 void setHuntTarget(const String& mac) {
     huntMac = mac;
     huntMac.toUpperCase();
@@ -1176,6 +1199,10 @@ String getWatchersTargetsJson() {
     // Carried on every push so flash.py --auto can read the tier back over
     // serial (the old selector heartbeat that used to carry it is gone).
     doc["tier"] = getTier();
+    // So the app never implies "match" for a row that is only being listed
+    // because the filter is off.
+    if (scanAll) doc["scan_all"] = true;
+    if (huntMac.length() > 0) doc["hunt"] = huntMac;
 
     if (watchersMutex != NULL && xSemaphoreTake(watchersMutex, pdMS_TO_TICKS(200)) == pdTRUE) {
 
@@ -1186,9 +1213,11 @@ String getWatchersTargetsJson() {
         // live scope now shows exactly what tripped the detector: confirmed
         // matches, nothing else. Round-robin by staleness still fairly rotates
         // when matches exceed the per-push cap (rare).
+        // scanAll lifts the listing gate only (see setScanAll). Everything is
+        // tracked either way; this decides what gets sent.
         std::vector<size_t> order;
         for (size_t i = 0; i < trackedTargets.size(); i++) {
-            if (trackedTargets[i].confidence >= CONF_LIST_MIN) order.push_back(i);
+            if (scanAll || trackedTargets[i].confidence >= CONF_LIST_MIN) order.push_back(i);
         }
         std::sort(order.begin(), order.end(), [](size_t a, size_t b) {
             return trackedTargets[a].lastReportedMs < trackedTargets[b].lastReportedMs;

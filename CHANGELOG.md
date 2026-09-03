@@ -2,6 +2,74 @@
 
 All notable changes to SignalSweep are recorded here.
 
+## [Unreleased] — 2026-09-02 — Foxhunting, a location readout, and an interface that looks like an instrument
+
+### Added — the filter switch and the foxhunt readout
+
+The old Beacon Bandit's best trick is back: turn the filter off, find something
+interesting, lock onto it, and physically walk it down.
+
+- `{"scan_all":bool}` reports every tracked device instead of only signature
+  matches. It lifts the *listing* gate only — `CONF_ALERT_MIN` still governs the
+  buzzer, so the filter can be off in a crowded room without a single beep.
+  Measured on the bench: 39-44 devices listed, none at or above the alert
+  threshold. Not persisted; a reboot always comes back quiet.
+- Hunt is offered on every row while the filter is off, and on trackers always.
+- A locked target gets a full instrument rather than a row: the signal in
+  numerals large enough to read at arm's length on a dash mount, a rolling trace
+  of the last 40 samples, and a warmer / holding / colder call taken from the
+  last few samples against the ones before them (3 dB, below which the reading
+  is multipath noise rather than movement). The trace is signal strength only —
+  there is no position in it — and it is dropped when the hunt stops.
+- Both `hunt` and `scan_all` are echoed in the 1 Hz push and the app adopts what
+  the device says. Neither survives a reboot, so after a reconnect the app must
+  not keep believing it is hunting something the board has forgotten.
+
+### Added — location status
+
+Restores the GPS badge from the geospatial era, rebuilt around the one-shot fix
+model that replaced `watchPosition`. Off, Locating, ±N m, or ±N m with "too
+vague to pin" past 50 m; a refused permission reads differently from a cold lock
+that timed out, because one is a settings problem and the other is worth
+standing still outside for another few seconds. Confirming a pin on a fix that
+vague now asks first — a pin is evidence of where a camera is, and one saved at
+±200 m points at the wrong building.
+
+### Changed — the interface
+
+- The four tabs are now four channels of a receiver. Each carries its own count
+  and a live meter of the strongest signal in that band, so a band going hot is
+  visible while you are reading a different one. Colour is load-bearing and
+  matches the buzzer's four words: red camera, orange body cam, blue drone,
+  magenta tracker.
+- Device, location and recording are three separate cells that fail
+  independently, replacing the single status badge that only reported one of
+  them. The old badge is hidden rather than deleted, since `updateConnectionUI`
+  still writes to it.
+- Monospace is now used for measured values only — addresses, dBm, coordinates,
+  IDs — where columns have to align and 0 must not read as O. No webfont
+  anywhere, deliberately: a detector is most needed where there is no network to
+  fetch one.
+
+### Fixed
+
+- **A device that matched nothing was displayed as a match.** With the filter
+  off, `categoryOf('')` fell through to the generic bucket, so every unnamed
+  phone in range was titled "Match" behind a warning triangle — and counted in
+  the Surveillance band, which read 5 cameras in a room containing one. No-match
+  is now its own category: grey, tagged "no match", no confidence, no tier, and
+  counted only under Everything. A detector that cries wolf in its own UI is the
+  same failure as one that cries wolf with its buzzer.
+- **The map showed "API KEY REQUIRED" across every tile.** CARTO's dark basemap
+  is keyed now. Switched to plain OSM tiles darkened by a CSS filter on the tile
+  pane, so markers and rings keep their real colours and nothing depends on a
+  keyed service to draw a map.
+- `showNextConsent()` threw on a missing modal element. It is called from inside
+  the ingest loop, so that abandoned the rest of the telemetry batch and left
+  the live list half-populated.
+- Recording consent is no longer offered for unmatched devices. With the filter
+  off it would otherwise ask permission to pin every phone on the street.
+
 ## [Unreleased] — 2026-09-02 — Put back what we missed, not what was wrong
 
 The previous pass was right about the two things that hurt — a passive location

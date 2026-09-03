@@ -109,6 +109,16 @@ void setHuntTarget(const String& mac);
 String getHuntTarget();
 
 /**
+ * @brief Report every tracked device rather than only signature matches, for
+ * foxhunting an unlisted device. Session-only, never persisted, and it does
+ * NOT affect the buzzer — CONF_ALERT_MIN still gates every alert.
+ */
+void setScanAll(bool enabled);
+
+/** @brief True while the report filter is off. */
+bool getScanAll();
+
+/**
  * @brief Queue a "ring the tracker" for this MAC. Performed on the 1 Hz task,
  * not on the caller's stack. MAC is the only parameter by design — see
  * performRing().
