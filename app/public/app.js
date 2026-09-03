@@ -1288,16 +1288,21 @@
             connStatusText.textContent = 'CONNECTING NATIVE BLE...';
             try {
                 await window.BleClient.initialize({ androidNeverForLocation: true });
-                const existing = await window.BleClient.getConnectedDevices([NUS_SERVICE_UUID]);
-                let device = existing && existing[0];
-                if (!device) {
-                    device = await window.BleClient.requestDevice({
-                        services: [NUS_SERVICE_UUID], optionalServices: [NUS_SERVICE_UUID]
-                    });
-                    await window.BleClient.connect(device.deviceId, () => onDeviceDisconnected());
-                } else {
-                    try { await window.BleClient.connect(device.deviceId, () => onDeviceDisconnected()); } catch (e) { /* already connected */ }
-                }
+                // Always show the picker. This used to adopt whatever
+                // getConnectedDevices() returned first, which meant Android's
+                // still-alive GATT link to the last board silently won and the
+                // picker never opened -- there was no way to reach a second
+                // device. An explicit Connect tap means "let me choose"; the
+                // silent path that still exists is auto-reconnect after a drop
+                // (tryReconnect) and reconcileConnection on resume.
+                // The filter is the NUS service UUID, not the name, so a
+                // renamed board still appears.
+                const device = await window.BleClient.requestDevice({
+                    services: [NUS_SERVICE_UUID], optionalServices: [NUS_SERVICE_UUID]
+                });
+                // Picking a board the OS is already connected to throws; that
+                // is success, not failure.
+                try { await window.BleClient.connect(device.deviceId, () => onDeviceDisconnected()); } catch (e) { /* already connected */ }
                 bleDevice = device;
                 await subscribeNative(device.deviceId);
                 rememberDevice(device.deviceId);
@@ -1617,6 +1622,15 @@
                 } else if (window.BleClient && bleDevice.deviceId) {
                     try { await window.BleClient.disconnect(bleDevice.deviceId); } catch (e) { console.error(e); }
                 }
+            } else if (window.BleClient) {
+                // The UI can say "disconnected" while Android still holds the
+                // GATT link -- after an app restart, bleDevice is null but the
+                // OS link survived. Without this, Disconnect is a no-op on that
+                // zombie and it keeps taking the reconnect path.
+                try {
+                    const stale = await window.BleClient.getConnectedDevices([NUS_SERVICE_UUID]);
+                    for (const d of (stale || [])) await window.BleClient.disconnect(d.deviceId);
+                } catch (e) { /* BLE unavailable or nothing connected */ }
             }
             await teardownUsb();
             if (serialReader) { try { await serialReader.cancel(); } catch (e) {} serialReader = null; }
