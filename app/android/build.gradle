@@ -21,6 +21,9 @@ allprojects {
     repositories {
         google()
         mavenCentral()
+        // usb-serial-for-android, pulled in by @leeskies/capacitor-usb-serial,
+        // is published on JitPack rather than Maven Central.
+        maven { url 'https://jitpack.io' }
     }
 }
 

@@ -2,6 +2,60 @@
 
 All notable changes to SignalSweep are recorded here.
 
+## [Unreleased] — 2026-09-03 — The phone can drive the device over USB
+
+### Added — native USB serial on Android
+
+Receive-only had a hole in it: silencing the device from the phone severed the
+only link the phone had. The cable was not an option, because **Android has no
+WebSerial** — the API is absent from the platform, not gated behind a flag —
+and tapping the USB option on a phone did nothing but raise an alert.
+
+That was the wrong conclusion to draw. The browser API is missing; the
+capability is not. Android has USB host, the board is a CDC/ACM device
+(`ARDUINO_USB_CDC_ON_BOOT=1`, Espressif VID `0x303A`), and
+`usb-serial-for-android` has driven that class for years. The app now reaches it
+through `@leeskies/capacitor-usb-serial`.
+
+Plug the device into the phone with a USB-C cable, accept Android's permission
+prompt, and you get full telemetry and full command control **with the radio
+completely quiet**. That is what the emissions work was for.
+
+Verified on the bench: with board A on the phone in receive-only, the witness
+board saw it in 0 of 43 pushes while 99 telemetry events arrived over the cable
+in the same window.
+
+No firmware change was needed — `loop()` already read USB serial commands and
+the detector already mirrored every 1 Hz push to `Serial`.
+
+### Changed — receive-only is a toggle, not a one-way door
+
+Over Bluetooth, going quiet severs the link that carried the command, so the
+only way back is the BOOT button. Over a cable **nothing is severed**: the radio
+goes quiet and the wire keeps working. A control that could only ever silence
+would strand the operator in the one situation where recovery is trivial, so the
+button now reads **Go quiet** or **Advertise** depending on what the device last
+reported, and the warning text only threatens to drop the connection when the
+connection is actually Bluetooth.
+
+### Fixed — connecting over USB could silence the device without asking
+
+The first cut asked "turn advertising off while you are on the cable?" the
+instant the port opened. On Android that put a dialog in the same screen region
+as the system USB-permission dialog, milliseconds after it — so the tap that
+granted permission carried straight through onto its OK. Measured on the bench:
+`{"rx_only":true}` went out 100 ms after connect with no human input, and the
+detector went silent because someone plugged in a cable.
+
+Silencing the detector is a deliberate act and it now lives only behind the
+deliberate control in Settings. Connecting says so in a toast instead.
+
+### Fixed — the USB option is offered where it can work
+
+The button was hidden wherever `'serial' in navigator` was false, which is every
+Android build. It is now shown wherever *any* USB transport exists — WebSerial
+in a desktop browser, the USB host stack on Android — and the badge says which.
+
 ## [Unreleased] — 2026-09-03 — Receive-only: the detector stops announcing itself
 
 ### Added — receive-only mode

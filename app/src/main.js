@@ -2,6 +2,7 @@ import { Capacitor } from '@capacitor/core';
 import { BleClient } from '@capacitor-community/bluetooth-le';
 import { Geolocation } from '@capacitor/geolocation';
 import { App } from '@capacitor/app';
+import { UsbSerial } from '@leeskies/capacitor-usb-serial';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -15,4 +16,10 @@ window.Capacitor = Capacitor;
 window.BleClient = BleClient;
 window.Geolocation = Geolocation;
 window.App = App;
+// Android has no WebSerial -- the API is simply absent from the platform, not
+// gated behind a flag -- so driving the device over the cable from a phone
+// needs the USB host stack directly. On web this import resolves to a stub
+// that rejects every call with UNSUPPORTED_PLATFORM, which is why app.js picks
+// the transport by platform rather than by whether this object exists.
+window.UsbSerial = UsbSerial;
 window.L = L;

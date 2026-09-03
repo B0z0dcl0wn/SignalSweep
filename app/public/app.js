@@ -1028,25 +1028,52 @@
             const rndEl  = document.getElementById('cfg-randmac');
             if (nameEl && typeof cfg.ble_name === 'string') nameEl.value = cfg.ble_name;
             if (rndEl) rndEl.checked = !!cfg.rand_mac;
-            const rxEl = document.getElementById('cfg-rxonly');
-            if (rxEl) rxEl.textContent = cfg.rx_only ? 'receive-only' : 'advertising';
+            setRxOnlyUi(!!cfg.rx_only);
         }
 
-        // The one action in the app that deliberately severs its own link, so
-        // it is signposted as plainly as the PIN wipe. The device keeps
-        // scanning and keeps beeping -- this is emissions, not the buzzer mute.
-        function goReceiveOnly() {
+        // The device is the authority on this; the app only mirrors what the
+        // last CMD:CFG said.
+        let deviceRxOnly = false;
+        function setRxOnlyUi(quiet) {
+            deviceRxOnly = quiet;
+            const label = document.getElementById('cfg-rxonly');
+            if (label) label.textContent = quiet ? 'receive-only' : 'advertising';
+            const btn = document.getElementById('btn-rxonly');
+            if (btn) btn.textContent = quiet ? 'Advertise' : 'Go quiet';
+        }
+
+        // Deliberately a toggle, not a one-way door. Over BLE, going quiet
+        // severs the link that carries the command, so the only way back is
+        // the BOOT button. Over a USB cable nothing is severed at all -- the
+        // radio goes quiet and the wire keeps working -- so the app must be
+        // able to put the device back on the air. A control that could only
+        // ever silence would strand the operator in the one situation where
+        // recovery is trivial.
+        function toggleReceiveOnly() {
+            if (deviceRxOnly) {
+                sendCommand({ rx_only: false });
+                setRxOnlyUi(false);
+                showToast('Advertising again', '✓');
+                return;
+            }
+            const overBle = connectionType === 'BLE';
+            const warning = overBle
+                ? 'THIS CONNECTION WILL DROP and the app will not reconnect on its own. ' +
+                  'Tap the BOOT button on the device to make it discoverable again for ' +
+                  'two minutes.'
+                : 'This cable is unaffected and keeps full control -- only the radio ' +
+                  'goes quiet. Bluetooth clients will not see the device until you ' +
+                  'turn advertising back on here, or tap BOOT.';
             if (!confirm(
                 'Receive-only stops the device advertising itself, so nobody — ' +
                 'including whatever it is watching for — can see it on the air.\n\n' +
-                'THIS CONNECTION WILL DROP and the app will not reconnect on its own. ' +
-                'Tap the BOOT button on the device to make it discoverable again for ' +
-                'two minutes.\n\nIt keeps scanning and keeps beeping.')) return;
+                warning + '\n\nIt keeps scanning and keeps beeping.')) return;
             sendCommand({ rx_only: true });
-            // Stand down the capped-backoff loop: the device is deliberately
-            // gone, and retrying for ever would just look like a fault.
-            cancelReconnect();
-            showToast('Device is receive-only — tap BOOT to return', '●');
+            // Only meaningful on BLE: stand down the capped-backoff loop,
+            // because the device is deliberately gone rather than faulty.
+            if (overBle) cancelReconnect();
+            setRxOnlyUi(true);
+            showToast(overBle ? 'Receive-only — tap BOOT to return' : 'Receive-only — radio quiet', '●');
         }
 
         function syncDeviceState(data) {
@@ -1139,13 +1166,21 @@
             } else {
                 bleBadge.className = 'api-badge warn'; bleBadge.textContent = 'Not Supported';
             }
-            // Hide the USB option outright where it cannot work rather than
-            // offering a button whose only outcome is an alert. Android has no
-            // WebSerial implementation at all -- not a permission or a flag,
-            // the API is simply absent -- and the Capacitor build is Android.
+            // Two different transports reach the same cable: WebSerial in a
+            // desktop browser, and the Android USB host stack through the
+            // plugin. Show the button wherever either exists, and hide it
+            // where neither does rather than offering a control whose only
+            // outcome is an alert.
             const serialBtn = document.getElementById('btnConnSerial');
-            if ('serial' in navigator) {
-                serialBadge.className = 'api-badge ok'; serialBadge.textContent = 'Supported';
+            const serialSub = document.getElementById('connSerialSub');
+            const usbNative = nativeUsbAvailable();
+            const usbWeb = 'serial' in navigator;
+            if (usbNative || usbWeb) {
+                serialBadge.className = 'api-badge ok';
+                serialBadge.textContent = usbNative ? 'Native USB host' : 'Supported';
+                if (serialSub) serialSub.textContent = usbNative
+                    ? 'USB-C cable, 115200 baud'
+                    : '115200 baud serial stream';
                 if (serialBtn) serialBtn.hidden = false;
             } else {
                 serialBadge.className = 'api-badge warn'; serialBadge.textContent = 'Not Supported';
@@ -1302,6 +1337,132 @@
             processIncomingChunk(chunk);
         }
 
+        // =====================================================================
+        //  Native USB serial (Android)
+        // =====================================================================
+        // Android has no WebSerial at all -- the API is absent from the
+        // platform -- so a phone can only reach the device over a cable
+        // through the USB host stack directly. That matters because
+        // receive-only deliberately severs the BLE link: without this, going
+        // quiet from the phone left the phone with no way back to the device
+        // it had just silenced.
+        //
+        // The board is a CDC/ACM device (ARDUINO_USB_CDC_ON_BOOT=1, Espressif
+        // VID 0x303A), which usb-serial-for-android identifies by interface
+        // class, so no custom prober is needed.
+        const USB_VID_ESPRESSIF = 0x303A;
+        let usbPortId = null;
+        let usbListeners = [];
+        // Kept across events: a UTF-8 sequence can straddle two data callbacks,
+        // and a fresh decoder per chunk would turn a split character into
+        // replacement bytes. Device names and SSIDs are chosen by whatever
+        // hardware is being observed, so assuming ASCII is not safe.
+        const usbDecoder = new TextDecoder('utf-8');
+
+        function nativeUsbAvailable() {
+            return !!(window.Capacitor && window.Capacitor.isNativePlatform() && window.UsbSerial);
+        }
+
+        function b64ToBytes(b64) {
+            const bin = atob(b64);
+            const bytes = new Uint8Array(bin.length);
+            for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+            return bytes;
+        }
+        function bytesToB64(bytes) {
+            let bin = '';
+            for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+            return btoa(bin);
+        }
+
+        // The modal button. Same shape as connectWebBluetooth forking to
+        // connectNativeBluetooth: one control, the platform picks the path.
+        async function connectUsb() {
+            if (nativeUsbAvailable()) return connectNativeUsb();
+            return connectWebSerial();
+        }
+
+        async function connectNativeUsb() {
+            const pulseDot = document.getElementById('pulseDot');
+            const connStatusText = document.getElementById('connStatusText');
+            pulseDot.className = 'pulse-dot connecting';
+            connStatusText.textContent = 'CONNECTING USB...';
+            try {
+                const { devices } = await window.UsbSerial.listDevices();
+                if (!devices || devices.length === 0) {
+                    updateConnectionUI(false);
+                    showToast('No USB device found — check the cable supports data', '✕');
+                    return;
+                }
+                // Prefer the board over whatever else is on the bus (a hub, a
+                // charger's control chip); fall back to the first device so an
+                // unusual build is still reachable.
+                const dev = devices.find(d => d.vendorId === USB_VID_ESPRESSIF) || devices[0];
+
+                if (!dev.hasPermission) {
+                    // Android's own dialog. A decline resolves granted:false
+                    // rather than throwing, so this is a branch, not a catch.
+                    const { granted } = await window.UsbSerial.requestPermission({ deviceId: dev.deviceId });
+                    if (!granted) {
+                        updateConnectionUI(false);
+                        showToast('USB permission denied', '✕');
+                        return;
+                    }
+                }
+
+                const { portId } = await window.UsbSerial.open({ deviceId: dev.deviceId });
+                usbPortId = portId;
+                await window.UsbSerial.setParameters({
+                    portId, baudRate: 115200, dataBits: 8, stopBits: 1, parity: 'none'
+                });
+
+                usbListeners.push(await window.UsbSerial.addListener('data', (ev) => {
+                    if (ev.portId !== usbPortId) return;
+                    // Straight into the same line reassembler BLE and WebSerial
+                    // feed. One parser, three transports.
+                    processIncomingChunk(usbDecoder.decode(b64ToBytes(ev.data), { stream: true }));
+                }));
+                usbListeners.push(await window.UsbSerial.addListener('detached', () => {
+                    showToast('USB device unplugged', '✕');
+                    onDeviceDisconnected();
+                }));
+                usbListeners.push(await window.UsbSerial.addListener('error', (ev) => {
+                    console.warn('USB stream error:', ev && ev.message);
+                }));
+
+                await window.UsbSerial.startReading({ portId });
+                updateConnectionUI(true, 'USB');
+                offerReceiveOnlyOnCable();
+            } catch (err) {
+                console.error('USB connect failed:', err);
+                usbPortId = null;
+                updateConnectionUI(false);
+                showToast(`USB Connect Failed: ${(err && (err.code || err.message)) || err}`, '✕');
+            }
+        }
+
+        async function teardownUsb() {
+            for (const sub of usbListeners) { try { await sub.remove(); } catch (e) {} }
+            usbListeners = [];
+            if (usbPortId && window.UsbSerial) {
+                try { await window.UsbSerial.stopReading({ portId: usbPortId }); } catch (e) {}
+                try { await window.UsbSerial.close({ portId: usbPortId }); } catch (e) {}
+            }
+            usbPortId = null;
+        }
+
+        // A hint, deliberately NOT a dialog. This used to be a confirm() fired
+        // the instant the port opened -- which on Android put it in the same
+        // screen region as the system USB-permission dialog, milliseconds
+        // after it, so the tap that granted permission carried straight
+        // through onto its OK and silenced the device nobody had asked to
+        // silence. Measured on the bench: {"rx_only":true} went out 100 ms
+        // after connect with no human input. Silencing the detector is a
+        // deliberate act and it lives behind a deliberate control.
+        function offerReceiveOnlyOnCable() {
+            showToast('On the cable — Settings can stop the radio advertising', '✓');
+        }
+
         async function connectWebSerial() {
             if (!('serial' in navigator)) {
                 alert('WebSerial API is not supported by your browser. Please use Google Chrome, Microsoft Edge, or Opera.');
@@ -1323,15 +1484,7 @@
                 serialWriter = textEncoder.writable.getWriter();
                 updateConnectionUI(true, 'SERIAL');
                 readSerialLoop();
-                // On the cable there is no reason to keep broadcasting -- but
-                // that is the operator's call, not an automatic one, or a board
-                // on a bench USB port could never be reached by phone.
-                if (confirm(
-                    'Connected over USB. Turn BLE advertising off while you are on ' +
-                    'the cable?\n\nThe device stops announcing itself; serial keeps ' +
-                    'full telemetry. Tap BOOT (or reconnect here) to bring it back.')) {
-                    sendCommand({ rx_only: true });
-                }
+                offerReceiveOnlyOnCable();
             } catch (err) {
                 console.error('WebSerial connection failed:', err);
                 updateConnectionUI(false);
@@ -1385,6 +1538,18 @@
                     showToast(`BLE Transmit Error: ${err.message}`, '✕');
                     return false;
                 }
+            } else if (connectionType === 'USB' && usbPortId) {
+                try {
+                    await window.UsbSerial.write({
+                        portId: usbPortId,
+                        data: bytesToB64(new TextEncoder().encode(jsonStr))
+                    });
+                    return true;
+                } catch (err) {
+                    console.error('USB write error:', err);
+                    showToast(`USB Transmit Error: ${(err && (err.code || err.message)) || err}`, '\u2715');
+                    return false;
+                }
             } else if (connectionType === 'SERIAL' && serialWriter) {
                 try { await serialWriter.write(jsonStr); return true; }
                 catch (err) {
@@ -1408,6 +1573,7 @@
                     try { await window.BleClient.disconnect(bleDevice.deviceId); } catch (e) { console.error(e); }
                 }
             }
+            await teardownUsb();
             if (serialReader) { try { await serialReader.cancel(); } catch (e) {} serialReader = null; }
             if (serialWriter) { try { await serialWriter.close(); } catch (e) {} serialWriter = null; }
             if (serialPort)   { try { await serialPort.close(); } catch (e) {} serialPort = null; }
@@ -1468,6 +1634,11 @@
         function onDeviceDisconnected() {
             bleDevice = null; gattServer = null; rxCharacteristic = null; txCharacteristic = null;
             serialPort = null; serialReader = null; serialWriter = null;
+            // Fire and forget: the cable may already be gone, in which case
+            // every call inside throws and none of it matters. wantConnection
+            // is only ever set on the native BLE path, so a yanked cable does
+            // not start a BLE backoff loop.
+            if (usbPortId || usbListeners.length) teardownUsb();
             clearLiveState();
             updateConnectionUI(false);
             if (wantConnection) scheduleReconnect();

@@ -17,8 +17,9 @@ This monorepo holds both halves:
 - `app/` — the control app: plain hand-written HTML/CSS/JS wrapped in Vite +
   Capacitor for Android. (It is **not** React.)
 
-The two talk over a BLE Nordic UART Service, with USB serial as a mirror. There
-is no HTTP server and no cloud.
+The two talk over a BLE Nordic UART Service, or over a USB cable — which works
+from a desktop browser and from an Android phone alike. There is no HTTP server
+and no cloud.
 
 ---
 
@@ -37,8 +38,9 @@ Power it and walk away — everything below is optional.
 
 A detector that advertises "SignalSweep" announces itself to anyone else
 running a scanner — including the hardware it is looking for. **Settings →
-Emissions → Go quiet** stops it advertising and drops the connection; the radio
-then only listens.
+Emissions → Go quiet** stops it advertising; the radio then only listens. Over
+Bluetooth that also drops your connection, because it is the link the command
+travelled on.
 
 It keeps scanning, keeps matching and keeps beeping — this is **not** the
 buzzer mute, which is the separate `{"buzzer":false}` setting. Active scanning
@@ -48,6 +50,27 @@ rules need them.
 The setting survives a power cycle, so a board left quiet comes back quiet. To
 get back in: tap BOOT, or send `CMD:RXONLY:OFF` over USB, or hold BOOT for the
 factory reset.
+
+**Over a USB cable nothing is severed** — only the radio goes quiet, and the
+same Settings control puts it back on the air. The drop-the-connection warning
+applies to Bluetooth only.
+
+### Driving it from the phone over USB
+
+Plug the device into an Android phone with a USB-C cable and pick **Connect via
+USB cable**. Android asks for permission once, then you get the full live view
+and full control over the wire. This is how you use receive-only from a phone:
+the radio is silent and the cable still works.
+
+Android has no WebSerial — the API simply does not exist on the platform — so
+this goes through the phone's own USB host stack
+([usb-serial-for-android](https://github.com/mik3y/usb-serial-for-android) via
+`@leeskies/capacitor-usb-serial`). The board enumerates as CDC/ACM. In a desktop
+browser the same button uses WebSerial instead.
+
+Two things worth knowing: the phone powers the board, so it is not charging
+while connected; and opening the port resets the board, which is why the app
+briefly shows the boot banner.
 
 ### Privacy
 

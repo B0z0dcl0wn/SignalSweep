@@ -1196,12 +1196,12 @@
                     </div>
                     <span class="btn-arrow">&rarr;</span>
                 </button>
-                <button class="btn-conn-option" id="btnConnSerial" onclick="connectWebSerial()">
+                <button class="btn-conn-option" id="btnConnSerial" onclick="connectUsb()">
                     <div class="btn-left">
                         <svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="12" rx="2"/><line x1="8" y1="20" x2="16" y2="20"/><line x1="12" y1="16" x2="12" y2="20"/></svg>
                         <div style="text-align:left;">
-                            <div>Connect via WebSerial (USB)</div>
-                            <div style="font-size:0.75rem;font-weight:normal;opacity:0.8;">115200 Baud Serial Stream</div>
+                            <div>Connect via USB cable</div>
+                            <div style="font-size:0.75rem;font-weight:normal;opacity:0.8;" id="connSerialSub">115200 baud serial stream</div>
                         </div>
                     </div>
                     <span class="btn-arrow">&rarr;</span>
@@ -1209,8 +1209,8 @@
             </div>
             <div class="api-support-info">
                 <div class="api-badge-row"><span>Web Bluetooth API:</span><span class="api-badge" id="bleSupportBadge">Checking...</span></div>
-                <div class="api-badge-row"><span>WebSerial API:</span><span class="api-badge" id="serialSupportBadge">Checking...</span></div>
-                <div style="margin-top:0.5rem;line-height:1.4;color:var(--text-muted);" id="connApiNote">Note: in a browser, Web Bluetooth and WebSerial need Chrome, Edge or Opera over HTTPS or localhost. There is no WebSerial on Android at all, so USB is desktop-only.</div>
+                <div class="api-badge-row"><span>USB serial:</span><span class="api-badge" id="serialSupportBadge">Checking...</span></div>
+                <div style="margin-top:0.5rem;line-height:1.4;color:var(--text-muted);" id="connApiNote">On Android, USB goes through the phone's own USB host stack &mdash; plug the device in with a USB-C cable and accept the permission prompt. In a desktop browser it uses WebSerial, which needs Chrome, Edge or Opera.</div>
             </div>
         </div>
     </div>
@@ -1291,11 +1291,11 @@
                 </div>
                 <p style="margin:22px 0 8px;font-size:0.8rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.08em;">Emissions</p>
                 <p style="margin:0 0 10px;font-size:0.78rem;color:var(--text-muted);line-height:1.5;">
-                    <strong>Receive-only</strong> stops the device announcing itself &mdash; no advertising, no connection. It keeps scanning and keeps beeping; this is not the buzzer mute. <strong>This connection will drop.</strong> Tap the BOOT button on the device to bring it back for two minutes.
+                    <strong>Receive-only</strong> stops the device announcing itself &mdash; no advertising, no connection. It keeps scanning and keeps beeping; this is not the buzzer mute. Over Bluetooth <strong>this connection will drop</strong> &mdash; tap the BOOT button on the device to bring it back for two minutes. Over a USB cable nothing drops: only the radio goes quiet, and you can turn it back on here.
                 </p>
                 <div style="display:flex;justify-content:space-between;align-items:center;padding:10px;background:rgba(255,255,255,0.05);border-radius:8px;">
                     <span>Currently: <strong id="cfg-rxonly">advertising</strong></span>
-                    <button onclick="goReceiveOnly()" style="padding:6px 12px;background:rgba(239,68,68,0.2);border:1px solid var(--accent-red);border-radius:6px;color:var(--accent-red);font-weight:bold;cursor:pointer;">Go quiet</button>
+                    <button id="btn-rxonly" onclick="toggleReceiveOnly()" style="padding:6px 12px;background:rgba(239,68,68,0.2);border:1px solid var(--accent-red);border-radius:6px;color:var(--accent-red);font-weight:bold;cursor:pointer;">Go quiet</button>
                 </div>
 
                 <p style="margin:22px 0 8px;font-size:0.8rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.08em;">Device identity</p>
