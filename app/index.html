@@ -1095,6 +1095,23 @@
                         <button onclick="sendCommand({raw:'CMD:WIFI_SCAN:OFF'})" style="padding:6px 12px;background:rgba(239,68,68,0.2);border:1px solid var(--accent-red);border-radius:6px;color:var(--accent-red);font-weight:bold;cursor:pointer;">OFF</button>
                     </div>
                 </div>
+                <p style="margin:22px 0 8px;font-size:0.8rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.08em;">Device identity</p>
+                <p style="margin:0 0 10px;font-size:0.78rem;color:var(--text-muted);line-height:1.5;">
+                    The app finds the device by its service UUID, so renaming it never breaks discovery. Useful for telling two boards apart &mdash; or for not announcing what it is.
+                </p>
+                <input class="pin-input" id="cfg-name" type="text" maxlength="20" autocomplete="off"
+                       placeholder="SignalSweep"
+                       style="font-size:1rem;letter-spacing:normal;text-align:left;">
+                <label style="display:flex;gap:10px;align-items:flex-start;margin:12px 0;cursor:pointer;">
+                    <input type="checkbox" id="cfg-randmac" style="margin-top:3px;flex:none;">
+                    <span style="font-size:0.82rem;line-height:1.5;">Randomize BLE address each boot
+                        <span style="display:block;color:var(--accent-red,#ef4444);font-size:0.75rem;margin-top:4px;">
+                            Breaks silent auto&#8209;reconnect. The phone remembers the device by its address, so after every reboot you must pick it from the dialog again &mdash; no use on a dash mount.
+                        </span>
+                    </span>
+                </label>
+                <button class="ctrl-btn" style="width:100%;" onclick="saveIdentity()">Save &amp; restart device</button>
+
                 <p style="margin:22px 0 8px;font-size:0.8rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.08em;">Opsec</p>
                 <p style="margin:0;font-size:0.8rem;color:var(--text-muted);line-height:1.5;">
                     This app keeps no history of what it detected or where you went. The only thing stored is location pins you explicitly confirm, encrypted behind your PIN. Manage them under <strong>Pins</strong>.

@@ -26,4 +26,36 @@ bool isBleSerialConnected();
  */
 void processIncomingCommand(const String& rawCommand);
 
+// ---- BLE identity (name + address), persisted in NVS "ouispy-ble" ----------
+// Both are read once at boot, before NimBLEDevice::init(), because neither can
+// be changed on a running host without tearing the stack down. Setting either
+// therefore stores it and reboots.
+
+/** @brief Advertised BLE name. Default "SignalSweep". */
+String getBleDeviceName();
+
+/** @brief True if a fresh random static address is generated each boot. */
+bool getRandomMacEnabled();
+
+/**
+ * @brief Persist a new BLE identity. Empty name restores the default. Does not
+ * take effect until the reboot that requestReboot() schedules.
+ */
+void setBleIdentity(const String& name, bool randomMac);
+
+/**
+ * @brief Generate and install a random static BLE address for this boot. Call
+ * after NimBLEDevice::init() and before advertising starts.
+ */
+void applyRandomMac();
+
+/** @brief Current identity + tier as JSON, for the app's settings page. */
+String getBleConfigJson();
+
+/** @brief Ask main's loop() to reboot shortly (lets the BLE reply flush). */
+void requestReboot();
+
+/** @brief True once requestReboot() has been called and the delay has passed. */
+bool rebootDue();
+
 #endif // BLE_SERIAL_H

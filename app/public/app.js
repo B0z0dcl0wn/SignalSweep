@@ -386,6 +386,7 @@
                     ingestTargets(data.targets);
                     renderScope();
                 }
+                if (data.cfg) applyConfigToSettings(data);
             } catch (e) {
                 console.warn('Data parse error:', e);
             }
@@ -643,6 +644,41 @@
         //  Alarm tuning + signature editor (device commands)
         // =====================================================================
         let buzzerOn = true;
+        // ---- Device identity (name / random address) ------------------------
+        // Both live in the firmware's NVS and are read at boot before the BLE
+        // stack comes up, so saving either restarts the board. The device is
+        // the source of truth -- with more than one board around, the app must
+        // never assume it knows what a given device is called. We ask on
+        // connect (CMD:CFG) rather than have the firmware push it every second;
+        // identity is static config and the 1 Hz payload is the tight budget.
+        function applyConfigToSettings(cfg) {
+            const nameEl = document.getElementById('cfg-name');
+            const rndEl  = document.getElementById('cfg-randmac');
+            if (nameEl && typeof cfg.ble_name === 'string') nameEl.value = cfg.ble_name;
+            if (rndEl) rndEl.checked = !!cfg.rand_mac;
+        }
+
+        function requestConfig() {
+            sendCommand({ raw: 'CMD:CFG' });
+        }
+
+        function saveIdentity() {
+            const nameEl = document.getElementById('cfg-name');
+            const rndEl  = document.getElementById('cfg-randmac');
+            const name = nameEl ? nameEl.value.trim() : '';
+            const rand = rndEl ? !!rndEl.checked : false;
+            if (rand && !confirm(
+                'Randomizing the BLE address means the phone cannot silently reconnect ' +
+                'after the device reboots \u2014 you will have to pick it from the dialog ' +
+                'every time. Turn it on anyway?')) {
+                if (rndEl) rndEl.checked = false;
+                return;
+            }
+            // Empty name is meaningful: it restores the "SignalSweep" default.
+            sendCommand({ ble_name: name, rand_mac: rand });
+            showToast('Saved \u2014 device is restarting', '\u21bb');
+        }
+
         function toggleBuzzer() {
             buzzerOn = !buzzerOn;
             sendCommand({ buzzer: buzzerOn });
@@ -718,6 +754,10 @@
                 connBanner.style.display = 'none';
                 closeConnModal();
                 showToast(`Connected via ${type}`, '✓');
+                // Ask the device what it is called. Done here rather than at
+                // each of the five connect sites, and after a beat so the NUS
+                // notify subscription is actually up before the reply lands.
+                setTimeout(requestConfig, 400);
             } else {
                 connectionType = null;
                 pulseDot.className = 'pulse-dot';

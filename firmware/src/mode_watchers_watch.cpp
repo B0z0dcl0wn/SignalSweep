@@ -928,6 +928,13 @@ static void performRing(const String& mac) {
     NimBLEClient* client = NimBLEDevice::createClient();
     bool ok = false;
     if (client) {
+        // Bound the attempt. This runs ON the 1 Hz task with the scan paused,
+        // so every second spent here is a second of no telemetry and a deaf
+        // detector. NimBLE's default is 30 s, and a "tracker" that turns out
+        // to have no Immediate Alert service — or has wandered out of range —
+        // takes the full timeout. Measured on the bench: a ring at the default
+        // stalled the push loop long enough to look like a crash.
+        client->setConnectTimeout(5);
         NimBLEAddress addr(std::string(mac.c_str()), BLE_ADDR_RANDOM);
         if (client->connect(addr, false)) {
             NimBLERemoteService* svc = client->getService(NimBLEUUID((uint16_t)0x1802));

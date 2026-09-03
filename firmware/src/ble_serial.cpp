@@ -4,9 +4,115 @@
 #include <NimBLEDevice.h>
 #include <ArduinoJson.h>
 #include <esp_log.h>
+#include <Preferences.h>
+#include <esp_random.h>
 #include "hardware_manager.h"
 
+
+// Declared rather than included: NimBLE-Arduino ships host/ble_hs_id.h inside
+// its own source tree but does not put that directory on the consumer include
+// path, so #include <host/ble_hs_id.h> does not resolve from src/.
+extern "C" int ble_hs_id_set_rnd(const uint8_t *rnd_addr);
+
 static const char *TAG = "BleSerial";
+
+// ---- BLE identity ---------------------------------------------------------
+// A user-set name lets you tell two boards apart in the connect dialog, and
+// keeps "SignalSweep" off the air if you'd rather not announce what it is.
+// The NUS service UUID is what the app actually filters on (see
+// startNusAdvertising below), so renaming can't make the device undiscoverable.
+#define BLE_ID_NVS_NS   "ouispy-ble"
+#define BLE_NAME_MAX    20   // scan response is 31 B total; leave room for the header
+
+static uint32_t rebootAtMs = 0;
+
+String getBleDeviceName() {
+    Preferences prefs;
+    prefs.begin(BLE_ID_NVS_NS, true);
+    String name = prefs.getString("name", "SignalSweep");
+    prefs.end();
+    if (name.length() == 0) name = "SignalSweep";
+    return name;
+}
+
+bool getRandomMacEnabled() {
+    Preferences prefs;
+    prefs.begin(BLE_ID_NVS_NS, true);
+    bool v = prefs.getBool("rndmac", false);
+    prefs.end();
+    return v;
+}
+
+void setBleIdentity(const String& name, bool randomMac) {
+    String clean;
+    for (size_t i = 0; i < name.length() && clean.length() < BLE_NAME_MAX; i++) {
+        char c = name[i];
+        // Printable ASCII only. The name goes straight into an advertisement
+        // and then into the phone's device picker; control bytes have no
+        // business in either.
+        if (c >= 0x20 && c < 0x7F) clean += c;
+    }
+    clean.trim();
+
+    Preferences prefs;
+    prefs.begin(BLE_ID_NVS_NS, false);
+    if (clean.length() > 0) prefs.putString("name", clean);
+    else                    prefs.remove("name");   // back to the default
+    prefs.putBool("rndmac", randomMac);
+    prefs.end();
+    ESP_LOGI(TAG, "BLE identity set: name='%s' randomMac=%d",
+             clean.length() ? clean.c_str() : "SignalSweep", (int)randomMac);
+}
+
+void applyRandomMac() {
+    // A random *static* address, not a resolvable private one: NimBLE's RPA
+    // path is compiled out unless BLE_HOST_BASED_PRIVACY is enabled, whereas
+    // this works on the stock config. "Static" means fixed for this boot, which
+    // is exactly the promise — a new identity every power cycle.
+    // The two most significant bits of a random static address must be 1.
+    uint8_t addr[6];
+    esp_fill_random(addr, sizeof(addr));
+    addr[5] |= 0xC0;
+
+    int rc = ble_hs_id_set_rnd(addr);
+    if (rc != 0) {
+        ESP_LOGW(TAG, "ble_hs_id_set_rnd failed (rc=%d) — keeping factory address", rc);
+        return;
+    }
+    NimBLEDevice::setOwnAddrType(BLE_OWN_ADDR_RANDOM);
+    ESP_LOGI(TAG, "Random BLE address for this boot: %02X:%02X:%02X:%02X:%02X:%02X",
+             addr[5], addr[4], addr[3], addr[2], addr[1], addr[0]);
+}
+
+String getBleConfigJson() {
+    JsonDocument doc;
+    doc["cfg"] = true;
+    doc["ble_name"] = getBleDeviceName();
+    doc["rand_mac"] = getRandomMacEnabled();
+    String out;
+    serializeJson(doc, out);
+    return out;
+}
+
+// Reply on both transports. sendBleSerial() deliberately returns early with no
+// client subscribed, so a BLE-only reply is invisible over USB — which makes the
+// identity commands untestable from a serial console, the one place you'd reach
+// for when the BLE name is what you're trying to fix.
+static void sendConfigReply() {
+    String cfg = getBleConfigJson();
+    sendBleSerial(cfg);
+    if (Serial) Serial.println(cfg);
+}
+
+void requestReboot() {
+    // Long enough for the notify queue to drain to a connected phone; short
+    // enough that it feels like the setting applied immediately.
+    rebootAtMs = millis() + 600;
+}
+
+bool rebootDue() {
+    return rebootAtMs != 0 && (int32_t)(millis() - rebootAtMs) >= 0;
+}
 
 #define SERVICE_UUID           "6E400001-B5A3-F393-E0A9-E50E24DCCA9E"
 #define CHARACTERISTIC_UUID_RX "6E400002-B5A3-F393-E0A9-E50E24DCCA9E"
@@ -129,6 +235,23 @@ void processIncomingCommand(const String& rawCommand) {
             setHuntTarget(String(doc["hunt"].as<const char*>()));
         }
 
+        // 3b. BLE identity: {"ble_name":"..."} and/or {"rand_mac":bool}. Both
+        // are read at boot before NimBLEDevice::init(), so the only honest way
+        // to apply them is to store and restart — which is what we do, after a
+        // beat so the reply reaches the phone first. The app's reconnect loop
+        // picks the device back up on its own.
+        if (doc["ble_name"].is<const char*>() || doc["rand_mac"].is<bool>()) {
+            String newName = doc["ble_name"].is<const char*>()
+                           ? String(doc["ble_name"].as<const char*>())
+                           : getBleDeviceName();
+            bool newRnd = doc["rand_mac"].is<bool>()
+                        ? doc["rand_mac"].as<bool>()
+                        : getRandomMacEnabled();
+            setBleIdentity(newName, newRnd);
+            sendConfigReply();
+            requestReboot();
+        }
+
         // 4. Ring: {"ring":"AA:BB:CC:DD:EE:FF"} makes a suspected tracker
         // announce itself. The MAC is the ONLY parameter — service,
         // characteristic and value are fixed in performRing(). Do not grow this
@@ -142,7 +265,12 @@ void processIncomingCommand(const String& rawCommand) {
         String rawStr = rawCommand;
         rawStr.trim();
 
-        if (rawStr == "CMD:SIGS:RESET") {
+        if (rawStr == "CMD:CFG") {
+            // The app asks for this once on connect rather than the firmware
+            // pushing it every second: identity is static config, and the 1 Hz
+            // payload is the tightest budget on the board.
+            sendConfigReply();
+        } else if (rawStr == "CMD:SIGS:RESET") {
             // Restore the built-in signature rules, undoing a pushed rule set
             // without the full factory reset (which also wipes mode + lock).
             resetWatchersSignaturesToDefaults();

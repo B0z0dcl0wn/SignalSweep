@@ -41,8 +41,14 @@ void setup() {
         Serial.println("[FS] LittleFS mounted.");
     }
 
-    // Initialize BLE stack
-    NimBLEDevice::init("SignalSweep");
+    // Initialize BLE stack under whatever identity is stored. Both the name
+    // and the address have to be settled before init/advertising, which is why
+    // changing either from the app reboots the board.
+    String bleName = getBleDeviceName();
+    NimBLEDevice::init(bleName.c_str());
+    if (getRandomMacEnabled()) applyRandomMac();
+    Serial.printf("[BLE] Advertising as '%s'%s\n", bleName.c_str(),
+                  getRandomMacEnabled() ? " (random address this boot)" : "");
 
     // 1. Initialize Nordic UART Service (NUS) over NimBLE
     bleSerialInit();
@@ -78,6 +84,12 @@ void loop() {
     // tap back to anymore — one always-on detector). Red flash + warning tone
     // every second while held is the "let go now" signal; releasing early
     // aborts.
+    if (rebootDue()) {
+        Serial.println("[BLE] Identity changed — restarting.");
+        Serial.flush();
+        ESP.restart();
+    }
+
     static uint32_t pressStartMs = 0;
     static uint32_t lastWarnSec = 0;
 
