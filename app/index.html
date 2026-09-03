@@ -856,7 +856,10 @@
         .scope-cat { font-size:0.72rem; font-weight:700; margin-left:6px; }
         /* .status-badge sets display:flex, which beats the hidden attribute --
            so hiding it needs a rule, not just the attribute. */
-        .status-badge[hidden] { display:none; }
+        /* A class that sets display: (flex, grid) beats the UA sheet's
+           [hidden] rule, so el.hidden = true silently does nothing. Make it
+           mean what it says everywhere. */
+        [hidden] { display:none !important; }
         .scope-head { display:flex; align-items:center; gap:0.6rem; margin:0 0 0.7rem; }
         .scope-head h2 { font-size:1rem; font-weight:700; color:#e8eef7; margin:0; }
         .scope-head-n { font-size:0.78rem; color:var(--ss-dim); margin-right:auto; }
@@ -1193,7 +1196,7 @@
                     </div>
                     <span class="btn-arrow">&rarr;</span>
                 </button>
-                <button class="btn-conn-option" onclick="connectWebSerial()">
+                <button class="btn-conn-option" id="btnConnSerial" onclick="connectWebSerial()">
                     <div class="btn-left">
                         <svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="12" rx="2"/><line x1="8" y1="20" x2="16" y2="20"/><line x1="12" y1="16" x2="12" y2="20"/></svg>
                         <div style="text-align:left;">
@@ -1207,7 +1210,7 @@
             <div class="api-support-info">
                 <div class="api-badge-row"><span>Web Bluetooth API:</span><span class="api-badge" id="bleSupportBadge">Checking...</span></div>
                 <div class="api-badge-row"><span>WebSerial API:</span><span class="api-badge" id="serialSupportBadge">Checking...</span></div>
-                <div style="margin-top:0.5rem;line-height:1.4;color:var(--text-muted);">Note: Web Bluetooth &amp; WebSerial require Chrome, Edge, or Opera over HTTPS or localhost.</div>
+                <div style="margin-top:0.5rem;line-height:1.4;color:var(--text-muted);" id="connApiNote">Note: in a browser, Web Bluetooth and WebSerial need Chrome, Edge or Opera over HTTPS or localhost. There is no WebSerial on Android at all, so USB is desktop-only.</div>
             </div>
         </div>
     </div>

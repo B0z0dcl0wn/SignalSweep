@@ -1139,10 +1139,17 @@
             } else {
                 bleBadge.className = 'api-badge warn'; bleBadge.textContent = 'Not Supported';
             }
+            // Hide the USB option outright where it cannot work rather than
+            // offering a button whose only outcome is an alert. Android has no
+            // WebSerial implementation at all -- not a permission or a flag,
+            // the API is simply absent -- and the Capacitor build is Android.
+            const serialBtn = document.getElementById('btnConnSerial');
             if ('serial' in navigator) {
                 serialBadge.className = 'api-badge ok'; serialBadge.textContent = 'Supported';
+                if (serialBtn) serialBtn.hidden = false;
             } else {
                 serialBadge.className = 'api-badge warn'; serialBadge.textContent = 'Not Supported';
+                if (serialBtn) serialBtn.hidden = true;
             }
         }
 
