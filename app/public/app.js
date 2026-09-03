@@ -1043,6 +1043,33 @@
             if (rndEl) rndEl.checked = !!cfg.rand_mac;
             setRxOnlyUi(!!cfg.rx_only);
             setRadioUi(cfg);
+            if (typeof cfg.beep_mask === 'number') setBeepUi(cfg.beep_mask);
+        }
+
+        // Which categories the buzzer is allowed to speak. One bit per firmware
+        // AlertCategory -- this bit order IS the contract with
+        // hardware_manager.h's enum; change one, change both.
+        const BEEP_BITS = { alpr: 1, bodycam: 2, drone: 4, tracker: 8, generic: 16 };
+
+        // Device is the authority, same as the radios: the boxes paint from the
+        // last CMD:CFG, never optimistically. The mask persists on the board, so
+        // one that ran headless comes back with its own idea of what beeps.
+        function setBeepUi(mask) {
+            for (const key in BEEP_BITS) {
+                const el = document.getElementById('beep-' + key);
+                if (el) el.checked = (mask & BEEP_BITS[key]) !== 0;
+            }
+        }
+
+        function saveBeepMask() {
+            let mask = 0;
+            for (const key in BEEP_BITS) {
+                const el = document.getElementById('beep-' + key);
+                if (el && el.checked) mask |= BEEP_BITS[key];
+            }
+            sendCommand({ beep_mask: mask });
+            showToast(mask === 0 ? 'Nothing will beep' : 'Alert categories saved',
+                      mask === 0 ? '●' : '✓');
         }
 
         // The device is the authority on the radios too: the toggles never

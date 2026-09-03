@@ -1329,6 +1329,19 @@
                     <button class="set-toggle on" id="btn-wifi-scan" onclick="toggleWifiScan()">Scanning</button>
                 </div>
 
+                <h3 class="set-label">What beeps</h3>
+                <p class="set-note">
+                    Untick a category and the device stops making a noise for it &mdash; useful
+                    in traffic, where every passing tracker earns a beep. Muted categories are
+                    still detected and still listed here; only the buzzer goes quiet. This
+                    lives on the device and survives a power cycle.
+                </p>
+                <label class="set-check"><input type="checkbox" id="beep-alpr" onchange="saveBeepMask()"><span>&#128247; ALPR / camera &mdash; two long beeps</span></label>
+                <label class="set-check"><input type="checkbox" id="beep-bodycam" onchange="saveBeepMask()"><span>&#127909; Body cam &mdash; long&#8209;short&#8209;short</span></label>
+                <label class="set-check"><input type="checkbox" id="beep-drone" onchange="saveBeepMask()"><span>&#128760; Drone (Remote ID) &mdash; rising trill</span></label>
+                <label class="set-check"><input type="checkbox" id="beep-tracker" onchange="saveBeepMask()"><span>&#128205; Tracker &mdash; fast ticking</span></label>
+                <label class="set-check"><input type="checkbox" id="beep-generic" onchange="saveBeepMask()"><span>Other matches &mdash; plain warning</span></label>
+
                 <h3 class="set-label">Emissions</h3>
                 <p class="set-note">
                     <strong>Receive-only</strong> stops the device announcing itself &mdash; no advertising, no connection. It keeps scanning and keeps beeping; this is not the buzzer mute. Over Bluetooth <strong>this connection will drop</strong> &mdash; tap the BOOT button on the device to bring it back for two minutes. Over a USB cable nothing drops: only the radio goes quiet, and you can turn it back on here.

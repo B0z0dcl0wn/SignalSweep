@@ -56,6 +56,27 @@ if (missing.length) {
 }
 console.log('[signalsweep self-test] selectors resolve against index.html: ok');
 
+// The beep mask is a bitmask shared with the firmware: app.js's BEEP_BITS must
+// agree with the AlertCategory enum order in hardware_manager.h, or unticking
+// "Tracker" mutes body cams instead. Nothing at runtime would tell you.
+const fwEnum = readFileSync(new URL('../firmware/src/hardware_manager.h', import.meta.url), 'utf8')
+    .match(/enum AlertCategory \{([^}]*)\}/)[1]
+    .split(/\r?\n/).map(l => (l.match(/\bALERT_([A-Z]+)/) || [])[1]).filter(Boolean);
+const appBits = [...appSrc.match(/const BEEP_BITS = \{([^}]*)\}/)[1]
+    .matchAll(/(\w+):\s*(\d+)/g)].map(m => [m[1], Number(m[2])]);
+const bitDrift = [];
+appBits.forEach(([key, bit], i) => {
+    if (fwEnum[i] !== key.toUpperCase()) bitDrift.push(key + ' vs ALERT_' + fwEnum[i]);
+    if (bit !== (1 << i)) bitDrift.push(key + '=' + bit + ' expected ' + (1 << i));
+    if (!htmlIds.has('beep-' + key)) bitDrift.push('no #beep-' + key + ' checkbox');
+});
+if (appBits.length !== fwEnum.length) bitDrift.push('count ' + appBits.length + ' vs ' + fwEnum.length);
+if (bitDrift.length) {
+    console.log('FAIL: beep mask drift:', bitDrift);
+    process.exit(1);
+}
+console.log('[signalsweep self-test] beep mask bits match firmware AlertCategory: ok');
+
 const results = await global.__signalsweepSelfTest();
 const failed = Object.entries(results).filter(([, v]) => !v).map(([k]) => k);
 console.log('[signalsweep self-test]', results);

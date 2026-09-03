@@ -310,12 +310,25 @@ static volatile uint32_t alertsFired = 0;
 // what actually tripped the alarm.
 static volatile AlertCategory pendingAlertCat = ALERT_GENERIC;
 
-static void noteAlert(int weight, const char* category) {
-    if (weight < CONF_ALERT_MIN) return;
+// Which categories are allowed to make a noise, one bit per AlertCategory
+// (1<<ALERT_ALPR .. 1<<ALERT_GENERIC). Default: all of them. Every AirTag in
+// traffic tripping the tracker pattern is correct behaviour and still useless to
+// listen to, so the operator picks the words worth hearing. A muted category is
+// fully silent — no beep, no LED flash, and it does not count in getAlertCount()
+// — but it is still tracked and still reported to the app.
+// Persisted (ouispy-st/beepmask): headless means a power cycle must not undo it.
+static uint8_t beepMask = BEEP_MASK_ALL;
+
+// Returns true if the alert was recorded (i.e. it will actually sound).
+static bool noteAlert(int weight, const char* category) {
+    if (weight < CONF_ALERT_MIN) return false;
+    AlertCategory cat = alertCategoryFromName(category);
+    if (!(beepMask & (1 << cat))) return false;
     if (weight > pendingAlertConf) {
         pendingAlertConf = weight;
-        pendingAlertCat = alertCategoryFromName(category);
+        pendingAlertCat = cat;
     }
+    return true;
 }
 
 // Sound for a target the first time it proves itself, whether or not we had
@@ -336,8 +349,11 @@ static void noteAlert(int weight, const char* category) {
 static void noteAlertForTarget(WatcherTargetInfo& t, int bestWeight, const String& category) {
     if (t.alerted) return;
     if (bestWeight < CONF_ALERT_MIN) return;
-    t.alerted = true;
-    noteAlert(bestWeight, category.c_str());
+    // Only burn the once-per-appearance flag if the alert really sounded. A
+    // muted category must stay un-flagged, or un-muting it mid-appearance would
+    // be silent until the target went stale — the AirTag in your hand would
+    // never beep.
+    if (noteAlert(bestWeight, category.c_str())) t.alerted = true;
 }
 
 /**
@@ -1007,6 +1023,7 @@ static void persistState() {
     if (huntMac.length() > 0) prefs.putString("hunt", huntMac);
     else                      prefs.remove("hunt");
     prefs.putBool("scanall", scanAll);
+    prefs.putUChar("beepmask", beepMask);
     prefs.end();
 }
 
@@ -1015,7 +1032,10 @@ void restoreWatchersState() {
     if (!prefs.begin(STATE_NVS_NS, true)) return;
     String mac = prefs.getString("hunt", "");
     bool all = prefs.getBool("scanall", false);
+    uint8_t mask = prefs.getUChar("beepmask", BEEP_MASK_ALL);
     prefs.end();
+
+    beepMask = mask & BEEP_MASK_ALL;
 
     scanAll = all;
     huntMac = mac;
@@ -1027,6 +1047,17 @@ void restoreWatchersState() {
         ESP_LOGI(TAG, "Restored hunt target %s", huntMac.c_str());
     }
     if (scanAll) ESP_LOGI(TAG, "Restored report filter: OFF (reporting everything)");
+    if (beepMask != BEEP_MASK_ALL) ESP_LOGI(TAG, "Restored beep mask 0x%02X", beepMask);
+}
+
+void setBeepMask(uint8_t mask) {
+    beepMask = mask & BEEP_MASK_ALL;
+    persistState();
+    ESP_LOGI(TAG, "Beep mask 0x%02X", beepMask);
+}
+
+uint8_t getBeepMask() {
+    return beepMask;
 }
 
 void setScanAll(bool enabled) {

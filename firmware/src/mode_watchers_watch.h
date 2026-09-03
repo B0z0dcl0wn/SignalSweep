@@ -134,6 +134,22 @@ void restoreWatchersState();
 /** @brief True while the report filter is off. */
 bool getScanAll();
 
+// Per-category buzzer mute. One bit per AlertCategory (hardware_manager.h), so
+// bit 0 = ALERT_ALPR ... bit 4 = ALERT_GENERIC. The app mirrors this bit order
+// in BEEP_BITS (app/public/app.js) — keep the two in step.
+#define BEEP_MASK_ALL 0x1F
+
+/**
+ * @brief Choose which device categories are allowed to sound the buzzer.
+ * Persisted, like the hunt target: the board is headless and loses power every
+ * time the engine stops. A muted category is fully silent (no beep, no flash,
+ * not counted by getAlertCount()) but is still tracked and still reported.
+ */
+void setBeepMask(uint8_t mask);
+
+/** @brief Categories currently allowed to beep (bitmask, see BEEP_MASK_ALL). */
+uint8_t getBeepMask();
+
 /**
  * @brief Wi-Fi channel the hunted target was last heard on, or 0 if unknown.
  * The channel hopper parks here while hunting -- see the comment in

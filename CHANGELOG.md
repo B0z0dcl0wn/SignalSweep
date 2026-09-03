@@ -2,6 +2,35 @@
 
 All notable changes to SignalSweep are recorded here.
 
+## [Unreleased] — 2026-09-03 — Choose which categories are worth a beep
+
+### Added — a per-category beep mask, in Settings and in NVS
+
+Driving with the detector on, every AirTag in traffic earned the tracker
+pattern. Correct behaviour, useless to listen to. Settings now has a **What
+beeps** section: five checkboxes, one per buzzer "word" (ALPR/camera, body cam,
+drone, tracker, other matches).
+
+The choice lives on the device, not in the app — the whole point is headless
+operation — as one bitmask over the existing `AlertCategory` enum
+(`{"beep_mask":N}`, echoed by `CMD:CFG`), persisted in `ouispy-st`/`beepmask`
+next to the hunt target and the report filter, so a board wired into a car comes
+back from every ignition cycle still muting what it was told to mute.
+
+A muted category is fully silent: no beep, no LED flash, and no increment of the
+`alerts` counter that proves the headless path works. It is still detected,
+still tracked and still listed in the app — the mask is about the noise, never
+about what the detector watches for.
+
+`noteAlertForTarget()` now only burns its once-per-appearance flag when the
+alert actually sounded. Otherwise un-muting trackers while the AirTag was still
+in range would have stayed silent until the target aged out.
+
+`app/selftest.js` cross-checks `BEEP_BITS` in `app.js` against the
+`AlertCategory` enum in `hardware_manager.h` — a shared bit order that drifts
+would mute body cams when you unticked trackers, with nothing at runtime to say
+so.
+
 ## [Unreleased] — 2026-09-03 — A Settings page you can reach the bottom of
 
 ### Fixed — modals were not scrollable at all
@@ -822,7 +851,6 @@ payload roughly halved.
   saw no `version` field, judged the file stale against the new
   `SIG_SCHEMA_VERSION`, and deleted it. Pushed rules now carry the current
   version stamp.
-
 
 - **Removed `restoreBleSerialAdvertising()`** — it had no callers anywhere in
   the tree, and it carried a latent bug worth recording because it bit during

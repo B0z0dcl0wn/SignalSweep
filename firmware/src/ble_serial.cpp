@@ -122,6 +122,8 @@ String getBleConfigJson() {
     // headless learns what it was already doing rather than assuming defaults.
     doc["hunt"] = getHuntTarget();
     doc["scan_all"] = getScanAll();
+    // Bitmask, not a counter -- "alerts" below is the alert count.
+    doc["beep_mask"] = getBeepMask();
     doc["rx_only"] = rxOnly;
     doc["ble_scan"] = bleScanOn;
     doc["wifi_scan"] = wifiScanOn;
@@ -391,6 +393,15 @@ void processIncomingCommand(const String& rawCommand) {
         // gated by CONF_ALERT_MIN either way.
         if (doc["scan_all"].is<bool>()) {
             setScanAll(doc["scan_all"].as<bool>());
+        }
+
+        // 3d. What beeps: {"beep_mask":N}, one bit per AlertCategory. Answers
+        // with a fresh config reply so the app's checkboxes paint from the
+        // device rather than optimistically -- the mask persists, so a board
+        // that ran headless comes back with whatever it was last told.
+        if (doc["beep_mask"].is<int>()) {
+            setBeepMask((uint8_t)(doc["beep_mask"].as<int>() & BEEP_MASK_ALL));
+            sendConfigReply();
         }
 
         // 4. Ring: {"ring":"AA:BB:CC:DD:EE:FF"} makes a suspected tracker
