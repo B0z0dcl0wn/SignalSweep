@@ -51,6 +51,16 @@
             return '█'.repeat(n) + '░'.repeat(5 - n);
         }
 
+        // Which radio heard it. The firmware sends "BLE", "WiFi" or "BLE+WiFi".
+        // It used to be a word buried in the grey sub-line, which is unreadable
+        // in a wall of rows, so it leads the title as a chip instead. Fixed
+        // literals only — nothing device-supplied, nothing to escape.
+        function radioBadges(protocol) {
+            const p = String(protocol || '');
+            return (p.indexOf('BLE')  >= 0 ? '<span class="radio-badge ble">BLE</span>' : '') +
+                   (p.indexOf('WiFi') >= 0 ? '<span class="radio-badge wifi">Wi‑Fi</span>' : '');
+        }
+
         // =====================================================================
         //  Live scope — what the device hears RIGHT NOW. Nothing persists.
         // =====================================================================
@@ -289,7 +299,8 @@
                 html += '<div class="scope-row' + (unmatched ? ' unmatched' : '') +
                         '" style="border-left:4px solid ' + cat.color + '">' +
                     '<div class="scope-main">' +
-                        '<div class="scope-title">' + (cat.icon ? cat.icon + ' ' : '') + esc(title) +
+                        '<div class="scope-title">' + radioBadges(m.protocol) +
+                            (cat.icon ? cat.icon + ' ' : '') + esc(title) +
                             // A weak hint has no vendor to name -- cat.label is
                             // just the rule text, which already appears below.
                             (unmatched || weak ? '' :
@@ -300,11 +311,14 @@
                         '</div>' +
                         // Don't print the address twice when it is also the title.
                         '<div class="scope-sub">' +
-                            (title === m.mac ? '' : '<span class="mono">' + esc(m.mac) + '</span> \u00b7 ') +
-                            esc(m.protocol) +
-                            (m.ssid && m.ssid !== title ? ' \u00b7 ' + esc(m.ssid) : '') +
-                            (m.rule ? ' \u00b7 ' + esc(m.rule) : '') +
-                            (unmatched ? '' : ' \u00b7 conf ' + (m.confidence | 0)) + '</div>' +
+                            // The protocol is a badge in the title now. Every
+                            // part here is optional, so join what exists rather
+                            // than leave a dangling separator behind.
+                            [ (title === m.mac ? '' : '<span class="mono">' + esc(m.mac) + '</span>'),
+                              (m.ssid && m.ssid !== title ? esc(m.ssid) : ''),
+                              (m.rule ? esc(m.rule) : ''),
+                              (unmatched ? '' : 'conf ' + (m.confidence | 0))
+                            ].filter(Boolean).join(' \u00b7 ') + '</div>' +
                     '</div>' +
                     '<div class="scope-signal">' +
                         '<div class="scope-bars" style="color:' + cat.color + '">' + signalBars(m.rssi) + '</div>' +
@@ -342,9 +356,8 @@
                 btn.classList.toggle('on', foxhuntMode);
                 btn.textContent = foxhuntMode ? '\u25c9 Filter: off' : '\u25ce Filter: matches';
             }
-            const radios = document.getElementById('radios');
-            if (radios) radios.style.display = foxhuntMode ? 'grid' : 'none';
-            if (!foxhuntMode) setRadio('any');
+            // The radio strip is always on screen and its choice is yours, not
+            // the filter's — it used to appear and reset with foxhunt mode.
             if (!foxhuntMode && huntMac) stopHunt();
             showToast(foxhuntMode ? 'Showing everything the radios hear'
                                   : 'Showing signature matches only',
@@ -1115,9 +1128,6 @@
             const devAll = !!data.scan_all;
             if (devAll !== foxhuntMode) {
                 foxhuntMode = devAll;
-                const radios = document.getElementById('radios');
-                if (radios) radios.style.display = foxhuntMode ? 'grid' : 'none';
-                if (!foxhuntMode) setRadio('any');
                 const btn = document.getElementById('btn-foxhunt');
                 if (btn) {
                     btn.classList.toggle('on', foxhuntMode);
@@ -1875,6 +1885,15 @@
                 results.radioBle = liveRows('all').length === 2;
                 setRadio('any');
                 results.radioAny = liveRows('all').length === 4;
+
+                // The badge is how you tell the two apart in a wall of rows.
+                results.radioBadges =
+                    radioBadges('WiFi').indexOf('wifi') > 0 &&
+                    radioBadges('WiFi').indexOf('ble') === -1 &&
+                    radioBadges('BLE').indexOf('ble') > 0 &&
+                    radioBadges('BLE+WiFi').indexOf('ble') > 0 &&
+                    radioBadges('BLE+WiFi').indexOf('wifi') > 0 &&
+                    radioBadges('') === '';
 
                 // Ring is a Bluetooth write: never offer it on a Wi-Fi-only row.
                 const wifiOnly = actionRow(liveMatches['CC:00:03'], categoryOf(''));

@@ -1035,6 +1035,15 @@
             background:rgba(255,58,200,0.12); }
         .tier-badge { font-size:0.65rem; font-weight:700; padding:2px 6px;
             border-radius:4px; margin-left:6px; border:1px solid currentColor; }
+        /* Which radio heard it, at the head of every row so the badges line up
+           in a column you can scan. Deliberately NOT a category colour: the
+           radio is orthogonal to what the thing is, and the row's left border
+           and signal bars already carry the category. */
+        .radio-badge { font-family:var(--mono); font-size:0.6rem; font-weight:700;
+            letter-spacing:0.04em; padding:1px 5px; border-radius:4px;
+            margin-right:6px; border:1px solid currentColor; vertical-align:2px; }
+        .radio-badge.ble  { color:#5ac8fa; }
+        .radio-badge.wifi { color:#3ddc97; }
         /* An unmatched row exists only because the filter is off. Say so, so a
            listed device is never mistaken for a detection. */
         .scope-row.unmatched { border-left-color:#3a465a !important; opacity:0.82; }
@@ -1171,9 +1180,9 @@
             </button>
         </div>
 
-        <!-- Radio filter. Only shown with the report filter off, where most of
-             the list is Wi-Fi access points and picking one radio matters. -->
-        <div class="radios" id="radios" role="tablist" style="display:none;">
+        <!-- Radio filter. Always available: dropping one radio is the quickest
+             way to cut a long list down to what you came for. -->
+        <div class="radios" id="radios" role="tablist">
             <button class="radio-tab" role="tab" aria-selected="true" data-radio="any">Both radios</button>
             <button class="radio-tab" role="tab" aria-selected="false" data-radio="BLE">Bluetooth</button>
             <button class="radio-tab" role="tab" aria-selected="false" data-radio="WiFi">Wi&#8209;Fi</button>
