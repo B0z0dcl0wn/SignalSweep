@@ -14,6 +14,7 @@ static TaskHandle_t hwTaskHandle = NULL;
 
 static OperatingMode currentHwMode = MODE_SELECTOR;
 static bool buzzerEnabled = true;
+static bool rxOnlyIndicator = false;
 
 struct Note {
     uint16_t freq;       // Hz (0 = rest/silence)
@@ -218,7 +219,12 @@ static void HardwareManagerTask(void *pvParameters) {
                     }
                     case MODE_WATCHERS_WATCH: {
                         uint32_t t = now % 800;
-                        if (t < 150) currentPixelColor = strip.Color(0, 255, 100); // Green blink
+                        // Receive-only is invisible by definition, and a device
+                        // that looks broken is worse than one that is. Dim blue
+                        // instead of green says "still watching, not talking".
+                        if (t < 150) currentPixelColor = rxOnlyIndicator
+                            ? strip.Color(0, 60, 140)
+                            : strip.Color(0, 255, 100);
                         break;
                     }
                     case MODE_SKY_SWEEPER: {
@@ -326,6 +332,13 @@ void playDisconnectionChirp() {
         activeJingle[1] = {1500, 100};
         jingleLength = 2;
         jinglePlaying = true;
+        xSemaphoreGive(hwMutex);
+    }
+}
+
+void setRxOnlyIndicator(bool quiet) {
+    if (hwMutex != NULL && xSemaphoreTake(hwMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+        rxOnlyIndicator = quiet;
         xSemaphoreGive(hwMutex);
     }
 }

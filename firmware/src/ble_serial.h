@@ -49,6 +49,24 @@ void setBleIdentity(const String& name, bool randomMac);
  */
 void applyRandomMac();
 
+// ---- Receive-only ---------------------------------------------------------
+// Stop announcing this device: no advertising, no GATT link, scanning
+// unchanged. Persisted alongside the identity in "ouispy-ble". NOT the buzzer
+// mute — that is {"buzzer":false} and is unaffected.
+
+/** @brief True while the device is not advertising itself. */
+bool getRxOnly();
+
+/**
+ * @brief Re-advertise for two minutes so a phone can get back in, then go
+ * quiet again if nobody connected. Called from the short-BOOT-press branch in
+ * loop(). No-op unless the device is in receive-only.
+ */
+void openAdvertisingWindow();
+
+/** @brief Closes an expired advertising window. Call from loop(). */
+void bleSerialTick();
+
 /** @brief Current identity + tier as JSON, for the app's settings page. */
 String getBleConfigJson();
 

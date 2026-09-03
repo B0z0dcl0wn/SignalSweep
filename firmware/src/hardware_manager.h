@@ -62,6 +62,12 @@ void setBuzzerEnabled(bool enabled);
 bool isBuzzerEnabled();
 
 /**
+ * @brief Swap the idle blink to dim blue while the device is in receive-only.
+ * The only visible sign that it has stopped advertising.
+ */
+void setRxOnlyIndicator(bool quiet);
+
+/**
  * @brief Trigger a custom momentary NeoPixel flash asynchronously
  * @param r Red channel (0-255)
  * @param g Green channel (0-255)

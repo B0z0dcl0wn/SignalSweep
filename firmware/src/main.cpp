@@ -111,8 +111,17 @@ void loop() {
             triggerWarning();
         }
     } else if (pressStartMs != 0) {
+        uint32_t heldMs = millis() - pressStartMs;
         pressStartMs = 0;
+        // A short tap is the way back in from receive-only with no cable at
+        // all, which is the whole reason that mode needs no USB stack. Bounded
+        // at 1 s so an aborted factory-reset hold isn't read as a tap, and it
+        // never touches the long-press path above. No-op when already
+        // advertising.
+        if (heldMs < 1000) openAdvertisingWindow();
     }
+
+    bleSerialTick();
 
     // Process incoming commands from USB Hardware Serial
     while (Serial.available()) {

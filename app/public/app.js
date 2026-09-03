@@ -1028,6 +1028,25 @@
             const rndEl  = document.getElementById('cfg-randmac');
             if (nameEl && typeof cfg.ble_name === 'string') nameEl.value = cfg.ble_name;
             if (rndEl) rndEl.checked = !!cfg.rand_mac;
+            const rxEl = document.getElementById('cfg-rxonly');
+            if (rxEl) rxEl.textContent = cfg.rx_only ? 'receive-only' : 'advertising';
+        }
+
+        // The one action in the app that deliberately severs its own link, so
+        // it is signposted as plainly as the PIN wipe. The device keeps
+        // scanning and keeps beeping -- this is emissions, not the buzzer mute.
+        function goReceiveOnly() {
+            if (!confirm(
+                'Receive-only stops the device advertising itself, so nobody — ' +
+                'including whatever it is watching for — can see it on the air.\n\n' +
+                'THIS CONNECTION WILL DROP and the app will not reconnect on its own. ' +
+                'Tap the BOOT button on the device to make it discoverable again for ' +
+                'two minutes.\n\nIt keeps scanning and keeps beeping.')) return;
+            sendCommand({ rx_only: true });
+            // Stand down the capped-backoff loop: the device is deliberately
+            // gone, and retrying for ever would just look like a fault.
+            cancelReconnect();
+            showToast('Device is receive-only — tap BOOT to return', '●');
         }
 
         function syncDeviceState(data) {
@@ -1297,6 +1316,15 @@
                 serialWriter = textEncoder.writable.getWriter();
                 updateConnectionUI(true, 'SERIAL');
                 readSerialLoop();
+                // On the cable there is no reason to keep broadcasting -- but
+                // that is the operator's call, not an automatic one, or a board
+                // on a bench USB port could never be reached by phone.
+                if (confirm(
+                    'Connected over USB. Turn BLE advertising off while you are on ' +
+                    'the cable?\n\nThe device stops announcing itself; serial keeps ' +
+                    'full telemetry. Tap BOOT (or reconnect here) to bring it back.')) {
+                    sendCommand({ rx_only: true });
+                }
             } catch (err) {
                 console.error('WebSerial connection failed:', err);
                 updateConnectionUI(false);

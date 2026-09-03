@@ -1286,6 +1286,15 @@
                         <button onclick="sendCommand({raw:'CMD:WIFI_SCAN:OFF'})" style="padding:6px 12px;background:rgba(239,68,68,0.2);border:1px solid var(--accent-red);border-radius:6px;color:var(--accent-red);font-weight:bold;cursor:pointer;">OFF</button>
                     </div>
                 </div>
+                <p style="margin:22px 0 8px;font-size:0.8rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.08em;">Emissions</p>
+                <p style="margin:0 0 10px;font-size:0.78rem;color:var(--text-muted);line-height:1.5;">
+                    <strong>Receive-only</strong> stops the device announcing itself &mdash; no advertising, no connection. It keeps scanning and keeps beeping; this is not the buzzer mute. <strong>This connection will drop.</strong> Tap the BOOT button on the device to bring it back for two minutes.
+                </p>
+                <div style="display:flex;justify-content:space-between;align-items:center;padding:10px;background:rgba(255,255,255,0.05);border-radius:8px;">
+                    <span>Currently: <strong id="cfg-rxonly">advertising</strong></span>
+                    <button onclick="goReceiveOnly()" style="padding:6px 12px;background:rgba(239,68,68,0.2);border:1px solid var(--accent-red);border-radius:6px;color:var(--accent-red);font-weight:bold;cursor:pointer;">Go quiet</button>
+                </div>
+
                 <p style="margin:22px 0 8px;font-size:0.8rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.08em;">Device identity</p>
                 <p style="margin:0 0 10px;font-size:0.78rem;color:var(--text-muted);line-height:1.5;">
                     The app finds the device by its service UUID, so renaming it never breaks discovery. Useful for telling two boards apart &mdash; or for not announcing what it is.

@@ -43,6 +43,27 @@ bool getRandomMacEnabled() {
     return v;
 }
 
+// ---- Receive-only -------------------------------------------------------
+// A counter-surveillance tool that advertises its own presence is backwards:
+// anyone else running a scanner — including the hardware this exists to find —
+// sees "SignalSweep" on the air. Receive-only stops advertising and drops the
+// GATT link, leaving the BLE radio doing nothing but scanning.
+//
+// It is NOT "silent": that word already means the buzzer mute
+// ({"buzzer":false}), which is a separate setting. The buzzer keeps working —
+// that is the whole point of a headless detector. Nor is it fully passive:
+// setActiveScan(true) stays on, because scan responses are where device names
+// live and the name-matching signature rules depend on them.
+//
+// Lives in the BLE identity namespace rather than the detector's ouispy-st,
+// because it is an emissions property of this radio, not operator state of the
+// detector.
+static bool rxOnly = false;          // cached; NVS is the source of truth at boot
+
+bool getRxOnly() {
+    return rxOnly;
+}
+
 void setBleIdentity(const String& name, bool randomMac) {
     String clean;
     for (size_t i = 0; i < name.length() && clean.length() < BLE_NAME_MAX; i++) {
@@ -93,6 +114,7 @@ String getBleConfigJson() {
     // headless learns what it was already doing rather than assuming defaults.
     doc["hunt"] = getHuntTarget();
     doc["scan_all"] = getScanAll();
+    doc["rx_only"] = rxOnly;
     doc["alerts"] = getAlertCount();
     String out;
     serializeJson(doc, out);
@@ -184,11 +206,28 @@ static void startNusAdvertising() {
 #endif
 }
 
+// Set while a short BOOT press has re-opened advertising temporarily. Zero
+// means no window is open. Deliberately transient: see setRxOnly().
+// Two minutes is long enough to fish the phone out of a pocket and pick the
+// device from the connect dialog, short enough that an accidental press is not
+// an afternoon of broadcasting.
+#define ADV_WINDOW_MS 120000
+static uint32_t advWindowEndMs = 0;
+
+static void setRxOnly(bool quiet, bool announce);
+
 class ServerCallbacks : public NimBLEServerCallbacks {
     void onConnect(NimBLEServer* pServer) override {
         deviceConnected = true;
         ESP_LOGI(TAG, "BLE Client Connected");
         playConnectionChirp();
+        // Someone actually connected during the re-advertise window, so this is
+        // a deliberate un-quieting rather than a stray button press. Clear the
+        // flag properly instead of dropping the link when the window expires.
+        if (advWindowEndMs != 0) {
+            advWindowEndMs = 0;
+            setRxOnly(false, false);   // already chirped on connect
+        }
     }
 
     void onMTUChange(uint16_t MTU, ble_gap_conn_desc* desc) override {
@@ -199,11 +238,90 @@ class ServerCallbacks : public NimBLEServerCallbacks {
     void onDisconnect(NimBLEServer* pServer) override {
         deviceConnected = false;
         negotiatedMtu = 23;   // next peer renegotiates from scratch
-        ESP_LOGI(TAG, "BLE Client Disconnected - Restarting Advertising");
         playDisconnectionChirp();
+        // THE trap. This call used to be unconditional, which means the instant
+        // receive-only dropped the client the device advertised itself again —
+        // going quiet would have been visibly, silently broken.
+        if (rxOnly) {
+            ESP_LOGI(TAG, "BLE Client Disconnected - staying quiet (receive-only)");
+            return;
+        }
+        ESP_LOGI(TAG, "BLE Client Disconnected - Restarting Advertising");
         startNusAdvertising();
     }
 };
+
+/**
+ * @brief Enter or leave receive-only.
+ *
+ * Entering: persist, acknowledge while the link is still up, then stop
+ * advertising and drop any connected client. The reply has to go first —
+ * once the link is gone there is no way to tell the app the command landed,
+ * and an app that never heard back just sits there reconnecting.
+ *
+ * Leaving: persist, then advertise. startNusAdvertising() stays the ONLY place
+ * advertising is ever started (see its comment); this adds no second path and
+ * never touches setAdvertisementData().
+ */
+static void setRxOnly(bool quiet, bool announce) {
+    rxOnly = quiet;
+    Preferences prefs;
+    if (prefs.begin(BLE_ID_NVS_NS, false)) {
+        prefs.putBool("rxonly", quiet);
+        prefs.end();
+    } else {
+        ESP_LOGW(TAG, "Could not persist rx_only — it will not survive a reboot");
+    }
+
+    if (quiet) {
+        // Acknowledge while the link is still up and with the new flag value
+        // already set, so the app records what actually happened.
+        sendConfigReply();
+        advWindowEndMs = 0;
+        NimBLEDevice::getAdvertising()->stop();
+        if (pServer) {
+            for (uint16_t id : pServer->getPeerDevices()) {
+                pServer->disconnect(id);
+            }
+        }
+        // Descending chirp + a blue idle blink. Receive-only is invisible by
+        // definition, and a device that looks broken is worse than one that is.
+        if (announce) playDisconnectionChirp();
+        setRxOnlyIndicator(true);
+        ESP_LOGI(TAG, "Receive-only ON — advertising stopped, still scanning");
+    } else {
+        setRxOnlyIndicator(false);
+        if (announce) playConnectionChirp();
+        // Not while a client is already on the link: the controller stops
+        // advertising on connect, and restarting it here would only offer the
+        // device to a second peer.
+        if (!deviceConnected) startNusAdvertising();
+        ESP_LOGI(TAG, "Receive-only OFF — advertising");
+    }
+}
+
+void openAdvertisingWindow() {
+    if (!rxOnly) return;   // already discoverable; nothing to do
+    advWindowEndMs = millis() + ADV_WINDOW_MS;
+    triggerLedFlash(0, 120, 255, 400);
+    playConnectionChirp();
+    startNusAdvertising();
+    ESP_LOGI(TAG, "Advertising window open for %u s", (unsigned)(ADV_WINDOW_MS / 1000));
+}
+
+void bleSerialTick() {
+    // Close the window. A press in the field must not leave the device
+    // broadcasting for the rest of the day — that would silently defeat the
+    // only reason receive-only exists. A client that connected in time already
+    // cleared rxOnly in onConnect, so this only fires when nobody came.
+    if (advWindowEndMs == 0) return;
+    if (deviceConnected) return;
+    if ((int32_t)(millis() - advWindowEndMs) < 0) return;
+    advWindowEndMs = 0;
+    NimBLEDevice::getAdvertising()->stop();
+    playDisconnectionChirp();
+    ESP_LOGI(TAG, "Advertising window expired — quiet again");
+}
 
 void processIncomingCommand(const String& rawCommand) {
     if (rawCommand.length() == 0) return;
@@ -273,6 +391,14 @@ void processIncomingCommand(const String& rawCommand) {
         if (doc["ring"].is<const char*>()) {
             requestRing(String(doc["ring"].as<const char*>()));
         }
+
+        // 5. Receive-only: {"rx_only":bool}. Stops the device announcing
+        // itself. Reply FIRST — turning this on severs the link it arrived on,
+        // and an app that never learns the command landed will sit there
+        // reconnecting to something that is deliberately gone.
+        if (doc["rx_only"].is<bool>()) {
+            setRxOnly(doc["rx_only"].as<bool>(), true);
+        }
     } else {
         // Raw text fallback parsing (manual serial).
         String rawStr = rawCommand;
@@ -295,6 +421,14 @@ void processIncomingCommand(const String& rawCommand) {
             pauseWifi(true);
         } else if (rawStr == "CMD:WIFI_SCAN:ON") {
             pauseWifi(false);
+        } else if (rawStr == "CMD:RXONLY:ON") {
+            setRxOnly(true, true);
+        } else if (rawStr == "CMD:RXONLY:OFF") {
+            // The always-available way back in while a USB host is attached.
+            // The other two are a short BOOT press and the 5 s factory reset;
+            // three independent paths, so lockout is impossible.
+            setRxOnly(false, true);
+            sendConfigReply();
         }
     }
 }
@@ -338,9 +472,22 @@ void bleSerialInit() {
 
     pService->start();
 
-    startNusAdvertising();
+    // A board left in receive-only comes back in receive-only. Everything the
+    // operator sets has to survive a power cycle — a detector wired into a car
+    // loses power every time the engine stops, and "unplug it and walk away" is
+    // the whole foxhunt workflow.
+    Preferences prefs;
+    prefs.begin(BLE_ID_NVS_NS, true);
+    rxOnly = prefs.getBool("rxonly", false);
+    prefs.end();
 
-    ESP_LOGI(TAG, "BLE Nordic UART Service started and advertising.");
+    if (rxOnly) {
+        setRxOnlyIndicator(true);
+        ESP_LOGI(TAG, "BLE NUS started in receive-only — not advertising.");
+    } else {
+        startNusAdvertising();
+        ESP_LOGI(TAG, "BLE Nordic UART Service started and advertising.");
+    }
 }
 
 bool isBleSerialConnected() {
