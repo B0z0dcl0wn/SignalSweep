@@ -2,6 +2,69 @@
 
 All notable changes to SignalSweep are recorded here.
 
+## [Unreleased] — 2026-09-03 — The device is the authority on its own state
+
+### Fixed — the buzzer mute never survived a power cycle
+
+`hardware_manager.cpp` read `ouispy-bz`/`on` at boot and **nothing anywhere ever
+wrote it**, so `{"buzzer":false}` lived only in RAM. A detector muted in the
+field came back beeping at the next ignition cycle — the one operator setting
+that broke the rule every other setting follows. `setBuzzerEnabled()` now
+persists it, outside `hwMutex` (the audio task takes that mutex every loop and
+an NVS write must not be held against it).
+
+### Fixed — the app guessed at the mute instead of asking
+
+The mute was absent from `CMD:CFG`, so `app.js` shipped `let buzzerOn = true`
+and a hardcoded `🔊 Buzzer: ON` button. Connect to a board that had been muted
+headless — or to the second board on the bench — and the app confidently showed
+the wrong state. `CMD:CFG` now reports `buzzer`, the `{"buzzer":…}` command
+answers with a fresh config (as `beep_mask` and the radio toggles already did),
+and the button paints `—` until the device says otherwise. `toggleBuzzer()` no
+longer paints optimistically: if the command never lands, the button must not
+claim it did. Both controls reset on disconnect, so one board's settings are
+never shown as another's.
+
+`app/selftest.js` now fails if the firmware reports a `CMD:CFG` field the app
+never reads. A field the device reports and the phone ignores is state the phone
+then invents; `buzzer` had been exactly that for the life of the project.
+
+### Added — `CMD:SIGS`, so the signature editor stops overwriting rules blind
+
+`getWatchersSignaturesJson()` existed with **zero callers** — no command reached
+it. The editor opened blank against any board, and saving replaced a rule set
+nobody had ever seen. It is now readable: the modal requests the rules on open,
+shows what the board is actually carrying, and keeps Save disabled until they
+arrive. On demand only, never on connect — the reply is multi-KB and the 1 Hz
+push is the tightest budget on the device.
+
+### Fixed — replies were lost on every transport except BLE
+
+`sendBleSerial()` returns early when no BLE client is subscribed, so a reply sent
+through it alone simply vanished on a board reached over the USB cable — one of
+the app's three transports, and the one used on the bench. Replies now go
+through `sendReply()`, which mirrors to `Serial` the way `sendConfigReply()`
+always had.
+
+### Fixed — a muted boot flooded the telemetry mirror with LEDC errors
+
+Making the mute persist made a muted boot possible for the first time, which
+exposed an old latent bug: Arduino attaches the LEDC channel lazily on the first
+`tone()`, and `noTone()` on a channel that was never attached logs an error on
+every call. A board that boots muted never calls `tone()` at all. Measured on
+COM3: **561 LEDC errors in 4 s booted muted, 0 booted audible.** All buzzer audio
+now goes through `buzzerTone()`/`buzzerOff()`; `buzzerOff()` no-ops until a
+`tone()` has actually run, and `buzzerTone()` sets that flag *after* `tone()`
+returns (setting it first left a race worth one stray error per mute
+transition).
+
+### Changed — the config handshake survives a dropped notification
+
+BLE notifications are unacknowledged and the app asked for the config exactly
+once, 400 ms after connect. One dropped reply left every settings control
+painting a stale or default value for the whole session, silently. It now asks
+at 400 ms / 1.5 s / 4 s until one lands, then stops.
+
 ## [Unreleased] — 2026-09-03 — Choose which categories are worth a beep
 
 ### Added — a per-category beep mask, in Settings and in NVS

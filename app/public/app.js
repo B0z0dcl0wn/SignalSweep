@@ -679,17 +679,21 @@
                     renderScope();
                 }
                 if (data.cfg) {
+                    cfgSeen = true;
                     applyConfigToSettings(data);
                     // A board that has been running headless may already be
                     // hunting something or have its filter off. Adopt that on
                     // connect rather than waiting for the first push.
                     syncDeviceState(data);
                 }
-                // The device is the authority on its own state. After a
-                // reconnect the app may believe it is hunting something the
-                // board has long since forgotten (it does not persist either
-                // flag across a reboot), so take what the telemetry says.
+                // The device is the authority on its own state. Both flags
+                // persist in NVS (ouispy-st), so a board that ran headless
+                // comes back still hunting or still unfiltered -- the app has
+                // to adopt what the telemetry says in either direction rather
+                // than assume defaults.
                 if ('targets' in data) syncDeviceState(data);
+                // Reply to CMD:SIGS. Carries neither `targets` nor `cfg`.
+                if (Array.isArray(data.signatures)) setSigUi(data.signatures);
             } catch (e) {
                 rxDropped++;
                 console.warn('Data parse error (dropped ' + rxDropped + ' of ' +
@@ -1028,7 +1032,11 @@
         // =====================================================================
         //  Alarm tuning + signature editor (device commands)
         // =====================================================================
-        let buzzerOn = true;
+        // Null until the device tells us. The mute persists on the board, so a
+        // detector muted in the field comes back muted -- an app that assumed
+        // ON would show a lie, and with two boards around it would show the
+        // wrong board's lie. Painted only from CMD:CFG, like the radios.
+        let buzzerOn = null;
         // ---- Device identity (name / random address) ------------------------
         // Both live in the firmware's NVS and are read at boot before the BLE
         // stack comes up, so saving either restarts the board. The device is
@@ -1044,6 +1052,7 @@
             setRxOnlyUi(!!cfg.rx_only);
             setRadioUi(cfg);
             if (typeof cfg.beep_mask === 'number') setBeepUi(cfg.beep_mask);
+            setBuzzerUi(cfg.buzzer);
         }
 
         // Which categories the buzzer is allowed to speak. One bit per firmware
@@ -1163,8 +1172,18 @@
             }
         }
 
+        // BLE notifications are unacknowledged, and the app asks for the config
+        // exactly once. If that one reply is dropped every settings control
+        // paints a stale or default value for the whole session, silently. So
+        // ask again until one lands, then stop.
+        let cfgSeen = false;
+        const CFG_RETRY_MS = [400, 1500, 4000];
+
         function requestConfig() {
-            sendCommand({ raw: 'CMD:CFG' });
+            cfgSeen = false;
+            CFG_RETRY_MS.forEach(ms => setTimeout(() => {
+                if (!cfgSeen && connectionType) sendCommand({ raw: 'CMD:CFG' });
+            }, ms));
         }
 
         function saveIdentity() {
@@ -1184,20 +1203,56 @@
             showToast('Saved \u2014 device is restarting', '\u21bb');
         }
 
+        // Device is the authority: send the inverse and let the firmware's cfg
+        // reply repaint. No optimistic paint -- if the command never lands the
+        // button must not claim it did.
         function toggleBuzzer() {
-            buzzerOn = !buzzerOn;
-            sendCommand({ buzzer: buzzerOn });
+            if (buzzerOn === null) { showToast('Waiting for the device', '…'); return; }
+            sendCommand({ buzzer: !buzzerOn });
+        }
+
+        function setBuzzerUi(on) {
+            buzzerOn = (typeof on === 'boolean') ? on : null;
             const btn = document.getElementById('btn-buzzer');
-            if (btn) {
-                btn.classList.toggle('on', buzzerOn);
-                btn.textContent = buzzerOn ? '🔊 Buzzer: ON' : '🔇 Buzzer: OFF';
+            if (!btn) return;
+            btn.classList.toggle('on', buzzerOn === true);
+            btn.textContent = buzzerOn === null ? '🔊 Buzzer: —'
+                            : buzzerOn ? '🔊 Buzzer: ON'
+                                       : '🔇 Buzzer: OFF';
+        }
+
+        // The rules the device is actually carrying. Until they arrive the box
+        // is not editable and Save is disabled: the editor used to open blank
+        // against an unknown board, so saving replaced a rule set nobody had
+        // ever seen. Requested on open, never on connect -- the reply is
+        // multi-KB and the 1 Hz push is the tightest budget on the device.
+        let sigsLoaded = false;
+
+        function setSigUi(rules) {
+            const box  = document.getElementById('sig-input');
+            const save = document.getElementById('btn-sig-save');
+            sigsLoaded = Array.isArray(rules);
+            if (box) {
+                box.value = sigsLoaded ? JSON.stringify(rules, null, 2) : '';
+                box.placeholder = sigsLoaded ? ''
+                    : connectionType ? 'Reading rules from the device…'
+                                     : 'Connect to a device to see the rules it is carrying.';
+                box.readOnly = !sigsLoaded;
             }
+            if (save) save.disabled = !sigsLoaded;
+        }
+
+        function requestSignatures() {
+            setSigUi(null);
+            sendCommand({ raw: 'CMD:SIGS' });
         }
 
         function openSignatures() {
             document.getElementById('sig-modal').classList.add('active');
+            requestSignatures();
         }
         function saveSignatures() {
+            if (!sigsLoaded) { showToast('Device rules not loaded yet', '…'); return; }
             const txt = document.getElementById('sig-input').value.trim();
             if (!txt) { showToast('Nothing to send', 'ℹ'); return; }
             let arr;
@@ -1211,6 +1266,8 @@
             if (!confirm('Restore the built-in signature rules on the device?')) return;
             sendCommand({ raw: 'CMD:SIGS:RESET' });
             showToast('Reset to defaults', '✓');
+            // Repaint from the device rather than assuming what the defaults are.
+            setTimeout(requestSignatures, 300);
         }
 
         // =====================================================================
@@ -1290,12 +1347,18 @@
                 closeConnModal();
                 renderStatusStrip();
                 showToast(`Connected via ${type}`, '✓');
-                // Ask the device what it is called. Done here rather than at
-                // each of the five connect sites, and after a beat so the NUS
-                // notify subscription is actually up before the reply lands.
-                setTimeout(requestConfig, 400);
+                // Ask the device what it is, and what it was already doing.
+                // Done here rather than at each of the five connect sites.
+                // requestConfig() owns its own delay and retries -- the first
+                // attempt waits for the NUS notify subscription to come up.
+                requestConfig();
             } else {
                 connectionType = null;
+                // Stop showing the last board's settings as if they were this
+                // one's -- with two boards around that is how you mute the
+                // wrong device.
+                setBuzzerUi(null);
+                setSigUi(null);
                 pulseDot.className = 'pulse-dot';
                 connStatusText.textContent = 'DISCONNECTED';
                 btnConnectHeader.style.display = 'flex';

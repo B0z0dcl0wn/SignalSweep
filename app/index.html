@@ -1141,7 +1141,7 @@
         <!-- Controls -->
         <div class="toolbar">
             <button class="ctrl-btn" id="btn-record" onclick="toggleRecording()">○ Recording: OFF</button>
-            <button class="ctrl-btn on" id="btn-buzzer" onclick="toggleBuzzer()">🔊 Buzzer: ON</button>
+            <button class="ctrl-btn" id="btn-buzzer" onclick="toggleBuzzer()">🔊 Buzzer: —</button>
             <button class="ctrl-btn" id="btn-foxhunt" onclick="toggleFoxhunt()">◎ Filter: matches</button>
             <button class="ctrl-btn" onclick="openPins()">📍 Pins</button>
             <button class="ctrl-btn" onclick="openSignatures()">✎ Signatures</button>
@@ -1300,11 +1300,11 @@
     <div class="modal-overlay" id="sig-modal">
         <div class="modal-card">
             <button class="modal-close-btn" onclick="document.getElementById('sig-modal').classList.remove('active')">&times;</button>
-            <div class="modal-header"><h2>Signature Rules</h2><p>What the device listens for. Paste a JSON array of rules and send it, or reset to the built-in set.</p></div>
+            <div class="modal-header"><h2>Signature Rules</h2><p>What the device listens for, read back from the board. Edit the JSON array and send it, or reset to the built-in set.</p></div>
             <textarea class="sig-input" id="sig-input" placeholder='[ { "name": "Axon Body Camera", "category": "Axon", "oui": "00:25:df", "mfg_id": "", "device_name": "", "service_uuid": "" } ]'></textarea>
             <div class="modal-actions" style="display:flex;gap:10px;">
                 <button class="ctrl-btn" onclick="resetSignatures()">Reset to defaults</button>
-                <button class="ctrl-btn on" onclick="saveSignatures()">Send to device</button>
+                <button class="ctrl-btn on" id="btn-sig-save" onclick="saveSignatures()">Send to device</button>
             </div>
         </div>
     </div>

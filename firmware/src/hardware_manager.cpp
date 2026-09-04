@@ -8,6 +8,11 @@
 
 static const char *TAG = "HardwareManager";
 
+// The buzzer mute is operator state on a headless device, so it lives in NVS
+// like the hunt target and the beep mask. It was read here at boot and never
+// written, which meant a board muted in the field came back beeping.
+#define BUZZER_NVS_NS "ouispy-bz"
+
 static Adafruit_NeoPixel strip(NEOPIXEL_COUNT, NEOPIXEL_PIN, NEO_GRB + NEO_KHZ800);
 static SemaphoreHandle_t hwMutex = NULL;
 static TaskHandle_t hwTaskHandle = NULL;
@@ -15,6 +20,19 @@ static TaskHandle_t hwTaskHandle = NULL;
 static OperatingMode currentHwMode = MODE_SELECTOR;
 static bool buzzerEnabled = true;
 static bool rxOnlyIndicator = false;
+
+// Arduino's tone() attaches the LEDC channel lazily on first use, and noTone()
+// on a channel that was never attached logs an error every single call. Nothing
+// hit this while a board always booted audible -- tone() ran first. Now that the
+// mute persists, a board that boots muted never calls tone() at all, and the
+// unguarded noTone()s in the audio loop flooded the USB telemetry mirror.
+// Measured on COM3: 561 LEDC errors in 4 s booted muted, 0 booted audible.
+static volatile bool ledcReady = false;
+// ledcReady is set AFTER tone() returns: setting it first left a window in
+// which setBuzzerEnabled() on the caller's thread could noTone() a channel
+// tone() had not finished attaching -- one stray error per mute transition.
+static inline void buzzerTone(uint16_t freq) { tone(BUZZER_PIN, freq); ledcReady = true; }
+static inline void buzzerOff() { if (ledcReady) noTone(BUZZER_PIN); }
 
 struct Note {
     uint16_t freq;       // Hz (0 = rest/silence)
@@ -109,23 +127,23 @@ static void HardwareManagerTask(void *pvParameters) {
                 if (noteStartTime == 0) {
                     noteStartTime = now;
                     if (activeJingle[jingleIndex].freq > 0 && buzzerEnabled) {
-                        tone(BUZZER_PIN, activeJingle[jingleIndex].freq);
+                        buzzerTone(activeJingle[jingleIndex].freq);
                     } else {
-                        noTone(BUZZER_PIN);
+                        buzzerOff();
                     }
                 } else if (now - noteStartTime >= activeJingle[jingleIndex].durationMs) {
-                    noTone(BUZZER_PIN);
+                    buzzerOff();
                     jingleIndex++;
                     if (jingleIndex < jingleLength) {
                         noteStartTime = now;
                         if (activeJingle[jingleIndex].freq > 0 && buzzerEnabled) {
-                            tone(BUZZER_PIN, activeJingle[jingleIndex].freq);
+                            buzzerTone(activeJingle[jingleIndex].freq);
                         }
                     } else {
                         jinglePlaying = false;
                         jingleIndex = 0;
                         jingleLength = 0;
-                        noTone(BUZZER_PIN);
+                        buzzerOff();
                     }
                 }
             }
@@ -134,7 +152,7 @@ static void HardwareManagerTask(void *pvParameters) {
             if (!jinglePlaying) {
                 if (geigerClickActive) {
                     if (now - geigerClickStartTime >= 25) { // 25ms Geiger click duration
-                        noTone(BUZZER_PIN);
+                        buzzerOff();
                         geigerClickActive = false;
                     }
                 }
@@ -151,7 +169,7 @@ static void HardwareManagerTask(void *pvParameters) {
                         lastGeigerClickTime = now;
 
                         if (buzzerEnabled) {
-                            tone(BUZZER_PIN, gFreq);
+                            buzzerTone(gFreq);
                         }
                         // Visual Geiger pulse flash
                         flashActive = true;
@@ -161,7 +179,7 @@ static void HardwareManagerTask(void *pvParameters) {
                         flashEndTime = now + 25;
                     }
                 } else if (!geigerClickActive && !alarmActive) {
-                    noTone(BUZZER_PIN);
+                    buzzerOff();
                 }
             }
 
@@ -170,7 +188,7 @@ static void HardwareManagerTask(void *pvParameters) {
                 if (now < alarmEndTime) {
                     if (buzzerEnabled) {
                         uint32_t t = now % 300;
-                        tone(BUZZER_PIN, t < 150 ? 2500 : 1800); // Police siren style
+                        buzzerTone(t < 150 ? 2500 : 1800); // Police siren style
                     }
                     
                     // Strobe red/blue
@@ -184,7 +202,7 @@ static void HardwareManagerTask(void *pvParameters) {
                     flashEndTime = now + 10; 
                 } else {
                     alarmActive = false;
-                    noTone(BUZZER_PIN);
+                    buzzerOff();
                 }
             }
 
@@ -274,7 +292,7 @@ void hardwareInit() {
     strip.show();
 
     Preferences prefs;
-    if (prefs.begin("ouispy-bz", true)) {
+    if (prefs.begin(BUZZER_NVS_NS, true)) {
         buzzerEnabled = prefs.getBool("on", true);
         prefs.end();
     } else {
@@ -357,7 +375,7 @@ void setGeigerTargetLock(bool locked, int initialRssi) {
         if (locked) {
             geigerRssi = initialRssi;
         } else {
-            noTone(BUZZER_PIN);
+            buzzerOff();
         }
         xSemaphoreGive(hwMutex);
         ESP_LOGI(TAG, "Geiger target lock state: %s (RSSI: %d)", locked ? "LOCKED" : "UNLOCKED", initialRssi);
@@ -368,10 +386,19 @@ void setBuzzerEnabled(bool enabled) {
     if (hwMutex != NULL && xSemaphoreTake(hwMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
         buzzerEnabled = enabled;
         if (!enabled) {
-            noTone(BUZZER_PIN);
+            buzzerOff();
         }
         xSemaphoreGive(hwMutex);
         ESP_LOGI(TAG, "Buzzer set to: %s", enabled ? "ENABLED" : "MUTED");
+    }
+    // Outside the mutex deliberately: an NVS write is slow and must not be held
+    // against the audio task, which takes hwMutex every loop.
+    Preferences prefs;
+    if (prefs.begin(BUZZER_NVS_NS, false)) {
+        prefs.putBool("on", enabled);
+        prefs.end();
+    } else {
+        ESP_LOGW(TAG, "Could not open %s — mute will not survive a reboot", BUZZER_NVS_NS);
     }
 }
 

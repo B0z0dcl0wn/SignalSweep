@@ -77,6 +77,25 @@ if (bitDrift.length) {
 }
 console.log('[signalsweep self-test] beep mask bits match firmware AlertCategory: ok');
 
+// Every field the firmware reports in CMD:CFG has to be read by the app, or it
+// is state the device owns and the phone silently guesses at. `buzzer` was
+// exactly that: reported by neither side, so the app shipped a hardcoded
+// "Buzzer: ON" against boards that were muted.
+const cfgKeys = [...readFileSync(new URL('../firmware/src/ble_serial.cpp', import.meta.url), 'utf8')
+    .match(/String getBleConfigJson\(\) \{[\s\S]*?\n\}/)[0]
+    .matchAll(/doc\["(\w+)"\]\s*=/g)].map(m => m[1]);
+// Deliberately unread: `cfg` is the discriminator itself, `alerts` is a
+// bench-only counter with no UI.
+const cfgIgnored = new Set(['cfg', 'alerts']);
+const cfgUnread = cfgKeys.filter(k => !cfgIgnored.has(k) &&
+    !appSrc.includes('cfg.' + k) && !appSrc.includes('data.' + k));
+if (cfgKeys.length < 5 || cfgUnread.length) {
+    console.log('FAIL: CMD:CFG fields the app never reads:', cfgUnread,
+                '(parsed', cfgKeys.length, 'keys)');
+    process.exit(1);
+}
+console.log('[signalsweep self-test] app reads every CMD:CFG field: ok');
+
 const results = await global.__signalsweepSelfTest();
 const failed = Object.entries(results).filter(([, v]) => !v).map(([k]) => k);
 console.log('[signalsweep self-test]', results);

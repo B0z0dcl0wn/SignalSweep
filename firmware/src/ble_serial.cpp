@@ -124,6 +124,10 @@ String getBleConfigJson() {
     doc["scan_all"] = getScanAll();
     // Bitmask, not a counter -- "alerts" below is the alert count.
     doc["beep_mask"] = getBeepMask();
+    // The mute is operator state and it persists, so the app must paint the
+    // buzzer control from here rather than assuming a freshly-connected board
+    // is audible. It used to be the one setting the phone owned by guessing.
+    doc["buzzer"] = isBuzzerEnabled();
     doc["rx_only"] = rxOnly;
     doc["ble_scan"] = bleScanOn;
     doc["wifi_scan"] = wifiScanOn;
@@ -137,10 +141,17 @@ String getBleConfigJson() {
 // client subscribed, so a BLE-only reply is invisible over USB — which makes the
 // identity commands untestable from a serial console, the one place you'd reach
 // for when the BLE name is what you're trying to fix.
+// Replies go to BOTH transports. sendBleSerial() returns early when no BLE
+// client is subscribed, so a reply sent through it alone is simply lost on a
+// board reached over the USB cable -- which is one of the three transports the
+// app supports, and the one used on the bench.
+static void sendReply(const String& payload) {
+    sendBleSerial(payload);
+    if (Serial) Serial.println(payload);
+}
+
 static void sendConfigReply() {
-    String cfg = getBleConfigJson();
-    sendBleSerial(cfg);
-    if (Serial) Serial.println(cfg);
+    sendReply(getBleConfigJson());
 }
 
 void requestReboot() {
@@ -357,6 +368,9 @@ void processIncomingCommand(const String& rawCommand) {
         if (doc["buzzer"].is<bool>()) {
             setBuzzerEnabled(doc["buzzer"].as<bool>());
             ESP_LOGI(TAG, "Buzzer %s by command", doc["buzzer"].as<bool>() ? "enabled" : "muted");
+            // Answer, so the app's button paints from the device rather than
+            // optimistically -- same contract as beep_mask and the radios.
+            sendConfigReply();
         }
 
         // 3. Hunt: {"hunt":"AA:BB:CC:DD:EE:FF"} locks the Geiger clicker onto
@@ -430,6 +444,13 @@ void processIncomingCommand(const String& rawCommand) {
             // pushing it every second: identity is static config, and the 1 Hz
             // payload is the tightest budget on the board.
             sendConfigReply();
+        } else if (rawStr == "CMD:SIGS") {
+            // Read back the rules the board is actually carrying. Without this
+            // the editor opened blank against an unknown device and saving
+            // replaced a rule set nobody had seen. On demand only, never on
+            // connect: the reply is multi-KB and the 1 Hz push is the tight
+            // budget. sendBleSerial() already chunks it to the MTU.
+            sendReply(getWatchersSignaturesJson());
         } else if (rawStr == "CMD:SIGS:RESET") {
             // Restore the built-in signature rules, undoing a pushed rule set
             // without the full factory reset (which also wipes mode + lock).
