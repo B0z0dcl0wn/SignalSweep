@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 B0z0dcl0wn and the SignalSweep contributors
+
 #ifndef BLE_SERIAL_H
 #define BLE_SERIAL_H
 
@@ -26,7 +29,7 @@ bool isBleSerialConnected();
  */
 void processIncomingCommand(const String& rawCommand);
 
-// ---- BLE identity (name + address), persisted in NVS "ouispy-ble" ----------
+// ---- BLE identity (name + address), persisted in NVS "sweep-ble" ----------
 // Both are read once at boot, before NimBLEDevice::init(), because neither can
 // be changed on a running host without tearing the stack down. Setting either
 // therefore stores it and reboots.
@@ -51,7 +54,7 @@ void applyRandomMac();
 
 // ---- Receive-only ---------------------------------------------------------
 // Stop announcing this device: no advertising, no GATT link, scanning
-// unchanged. Persisted alongside the identity in "ouispy-ble". NOT the buzzer
+// unchanged. Persisted alongside the identity in "sweep-ble". NOT the buzzer
 // mute — that is {"buzzer":false} and is unaffected.
 
 /** @brief True while the device is not advertising itself. */

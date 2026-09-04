@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 B0z0dcl0wn and the SignalSweep contributors
+
 #include "mode_watchers_watch.h"
 #include "ble_serial.h"
 #include <NimBLEDevice.h>
@@ -151,9 +154,18 @@ static void ensureSignaturesFileExists() {
                 s["service_uuid"] = uuid;
             };
 
-            // GoFlockYourself extended OUIs. Four entries from the original
-            // crowd-sourced list are deliberately absent because they cannot
-            // mean "Flock" and only generate false positives:
+            // Flock Safety OUI prefixes.
+            //
+            // This list is not ours. It is the promiscuous-mode set compiled by
+            // OrdoOuroborous / @NitekryDPaul (https://github.com/nitekry) and
+            // circulated as the "GoFlockYourself" extended OUIs. Compiling it
+            // meant physically finding cameras and confirming their prefixes.
+            // Everything this detector knows about Flock hardware, it knows
+            // because of that work. See CREDITS.md.
+            //
+            // Four entries from that original list are deliberately absent
+            // here, because they cannot mean "Flock" and only generate false
+            // positives:
             //   a4:cf:12, 3c:71:bf  Espressif — this board's own vendor block,
             //                       so every ESP32 in range matched.
             //   cc:cc:cc            not an assigned OUI at all.
@@ -323,7 +335,7 @@ static volatile AlertCategory pendingAlertCat = ALERT_GENERIC;
 // listen to, so the operator picks the words worth hearing. A muted category is
 // fully silent — no beep, no LED flash, and it does not count in getAlertCount()
 // — but it is still tracked and still reported to the app.
-// Persisted (ouispy-st/beepmask): headless means a power cycle must not undo it.
+// Persisted (sweep-st/beepmask): headless means a power cycle must not undo it.
 static uint8_t beepMask = BEEP_MASK_ALL;
 
 // Returns true if the alert was recorded (i.e. it will actually sound).
@@ -1023,7 +1035,7 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
 // A detector wired into a car loses power every time the engine stops; one on a
 // battery pack loses it whenever the pack is swapped. Neither is a reason to
 // forget what it was told to do.
-#define STATE_NVS_NS "ouispy-st"
+#define STATE_NVS_NS "sweep-st"
 
 static void persistState() {
     Preferences prefs;

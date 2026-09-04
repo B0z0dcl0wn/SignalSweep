@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 B0z0dcl0wn and the SignalSweep contributors
+
 // ponytail: the smallest thing that makes `node` able to run app.js's own
 // self-check. app.js is a classic browser script; stub just enough of the DOM
 // for its top-level lines, then call the check it exposes on window.

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 B0z0dcl0wn and the SignalSweep contributors
+
 #include "hardware_manager.h"
 #include <Adafruit_NeoPixel.h>
 #include <Preferences.h>
@@ -11,7 +14,7 @@ static const char *TAG = "HardwareManager";
 // The buzzer mute is operator state on a headless device, so it lives in NVS
 // like the hunt target and the beep mask. It was read here at boot and never
 // written, which meant a board muted in the field came back beeping.
-#define BUZZER_NVS_NS "ouispy-bz"
+#define BUZZER_NVS_NS "sweep-bz"
 
 static Adafruit_NeoPixel strip(NEOPIXEL_COUNT, NEOPIXEL_PIN, NEO_GRB + NEO_KHZ800);
 static SemaphoreHandle_t hwMutex = NULL;

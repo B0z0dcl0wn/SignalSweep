@@ -6,7 +6,7 @@ All notable changes to SignalSweep are recorded here.
 
 ### Fixed — the buzzer mute never survived a power cycle
 
-`hardware_manager.cpp` read `ouispy-bz`/`on` at boot and **nothing anywhere ever
+`hardware_manager.cpp` read `sweep-bz`/`on` at boot and **nothing anywhere ever
 wrote it**, so `{"buzzer":false}` lived only in RAM. A detector muted in the
 field came back beeping at the next ignition cycle — the one operator setting
 that broke the rule every other setting follows. `setBuzzerEnabled()` now
@@ -76,7 +76,7 @@ drone, tracker, other matches).
 
 The choice lives on the device, not in the app — the whole point is headless
 operation — as one bitmask over the existing `AlertCategory` enum
-(`{"beep_mask":N}`, echoed by `CMD:CFG`), persisted in `ouispy-st`/`beepmask`
+(`{"beep_mask":N}`, echoed by `CMD:CFG`), persisted in `sweep-st`/`beepmask`
 next to the hunt target and the report filter, so a board wired into a car comes
 back from every ignition cycle still muting what it was told to mute.
 
@@ -354,7 +354,7 @@ trying to leave behind.
 
 ### Fixed — the hunt target and the report filter are persisted
 
-Both now live in NVS (`ouispy-st`) and are restored by `startWatchersWatch()`.
+Both now live in NVS (`sweep-st`) and are restored by `startWatchersWatch()`.
 The filter had been deliberately session-only on the grounds that it floods the
 telemetry budget; that argument protected a budget that isn't being spent, since
 `sendBleSerial()` returns early with no client subscribed. Verified across real

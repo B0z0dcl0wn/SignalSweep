@@ -35,3 +35,17 @@ npm-debug.log*
 
 # Reference copies of sibling projects (not ours, not shipped)
 inspiration/
+
+# Archived old tree (kept outside the repo; never commit)
+SingalSweep_OLD/
+SignalSweep_OLD/
+
+# Signing material — never commit
+*.keystore
+*.jks
+keystore.properties
+app/android/app/release/
+app/android/keystore*
+
+# Agent/editor local state
+.claude/

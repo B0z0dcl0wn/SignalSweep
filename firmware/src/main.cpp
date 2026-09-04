@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 B0z0dcl0wn and the SignalSweep contributors
+
 #include <Arduino.h>
 #include "hardware_manager.h"
 #include "ble_serial.h"

@@ -1,0 +1,123 @@
+# Builds the firmware + app, publishes the web flasher to GitHub Pages, and
+# attaches the firmware binaries to a Release when a v* tag is pushed.
+#
+# Nothing here is hand-built or hand-uploaded: the .bin files served by the
+# flasher are the ones this workflow compiled from the tagged commit.
+name: release
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write   # attach binaries to the Release
+  pages: write
+  id-token: write
+
+# Never let two deploys race; let a running one finish.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      # PlatformIO's toolchains and framework packages are the slow part.
+      - name: Cache PlatformIO
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio
+            firmware/.pio
+          key: pio-${{ runner.os }}-${{ hashFiles('firmware/platformio.ini') }}
+
+      - name: Install PlatformIO
+        run: pip install --upgrade platformio
+
+      - name: Build firmware (tier1)
+        run: pio run -e tier1 -d firmware
+
+      - name: Build app
+        working-directory: app
+        run: |
+          npm ci
+          npm run build
+
+      - name: Assemble site
+        run: |
+          set -euo pipefail
+          mkdir -p _site/firmware
+          cp site/index.html site/manifest.json site/favicon.svg _site/
+          cp -r app/dist _site/app
+
+          B=firmware/.pio/build/tier1
+          cp "$B/bootloader.bin" _site/firmware/bootloader.bin
+          cp "$B/partitions.bin" _site/firmware/partitions.bin
+          cp "$B/firmware.bin"   _site/firmware/signalsweep.bin
+
+          # boot_app0.bin ships with the Arduino framework package, not the build.
+          BOOT_APP0=$(find ~/.platformio/packages -name boot_app0.bin | head -1)
+          test -n "$BOOT_APP0" || { echo "boot_app0.bin not found"; exit 1; }
+          cp "$BOOT_APP0" _site/firmware/boot_app0.bin
+
+          # Fail loudly if the manifest references a file we did not produce.
+          python - <<'PY'
+          import json, pathlib, sys
+          m = json.load(open('site/manifest.json'))
+          missing = [p['path'] for b in m['builds'] for p in b['parts']
+                     if not pathlib.Path('_site', p['path']).is_file()]
+          if missing:
+              sys.exit('manifest references missing files: ' + ', '.join(missing))
+          print('manifest parts all present')
+          PY
+
+      - name: Stamp manifest version from tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          V="${GITHUB_REF_NAME#v}"
+          python - "$V" <<'PY'
+          import json, sys
+          p = '_site/manifest.json'
+          m = json.load(open(p))
+          m['version'] = sys.argv[1]
+          json.dump(m, open(p, 'w'), indent=2)
+          print('manifest version ->', sys.argv[1])
+          PY
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - name: Attach binaries to the Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            _site/firmware/*.bin
+            _site/manifest.json
+          generate_release_notes: true
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

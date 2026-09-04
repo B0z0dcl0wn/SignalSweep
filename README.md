@@ -23,6 +23,61 @@ and no cloud.
 
 ---
 
+## Quick start
+
+You need one [Seeed Studio XIAO ESP32-S3](https://www.seeedstudio.com/XIAO-ESP32S3-p-5627.html)
+(about $15) and a USB-C cable that carries data.
+
+1. **Flash it** — open <https://b0z0dcl0wn.github.io/SignalSweep/> in desktop
+   Chrome, Edge or Opera and press **Connect & flash**. No Python, no
+   PlatformIO, no drivers.
+2. **Open the app** — same site, `/app/`. Desktop Chrome or Android Chrome, over
+   Bluetooth. Nothing to install.
+3. **Or don't.** The device works alone. Give it USB power and it scans and
+   beeps with nothing connected — that is the point of it.
+
+For the buzzer, the LED and the external antenna, see
+[`firmware/WIRING.md`](firmware/WIRING.md). Building from source is documented
+further down; you only need it if you want to change the firmware.
+
+---
+
+## What it deliberately does not do
+
+This is a receiver. Offensive capability was removed on purpose and should not
+grow back:
+
+- **No jamming, no deauth, no packet injection.**
+- **No advertisement spoofing.** The `ble_spoof` primitive was cut.
+- **No arbitrary GATT writes.** The old build could write any service, any
+  characteristic, any hex payload. That is gone. Ringing a tracker is one fixed
+  Immediate Alert write (`0x1802` / `0x2A06` / `0x02`) with a MAC as its only
+  parameter.
+- **No cloud, no telemetry, no analytics, no account.**
+
+### Threat model
+
+The device is meant to be left somewhere and walked away from, so the failure
+mode that matters is *it quietly recorded where you have been*.
+
+- **No history, anywhere.** The app is a live scope: it shows what the device is
+  matching right now and clears it on disconnect. There is no logbook, no
+  breadcrumb trail, no map tile cache.
+- **No passive location tracking.** Geolocation is a one-shot `getFix()` on a
+  path you explicitly consent to — never a background `watchPosition`.
+- **One persisted secret, opt in.** Location pins you confirm per device, stored
+  only as AES-GCM ciphertext behind a PIN (Web Crypto, PBKDF2). Recording
+  defaults to off. Detecting and beeping never ask for the PIN — it gates
+  viewing and export only.
+- **It can stop announcing itself.** Receive-only mode stops BLE advertising
+  entirely, because a counter-surveillance tool that broadcasts `SignalSweep` to
+  every scanner in range — including the hardware it is hunting — is doing the
+  opposite of its job. It keeps scanning, matching and beeping while quiet.
+
+### Legality
+
+---
+
 ## Using the device
 
 Power it and walk away — everything below is optional.
@@ -74,10 +129,9 @@ briefly shows the boot banner.
 
 ### Privacy
 
-The app keeps no history of what was detected or where you went. The only thing
-stored is location pins you explicitly confirm, one device at a time, encrypted
-behind a PIN. Detecting and beeping never ask for the PIN — it gates only
-viewing and export.
+See [Threat model](#threat-model) above. Short version: no history, no passive
+location tracking, and the only thing ever written to disk is location pins you
+explicitly confirm, encrypted behind a PIN.
 
 ---
 
@@ -102,8 +156,9 @@ python flash.py --tier 1 --port COM3
 ```
 
 That wraps `pio run -e tier1 -t upload`; `pio run -e tier1` alone just builds.
-If `pio` is not on PATH, `python -m platformio` is the same tool. `--auto` reads
-the tier back from a running board.
+If `pio` is not on PATH, `python -m platformio` is the same tool. `--auto` is a
+stub that falls through to tier1 — board auto-identification needs Tier 2
+hardware that does not exist yet.
 
 From the IDE: open the `firmware/` folder, let PlatformIO install the
 dependencies from `platformio.ini`, connect the board over USB, then use
@@ -134,8 +189,6 @@ power cycle: a board always boots with both radios scanning.
 rule, power cycle, wait, then read the count back. Nonzero means it sounded
 with nothing connected.
 
----
-
 ## 2. Control app (`app/`)
 
 ### Prerequisites
@@ -162,10 +215,56 @@ npx cap open android      # or: cd android && ./gradlew installDebug
 
 ---
 
+## Signature rules — the most useful thing you can contribute
+
+The detector is only as good as its signature list. Rules live in
+`/data/signatures.json` on the device (LittleFS, auto-created with defaults on
+first boot) and the defaults are compiled into
+`firmware/src/mode_watchers_watch.cpp`. A rule matches on any of five fields:
+
+| Field | Matches |
+|---|---|
+| `oui` | first three bytes of the MAC |
+| `mfg_id` | Bluetooth SIG company ID |
+| `device_name` | substring of the advertised name |
+| `service_uuid` | substring of an advertised service UUID |
+| `ssid` | Wi-Fi network name |
+
+Each rule carries a **category**, which is what picks the buzzer pattern.
+
+**A rule that fires on ordinary hardware is worse than no rule.** Two entries
+were removed in v5 for exactly this: `raven` and `penguin` as name substrings
+(ordinary words, enough on their own to sound the alarm on someone's Bluetooth
+speaker), and four short service UUIDs. A company-ID rule for `0x01` labelled
+Govee smart bulbs as surveillance hardware, because `0x0001` is Nokia's. OUI
+prefixes with the locally-administered bit (`0x02`) set are rejected at load —
+that is a randomized MAC, i.e. a phone, not a vendor.
+
+So: send a PR with the rule, the category, and **how you confirmed it**. What
+the hardware was, and how you know. Bump `SIG_SCHEMA_VERSION` when you change
+the defaults, or already-deployed boards keep the old set for ever.
+
 ## Contributing
 
 `CLAUDE.md` is the design record — it documents the traps that have already
 cost this project a working build, and is worth reading before changing
-firmware. When you touch the BLE protocol, change **both** sides: the parser
-and JSON producers in `firmware/src/`, and the command/consumer code in
-`app/public/app.js`.
+firmware. See [CONTRIBUTING.md](CONTRIBUTING.md) for the short version.
+
+When you touch the BLE protocol, change **both** sides: the parser and JSON
+producers in `firmware/src/`, and the command/consumer code in
+`app/public/app.js`. `node app/selftest.js` must pass.
+
+## License and credits
+
+SignalSweep is **GPL-3.0-or-later** — see [LICENSE](LICENSE). Copyleft is
+deliberate: a detector built to find surveillance hardware should not be
+forkable into a closed product by the people who sell it.
+
+`firmware/src/opendroneid.c`, `odid_wifi.c` and their headers are vendored
+unmodified from
+[opendroneid-core-c](https://github.com/opendroneid/opendroneid-core-c) and stay
+**Apache-2.0** under their own copyright headers.
+
+This project started from other people's work and says so in
+**[CREDITS.md](CREDITS.md)** — Colonel Panic's OUI Spy, the Flock Safety OUI
+research of OrdoOuroborous / @NitekryDPaul, and everyone else. Read it.

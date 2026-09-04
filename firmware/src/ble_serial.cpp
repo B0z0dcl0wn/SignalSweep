@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 B0z0dcl0wn and the SignalSweep contributors
+
 #include "ble_serial.h"
 #include "mode_manager.h"
 #include "mode_watchers_watch.h"
@@ -21,7 +24,7 @@ static const char *TAG = "BleSerial";
 // keeps "SignalSweep" off the air if you'd rather not announce what it is.
 // The NUS service UUID is what the app actually filters on (see
 // startNusAdvertising below), so renaming can't make the device undiscoverable.
-#define BLE_ID_NVS_NS   "ouispy-ble"
+#define BLE_ID_NVS_NS   "sweep-ble"
 #define BLE_NAME_MAX    20   // scan response is 31 B total; leave room for the header
 
 static uint32_t rebootAtMs = 0;
@@ -55,7 +58,7 @@ bool getRandomMacEnabled() {
 // setActiveScan(true) stays on, because scan responses are where device names
 // live and the name-matching signature rules depend on them.
 //
-// Lives in the BLE identity namespace rather than the detector's ouispy-st,
+// Lives in the BLE identity namespace rather than the detector's sweep-st,
 // because it is an emissions property of this radio, not operator state of the
 // detector.
 static bool rxOnly = false;          // cached; NVS is the source of truth at boot

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 B0z0dcl0wn and the SignalSweep contributors
+
         // SignalSweep control app — one always-on detector.
         //
         // Opsec first: this app keeps NO passive trail. It shows what the device
@@ -738,7 +741,7 @@
                     syncDeviceState(data);
                 }
                 // The device is the authority on its own state. Both flags
-                // persist in NVS (ouispy-st), so a board that ran headless
+                // persist in NVS (sweep-st), so a board that ran headless
                 // comes back still hunting or still unfiltered -- the app has
                 // to adopt what the telemetry says in either direction rather
                 // than assume defaults.

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 B0z0dcl0wn and the SignalSweep contributors
+
 #include "mode_manager.h"
 #include "mode_watchers_watch.h"
 #include "hardware_manager.h"
@@ -35,7 +38,7 @@ void modeManagerInit() {
     // Board self-ID: persist the compiled hardware tier so a future
     // flash.py --auto can read it back over serial (see capabilities.h).
     Preferences prefs;
-    prefs.begin("ouispy-hw", false);
+    prefs.begin("sweep-hw", false);
     prefs.putInt("tier", getTier());
     prefs.end();
     ESP_LOGI(TAG, "Hardware tier: %d", getTier());
