@@ -1026,8 +1026,14 @@
         .scope-detail { flex-basis:100%; font-size:0.75rem; color:var(--ss-dim);
             margin-top:0.5rem; line-height:1.5; }
         .scope-detail b { color:#e8eef7; font-weight:600; font-family:var(--mono); }
+        /* Thumb-sized on purpose. These sit in a list that updates while you
+           are reading it, so a 24 px button in a moving list is a coin toss --
+           the row order is stabilised too, but the target still has to be one
+           you can hit while walking. 44 px is the smallest that reliably is. */
         .scope-actions { flex-basis:100%; display:flex; gap:8px; margin-top:0.6rem; }
-        .scope-act { padding:0.35rem 0.7rem; border-radius:6px; cursor:pointer; font-size:0.72rem;
+        .scope-actions .scope-act { flex:1; text-align:center; }
+        .scope-act { padding:0.6rem 0.9rem; min-height:44px; border-radius:6px; cursor:pointer;
+            font-size:0.82rem; display:inline-flex; align-items:center; justify-content:center;
             font-weight:700; border:1px solid var(--ss-line);
             background:rgba(255,255,255,0.05); color:#e8eef7; }
         .scope-act:hover { border-color:rgba(140,170,210,0.35); }
@@ -1049,6 +1055,11 @@
         .scope-row.unmatched { border-left-color:#3a465a !important; opacity:0.82; }
         .scope-row.unmatched .scope-title { font-weight:600; font-size:0.9rem; color:#b8c4d4;
             font-family:var(--mono); }
+        /* The pinned card. It is at the top of the list because it is being
+           hunted, not because it is the loudest thing in the room -- say so, or
+           the pin reads as a sorting bug. */
+        .scope-row.hunted { outline:1px solid var(--band-tracker);
+            background:rgba(255,58,200,0.07); opacity:1; }
         .unmatched-tag { font-size:0.65rem; font-weight:600; color:var(--ss-dim);
             border:1px dashed var(--ss-line); border-radius:4px; padding:1px 5px; margin-left:6px; }
 

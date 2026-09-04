@@ -101,6 +101,13 @@ static bool huntAudible = false;
 static volatile int huntWifiRssi = 0;
 static volatile uint32_t huntWifiRssiMs = 0;
 static volatile int huntChannel = 0;
+
+// Freshest RSSI for the hunted target, from whichever radio heard it. Written
+// from both callbacks (volatile only -- the promiscuous handler must not take a
+// mutex) and read by the 4 Hz hunt frame, which is what keeps the phone's meter
+// in step with the clicker instead of a second behind it.
+static volatile int      huntLastRssi = 0;
+static volatile uint32_t huntLastRssiMs = 0;
 /**
  * @brief Ensure /data/signatures.json exists on LittleFS, creating default rules if missing
  */
@@ -581,6 +588,8 @@ class WatchersScanCallbacks : public NimBLEAdvertisedDeviceCallbacks {
         // physically walking on.
         if (huntMac.length() > 0 && huntMac.equalsIgnoreCase(mac)) {
             updateGeigerRssi(rssi);
+            huntLastRssi = rssi;
+            huntLastRssiMs = now;
         }
 
         if (xSemaphoreTake(watchersMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
@@ -840,6 +849,8 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
         if (huntMac.length() > 0 && huntMac.equalsIgnoreCase(mac)) {
             huntWifiRssi = rssi;
             huntWifiRssiMs = millis();
+            huntLastRssi = rssi;
+            huntLastRssiMs = huntWifiRssiMs;
             huntChannel = packet->rx_ctrl.channel;
         }
         String cleanMac = "";
@@ -1147,9 +1158,25 @@ static void performRing(const String& mac) {
 
 static void watchersPeriodicTask(void *pvParameters) {
     (void)pvParameters;
+    uint32_t tick = 0;
     while (watchersRunning) {
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        // 250 ms tick, full body every fourth. The three ticks in between exist
+        // only for the hunt frame: the clicker is driven straight off the scan
+        // callback at advert rate, so a phone fed at 1 Hz reads visibly behind
+        // the noise you are walking on. ~40 bytes, three times a second, and
+        // only while something is actually being hunted.
+        vTaskDelay(pdMS_TO_TICKS(250));
         if (!watchersRunning) break;
+        if (++tick % 4 != 0) {
+            if (huntMac.length() > 0 && huntLastRssiMs != 0 &&
+                millis() - huntLastRssiMs <= HUNT_SILENCE_MS) {
+                char buf[64];
+                snprintf(buf, sizeof(buf), "{\"hunt\":\"%s\",\"hunt_rssi\":%d}",
+                         huntMac.c_str(), huntLastRssi);
+                sendBleSerial(buf);   // returns early when nobody is subscribed
+            }
+            continue;
+        }
 
         // Sound anything the radios flagged since the last tick. Done here, off
         // the detection callbacks, so the Wi-Fi promiscuous handler stays fast
@@ -1439,6 +1466,25 @@ String getWatchersTargetsJson() {
         // one dropped BLE notification discards the entire batch.
         size_t cap = scanAll ? WATCHERS_MAX_REPORT_ALL : WATCHERS_MAX_REPORT;
         if (order.size() > cap) order.resize(cap);
+
+        // The hunted target rides in every push, whatever the round-robin says.
+        // Otherwise a crowded room (cap 18 with the filter off) reports it every
+        // few seconds and the phone's meter goes stale between appearances --
+        // the one row where that is unacceptable. It takes the front slot rather
+        // than an extra one, so the payload cap is untouched. Also covers a
+        // target below CONF_LIST_MIN that would not otherwise be listed at all.
+        if (huntMac.length() > 0) {
+            size_t hunted = trackedTargets.size();
+            for (size_t i = 0; i < trackedTargets.size(); i++) {
+                if (trackedTargets[i].mac.equalsIgnoreCase(huntMac)) { hunted = i; break; }
+            }
+            if (hunted < trackedTargets.size()) {
+                auto at = std::find(order.begin(), order.end(), hunted);
+                if (at != order.end()) order.erase(at);
+                else if (order.size() >= cap) order.pop_back();
+                order.insert(order.begin(), hunted);
+            }
+        }
 
         uint32_t nowMs = millis();
         JsonArray targetsArr = doc["targets"].to<JsonArray>();

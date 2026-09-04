@@ -166,7 +166,7 @@
         function liveRows(forLens) {
             const now = Date.now();
             const k = forLens || lens;
-            return Object.values(liveMatches)
+            const rows = Object.values(liveMatches)
                 .filter(function (m) { return now - m.ts < LIVE_STALE_MS; })
                 .filter(matchesRadio)
                 .filter(function (m) {
@@ -179,7 +179,28 @@
                     if (k === 'alpr') return c === 'alpr' || c === 'bodycam' || c === 'other';
                     return c === k;
                 })
-                .sort(function (a, b) { return (b.rssi || -999) - (a.rssi || -999); });
+                // Bucketed to 5 dB, MAC as tiebreak. Sorting on raw RSSI made
+                // the list dance: a couple of dB of multipath swaps two rows,
+                // every push, and you tap the wrong device because the one you
+                // aimed at moved. Strongest-first still holds; the jitter does
+                // not move anything.
+                .sort(function (a, b) {
+                    const ba = Math.round((Number(a.rssi) || -999) / 5);
+                    const bb = Math.round((Number(b.rssi) || -999) / 5);
+                    if (ba !== bb) return bb - ba;
+                    return String(a.mac) < String(b.mac) ? -1 : 1;
+                });
+            // The hunted card is pinned to the top, directly under the
+            // instrument, so the meter, the trace, "stop hunting" and the card
+            // are all on screen at once -- you found it halfway down a long
+            // list, and the readout is at the top of that list.
+            if (huntMac) {
+                const at = rows.findIndex(function (m) {
+                    return String(m.mac).toUpperCase() === huntMac.toUpperCase();
+                });
+                if (at > 0) rows.unshift(rows.splice(at, 1)[0]);
+            }
+            return rows;
         }
 
         // One line of extra detail per category. Drones earn the most, because
@@ -296,7 +317,9 @@
                 const band = bandOf(m);
                 const unmatched = band === 'none';
                 const weak = band === 'weak';
+                const isHunted = !!huntMac && String(m.mac).toUpperCase() === huntMac.toUpperCase();
                 html += '<div class="scope-row' + (unmatched ? ' unmatched' : '') +
+                        (isHunted ? ' hunted' : '') +
                         '" style="border-left:4px solid ' + cat.color + '">' +
                     '<div class="scope-main">' +
                         '<div class="scope-title">' + radioBadges(m.protocol) +
@@ -345,6 +368,16 @@
 
         function currentHuntMac() { return huntMac; }
 
+        // Only append when the sample is actually new, so standing still doesn't
+        // fill the trace with duplicates of one reading. Fed by both the 1 Hz
+        // push and the 4 Hz hunt frame.
+        function pushHuntSample(rssi, ts) {
+            const last = huntTrace.length ? huntTrace[huntTrace.length - 1] : null;
+            if (last && last.ts === ts) return;
+            huntTrace.push({ rssi: Number(rssi), ts: ts });
+            if (huntTrace.length > HUNT_TRACE_MAX) huntTrace.shift();
+        }
+
         function toggleFoxhunt() {
             foxhuntMode = !foxhuntMode;
             // Listing only. The buzzer stays gated by the firmware's alert
@@ -373,6 +406,11 @@
             sendCommand({ hunt: huntMac });
             showToast('Locked on \u2014 the device is clicking now', '\u25c9');
             renderScope();
+            // You locked on from halfway down a long list; the instrument is at
+            // the top of it. Bring it to you -- the hunted card is pinned
+            // directly beneath, so both land on screen together.
+            const fox = document.getElementById('fox');
+            if (fox && fox.scrollIntoView) fox.scrollIntoView({ block: 'start', behavior: 'smooth' });
         }
 
         function stopHunt() {
@@ -415,25 +453,23 @@
             if (nameEl) nameEl.textContent = m.name || m.rule || cat.label;
             if (rssiEl) rssiEl.textContent = m.rssi;
 
-            // Only append when the device actually reported again, so standing
-            // still doesn't fill the trace with duplicates of one sample.
-            const last = huntTrace.length ? huntTrace[huntTrace.length - 1] : null;
-            if (!last || last.ts !== m.ts) {
-                huntTrace.push({ rssi: Number(m.rssi), ts: m.ts });
-                if (huntTrace.length > HUNT_TRACE_MAX) huntTrace.shift();
-            }
+            pushHuntSample(m.rssi, m.ts);
 
             // Warmer/colder from the last handful of samples against the ones
             // before them. 3 dB is roughly the smallest change worth acting on;
             // below that the reading is just multipath noise.
             if (trendEl) {
                 const t = huntTrace.map(function (p) { return p.rssi; });
-                if (t.length < 6) {
+                if (t.length < 4) {
                     trendEl.textContent = 'reading\u2026';
                     trendEl.style.color = 'var(--ss-dim)';
                 } else {
                     const avg = (a) => a.reduce(function (x, y) { return x + y; }, 0) / a.length;
-                    const delta = avg(t.slice(-4)) - avg(t.slice(-10, -4));
+                    // Last three samples against the three before them. At the
+                    // hunt frame's 4 Hz that is ~1.5 s of history; the old
+                    // 4-against-6 window was ~10 s at 1 Hz, which is why the
+                    // screen read cold while the buzzer was already warming.
+                    const delta = avg(t.slice(-3)) - avg(t.slice(-6, -3));
                     if (delta > 3)       { trendEl.textContent = 'warmer';  trendEl.style.color = 'var(--ss-live)'; }
                     else if (delta < -3) { trendEl.textContent = 'colder';  trendEl.style.color = 'var(--accent-amber)'; }
                     else                 { trendEl.textContent = 'holding'; trendEl.style.color = 'var(--ss-dim)'; }
@@ -674,6 +710,21 @@
             try {
                 const data = JSON.parse(dataStr);
                 rxOk++;
+                // The 4 Hz hunt frame: one target, one number, and deliberately
+                // NOT a renderScope() -- rebuilding the list four times a second
+                // would put the rows back to moving under your thumb, which is
+                // the thing this whole path exists to stop.
+                if ('hunt_rssi' in data) {
+                    const hm = liveMatches[data.hunt] ||
+                               liveMatches[Object.keys(liveMatches).find(function (k) {
+                                   return k.toUpperCase() === String(data.hunt).toUpperCase();
+                               })];
+                    const now = Date.now();
+                    if (hm) { hm.rssi = data.hunt_rssi; hm.ts = now; }
+                    pushHuntSample(data.hunt_rssi, now);
+                    try { renderFoxhunt(); } catch (e) { console.warn('foxhunt render failed:', e); }
+                    return;
+                }
                 if (data.targets) {
                     ingestTargets(data.targets);
                     renderScope();
@@ -1991,6 +2042,37 @@
                 results.noRingOnWifi = wifiOnly.indexOf('data-act="ring"') === -1 &&
                                        wifiOnly.indexOf('data-act="hunt"') > 0;
                 results.ringOnBle = bleRow.indexOf('data-act="ring"') > 0;
+
+                // The hunted row is pinned to the top of the list even when it
+                // is the weakest thing on screen -- the instrument is up there
+                // and you should not have to scroll to the card it describes.
+                huntMac = 'CC:00:04';
+                results.huntPinnedTop = liveRows('all')[0].mac === 'CC:00:04' &&
+                                        liveRows('all').length === 4;
+                // The 4 Hz hunt frame feeds the trace without disturbing the
+                // list: no new rows, no re-render of the thing under your thumb.
+                huntTrace = [];
+                const beforeKeys = Object.keys(liveMatches).length;
+                processIncomingData('{"hunt":"CC:00:04","hunt_rssi":-52}');
+                results.huntFrameFeedsTrace = huntTrace.length === 1 &&
+                                              huntTrace[0].rssi === -52 &&
+                                              liveMatches['CC:00:04'].rssi === -52 &&
+                                              Object.keys(liveMatches).length === beforeKeys;
+                huntMac = ''; huntTrace = [];
+
+                // Ordering is bucketed to 5 dB so multipath jitter cannot swap
+                // two rows under a thumb that is already reaching for one.
+                liveMatches = {};
+                ingestTargets([
+                    { mac: 'DD:00:02', rssi: -60, confidence: 80, type: 'Tracker' },
+                    { mac: 'DD:00:01', rssi: -62, confidence: 80, type: 'Tracker' }
+                ]);
+                const order1 = liveRows('all').map(function (m) { return m.mac; }).join();
+                liveMatches['DD:00:02'].rssi = -63;   // jitter, same bucket
+                results.orderStableUnderJitter =
+                    order1 === 'DD:00:01,DD:00:02' &&
+                    liveRows('all').map(function (m) { return m.mac; }).join() === order1;
+
                 foxhuntMode = false;
 
                 // Disconnect drops the whole live set, not just the view.
