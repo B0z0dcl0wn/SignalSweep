@@ -24,6 +24,12 @@ try {
 } catch (Exception e) {
     logger.warn("Could not derive versionCode from '${verName}', using ${verCode}")
 }
+// Android rejects versionCode 0 outright ("should be a positive integer"), and
+// 0.0.0 derives to exactly that -- which is what CI uses to mark a build that
+// is not a release. Clamping here keeps that failure out of the build for any
+// input, rather than relying on every caller to pick a version that happens to
+// derive above zero.
+if (verCode < 1) verCode = 1
 
 android {
     namespace = "com.signalsweep.app"
