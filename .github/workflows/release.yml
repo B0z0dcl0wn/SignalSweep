@@ -34,7 +34,11 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          # >=22 because the Capacitor 8 CLI refuses to run on anything older
+          # ("The Capacitor CLI requires NodeJS >=22.0.0"). Vite builds happily
+          # on 20, so this only surfaced when cap sync was added to the release
+          # job -- keep them on one version rather than discovering it twice.
+          node-version: '22'
           cache: npm
           cache-dependency-path: app/package-lock.json
 
