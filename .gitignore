@@ -49,3 +49,7 @@ app/android/keystore*
 
 # Agent/editor local state
 .claude/
+
+# Agent instructions and planning notes — kept local, not published
+CLAUDE.md
+docs/plans/

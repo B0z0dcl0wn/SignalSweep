@@ -246,9 +246,9 @@ the defaults, or already-deployed boards keep the old set for ever.
 
 ## Contributing
 
-`CLAUDE.md` is the design record — it documents the traps that have already
-cost this project a working build, and is worth reading before changing
-firmware. See [CONTRIBUTING.md](CONTRIBUTING.md) for the short version.
+[CHANGELOG.md](CHANGELOG.md) is the design record — it documents the traps
+that have already cost this project a working build, and is worth reading
+before changing firmware. See [CONTRIBUTING.md](CONTRIBUTING.md) for the rules.
 
 When you touch the BLE protocol, change **both** sides: the parser and JSON
 producers in `firmware/src/`, and the command/consumer code in

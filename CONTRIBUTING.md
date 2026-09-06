@@ -1,11 +1,9 @@
 # Contributing
 
-Short version: read `CLAUDE.md` first, keep both sides of the BLE protocol in
+Short version: read the rules below, keep both sides of the BLE protocol in
 sync, and make `node app/selftest.js` pass.
 
-## Read the design record first
-
-`CLAUDE.md` is not boilerplate. It documents the specific traps that have
+The changelog is the design record. It documents the specific traps that have
 already cost this project a working build — the advertising payload API that
 silently stops the app connecting, the missing LittleFS mount that turns every
 signature rule into dead code without an error, the telemetry budget where an
@@ -27,7 +25,7 @@ persists.
 
 **Do not add offensive capability.** No jamming, no deauth, no injection, no
 advertisement spoofing, no arbitrary GATT writes. These were removed
-deliberately and the reasoning is in `CLAUDE.md` and the changelog. A PR that
+deliberately and the reasoning is in the changelog. A PR that
 adds one will be declined regardless of how well it is written.
 
 **Do not reintroduce a passive trail.** No `watchPosition`, no history, no tile
