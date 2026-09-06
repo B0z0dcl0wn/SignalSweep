@@ -142,7 +142,11 @@ def esp_ports():
 
 
 def adb_devices(adb):
-    out = subprocess.run([adb, "devices", "-l"], capture_output=True, text=True).stdout
+    # stdin=DEVNULL on every adb call: adb inherits the parent's stdin and
+    # consumes it, which made the confirmation prompt read EOF instead of the
+    # operator's answer. A helper process must not eat the installer's input.
+    out = subprocess.run([adb, "devices", "-l"], capture_output=True, text=True,
+                         stdin=subprocess.DEVNULL).stdout
     devs = []
     for line in out.splitlines()[1:]:
         line = line.strip()
@@ -183,7 +187,7 @@ def installed_signature(adb, serial):
     a reason to refuse.
     """
     r = subprocess.run([adb, "-s", serial, "shell", "dumpsys", "package", PKG],
-                       capture_output=True, text=True)
+                       capture_output=True, text=True, stdin=subprocess.DEVNULL)
     if PKG not in r.stdout:
         return None
     m = re.search(r"(?:signatures|Signature)\S*[=:]\s*\[?([0-9a-fA-F]{8,})", r.stdout)
@@ -208,7 +212,7 @@ def flash_firmware(port, files, erase):
 def install_apk(adb, serial, apk):
     say(f"\n[install] {adb} -s {serial} install -r {apk}\n")
     r = subprocess.run([adb, "-s", serial, "install", "-r", str(apk)],
-                       capture_output=True, text=True)
+                       capture_output=True, text=True, stdin=subprocess.DEVNULL)
     out = (r.stdout or "") + (r.stderr or "")
     say(out.strip())
     if "INSTALL_FAILED_UPDATE_INCOMPATIBLE" in out or "signatures do not match" in out:
