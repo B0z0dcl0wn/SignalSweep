@@ -1,0 +1,45 @@
+# Line-ending policy.
+#
+# This file exists because it was missing, and the cost was concrete: with
+# core.autocrlf=true on Windows, git normalised CRLF->LF *inside binary files*
+# on commit, and every PNG in app/android was committed corrupt. A PNG's
+# 8-byte signature is 89 50 4E 47 0D 0A 1A 0A -- it contains \r\n precisely so
+# that this damage is detectable -- and all 26 of them were stored as
+# 89 50 4E 47 0A 1A 0A, with every other 0D0A in the image data stripped too.
+# That is not reversible: nothing records which 0A bytes used to be 0D0A.
+#
+# aapt2 rejects them ("file failed to compile"), so no APK could be built from
+# a clean checkout. It went unnoticed because local builds reused cached
+# compiled resources from before the corruption.
+#
+# Text files get normalised in the repo and checked out native.
+* text=auto
+
+# Binary: never touched, never normalised, never diffed as text.
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.webp binary
+*.bin  binary
+*.apk  binary
+*.jks  binary
+*.keystore binary
+*.ttf  binary
+*.woff binary
+*.woff2 binary
+*.zip  binary
+*.gz   binary
+*.pdf  binary
+
+# Scripts that must keep LF or they break the tool reading them: a shebang
+# followed by \r makes the kernel look for an interpreter named "python3\r",
+# and gradlew is run by sh in CI.
+*.sh      text eol=lf
+gradlew   text eol=lf
+*.py      text eol=lf
+
+# Windows-only helpers that must keep CRLF.
+*.bat text eol=crlf
+*.cmd text eol=crlf

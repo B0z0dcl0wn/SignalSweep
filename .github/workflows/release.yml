@@ -39,6 +39,12 @@ jobs:
           cache-dependency-path: app/package-lock.json
 
       # PlatformIO's toolchains and framework packages are the slow part.
+      # Only needed for the Android build below.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
       - name: Cache PlatformIO
         uses: actions/cache@v4
         with:
@@ -58,6 +64,60 @@ jobs:
         run: |
           npm ci
           npm run build
+
+      # The signed APK, on tags only. Sideload-only: there is no Play Store
+      # listing, so the release asset IS the distribution channel.
+      #
+      # Skips rather than fails when the keystore secret is absent -- a fork, or
+      # this repo before the secret was added -- because a missing signing key
+      # must never block the firmware release, which is the primary artifact.
+      - name: Build signed APK
+        if: startsWith(github.ref, 'refs/tags/v')
+        id: apk
+        env:
+          ANDROID_KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          ANDROID_KEYSTORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASS }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASS: ${{ secrets.ANDROID_KEY_PASS }}
+        run: |
+          set -euo pipefail
+          if [ -z "${ANDROID_KEYSTORE_B64:-}" ]; then
+            echo "::warning::ANDROID_KEYSTORE_B64 not set - skipping the APK."
+            echo "built=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Outside the workspace so it cannot be picked up by a glob, archived
+          # into an artifact, or committed. Runners are ephemeral, but the
+          # keystore still gets the shortest life we can give it.
+          KS="$(mktemp -d)/signing.jks"
+          echo "$ANDROID_KEYSTORE_B64" | base64 -d > "$KS"
+
+          VERSION="${GITHUB_REF_NAME#v}"
+          ( cd app && npx cap sync android )
+          ( cd app/android && chmod +x gradlew && ./gradlew --no-daemon assembleRelease )
+
+          APK=$(find app/android/app/build/outputs/apk/release -name '*.apk' | head -1)
+          test -n "$APK" || { echo "no APK produced"; exit 1; }
+          case "$APK" in
+            *unsigned*) echo "APK is UNSIGNED - the keystore was not applied"; exit 1;;
+          esac
+
+          # An APK that will not install is worse than no APK: verify the
+          # signature before it is ever published.
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner | sort | tail -1)
+          "$APKSIGNER" verify --print-certs "$APK"
+
+          # Deliberately NOT inside _site: that tree is force-pushed to
+          # gh-pages, and publishing the APK there would duplicate the release
+          # asset, add megabytes to every site deploy, and mint a
+          # version-stamped URL that is stale the moment the next tag lands.
+          # The Release asset is the one canonical download.
+          mkdir -p dist-apk
+          cp "$APK" "dist-apk/SignalSweep-${VERSION}.apk"
+          shred -u "$KS" 2>/dev/null || rm -f "$KS"
+          echo "built=true" >> "$GITHUB_OUTPUT"
+          echo "apk=dist-apk/SignalSweep-${VERSION}.apk" >> "$GITHUB_OUTPUT"
 
       - name: Assemble site
         run: |
@@ -129,4 +189,5 @@ jobs:
           files: |
             _site/firmware/*.bin
             _site/manifest.json
+            dist-apk/*.apk
           generate_release_notes: true

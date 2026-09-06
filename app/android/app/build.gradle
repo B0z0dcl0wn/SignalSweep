@@ -1,5 +1,30 @@
 apply plugin: 'com.android.application'
 
+// Release signing.
+//
+// The keystore NEVER lives in the repo: CI decodes it from a secret to a temp
+// file and points these env vars at it. When they are absent -- any local
+// build, any fork, any clone without the secret -- the release build is simply
+// left unsigned instead of failing, so assembleDebug and Android Studio keep
+// working for everyone. Losing this keystore means never being able to ship an
+// update that installs over an existing SignalSweep again, so it is backed up
+// off this machine and out of this repo.
+def ksPath = System.getenv("ANDROID_KEYSTORE_PATH")
+def hasKeystore = ksPath != null && !ksPath.isEmpty() && file(ksPath).exists()
+
+// One source of truth for the version: the git tag, passed in by CI. Android
+// requires versionCode to strictly increase on every upload, and deriving it
+// from the name means that can never be forgotten -- 0.1.0 -> 100, 1.2.3 ->
+// 10203. Falls back to the checked-in default for a plain local build.
+def verName = System.getenv("SIGNALSWEEP_VERSION") ?: "0.1.0"
+def verCode = 1
+try {
+    def v = verName.tokenize('.')
+    verCode = (v[0] as int) * 10000 + (v[1] as int) * 100 + (v[2] as int)
+} catch (Exception e) {
+    logger.warn("Could not derive versionCode from '${verName}', using ${verCode}")
+}
+
 android {
     namespace = "com.signalsweep.app"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -7,8 +32,8 @@ android {
         applicationId "com.signalsweep.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "0.1.0"
+        versionCode verCode
+        versionName verName
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -16,10 +41,27 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        release {
+            if (hasKeystore) {
+                storeFile file(ksPath)
+                storePassword System.getenv("ANDROID_KEYSTORE_PASS")
+                keyAlias System.getenv("ANDROID_KEY_ALIAS")
+                keyPassword System.getenv("ANDROID_KEY_PASS")
+            }
+        }
+    }
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            // Unsigned when no keystore is configured. An unsigned APK will not
+            // install, which is the honest outcome -- better than silently
+            // shipping one signed with a throwaway debug key, because a later
+            // build would use a DIFFERENT debug key and the upgrade would fail
+            // with INSTALL_FAILED_UPDATE_INCOMPATIBLE, destroying the user's
+            // encrypted pin store to recover.
+            signingConfig hasKeystore ? signingConfigs.release : null
         }
     }
 }

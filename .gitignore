@@ -50,6 +50,10 @@ app/android/keystore*
 # Agent/editor local state
 .claude/
 
+# Python bytecode
+__pycache__/
+*.pyc
+
 # Agent instructions and planning notes — kept local, not published
 CLAUDE.md
 docs/plans/

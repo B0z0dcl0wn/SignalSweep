@@ -36,6 +36,35 @@ You need one [Seeed Studio XIAO ESP32-S3](https://www.seeedstudio.com/XIAO-ESP32
 3. **Or don't.** The device works alone. Give it USB power and it scans and
    beeps with nothing connected — that is the point of it.
 
+### Or install everything from one command
+
+If you have Python and `adb`, `install.py` downloads a published release and
+puts it on your hardware — firmware, Android app, or both:
+
+```
+pip install esptool pyserial
+python install.py                 # firmware + app, latest release
+python install.py --apk-only      # just the Android app
+python install.py --esp-only      # just the firmware
+python install.py --list          # what is attached, changes nothing
+python install.py --erase         # also reset the board to factory defaults
+```
+
+It never guesses what to touch: with more than one board or phone attached it
+lists them and makes you pick, prints exactly what it is about to do, and waits
+for you to type the target's name. Every download is checked against the sha256
+GitHub publishes for it before anything is flashed.
+
+**Without `--erase` your settings survive** — the buzzer mute, beep mask, hunt
+target, BLE name and signature rules all live in NVS and a normal flash leaves
+them alone. `--erase` wipes them back to defaults, and says so first.
+
+The Android app is **sideload-only** — there is no Play Store listing. It is
+signed with a stable release key, so updates install over the top and keep your
+data. The first time you move from a self-built APK to a released one, Android
+will refuse the upgrade because the signing keys differ; uninstall first, which
+does destroy the encrypted pin store if you have one.
+
 For the buzzer, the LED and the external antenna, see
 [`firmware/WIRING.md`](firmware/WIRING.md). Building from source is documented
 further down; you only need it if you want to change the firmware.
@@ -193,7 +222,6 @@ power cycle: a board always boots with both radios scanning.
 `CMD:CFG`'s `alerts` counter is how you prove the headless path works: push a
 rule, power cycle, wait, then read the count back. Nonzero means it sounded
 with nothing connected.
-
 
 ## 2. Control app (`app/`)
 
