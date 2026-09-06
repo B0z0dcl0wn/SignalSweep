@@ -1,5 +1,6 @@
-# Builds the firmware + app, publishes the web flasher to GitHub Pages, and
-# attaches the firmware binaries to a Release when a v* tag is pushed.
+# Builds the firmware + app, publishes the web flasher by force-pushing the
+# assembled site to gh-pages (which Pages serves), and attaches the firmware
+# binaries to a Release when a v* tag is pushed.
 #
 # Nothing here is hand-built or hand-uploaded: the .bin files served by the
 # flasher are the ones this workflow compiled from the tagged commit.
@@ -11,10 +12,10 @@ on:
     tags: ['v*']
   workflow_dispatch:
 
+# contents:write covers both things this workflow writes: the gh-pages branch
+# it force-pushes the built site to, and the Release it attaches binaries to.
 permissions:
-  contents: write   # attach binaries to the Release
-  pages: write
-  id-token: write
+  contents: write
 
 # Never let two deploys race; let a running one finish.
 concurrency:
@@ -99,9 +100,27 @@ jobs:
           print('manifest version ->', sys.argv[1])
           PY
 
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: _site
+      # Publish by force-pushing the assembled tree to gh-pages, which is what
+      # Pages serves. Deliberately NOT actions/deploy-pages: that requires the
+      # Pages source to be "GitHub Actions", which pins the github-pages
+      # environment to a single branch and rejects deployments from main
+      # ("Branch main is not allowed to deploy to github-pages due to
+      # environment protection rules"). Pushing the branch has no such gate.
+      - name: Publish site to gh-pages
+        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+        working-directory: _site
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          touch .nojekyll   # serve the tree verbatim; no Jekyll processing
+          git init -q -b gh-pages
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Deploy ${GITHUB_SHA:0:7} from ${GITHUB_REF_NAME}"
+          git push -q --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" gh-pages
+          echo "published $(git rev-parse --short HEAD) to gh-pages"
 
       - name: Attach binaries to the Release
         if: startsWith(github.ref, 'refs/tags/v')
@@ -111,13 +130,3 @@ jobs:
             _site/firmware/*.bin
             _site/manifest.json
           generate_release_notes: true
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - id: deployment
-        uses: actions/deploy-pages@v4
