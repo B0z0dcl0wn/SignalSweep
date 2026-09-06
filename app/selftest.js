@@ -71,8 +71,18 @@ const bitDrift = [];
 appBits.forEach(([key, bit], i) => {
     if (fwEnum[i] !== key.toUpperCase()) bitDrift.push(key + ' vs ALERT_' + fwEnum[i]);
     if (bit !== (1 << i)) bitDrift.push(key + '=' + bit + ' expected ' + (1 << i));
-    if (!htmlIds.has('beep-' + key)) bitDrift.push('no #beep-' + key + ' checkbox');
+    if (!htmlIds.has('beep-' + key)) bitDrift.push('no #beep-' + key + ' control');
 });
+// And those controls must not be checkboxes. A checkbox owns its own checked
+// state and flips the instant it is tapped, before the BLE write is attempted
+// and regardless of whether it succeeds -- so a rejected or dropped write left
+// the box showing a mask the device never received, silently, for the rest of
+// the session. The sound rows are buttons painted only from the device's own
+// report; this is the regression that change turns on, so it is asserted.
+for (const m of htmlSrc.matchAll(/<input [^>]*>/g)) {
+    if (/id="beep-/.test(m[0]) && /type="checkbox"/.test(m[0]))
+        bitDrift.push('#' + (m[0].match(/id="([^"]+)"/) || [])[1] + ' is a checkbox again');
+}
 if (appBits.length !== fwEnum.length) bitDrift.push('count ' + appBits.length + ' vs ' + fwEnum.length);
 if (bitDrift.length) {
     console.log('FAIL: beep mask drift:', bitDrift);

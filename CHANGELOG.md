@@ -2,7 +2,76 @@
 
 All notable changes to SignalSweep are recorded here.
 
-## [Unreleased] — 2026-09-03 — The device is the authority on its own state
+## [0.1.0] — 2026-09-06 — Sounds you can find, and that stay in sync
+
+### Fixed — overlapping BLE writes silently dropped commands
+
+GATT permits one write in flight; a second is rejected with `InvalidStateError`
+and, because nothing awaits `sendCommand()`, the command was simply lost behind
+a "BLE Transmit Error" toast. Ordinary use reached this: the five per-category
+sound toggles each fired their own command, so muting a few categories quickly
+raced the writes against each other. `sendCommand()` is now a one-deep promise
+chain over `sendCommandNow()`, with the same handler on both arms so a failed
+write cannot strand everything queued behind it. Bench-verified: five rows
+tapped as fast as `adb` can issue taps, zero transmit errors.
+
+### Fixed — the app and the device drifted apart with no way back
+
+`beep_mask` and `buzzer` were reachable only through the `CMD:CFG` reply, which
+the app requests three times on connect and then never again. One dropped write
+or one dropped notification left the phone painting a mask the board did not
+have, for the rest of the session — recoverable only by a five-second factory
+reset and a force stop of the app. Both fields now ride the 1 Hz push
+(unconditionally: "absent" must not mean both "the default" and "old
+firmware"), and `syncDeviceState()` adopts them, so a lost write self-heals
+within a second. Measured cost: idle push 84 → 113 B, still 60 pushes in 60 s.
+
+Verified on the bench by changing the mask over USB behind the app's back — the
+phone repainted itself, including reverting a mute the app itself had set, with
+no interaction.
+
+### Fixed — the toggles owned state the device was supposed to own
+
+They were `<input type="checkbox">`. A checkbox flips on tap, before the write
+is attempted and regardless of whether it lands, so the box could show a mask
+that never reached the board. They are now buttons painted solely by
+`setBeepUi()`/`setBuzzerUi()` from device frames, and `app/selftest.js` fails
+if an `id="beep-*"` element becomes a checkbox again.
+
+`toggleBeep()` chains off `pendingMask` — the mask last *asked for* while still
+in flight — rather than the last confirmed one. Computing every tap from the
+confirmed value made taps inside the echo window overwrite each other: five
+quick taps that should have muted everything left two categories sounding
+(measured). Intent expires after `PENDING_TTL_MS` so a write that never lands
+leaves no phantom for later taps to build on.
+
+### Changed — the sound controls moved out of Settings
+
+The five category toggles were three taps deep in the Settings modal, below a
+scroll. They now live in a **Sounds** sheet opened from the toolbar, which also
+carries the master mute and reads its own state at a glance
+(`🔊 Sounds: 4/5`, `🔇 Sounds: off`). Silencing a category is a field action.
+
+### Fixed — the firmware could report a mute it was not honouring
+
+`isBuzzerEnabled()` returned `true` when it could not take `hwMutex` in 50 ms,
+so a muted board reported itself audible — and `setBuzzerEnabled()` set the RAM
+flag inside the mutex while writing NVS outside it, so a timeout left a board
+that beeps now and boots silent later. The audio task takes that mutex every
+loop, so neither was hypothetical. `buzzerEnabled` is now `volatile` and lives
+outside the lock; only `buzzerOff()` still takes it.
+
+### Fixed — "Surveillance Camera" sounded the body-cam pattern
+
+`alertCategoryFromName()` tested `"cam"` before the ALPR terms, so any category
+naming both resolved to `ALERT_BODYCAM` and was silenced by the wrong toggle —
+indistinguishable from the mute not working. The shipped defaults dodge it; the
+signature list is operator-editable and the UI labels that bucket
+"ALPR / camera".
+
+### Verified on the two-board rig
+
+## [0.1.0] — 2026-09-03 — The device is the authority on its own state
 
 ### Fixed — the buzzer mute never survived a power cycle
 
@@ -65,7 +134,7 @@ once, 400 ms after connect. One dropped reply left every settings control
 painting a stale or default value for the whole session, silently. It now asks
 at 400 ms / 1.5 s / 4 s until one lands, then stops.
 
-## [Unreleased] — 2026-09-03 — Choose which categories are worth a beep
+## [0.1.0] — 2026-09-03 — Choose which categories are worth a beep
 
 ### Added — a per-category beep mask, in Settings and in NVS
 
@@ -94,7 +163,7 @@ in range would have stayed silent until the target aged out.
 would mute body cams when you unticked trackers, with nothing at runtime to say
 so.
 
-## [Unreleased] — 2026-09-03 — A Settings page you can reach the bottom of
+## [0.1.0] — 2026-09-03 — A Settings page you can reach the bottom of
 
 ### Fixed — modals were not scrollable at all
 
@@ -150,7 +219,7 @@ filter-off list is capped at 18 rather than 40.
 
 ---
 
-## [Unreleased] — 2026-09-03 — The phone can drive the device over USB
+## [0.1.0] — 2026-09-03 — The phone can drive the device over USB
 
 ### Added — native USB serial on Android
 
@@ -204,7 +273,7 @@ The button was hidden wherever `'serial' in navigator` was false, which is every
 Android build. It is now shown wherever *any* USB transport exists — WebSerial
 in a desktop browser, the USB host stack on Android — and the badge says which.
 
-## [Unreleased] — 2026-09-03 — Receive-only: the detector stops announcing itself
+## [0.1.0] — 2026-09-03 — Receive-only: the detector stops announcing itself
 
 ### Added — receive-only mode
 
@@ -262,7 +331,7 @@ have shown you. It is now gated. Proven on the two-board bench: with board A
 quiet, board B saw zero of 63 pushes containing A, while A went on detecting B
 and beeping headless.
 
-## [Unreleased] — 2026-09-02 — SSIDs, a radio filter, and Wi-Fi foxhunting
+## [0.1.0] — 2026-09-02 — SSIDs, a radio filter, and Wi-Fi foxhunting
 
 ### Added — network names
 
@@ -312,7 +381,7 @@ conflated: matched nothing, matched a rule the firmware refuses to attribute
 ("weak hint"), and matched a real vendor category. Only the last counts toward a
 category band.
 
-## [Unreleased] — 2026-09-02 — The band tabs were dead, and filter-off pushes were too big to arrive
+## [0.1.0] — 2026-09-02 — The band tabs were dead, and filter-off pushes were too big to arrive
 
 ### Fixed — clicking a band tab did nothing
 
@@ -344,7 +413,7 @@ more than one in ten is being lost, rather than logging to a console nobody has
 open on a phone. A render error in the foxhunt panel can no longer take the
 device list down with it.
 
-## [Unreleased] — 2026-09-02 — Everything the operator sets now survives a power cycle
+## [0.1.0] — 2026-09-02 — Everything the operator sets now survives a power cycle
 
 The device is headless and unattended. Wired into a car it loses power every
 time the engine stops; the foxhunt workflow is unplug from the laptop, move to a
@@ -399,7 +468,7 @@ running headless adopts what it was already doing.
 Bench result: rule pushed, power cycled, left alone, then read back — one alert
 fired after the power cycle with no phone and no USB host listening.
 
-## [Unreleased] — 2026-09-02 — Foxhunting, a location readout, and an interface that looks like an instrument
+## [0.1.0] — 2026-09-02 — Foxhunting, a location readout, and an interface that looks like an instrument
 
 ### Added — the filter switch and the foxhunt readout
 
@@ -467,7 +536,7 @@ vague now asks first — a pin is evidence of where a camera is, and one saved a
 - Recording consent is no longer offered for unmatched devices. With the filter
   off it would otherwise ask permission to pin every phone on the street.
 
-## [Unreleased] — 2026-09-02 — Put back what we missed, not what was wrong
+## [0.1.0] — 2026-09-02 — Put back what we missed, not what was wrong
 
 The previous pass was right about the two things that hurt — a passive location
 trail on a seizable phone, and a signature list that cried wolf — and wrong
@@ -594,7 +663,7 @@ helper and is not: it implements both `odid_message_process_pack()` and
 `odid_wifi_receive_message_pack_nan_action_frame()`. Omitting it fails at link,
 not at compile.
 
-## [Unreleased] — 2026-09-01 — Peel back to a simple beeper
+## [0.1.0] — 2026-09-01 — Peel back to a simple beeper
 
 A deliberate reversal of the geospatial direction below, on two grounds: opsec
 (the passive location history was a liability if the phone was ever found) and

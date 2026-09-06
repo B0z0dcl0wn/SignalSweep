@@ -911,6 +911,40 @@
         .set-warn { display:block; color:var(--accent-red,#ef4444); font-size:0.75rem; margin-top:4px; }
 
         /* ------------------------------------------------------------------
+           Sounds sheet. Rows are full-width buttons, never checkboxes: a
+           checkbox owns its own checked state and flips on tap regardless of
+           whether the command reached the device, which is precisely how the
+           app and the board used to drift apart. These paint only from
+           setBeepUi()/setBuzzerUi(), i.e. only from what the device reported.
+           min-height 44px because a small target in a control that changes
+           what the hardware does is a coin toss.
+           ------------------------------------------------------------------ */
+        .snd-row { display:flex; width:100%; justify-content:space-between; align-items:center;
+            gap:12px; min-height:44px; padding:0.7rem 0.85rem; text-align:left;
+            background:rgba(255,255,255,0.05); border:1px solid var(--card-border);
+            border-radius:10px; color:var(--text-main); font:inherit; font-size:0.9rem;
+            cursor:pointer; transition:border-color 0.2s ease, opacity 0.2s ease; }
+        .snd-row + .snd-row { margin-top:8px; }
+        .snd-row.on  { border-color:var(--accent-emerald); }
+        .snd-row.off { opacity:0.55; }
+        .snd-master { margin-bottom:14px; padding-bottom:1rem;
+            border-bottom:1px solid var(--card-border); border-radius:10px; }
+        .snd-label { display:flex; flex-direction:column; gap:2px; }
+        .snd-label em { font-style:normal; font-size:0.72rem; color:var(--text-muted); }
+        .snd-state, .snd-toggle { flex:none; min-width:52px; padding:6px 12px; border-radius:6px;
+            font-weight:700; font-size:0.78rem; text-align:center;
+            background:rgba(255,255,255,0.07); border:1px solid var(--card-border);
+            color:var(--text-muted); cursor:pointer; transition:all 0.2s ease; }
+        .snd-row.on .snd-state, .snd-toggle.on {
+            background:var(--accent-emerald); border-color:var(--accent-emerald); color:#000; }
+        .snd-row.off .snd-state, .snd-toggle.off {
+            background:rgba(239,68,68,0.2); border-color:var(--accent-red); color:var(--accent-red); }
+        /* Sent, awaiting the device's next frame (under a second). Deliberately
+           does NOT change the ON/OFF text -- a tap must never claim an outcome
+           the board has not confirmed. */
+        .snd-row.pending, .snd-toggle.pending { opacity:0.45; }
+
+        /* ------------------------------------------------------------------
            Band selector + foxhunt instrument.
 
            The device's real interface is a buzzer speaking four patterns, one
@@ -1152,7 +1186,7 @@
         <!-- Controls -->
         <div class="toolbar">
             <button class="ctrl-btn" id="btn-record" onclick="toggleRecording()">○ Recording: OFF</button>
-            <button class="ctrl-btn" id="btn-buzzer" onclick="toggleBuzzer()">🔊 Buzzer: —</button>
+            <button class="ctrl-btn" id="btn-buzzer" onclick="openSounds()">🔊 Sounds: —</button>
             <button class="ctrl-btn" id="btn-foxhunt" onclick="toggleFoxhunt()">◎ Filter: matches</button>
             <button class="ctrl-btn" onclick="openPins()">📍 Pins</button>
             <button class="ctrl-btn" onclick="openSignatures()">✎ Signatures</button>
@@ -1320,6 +1354,52 @@
         </div>
     </div>
 
+    <!-- Sounds: the one home for everything the buzzer does. Every control here
+         paints from the device (1 Hz push + CMD:CFG) and never from itself, so
+         it cannot show a setting the board does not hold. Rows are buttons on
+         purpose: a checkbox flips on tap before the write is even attempted. -->
+    <div class="modal-overlay" id="sounds-modal">
+        <div class="modal-card">
+            <button class="modal-close-btn" onclick="document.getElementById('sounds-modal').classList.remove('active')">&times;</button>
+            <div class="modal-header">
+                <h2>Sounds</h2>
+                <p>What the device is allowed to make a noise about. Saved on the board &mdash; it survives a power cycle, so you can set this and walk away.</p>
+            </div>
+
+            <div class="snd-row snd-master">
+                <span class="snd-label"><strong>Buzzer</strong><em>Master mute &mdash; silences everything below</em></span>
+                <button class="snd-toggle" id="btn-buzzer-master" onclick="toggleBuzzer()">&mdash;</button>
+            </div>
+
+            <button class="snd-row" id="beep-alpr" onclick="toggleBeep('alpr')">
+                <span class="snd-label"><strong>&#128247; ALPR / camera</strong><em>Two long beeps</em></span>
+                <span class="snd-state">&mdash;</span>
+            </button>
+            <button class="snd-row" id="beep-bodycam" onclick="toggleBeep('bodycam')">
+                <span class="snd-label"><strong>&#127909; Body cam</strong><em>Long&#8209;short&#8209;short</em></span>
+                <span class="snd-state">&mdash;</span>
+            </button>
+            <button class="snd-row" id="beep-drone" onclick="toggleBeep('drone')">
+                <span class="snd-label"><strong>&#128760; Drone (Remote ID)</strong><em>Rising trill</em></span>
+                <span class="snd-state">&mdash;</span>
+            </button>
+            <button class="snd-row" id="beep-tracker" onclick="toggleBeep('tracker')">
+                <span class="snd-label"><strong>&#128205; Tracker</strong><em>Fast ticking</em></span>
+                <span class="snd-state">&mdash;</span>
+            </button>
+            <button class="snd-row" id="beep-generic" onclick="toggleBeep('generic')">
+                <span class="snd-label"><strong>Other matches</strong><em>Plain warning</em></span>
+                <span class="snd-state">&mdash;</span>
+            </button>
+
+            <p class="set-note" style="margin-top:14px;">
+                A muted category is <strong>still detected and still listed</strong> in the live
+                scope &mdash; only the buzzer goes quiet. This is not receive&#8209;only, which stops
+                the device announcing itself on the air; that lives in Settings.
+            </p>
+        </div>
+    </div>
+
     <!-- Settings Modal -->
     <div id="settings-modal" class="modal-overlay">
         <div class="modal-card">
@@ -1342,16 +1422,9 @@
 
                 <h3 class="set-label">What beeps</h3>
                 <p class="set-note">
-                    Untick a category and the device stops making a noise for it &mdash; useful
-                    in traffic, where every passing tracker earns a beep. Muted categories are
-                    still detected and still listed here; only the buzzer goes quiet. This
-                    lives on the device and survives a power cycle.
+                    Moved to <strong>&#128266; Sounds</strong> on the main screen &mdash; silencing a
+                    category is something you do in the field, not three taps deep in here.
                 </p>
-                <label class="set-check"><input type="checkbox" id="beep-alpr" onchange="saveBeepMask()"><span>&#128247; ALPR / camera &mdash; two long beeps</span></label>
-                <label class="set-check"><input type="checkbox" id="beep-bodycam" onchange="saveBeepMask()"><span>&#127909; Body cam &mdash; long&#8209;short&#8209;short</span></label>
-                <label class="set-check"><input type="checkbox" id="beep-drone" onchange="saveBeepMask()"><span>&#128760; Drone (Remote ID) &mdash; rising trill</span></label>
-                <label class="set-check"><input type="checkbox" id="beep-tracker" onchange="saveBeepMask()"><span>&#128205; Tracker &mdash; fast ticking</span></label>
-                <label class="set-check"><input type="checkbox" id="beep-generic" onchange="saveBeepMask()"><span>Other matches &mdash; plain warning</span></label>
 
                 <h3 class="set-label">Emissions</h3>
                 <p class="set-note">

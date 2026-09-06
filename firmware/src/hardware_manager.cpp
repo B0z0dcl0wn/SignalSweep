@@ -21,7 +21,15 @@ static SemaphoreHandle_t hwMutex = NULL;
 static TaskHandle_t hwTaskHandle = NULL;
 
 static OperatingMode currentHwMode = MODE_SELECTOR;
-static bool buzzerEnabled = true;
+// Read and written WITHOUT hwMutex, deliberately. It is a single bool, so a
+// torn read is impossible on this core; the mutex exists to protect buzzerOff()
+// and the tone state, not this flag. Taking it here was actively harmful: both
+// accessors gave up after 50 ms, and the audio task takes hwMutex every loop.
+// A timed-out isBuzzerEnabled() returned `true` -- so a muted board reported
+// itself audible to CMD:CFG and to the 1 Hz push -- and a timed-out
+// setBuzzerEnabled() skipped the RAM write while the NVS write below still
+// landed, leaving a board that beeps now and boots silent later.
+static volatile bool buzzerEnabled = true;
 static bool rxOnlyIndicator = false;
 
 // Arduino's tone() attaches the LEDC channel lazily on first use, and noTone()
@@ -386,13 +394,17 @@ void setGeigerTargetLock(bool locked, int initialRssi) {
 }
 
 void setBuzzerEnabled(bool enabled) {
-    if (hwMutex != NULL && xSemaphoreTake(hwMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
-        buzzerEnabled = enabled;
-        if (!enabled) {
-            buzzerOff();
-        }
+    // The flag first and outside the mutex, so the setting takes effect even if
+    // the audio task is holding hwMutex right now. Silencing a buzzer must not
+    // be able to fail on a lock.
+    buzzerEnabled = enabled;
+    ESP_LOGI(TAG, "Buzzer set to: %s", enabled ? "ENABLED" : "MUTED");
+    // Only the tone hardware needs the mutex. Missing this window costs at most
+    // the tail of one in-flight beep -- the flag above already stops the next.
+    if (!enabled && hwMutex != NULL &&
+        xSemaphoreTake(hwMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+        buzzerOff();
         xSemaphoreGive(hwMutex);
-        ESP_LOGI(TAG, "Buzzer set to: %s", enabled ? "ENABLED" : "MUTED");
     }
     // Outside the mutex deliberately: an NVS write is slow and must not be held
     // against the audio task, which takes hwMutex every loop.
@@ -406,12 +418,10 @@ void setBuzzerEnabled(bool enabled) {
 }
 
 bool isBuzzerEnabled() {
-    bool enabled = true;
-    if (hwMutex != NULL && xSemaphoreTake(hwMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
-        enabled = buzzerEnabled;
-        xSemaphoreGive(hwMutex);
-    }
-    return enabled;
+    // No mutex: see the declaration. This is reported by CMD:CFG and by the
+    // 1 Hz push, and the app now paints its sound controls from it, so it must
+    // never fall back to a cheerful default.
+    return buzzerEnabled;
 }
 
 void triggerLedFlash(uint8_t r, uint8_t g, uint8_t b, uint32_t durationMs) {
@@ -462,11 +472,18 @@ AlertCategory alertCategoryFromName(const char* category) {
     if (c.indexOf("track") >= 0 || c.indexOf("airtag") >= 0 || c.indexOf("tile") >= 0 ||
         c.indexOf("tag") >= 0 || c.indexOf("beacon") >= 0)
         return ALERT_TRACKER;
-    if (c.indexOf("body") >= 0 || c.indexOf("axon") >= 0 || c.indexOf("cam") >= 0)
-        return ALERT_BODYCAM;
+    // ALPR before body cam, because "cam" is a substring of the categories that
+    // name BOTH -- "ALPR Camera", "Surveillance Camera". Tested the other way
+    // round, those sounded the body-cam pattern and were silenced by the wrong
+    // toggle in the app, which is indistinguishable from the mute not working.
+    // The shipped defaults ("Flock Safety", "Axon", "Tracker") dodge it, but the
+    // signature list is operator-editable and the UI calls this bucket
+    // "ALPR / camera". Naming only one of the two still lands where it did.
     if (c.indexOf("flock") >= 0 || c.indexOf("alpr") >= 0 || c.indexOf("plate") >= 0 ||
         c.indexOf("surveil") >= 0)
         return ALERT_ALPR;
+    if (c.indexOf("body") >= 0 || c.indexOf("axon") >= 0 || c.indexOf("cam") >= 0)
+        return ALERT_BODYCAM;
     return ALERT_GENERIC;
 }
 

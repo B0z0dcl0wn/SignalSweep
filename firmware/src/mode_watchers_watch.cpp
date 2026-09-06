@@ -1451,6 +1451,19 @@ String getWatchersTargetsJson() {
     // because the filter is off.
     if (scanAll) doc["scan_all"] = true;
     if (huntMac.length() > 0) doc["hunt"] = huntMac;
+    // Echoed on EVERY push, not just in the CMD:CFG reply, so the app's sound
+    // controls reconcile continuously instead of once per connection. They used
+    // to live only in that reply, which the app asks for three times and then
+    // never again -- so a single dropped write or dropped notification left the
+    // phone showing a mask the device did not have, for the rest of the session,
+    // with no way back but a factory reset. ~30 B on an ~84 B idle payload;
+    // telemetry is the tightest budget on the device, so nothing else joins
+    // these two without re-measuring the 60 s push soak.
+    //
+    // Unconditional, unlike scan_all: "absent" must not be ambiguous between
+    // "the default" and "firmware too old to send it".
+    doc["beep_mask"] = beepMask;
+    doc["buzzer"] = isBuzzerEnabled();
 
     if (watchersMutex != NULL && xSemaphoreTake(watchersMutex, pdMS_TO_TICKS(200)) == pdTRUE) {
 

@@ -1117,22 +1117,89 @@
         // Device is the authority, same as the radios: the boxes paint from the
         // last CMD:CFG, never optimistically. The mask persists on the board, so
         // one that ran headless comes back with its own idea of what beeps.
+        // The last mask the DEVICE confirmed, null until it tells us. Every
+        // toggle is computed from this, never from the DOM -- that is the whole
+        // fix. These rows used to be <input type="checkbox">, and a checkbox
+        // flips itself on tap before any write is even attempted, so a rejected
+        // or dropped write left the box showing a mask the board did not have,
+        // for the rest of the session, with nothing on screen to say so.
+        let deviceBeepMask = null;
+        // What we have asked the device for but have not yet seen echoed back.
+        // Toggles chain off this so a second tap inside the ~1 s echo window
+        // builds on the first instead of overwriting it -- computing every tap
+        // from the last CONFIRMED mask silently discarded the earlier one
+        // (measured on the bench: five quick taps that should have muted
+        // everything left two categories still sounding). This decides only
+        // what the next command asks for; the rows still paint from the device.
+        let pendingMask = null;
+        let pendingSince = 0;
+        // A write that never lands must not leave a phantom for later taps to
+        // build on, so intent expires and the next tap resyncs to the truth.
+        const PENDING_TTL_MS = 3000;
+
         function setBeepUi(mask) {
+            if (pendingMask !== null &&
+                (mask === pendingMask || Date.now() - pendingSince > PENDING_TTL_MS)) {
+                pendingMask = null;
+            }
+            if (typeof mask !== 'number') pendingMask = null;
+            deviceBeepMask = (typeof mask === 'number') ? mask : null;
             for (const key in BEEP_BITS) {
                 const el = document.getElementById('beep-' + key);
-                if (el) el.checked = (mask & BEEP_BITS[key]) !== 0;
+                if (!el) continue;
+                const on = deviceBeepMask === null
+                         ? null : (deviceBeepMask & BEEP_BITS[key]) !== 0;
+                el.dataset.on = on === null ? '' : (on ? '1' : '0');
+                el.classList.toggle('on', on === true);
+                el.classList.toggle('off', on === false);
+                el.classList.remove('pending');
+                const state = el.querySelector('.snd-state');
+                if (state) state.textContent = on === null ? '—' : (on ? 'ON' : 'OFF');
             }
+            setSoundsSummary();
         }
 
-        function saveBeepMask() {
-            let mask = 0;
-            for (const key in BEEP_BITS) {
-                const el = document.getElementById('beep-' + key);
-                if (el && el.checked) mask |= BEEP_BITS[key];
+        // Flip one bit off the device-confirmed mask and send the whole mask.
+        // No optimistic paint and no success toast: the acknowledgement is the
+        // next frame from the device, which the 1 Hz echo guarantees is under a
+        // second away. If the write never lands, that frame repaints the old
+        // value and the row goes back on its own -- self-healing, with
+        // sendCommand's own transport error toast saying why.
+        function toggleBeep(key) {
+            const base = pendingMask !== null ? pendingMask : deviceBeepMask;
+            if (base === null) { showToast('Waiting for the device', '…'); return; }
+            const bit = BEEP_BITS[key];
+            if (!bit) return;
+            pendingMask = base ^ bit;
+            pendingSince = Date.now();
+            const el = document.getElementById('beep-' + key);
+            if (el) el.classList.add('pending');
+            sendCommand({ beep_mask: pendingMask });
+        }
+
+        // The toolbar label, so what is muted is legible without opening
+        // anything -- the old controls were three taps deep in Settings.
+        function setSoundsSummary() {
+            const btn = document.getElementById('btn-buzzer');
+            if (!btn) return;
+            const keys = Object.keys(BEEP_BITS);
+            let label;
+            if (buzzerOn === false) {
+                label = '🔇 Sounds: off';
+            } else if (deviceBeepMask === null || buzzerOn === null) {
+                label = '🔊 Sounds: —';
+            } else {
+                const n = keys.filter(k => (deviceBeepMask & BEEP_BITS[k]) !== 0).length;
+                label = n === 0 ? '🔇 Sounds: none'
+                      : n === keys.length ? '🔊 Sounds: all'
+                      : '🔊 Sounds: ' + n + '/' + keys.length;
             }
-            sendCommand({ beep_mask: mask });
-            showToast(mask === 0 ? 'Nothing will beep' : 'Alert categories saved',
-                      mask === 0 ? '●' : '✓');
+            btn.textContent = label;
+            btn.classList.toggle('on', buzzerOn === true && deviceBeepMask !== 0);
+        }
+
+        function openSounds() {
+            document.getElementById('sounds-modal').classList.add('active');
         }
 
         // The device is the authority on the radios too: the toggles never
@@ -1215,6 +1282,12 @@
                 huntMac = devHunt;
                 huntTrace = [];
             }
+            // The sound settings ride the 1 Hz push as well as the CMD:CFG
+            // reply, so the controls reconcile with the board every second
+            // rather than once per connection. This is what makes a lost write
+            // self-heal instead of stranding the app until a factory reset.
+            if (typeof data.beep_mask === 'number') setBeepUi(data.beep_mask);
+            if (typeof data.buzzer === 'boolean') setBuzzerUi(data.buzzer);
             const devAll = !!data.scan_all;
             if (devAll !== foxhuntMode) {
                 foxhuntMode = devAll;
@@ -1262,17 +1335,22 @@
         // button must not claim it did.
         function toggleBuzzer() {
             if (buzzerOn === null) { showToast('Waiting for the device', '…'); return; }
+            const btn = document.getElementById('btn-buzzer-master');
+            if (btn) btn.classList.add('pending');
             sendCommand({ buzzer: !buzzerOn });
         }
 
         function setBuzzerUi(on) {
             buzzerOn = (typeof on === 'boolean') ? on : null;
-            const btn = document.getElementById('btn-buzzer');
-            if (!btn) return;
-            btn.classList.toggle('on', buzzerOn === true);
-            btn.textContent = buzzerOn === null ? '🔊 Buzzer: —'
-                            : buzzerOn ? '🔊 Buzzer: ON'
-                                       : '🔇 Buzzer: OFF';
+            const btn = document.getElementById('btn-buzzer-master');
+            if (btn) {
+                btn.classList.toggle('on', buzzerOn === true);
+                btn.classList.toggle('off', buzzerOn === false);
+                btn.classList.remove('pending');
+                btn.textContent = buzzerOn === null ? '—'
+                                : buzzerOn ? 'ON' : 'OFF';
+            }
+            setSoundsSummary();
         }
 
         // The rules the device is actually carrying. Until they arrive the box
@@ -1412,6 +1490,10 @@
                 // one's -- with two boards around that is how you mute the
                 // wrong device.
                 setBuzzerUi(null);
+                // Same reason: the category mask is per-board too, and it used
+                // to survive a disconnect as five checkboxes still showing the
+                // last device's settings.
+                setBeepUi(null);
                 setSigUi(null);
                 pulseDot.className = 'pulse-dot';
                 connStatusText.textContent = 'DISCONNECTED';
@@ -1722,7 +1804,25 @@
             }
         }
 
-        async function sendCommand(cmdObj) {
+        // GATT permits exactly one write in flight per connection. A second
+        // issued while the first is outstanding is rejected outright
+        // (InvalidStateError / "GATT operation already in progress"), and since
+        // nothing awaits sendCommand the command is simply lost -- with a
+        // "BLE Transmit Error" toast as the only trace. That was reachable from
+        // ordinary use: the five sound toggles each fired their own command, so
+        // muting three categories quickly raced three writes against each other.
+        // One chain serializes every device command on every transport. Callers
+        // stay fire-and-forget; this is a queue, not an awaited API.
+        let txChain = Promise.resolve();
+        function sendCommand(cmdObj) {
+            // Same handler on both arms: a failed write must not break the chain
+            // and strand every command after it.
+            const run = () => sendCommandNow(cmdObj);
+            txChain = txChain.then(run, run);
+            return txChain;
+        }
+
+        async function sendCommandNow(cmdObj) {
             const jsonStr = (cmdObj.raw || JSON.stringify(cmdObj)) + '\n';
             if (connectionType === 'BLE') {
                 try {
