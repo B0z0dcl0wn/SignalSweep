@@ -76,6 +76,11 @@ mode that matters is *it quietly recorded where you have been*.
 
 ### Legality
 
+Receiving radio signals is legal in most jurisdictions. Transmitting generally
+is not, and this device does not transmit — beyond a Bluetooth advertisement you
+can switch off. Your local law is not the same as everyone else's; go and read
+it.
+
 ---
 
 ## Using the device
@@ -188,6 +193,7 @@ power cycle: a board always boots with both radios scanning.
 `CMD:CFG`'s `alerts` counter is how you prove the headless path works: push a
 rule, power cycle, wait, then read the count back. Nonzero means it sounded
 with nothing connected.
+
 
 ## 2. Control app (`app/`)
 

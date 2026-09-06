@@ -37,6 +37,17 @@ README before adding a rule.
 
 ## Before you open a PR
 
+```bash
+node app/selftest.js       # category routing, pin crypto, CMD:CFG coverage,
+                           # BEEP_BITS bit order, selector-drift check
+pio run -e tier1 -d firmware
+```
+
+If you changed detection behaviour, say how you tested it on hardware, against
+a signal you controlled. Real hardware, or a transmitter you can turn on and
+off, is the only thing that actually proves the detector detects. "It compiles"
+is not a test of a radio.
+
 ## Reporting a detection
 
 Found hardware the detector misses, or a rule that fires on something innocent?

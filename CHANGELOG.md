@@ -71,6 +71,14 @@ signature list is operator-editable and the UI labels that bucket
 
 ### Verified on the two-board rig
 
+60 pushes in 60.3 s with the echo added. Mask and mute both survived a reboot.
+With every category muted the alert counter did not move in 25 s while the
+test transmitter broadcast; un-muting drone made it climb. Recorded audio confirms the
+patterns are distinct and that muting is real silence: 0 bursts with mask 0, four
+2000 Hz ticks for tracker, two 1200 Hz bursts 390 ms apart for ALPR (the piezo's
+3rd harmonic dominates the spectrum, the fundamental measures 1200.0 Hz), and a
+rising sweep ending at 2297 Hz for drone against a coded 2300 Hz.
+
 ## [0.1.0] — 2026-09-03 — The device is the authority on its own state
 
 ### Fixed — the buzzer mute never survived a power cycle
@@ -134,7 +142,24 @@ once, 400 ms after connect. One dropped reply left every settings control
 painting a stale or default value for the whole session, silently. It now asks
 at 400 ms / 1.5 s / 4 s until one lands, then stops.
 
+Bench (two boards, COM3 + COM4, both tier1): mute survived a power cycle in both
+directions; the two boards held independently different state across reboots
+(A muted + filter on, B audible + filter off); `CMD:SIGS` returned 52 rules at
+schema v5; a 60 s soak measured 60 pushes, 0 LEDC errors and `alerts=8` against
+a bench transmitter.
+
 ## [0.1.0] — 2026-09-03 — Choose which categories are worth a beep
+
+### Added — detection verified against a controlled signal
+
+Detection is now tested against a bench transmitter we control rather than
+whatever happens to be in the air, so "the detector works" stops being an
+unfalsifiable claim. The transmitter is a local test fixture and is not part of
+this repository.
+
+Bench result: with the beep mask set to drone-only, the detector listed the
+Flock and the AirTag but sounded only the drone — the two features verified
+together on real hardware.
 
 ### Added — a per-category beep mask, in Settings and in NVS
 
@@ -162,6 +187,12 @@ in range would have stayed silent until the target aged out.
 `AlertCategory` enum in `hardware_manager.h` — a shared bit order that drifts
 would mute body cams when you unticked trackers, with nothing at runtime to say
 so.
+
+Bench (two boards, COM3 detector / COM4 transmitter, rule matched on device name):
+mask = drone-only with a Tracker-category rule → board listed, zero `[ALERT]`
+lines, `alerts` 0; same mask with the rule recategorised as Drone → `[ALERT]
+category=2 weight=70`, `alerts` 1 (proving the muted pass had not burned the
+flag); `beep_mask` still 4 after a reboot.
 
 ## [0.1.0] — 2026-09-03 — A Settings page you can reach the bottom of
 
@@ -983,6 +1014,7 @@ payload roughly halved.
   saw no `version` field, judged the file stale against the new
   `SIG_SCHEMA_VERSION`, and deleted it. Pushed rules now carry the current
   version stamp.
+
 
 - **Removed `restoreBleSerialAdvertising()`** — it had no callers anywhere in
   the tree, and it carried a latent bug worth recording because it bit during

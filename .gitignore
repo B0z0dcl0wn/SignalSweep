@@ -53,3 +53,7 @@ app/android/keystore*
 # Agent instructions and planning notes — kept local, not published
 CLAUDE.md
 docs/plans/
+
+# Local-only bench programs and side-configs — never published
+firmware/src/bench/
+*.local.ini
