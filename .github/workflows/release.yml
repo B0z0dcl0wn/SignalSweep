@@ -71,8 +71,12 @@ jobs:
       # Skips rather than fails when the keystore secret is absent -- a fork, or
       # this repo before the secret was added -- because a missing signing key
       # must never block the firmware release, which is the primary artifact.
+      # Runs on main pushes as well as tags. Signing is the part most likely to
+      # break silently -- a rotated secret, a Gradle change, a runner image
+      # without the right SDK -- and discovering that at tag time means the
+      # release is already half-published. Building it on every push turns that
+      # into an ordinary red build. Only the tag path attaches it to a Release.
       - name: Build signed APK
-        if: startsWith(github.ref, 'refs/tags/v')
         id: apk
         env:
           ANDROID_KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
@@ -100,21 +104,46 @@ jobs:
           # from its local fallback instead of the tag.
           export ANDROID_KEYSTORE_PATH="$KS"
           export SIGNALSWEEP_VERSION="${GITHUB_REF_NAME#v}"
+          case "$SIGNALSWEEP_VERSION" in
+            *[!0-9.]*|"") SIGNALSWEEP_VERSION="0.0.0";;   # a branch push, not a tag
+          esac
           VERSION="$SIGNALSWEEP_VERSION"
 
-          ( cd app && npx cap sync android )
-          ( cd app/android && chmod +x gradlew && ./gradlew --no-daemon assembleRelease )
+          # Actions logs are not readable without a token, so anything worth
+          # debugging has to reach the job's annotations. fail() puts the real
+          # error there instead of a bare "exit code 1".
+          fail() {
+            echo "::error::$(printf '%s' "$1" | tail -c 3000 | tr '\n' '~' | sed 's/~/%0A/g')"
+            exit 1
+          }
 
-          APK=$(find app/android/app/build/outputs/apk/release -name '*.apk' | head -1)
-          test -n "$APK" || { echo "no APK produced"; exit 1; }
+          echo "keystore bytes: $(wc -c < "$KS")"
+          echo "ANDROID_HOME=${ANDROID_HOME:-<unset>}"
+          echo "version: $SIGNALSWEEP_VERSION"
+
+          if ! OUT=$( cd app && npx cap sync android 2>&1 ); then
+            fail "cap sync failed:%0A$OUT"
+          fi
+
+          chmod +x app/android/gradlew
+          if ! OUT=$( cd app/android && ./gradlew --no-daemon assembleRelease 2>&1 ); then
+            fail "gradlew assembleRelease failed:%0A$OUT"
+          fi
+
+          APK=$(find app/android/app/build/outputs/apk/release -name '*.apk' 2>/dev/null | head -1)
+          test -n "$APK" || fail "no APK produced under app/android/app/build/outputs/apk/release"
           case "$APK" in
-            *unsigned*) echo "APK is UNSIGNED - the keystore was not applied"; exit 1;;
+            *unsigned*) fail "APK is UNSIGNED ($APK) - the keystore was not applied";;
           esac
 
           # An APK that will not install is worse than no APK: verify the
           # signature before it is ever published.
-          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner | sort | tail -1)
-          "$APKSIGNER" verify --print-certs "$APK"
+          APKSIGNER=$(find "${ANDROID_HOME:-/usr/local/lib/android/sdk}" -name 'apksigner' -type f 2>/dev/null | sort | tail -1)
+          test -n "$APKSIGNER" || fail "apksigner not found under ANDROID_HOME=${ANDROID_HOME:-<unset>}"
+          if ! OUT=$( "$APKSIGNER" verify --print-certs "$APK" 2>&1 ); then
+            fail "apksigner verify failed:%0A$OUT"
+          fi
+          echo "$OUT"
 
           # Deliberately NOT inside _site: that tree is force-pushed to
           # gh-pages, and publishing the APK there would duplicate the release
