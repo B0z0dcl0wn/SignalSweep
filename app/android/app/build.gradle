@@ -16,7 +16,7 @@ def hasKeystore = ksPath != null && !ksPath.isEmpty() && file(ksPath).exists()
 // requires versionCode to strictly increase on every upload, and deriving it
 // from the name means that can never be forgotten -- 0.1.0 -> 100, 1.2.3 ->
 // 10203. Falls back to the checked-in default for a plain local build.
-def verName = System.getenv("SIGNALSWEEP_VERSION") ?: "0.1.0"
+def verName = System.getenv("SIGNALSWEEP_VERSION") ?: "0.1.1"
 def verCode = 1
 try {
     def v = verName.tokenize('.')

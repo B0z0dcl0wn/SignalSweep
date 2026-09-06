@@ -2,6 +2,67 @@
 
 All notable changes to SignalSweep are recorded here.
 
+## [0.1.1] — 2026-09-06 — A signed APK, and an installer that checks first
+
+### Added — the Android app is published
+
+There was no distribution path for the app: no signing config, so a release
+build produced an unsigned APK, which Android refuses to install. It is
+sideload-only and will stay that way -- there is no Play Store listing -- so
+the release asset has to be a properly signed APK. CI now builds and attaches
+one on `v*` tags, signing it from a keystore held in repo secrets and running
+`apksigner verify` before publishing. `versionCode` is derived from the tag
+(`major*10000 + minor*100 + patch`), because Android requires it to strictly
+increase on every upload and deriving it means that cannot be forgotten.
+
+Local and fork builds are unaffected: without the keystore they produce an
+*unsigned* APK rather than a debug-signed one. That is deliberate. A debug key
+is generated per machine, so the next build would sign with a different one and
+the upgrade would fail with `INSTALL_FAILED_UPDATE_INCOMPATIBLE`, whose only
+fix -- uninstalling -- destroys the user's encrypted pin store.
+
+### Added — `install.py`
+
+Downloads a published release and puts it on hardware: firmware, app, or both.
+Separate from `flash.py`, which builds from source and needs a toolchain.
+
+Because it points destructive tools at devices, it refuses to guess. More than
+one board or phone attached means it lists them and makes you choose; it prints
+exactly what it is about to do and waits for the target's name to be typed
+back. Every download is verified against the sha256 GitHub publishes for that
+asset before anything is flashed -- a truncated image bricks a board until it
+is reflashed. `--erase` is opt-in and says first that it wipes the mute, beep
+mask, hunt target, BLE name and signature rules. An install signed with a
+different key is explained in plain language instead of an adb error code.
+
+### Fixed — every PNG in the Android project was committed corrupt
+
+There was no `.gitattributes`, `core.autocrlf=true` on Windows, and git
+normalised CRLF->LF *inside* the binaries on commit. All 26 were stored with
+the signature `89 50 4E 47 0A 1A 0A` -- missing the `` that PNG puts there
+precisely so this is detectable -- and every other `0D0A` in the image data
+stripped too. Not reversible.
+
+`aapt2` rejects them ("file failed to compile"), so **no APK could be built
+from a clean checkout**. It went unnoticed because local builds reused cached
+compiled resources from before the corruption. `.gitattributes` now marks
+binaries, and the icons are regenerated from `app/assets/*.svg` -- the app's
+own brand mark, so the launcher icon finally matches the app.
+
+### Verified
+
+Signing proved end to end with a throwaway keystore: `apksigner` reports a V2
+signer, `versionCode` 101 from `versionName` 0.1.1, the installed package shows
+`flags=0x0` (not debuggable), and it launches. A clean `assembleRelease` now
+succeeds where it previously failed on resources. `install.py` was tested
+against the live v0.1.0 release: four sha256 digests verified, two attached
+boards forced a choice, a wrong confirmation aborted without touching anything,
+settings survived a flash without `--erase` and were reset by one with it, and
+the signature-mismatch path was caught live against a phone's existing build.
+
+One bug found by that testing and fixed: `--erase-all` was placed before the
+`write_flash` subcommand, so esptool rejected it and the erase never happened.
+
 ## [0.1.0] — 2026-09-06 — Sounds you can find, and that stay in sync
 
 ### Fixed — overlapping BLE writes silently dropped commands
