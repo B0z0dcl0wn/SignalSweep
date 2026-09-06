@@ -93,7 +93,15 @@ jobs:
           KS="$(mktemp -d)/signing.jks"
           echo "$ANDROID_KEYSTORE_B64" | base64 -d > "$KS"
 
-          VERSION="${GITHUB_REF_NAME#v}"
+          # Both of these must reach the Gradle process itself. The other
+          # three secrets are in this step's env: block and so are already
+          # exported; these two are computed here, and without exporting them
+          # build.gradle sees no keystore, signs nothing, and takes the version
+          # from its local fallback instead of the tag.
+          export ANDROID_KEYSTORE_PATH="$KS"
+          export SIGNALSWEEP_VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="$SIGNALSWEEP_VERSION"
+
           ( cd app && npx cap sync android )
           ( cd app/android && chmod +x gradlew && ./gradlew --no-daemon assembleRelease )
 
