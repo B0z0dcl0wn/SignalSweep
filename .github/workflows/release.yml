@@ -10,6 +10,33 @@ on:
   push:
     branches: [main]
     tags: ['v*']
+    # Skip the build+deploy for files that cannot change what ships. This job
+    # force-pushes gh-pages, so a README edit would otherwise republish the live
+    # flasher with byte-identical contents -- minutes of CI for nothing, which
+    # makes pushing feel expensive and leaves commits sitting unbacked-up.
+    #
+    # Safe for releases: GitHub does NOT apply path filters to tag pushes, so a
+    # v* tag always builds even if its commit only touched docs. That is real
+    # but undocumented (the docs are silent on combining tags with paths-ignore
+    # -- see community discussion 165354), and it is the whole safety argument
+    # here: if filters DID apply to tags, a docs-only release commit would
+    # silently ship nothing and we would find out at the worst moment.
+    #
+    # A push that mixes an ignored file with a real one still builds -- the skip
+    # needs ALL changed files to match, which errs toward building.
+    #
+    # flash.py and install.py are deliberately absent despite also being
+    # host-side: they are the developer and user install paths, and a needless
+    # build costs minutes while a wrongly-skipped one costs a broken installer
+    # nobody notices.
+    #
+    # Escape hatch: Actions -> release -> "Run workflow" (workflow_dispatch,
+    # just below) forces a deploy with no code change.
+    paths-ignore:
+      - '**.md'                # README, CHANGELOG, CONTRIBUTING, CREDITS
+      - 'docs/**'
+      - 'firmware/test_*.py'   # bench tools, never built or deployed
+      - 'LICENSE'
   workflow_dispatch:
 
 # contents:write covers both things this workflow writes: the gh-pages branch
