@@ -70,6 +70,110 @@ static uint32_t flashEndTime = 0;
 static bool alarmActive = false;
 static uint32_t alarmEndTime = 0;
 
+// A category alert plays a short animation across the whole bar. Like the
+// buzzer pattern it is the ID: a different shape per category, so it reads
+// across a room and with the buzzer muted. Indexed by AlertCategory; ANIM_BOOT
+// is the power-on sweep. Durations outlast the jingle a little on purpose.
+#define ANIM_BOOT 5
+static const uint16_t ANIM_MS[] = {1600, 900, 1380, 1300, 900, 1200};
+static int8_t animCat = -1;  // -1 = none
+static uint32_t animStart = 0;
+
+static uint32_t dim(uint32_t c, float k) {
+    if (k <= 0) return 0;
+    if (k > 1) k = 1;
+    return strip.Color(((c >> 16) & 0xFF) * k, ((c >> 8) & 0xFF) * k, (c & 0xFF) * k);
+}
+
+// Brightness at distance d from a bright point, reaching 0 at w. Squared so
+// tails look soft rather than stepped.
+static float falloff(float d, float w) {
+    float k = 1 - d / w;
+    return k > 0 ? k * k : 0;
+}
+
+static void drawAnimation(int cat, uint32_t e) {
+    const int N = NEOPIXEL_COUNT;
+    const float mid = (N - 1) / 2.0f;
+    switch (cat) {
+        case ALERT_ALPR: {  // plate-reader sweep: a red comet bounces end to end, twice
+            float ph = (e % 800) / 400.0f;
+            float x = (ph < 1 ? ph : 2 - ph) * (N - 1);
+            for (int i = 0; i < N; i++)
+                strip.setPixelColor(i, dim(strip.Color(255, 0, 0), falloff(fabsf(i - x), 2.5f)));
+            break;
+        }
+        case ALERT_BODYCAM: {  // camera flash: three pops (long-short-short) burst
+                               // from the centre white-hot, then cool to amber
+            static const uint16_t pops[] = {0, 340, 500};  // the jingle's note starts
+            uint32_t t = e;
+            for (uint16_t p : pops) if (e >= p) t = e - p;
+            for (int i = 0; i < N; i++) {
+                if (fabsf(i - mid) > t / 30.0f + 0.5f) continue;  // burst grows 1 px / 30 ms
+                strip.setPixelColor(i, t < 50 ? strip.Color(255, 255, 255)
+                                              : dim(strip.Color(255, 70, 0), 1 - t / 320.0f));
+            }
+            break;
+        }
+        case ALERT_DRONE: {  // rising trill: the bar fills upward, then two rotor
+                             // blades chase round it and wind down
+            if (e < 480) {
+                for (int i = 0; i <= (int)(e / 60) && i < N; i++)
+                    strip.setPixelColor(i, strip.Color(0, 200 - i * 20, 255));
+            } else {
+                uint32_t t = e - 480;
+                float fade = 1 - t / 900.0f;
+                int k = (t / 45) % N;
+                for (int i = 0; i < N; i++) {
+                    bool blade = i == k || i == (k + N / 2) % N;
+                    strip.setPixelColor(i, blade ? dim(strip.Color(200, 230, 255), fade)
+                                                 : dim(strip.Color(0, 60, 255), fade * 0.5f));
+                }
+            }
+            break;
+        }
+        case ALERT_TRACKER: {  // four ticks on alternating pixels, then two sonar
+                               // pings ripple out from the centre
+            if (e < 400) {
+                if (e % 100 < 45)
+                    for (int i = (e / 100) % 2; i < N; i += 2)
+                        strip.setPixelColor(i, strip.Color(255, 0, 200));
+            } else {
+                uint32_t t = e - 400;
+                float wave = (t % 450) / 450.0f * (mid + 1);
+                float fade = 1 - t / 900.0f;
+                for (int i = 0; i < N; i++)
+                    strip.setPixelColor(i, dim(strip.Color(255, 0, 200),
+                                               falloff(fabsf(fabsf(i - mid) - wave), 1.2f) * fade));
+            }
+            break;
+        }
+        case ANIM_BOOT: {  // rainbow wipes on, then fades
+            float fade = e < 700 ? 1 : 1 - (e - 700) / 500.0f;
+            for (int i = 0; i < N && e >= (uint32_t)i * 70; i++)
+                strip.setPixelColor(i, dim(strip.gamma32(strip.ColorHSV((uint16_t)(i * 65536 / N + e * 40))), fade));
+            break;
+        }
+        default: {  // matched, category unknown: one amber breath
+            float k = e < 450 ? e / 450.0f : 1 - (e - 450) / 450.0f;
+            strip.fill(dim(strip.Color(255, 165, 0), k));
+            break;
+        }
+    }
+}
+
+// Hunting: the bar is a signal meter, one pixel per ~8 dB (-95 dBm = 1 lit,
+// -30 = all 8), green / yellow / red, flaring on each Geiger click so what you
+// see and what you hear agree.
+static void drawHuntMeter(int rssi, uint32_t sinceClick) {
+    int lit = constrain((rssi + 95) * NEOPIXEL_COUNT / 65 + 1, 1, NEOPIXEL_COUNT);
+    float k = sinceClick < 40 ? 1.0f : 0.35f;
+    for (int i = 0; i < lit; i++) {
+        uint32_t c = i < 4 ? strip.Color(0, 255, 0) : i < 6 ? strip.Color(255, 180, 0) : strip.Color(255, 0, 0);
+        strip.setPixelColor(i, dim(c, k));
+    }
+}
+
 // Calculate Geiger click pitch and repetition interval from RSSI (-95 to -30 dBm)
 static inline void calculateGeigerParams(int rssi, uint16_t &freqOut, uint32_t &intervalOut) {
     int clampedRssi = rssi;
@@ -127,7 +231,7 @@ static void loadJingleNotes(OperatingMode mode) {
 
 static void HardwareManagerTask(void *pvParameters) {
     (void)pvParameters;
-    uint32_t lastPixelColor = 0xFFFFFFFF;
+    static uint8_t lastFrame[NEOPIXEL_COUNT * 3];
 
     for (;;) {
         if (hwMutex != NULL && xSemaphoreTake(hwMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
@@ -182,12 +286,7 @@ static void HardwareManagerTask(void *pvParameters) {
                         if (buzzerEnabled) {
                             buzzerTone(gFreq);
                         }
-                        // Visual Geiger pulse flash
-                        flashActive = true;
-                        flashR = 255;
-                        flashG = 0;
-                        flashB = 128;
-                        flashEndTime = now + 25;
+                        // The visual click is the hunt meter's flare (drawHuntMeter).
                     }
                 } else if (!geigerClickActive && !alarmActive) {
                     buzzerOff();
@@ -217,18 +316,27 @@ static void HardwareManagerTask(void *pvParameters) {
                 }
             }
 
-            // 3. Render NeoPixel Status Indicator
+            // 3. Render the bar. Priority: a hard flash (siren strobe, manual
+            // triggerLedFlash) > a category alert animation > the hunt meter >
+            // the idle heartbeat. The frame is redrawn every tick and pushed to
+            // the strip only when it changed.
             uint32_t currentPixelColor = strip.Color(0, 0, 0);
+            bool onePixel = false;  // idle heartbeat lights LED 0 only
+            bool drawn = false;     // an animation or the meter owns the frame
+            strip.clear();
 
+            if (flashActive && now >= flashEndTime) flashActive = false;
             if (flashActive) {
-                if (now < flashEndTime) {
-                    currentPixelColor = strip.Color(flashR, flashG, flashB);
-                } else {
-                    flashActive = false;
-                }
-            }
-
-            if (!flashActive) {
+                currentPixelColor = strip.Color(flashR, flashG, flashB);
+            } else if (animCat >= 0 && now - animStart < ANIM_MS[animCat]) {
+                drawAnimation(animCat, now - animStart);
+                drawn = true;
+            } else if (geigerLocked) {
+                animCat = -1;
+                drawHuntMeter(geigerRssi, now - lastGeigerClickTime);
+                drawn = true;
+            } else {
+                animCat = -1;
                 switch (currentHwMode) {
                     case MODE_SELECTOR: {
                         uint32_t t = now % 1000;
@@ -247,13 +355,22 @@ static void HardwareManagerTask(void *pvParameters) {
                         break;
                     }
                     case MODE_WATCHERS_WATCH: {
-                        uint32_t t = now % 800;
+                        // Idle heartbeat: one dim pixel glows up and down once
+                        // every 4 s. Enough to tell alive from unpowered, not
+                        // enough to notice across a room or through a car
+                        // window — the whole bar blinking every 0.8 s was a
+                        // beacon. Full-bar colour is reserved for alerts.
                         // Receive-only is invisible by definition, and a device
-                        // that looks broken is worse than one that is. Dim blue
+                        // that looks broken is worse than one that is. Blue
                         // instead of green says "still watching, not talking".
-                        if (t < 150) currentPixelColor = rxOnlyIndicator
-                            ? strip.Color(0, 60, 140)
-                            : strip.Color(0, 255, 100);
+                        uint32_t t = now % 4000;
+                        if (t < 800) {
+                            uint32_t s = t < 400 ? t : 800 - t;  // 0..400..0
+                            currentPixelColor = rxOnlyIndicator
+                                ? strip.Color(0, 40 * s / 400, 110 * s / 400)
+                                : strip.Color(0, 120 * s / 400, 50 * s / 400);
+                            onePixel = true;
+                        }
                         break;
                     }
                     case MODE_SKY_SWEEPER: {
@@ -276,10 +393,13 @@ static void HardwareManagerTask(void *pvParameters) {
                 }
             }
 
-            if (currentPixelColor != lastPixelColor) {
-                strip.fill(currentPixelColor);
+            if (!drawn) {
+                if (onePixel) strip.setPixelColor(0, currentPixelColor);
+                else strip.fill(currentPixelColor);
+            }
+            if (memcmp(lastFrame, strip.getPixels(), sizeof(lastFrame)) != 0) {
+                memcpy(lastFrame, strip.getPixels(), sizeof(lastFrame));
                 strip.show();
-                lastPixelColor = currentPixelColor;
             }
 
             xSemaphoreGive(hwMutex);
@@ -299,8 +419,9 @@ void hardwareInit() {
 
     strip.begin();
     strip.setBrightness(50);
-    strip.fill(strip.Color(0, 200, 255));
-    strip.show();
+    strip.show();  // blank; the task plays the boot sweep
+    animCat = ANIM_BOOT;
+    animStart = millis();
 
     Preferences prefs;
     if (prefs.begin(BUZZER_NVS_NS, true)) {
@@ -499,14 +620,12 @@ void triggerCategoryAlert(AlertCategory cat) {
     if (!jinglePlaying && !alarmActive) {
         jingleIndex = 0;
         noteStartTime = 0;
-        uint8_t r = 255, g = 0, b = 0;   // default red
         switch (cat) {
             case ALERT_ALPR:  // two long beeps
                 activeJingle[0] = {1200, 250};
                 activeJingle[1] = {0, 130};
                 activeJingle[2] = {1200, 250};
                 jingleLength = 3;
-                r = 255; g = 0; b = 0;
                 break;
             case ALERT_BODYCAM:  // long-short-short
                 activeJingle[0] = {900, 260};
@@ -515,7 +634,6 @@ void triggerCategoryAlert(AlertCategory cat) {
                 activeJingle[3] = {0, 70};
                 activeJingle[4] = {900, 90};
                 jingleLength = 5;
-                r = 255; g = 40; b = 0;
                 break;
             case ALERT_DRONE:  // rising trill
                 activeJingle[0] = {1000, 60};
@@ -523,7 +641,6 @@ void triggerCategoryAlert(AlertCategory cat) {
                 activeJingle[2] = {1800, 60};
                 activeJingle[3] = {2300, 110};
                 jingleLength = 4;
-                r = 0; g = 120; b = 255;
                 break;
             case ALERT_TRACKER:  // fast ticking
                 activeJingle[0] = {2000, 45};
@@ -534,24 +651,20 @@ void triggerCategoryAlert(AlertCategory cat) {
                 activeJingle[5] = {0, 55};
                 activeJingle[6] = {2000, 45};
                 jingleLength = 7;
-                r = 255; g = 0; b = 200;
                 break;
             case ALERT_GENERIC:
             default:  // plain warning (matched, unknown category)
                 activeJingle[0] = {800, 150};
                 activeJingle[1] = {600, 200};
                 jingleLength = 2;
-                r = 255; g = 165; b = 0;
                 break;
         }
         jinglePlaying = true;
-        // Colour the NeoPixel for the whole pattern so the flash matches the
-        // sound (jingle engine drives the tone; this just tints the LED).
-        uint32_t total = 0;
-        for (uint8_t i = 0; i < jingleLength; i++) total += activeJingle[i].durationMs;
-        flashActive = true;
-        flashR = r; flashG = g; flashB = b;
-        flashEndTime = millis() + total;
+        // The bar plays this category's animation (drawAnimation), started with
+        // the sound and outlasting it a little. Like the beep pattern, its
+        // shape is the ID, so it still reads with the buzzer muted.
+        animCat = cat;
+        animStart = millis();
     }
     xSemaphoreGive(hwMutex);
 }

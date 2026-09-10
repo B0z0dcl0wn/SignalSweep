@@ -2,6 +2,32 @@
 
 All notable changes to SignalSweep are recorded here.
 
+## [Unreleased]
+
+### Changed — the LED bar speaks, and stops shouting when idle
+
+Every indicator used to `fill()` the whole 8-LED bar with one colour, a holdover
+from a single status pixel. Idle, that meant all eight LEDs blinking every
+0.8 s: obnoxious on a desk, and on a counter-surveillance tool in a parked car
+a beacon. Idle is now **one dim pixel** that glows up and down once every 4 s
+(green, or blue in receive-only) -- enough to tell alive from unpowered.
+
+The full bar is reserved for detections, and each category gets its own
+animation, because like the buzzer pattern the shape *is* the ID and must read
+with the buzzer muted: ALPR a red comet sweeping end to end twice, body cam
+three camera-flash pops in the long-short-short rhythm, drone a rising fill
+then two "rotor blades" chasing round, tracker four alternating ticks then two
+sonar pings from the centre, unknown match an amber breath. While hunting the
+bar is a green/yellow/red RSSI meter that flares on each Geiger click (it
+replaces a 25 ms full-bar magenta flash), and power-on is a rainbow wipe.
+
+Frames are drawn every task tick and pushed to the strip only when the pixel
+buffer changed (`memcmp` against the last frame), so a static idle costs
+nothing on the data line. Measured on the two-board bench: 30 pushes in 30 s,
+unchanged. The bar these boards use is RGB (WS2812B, `NEO_GRB`) -- verified
+clean on hardware; a true RGBW bar would need `NEO_GRBW` or every colour and
+position comes out scrambled.
+
 ## [0.1.1] — 2026-09-06 — A signed APK, and an installer that checks first
 
 ### Added — the Android app is published
