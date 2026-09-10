@@ -162,16 +162,25 @@ static void drawAnimation(int cat, uint32_t e) {
     }
 }
 
-// Hunting: the bar is a signal meter, one pixel per ~8 dB (-95 dBm = 1 lit,
-// -30 = all 8), green / yellow / red, flaring on each Geiger click so what you
-// see and what you hear agree.
-static void drawHuntMeter(int rssi, uint32_t sinceClick) {
-    int lit = constrain((rssi + 95) * NEOPIXEL_COUNT / 65 + 1, 1, NEOPIXEL_COUNT);
-    float k = sinceClick < 40 ? 1.0f : 0.35f;
-    for (int i = 0; i < lit; i++) {
-        uint32_t c = i < 4 ? strip.Color(0, 255, 0) : i < 6 ? strip.Color(255, 180, 0) : strip.Color(255, 0, 0);
-        strip.setPixelColor(i, dim(c, k));
-    }
+// Hunting: the bar is a steady signal meter, one pixel per ~8 dB (-95 dBm = 1
+// lit, -30 = all 8), on the same scale as the Geiger clicker. Read like a
+// phone's signal bars: the count is the strength and the whole meter is one
+// colour -- red below ~-71 dBm, yellow to ~-50, green above (roughly within a
+// metre of a BLE tag). Colouring by position (green first, red last, a heat
+// gauge) painted a weak -76 dBm as four green bars, which reads as "good
+// signal". Steady on purpose: it used to flare
+// on every Geiger click, which at 2-3 clicks/s was hard to look at, and the ear
+// already has the clicks. RSSI jumps several dB between adverts, so the level
+// is smoothed (~1 s) and the top pixel lit in proportion -- the bar glides
+// instead of hopping a whole LED on every packet.
+static void drawHuntMeter(int rssi) {
+    static float level = -1;
+    float target = (rssi + 95) * NEOPIXEL_COUNT / 65.0f + 1;
+    level = level < 0 ? target : level + (target - level) * 0.02f;  // per 15 ms tick
+    float fill = constrain(level, 1.0f, (float)NEOPIXEL_COUNT);
+    uint32_t c = fill < 4 ? strip.Color(255, 0, 0) : fill < 6.5f ? strip.Color(255, 180, 0) : strip.Color(0, 255, 0);
+    for (int i = 0; i < NEOPIXEL_COUNT; i++)
+        strip.setPixelColor(i, dim(c, 0.5f * constrain(fill - i, 0.0f, 1.0f)));
 }
 
 // Calculate Geiger click pitch and repetition interval from RSSI (-95 to -30 dBm)
@@ -333,7 +342,7 @@ static void HardwareManagerTask(void *pvParameters) {
                 drawn = true;
             } else if (geigerLocked) {
                 animCat = -1;
-                drawHuntMeter(geigerRssi, now - lastGeigerClickTime);
+                drawHuntMeter(geigerRssi);
                 drawn = true;
             } else {
                 animCat = -1;

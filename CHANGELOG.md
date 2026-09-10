@@ -18,8 +18,16 @@ with the buzzer muted: ALPR a red comet sweeping end to end twice, body cam
 three camera-flash pops in the long-short-short rhythm, drone a rising fill
 then two "rotor blades" chasing round, tracker four alternating ticks then two
 sonar pings from the centre, unknown match an amber breath. While hunting the
-bar is a green/yellow/red RSSI meter that flares on each Geiger click (it
-replaces a 25 ms full-bar magenta flash), and power-on is a rainbow wipe.
+bar is a steady RSSI meter read like a phone's signal bars -- the count is the
+strength, and the whole meter goes red (below ~-71 dBm), yellow, then green
+(above ~-50, about a metre from a BLE tag) -- replacing a 25 ms full-bar
+magenta flash on every Geiger click. Power-on is a rainbow wipe. The meter was
+first coloured by position like a heat gauge, green first and red last, which
+painted a weak -76 dBm lock as four green bars: "good signal". The
+meter first flared on each click too, and at 2-3 clicks a second that was hard
+to look at -- the ear already has the clicks. It also hopped a whole LED on
+every advert, because RSSI jitters several dB packet to packet, so the level is
+smoothed over about a second and the top LED lit in proportion: it glides.
 
 Frames are drawn every task tick and pushed to the strip only when the pixel
 buffer changed (`memcmp` against the last frame), so a static idle costs
