@@ -1,0 +1,2574 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 B0z0dcl0wn and the SignalSweep contributors
+
+        // SignalSweep control app — one always-on detector.
+        //
+        // Opsec first: this app keeps NO passive trail. It shows what the device
+        // is hearing RIGHT NOW and forgets it on close. The only thing that ever
+        // persists to disk is (a) tiny UI preferences and (b) location pins you
+        // deliberately, per-device, consent to record — and those are stored
+        // ONLY as AES-GCM ciphertext behind a PIN. A found phone reveals nothing.
+
+        const NUS_SERVICE_UUID = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
+        const NUS_RX_UUID      = '6e400002-b5a3-f393-e0a9-e50e24dcca9e';
+        const NUS_TX_UUID      = '6e400003-b5a3-f393-e0a9-e50e24dcca9e';
+
+        let connectionType = null; // 'BLE' | 'SERIAL' | null
+
+        function esc(v) {
+            if (v == null) return '';
+            return String(v).replace(/[&<>"']/g, (c) => (
+                { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+            ));
+        }
+
+        // ---- Category → colour/label (mirrors the firmware buzzer words) -----
+        // The device sounds a distinct pattern per category headless; here we
+        // just spell it out. Keyword-tolerant so any signature `category` label
+        // routes to the right bucket.
+        function categoryOf(type) {
+            const c = String(type || '').toLowerCase();
+            // Nothing matched. This is its own state, not a weak match: with
+            // the filter off most of the list is ordinary hardware, and folding
+            // it into the generic bucket titled every unnamed phone "Match"
+            // behind a warning triangle, then counted it under Cameras.
+            if (!c) return { key: 'none', label: '', color: '#3a465a', icon: '' };
+            if (c.indexOf('drone') >= 0 || c.indexOf('remote id') >= 0 || c.indexOf('uas') >= 0)
+                return { key: 'drone',   label: 'Drone',      color: '#3aa0ff', icon: '🛸' };
+            if (c.indexOf('track') >= 0 || c.indexOf('airtag') >= 0 || c.indexOf('tile') >= 0 ||
+                c.indexOf('tag') >= 0 || c.indexOf('beacon') >= 0)
+                return { key: 'tracker', label: 'Tracker',    color: '#ff3ac8', icon: '📍' };
+            if (c.indexOf('body') >= 0 || c.indexOf('axon') >= 0 || c.indexOf('cam') >= 0)
+                return { key: 'bodycam', label: 'Body Cam',   color: '#ff5a1a', icon: '🎥' };
+            if (c.indexOf('flock') >= 0 || c.indexOf('alpr') >= 0 || c.indexOf('plate') >= 0 || c.indexOf('surveil') >= 0)
+                return { key: 'alpr',    label: 'ALPR / Camera', color: '#ef4444', icon: '📷' };
+            return { key: 'other', label: (type || 'Match'), color: '#f59e0b', icon: '⚠️' };
+        }
+
+        // Signal bar 0-5 from RSSI.
+        function signalBars(rssi) {
+            const r = Number(rssi);
+            let n = 0;
+            if (r >= -55) n = 5; else if (r >= -65) n = 4; else if (r >= -75) n = 3;
+            else if (r >= -85) n = 2; else if (r >= -95) n = 1; else n = 0;
+            return '█'.repeat(n) + '░'.repeat(5 - n);
+        }
+
+        // Which radio heard it. The firmware sends "BLE", "WiFi" or "BLE+WiFi".
+        // It used to be a word buried in the grey sub-line, which is unreadable
+        // in a wall of rows, so it leads the title as a chip instead. Fixed
+        // literals only — nothing device-supplied, nothing to escape.
+        // `ap` is the firmware's link role: 1 = access point (beacons), 0 =
+        // client (probe requests), undefined = not known / older firmware.
+        function radioBadges(protocol, ap) {
+            const p = String(protocol || '');
+            const wifi = ap === 1 ? '📡 AP' : ap === 0 ? '📱 Client' : 'Wi‑Fi';
+            return (p.indexOf('BLE')  >= 0 ? '<span class="radio-badge ble">BLE</span>' : '') +
+                   (p.indexOf('WiFi') >= 0 ? '<span class="radio-badge wifi">' + wifi + '</span>' : '');
+        }
+
+        // ---- Vendor names -------------------------------------------------
+        // Looked up OFFLINE from lists bundled in public/ (refresh with
+        // tools/fetch-vendors.mjs). Never an online OUI API: that would hand
+        // every MAC the device hears to a third party.
+        // ponytail: ~1 MB OUI list, fetched once on first render; a trimmed
+        // list is the upgrade if the bundle size ever matters.
+        let ouiNames = new Map();   // 'AABBCC' -> vendor
+        let btNames = new Map();    // BT SIG company id -> company
+        let vendorsRequested = false;
+        function loadVendors() {
+            if (vendorsRequested || typeof fetch !== 'function') return;
+            vendorsRequested = true;
+            const text = function (u) { return fetch(u).then(function (r) { return r.ok ? r.text() : Promise.reject(u); }); };
+            const parse = function (t, key) {
+                const out = new Map();
+                for (const line of t.split(/\r?\n/)) {
+                    const i = line.indexOf('\t');
+                    if (i > 0) out.set(key(line.slice(0, i)), line.slice(i + 1));
+                }
+                return out;
+            };
+            Promise.all([text('oui.txt'), text('bt-company.txt')]).then(function (r) {
+                ouiNames = parse(r[0], String);
+                btNames = parse(r[1], Number);
+                renderScope();
+            }).catch(function () { /* no names; rows still render. selftest.js checks the files ship. */ });
+        }
+        // Only a globally-unique address names its maker. BLE says so itself
+        // (`pub`); for Wi-Fi the locally-administered bit (0x02 of the first
+        // byte) marks a randomized MAC, which carries no vendor at all.
+        function publicMac(m) {
+            if (m.pub) return true;
+            if (String(m.protocol || '').indexOf('WiFi') < 0) return false;
+            return (parseInt(String(m.mac).slice(0, 2), 16) & 0x02) === 0;
+        }
+        // The registry wins wherever it applies. A public address's OUI was
+        // assigned by the IEEE; a BLE company ID is whatever the firmware put
+        // there, and cheap silicon puts junk (Govee's Telink thermometers send
+        // 0x0001, which is Nokia -- seen on the bench). The company ID is the
+        // fallback for random addresses and "Private" registrations.
+        function vendorOf(m) {
+            const o = publicMac(m) ? ouiNames.get(String(m.mac).replace(/[:-]/g, '').slice(0, 6).toUpperCase()) : '';
+            if (o && o !== 'Private') return o;
+            return (m.cid != null && btNames.get(m.cid)) || '';
+        }
+
+        // =====================================================================
+        //  Live scope — what the device hears RIGHT NOW. Nothing persists.
+        // =====================================================================
+        // Keyed by MAC, dropped when the device stops reporting it (the firmware
+        // prunes at 120 s and only reports matches, so this list IS the matches).
+        let liveMatches = {};       // mac -> { mac, name, type, rule, rssi, protocol, confidence, tier, ts }
+        const LIVE_STALE_MS = 8000; // hide a match we haven't heard in 8 s
+
+        function ingestTargets(targets) {
+            const now = Date.now();
+            for (const t of targets) {
+                if (!t.mac) continue;
+                liveMatches[t.mac] = {
+                    mac: t.mac, name: t.name || '', type: t.type || '',
+                    rule: t.matched_rule || '', rssi: t.rssi,
+                    protocol: t.protocol || 'BLE', ssid: t.ssid || '',
+                    ap: t.ap, pub: !!t.pub, cid: t.cid,
+                    confidence: t.confidence || 0,
+                    tier: t.tier || '', ts: now,
+                    // Decoded ASTM Remote ID, present only on drones. The
+                    // firmware omits any field it does not actually know, so
+                    // undefined here means "unknown", never "zero".
+                    uasId: t.uas_id, operatorId: t.operator_id, selfId: t.self_id,
+                    lat: t.lat, lng: t.lng, alt: t.alt, agl: t.agl,
+                    speed: t.speed, heading: t.heading,
+                    opLat: t.op_lat, opLng: t.op_lng
+                };
+                maybeOfferRecord(liveMatches[t.mac]);
+            }
+        }
+
+        // ---- Lens: a filter over what the detector already found -----------
+        // This is what replaces the old four-mode selector. The firmware is one
+        // always-on detector watching every category at once, and a lens
+        // cannot make it miss anything. A tab tap does set one thing on the
+        // device: a preset beep mask (LENS_MASK), so the board alerts only for
+        // what you are looking at. That is the same persisted mask the Alerts
+        // sheet edits. It gates the beep and the light, never detection or
+        // the list, so every band still counts what it hears.
+        let lens = 'all';
+        let viewMode = 'list';   // 'list' | 'map'
+
+        function paintLens(key) {
+            lens = key;
+            document.querySelectorAll('#bands .band').forEach(function (el) {
+                el.setAttribute('aria-selected',
+                    el.getAttribute('data-lens') === key ? 'true' : 'false');
+            });
+            renderScope();
+        }
+
+        // Tab tap. Tapping the selected tab again goes back to Everything.
+        // The tab paints now, and the mask goes through the same pendingMask
+        // echo window as toggleBeep(), so a push that lands before the echo
+        // cannot flip it back. If the write never lands, intent expires and
+        // the next push repaints what the device actually has.
+        function setLens(key) {
+            if (key === lens && key !== 'all') key = 'all';
+            paintLens(key);
+            setPinLens(key);
+            if (deviceBeepMask === null) return;   // not connected: view only
+            pendingMask = LENS_MASK[key];
+            pendingSince = Date.now();
+            sendCommand({ beep_mask: pendingMask });
+            setSoundsSummary();
+        }
+
+        function toggleView() {
+            viewMode = (viewMode === 'list') ? 'map' : 'list';
+            const wrap = document.getElementById('map-wrap');
+            const list = document.getElementById('targets-list');
+            const btn  = document.getElementById('btn-view');
+            if (wrap) wrap.style.display = (viewMode === 'map') ? 'block' : 'none';
+            if (list) list.style.display = (viewMode === 'map') ? 'none' : 'block';
+            if (btn)  btn.textContent = (viewMode === 'map') ? '\u2630 List' : '\ud83d\uddfa Map';
+            if (viewMode === 'map') initMap();
+            renderScope();
+        }
+
+        // Which band a row belongs in.
+        //
+        // Three distinct states, and conflating them was putting ordinary
+        // hardware under "Cameras":
+        //   * no type and no rule      -> matched nothing at all
+        //   * a rule but no type       -> matched something the firmware
+        //                                 deliberately refuses to attribute,
+        //                                 i.e. the Lite-On vendor IE, which is
+        //                                 in countless consumer Wi-Fi chips.
+        //                                 Real example: Nest cameras listed as
+        //                                 "Cameras" off a prefix that only
+        //                                 means "this chipset".
+        //   * a type                   -> a real vendor category
+        // Only the last belongs in a category band.
+        function bandOf(m) {
+            if (!m.type && !m.rule) return 'none';
+            if (!m.type) return 'weak';
+            return categoryOf(m.type).key;
+        }
+
+        // Radio filter. When you are looking for one kind of thing, the other
+        // radio's devices are noise -- and with the filter off most of the list
+        // is Wi-Fi access points.
+        let radio = 'any';   // 'any' | 'BLE' | 'WiFi'
+        // Wi-Fi sub-filter, from the firmware's `ap` field. It only applies
+        // (and is only on screen) while the Wi-Fi tab is selected, so a choice
+        // left behind can never silently hide rows under another tab.
+        let wifiRole = 'any';   // 'any' | 'ap' | 'client'
+
+        function setRadio(key) {
+            radio = key;
+            document.querySelectorAll('#radios .radio-tab').forEach(function (el) {
+                el.setAttribute('aria-selected',
+                    el.getAttribute('data-radio') === key ? 'true' : 'false');
+            });
+            const roles = document.getElementById('wifi-roles');
+            if (roles) roles.hidden = key !== 'WiFi';
+            renderScope();
+        }
+
+        function setWifiRole(key) {
+            wifiRole = key;
+            document.querySelectorAll('#wifi-roles .radio-tab').forEach(function (el) {
+                el.setAttribute('aria-selected',
+                    el.getAttribute('data-role') === key ? 'true' : 'false');
+            });
+            renderScope();
+        }
+
+        // A device seen on both radios counts as either.
+        function matchesRadio(m) {
+            if (radio === 'any') return true;
+            if (String(m.protocol || '').indexOf(radio) < 0) return false;
+            if (radio !== 'WiFi' || wifiRole === 'any') return true;
+            return m.ap === (wifiRole === 'ap' ? 1 : 0);
+        }
+
+        // Is this row in band k? Shared by the list and the pin filter.
+        function inLens(m, k) {
+            if (k === 'all') return true;
+            const c = bandOf(m);
+            // "Cameras" is the umbrella over what the buzzer says as two
+            // separate words (ALPR and body cam), plus a vendor category we
+            // have no keyword for (SoundThinking, Raven). It does NOT include
+            // 'weak' -- see bandOf(). LENS_MASK.alpr mirrors this umbrella.
+            if (k === 'alpr') return c === 'alpr' || c === 'bodycam' || c === 'other';
+            return c === k;
+        }
+
+        // Live rows: heard recently, matching the current lens, strongest first.
+        function liveRows(forLens) {
+            const now = Date.now();
+            const k = forLens || lens;
+            const rows = Object.values(liveMatches)
+                .filter(function (m) { return now - m.ts < LIVE_STALE_MS; })
+                // Filter on hides unmatched rows at once. The device stops
+                // reporting them, but waiting for them to go stale left the
+                // whole unfiltered list on screen for 8 s after the tap.
+                .filter(function (m) {
+                    return foxhuntMode || bandOf(m) !== 'none' ||
+                        String(m.mac).toUpperCase() === huntMac.toUpperCase();
+                })
+                .filter(matchesRadio)
+                .filter(function (m) { return inLens(m, k); })
+                // Bucketed to 5 dB, MAC as tiebreak. Sorting on raw RSSI made
+                // the list dance: a couple of dB of multipath swaps two rows,
+                // every push, and you tap the wrong device because the one you
+                // aimed at moved. Strongest-first still holds; the jitter does
+                // not move anything.
+                .sort(function (a, b) {
+                    const ba = Math.round((Number(a.rssi) || -999) / 5);
+                    const bb = Math.round((Number(b.rssi) || -999) / 5);
+                    if (ba !== bb) return bb - ba;
+                    return String(a.mac) < String(b.mac) ? -1 : 1;
+                });
+            // The hunted card is pinned to the top, directly under the
+            // instrument, so the meter, the trace, "stop hunting" and the card
+            // are all on screen at once -- you found it halfway down a long
+            // list, and the readout is at the top of that list.
+            if (huntMac) {
+                const at = rows.findIndex(function (m) {
+                    return String(m.mac).toUpperCase() === huntMac.toUpperCase();
+                });
+                if (at > 0) rows.unshift(rows.splice(at, 1)[0]);
+            }
+            return rows;
+        }
+
+        // One line of extra detail per category. Drones earn the most, because
+        // Remote ID is a broadcast standard that hands us real values.
+        function detailLine(m, cat) {
+            const bits = [];
+            if (cat.key === 'drone') {
+                if (m.uasId)      bits.push('UAS <b>' + esc(m.uasId) + '</b>');
+                if (m.operatorId) bits.push('Operator <b>' + esc(m.operatorId) + '</b>');
+                if (m.selfId)     bits.push(esc(m.selfId));
+                if (m.alt   != null) bits.push('Alt <b>' + Math.round(m.alt) + ' m</b>');
+                if (m.agl   != null) bits.push('AGL <b>' + Math.round(m.agl) + ' m</b>');
+                if (m.speed != null) bits.push('<b>' + Number(m.speed).toFixed(1) + ' m/s</b>');
+                if (m.heading != null) bits.push('Hdg <b>' + Math.round(m.heading) + '\u00b0</b>');
+                if (m.lat != null && m.lng != null)
+                    bits.push('at <b>' + Number(m.lat).toFixed(5) + ', ' + Number(m.lng).toFixed(5) + '</b>');
+                if (m.opLat != null && m.opLng != null)
+                    bits.push('pilot at <b>' + Number(m.opLat).toFixed(5) + ', ' + Number(m.opLng).toFixed(5) + '</b>');
+            }
+            if (!bits.length) return '';
+            return '<div class="scope-detail">' + bits.join(' \u00b7 ') + '</div>';
+        }
+
+        // Trackers get the two things you actually want when something may be
+        // following you: walk it down, or make it announce itself.
+        function actionRow(m, cat) {
+            // Trackers always offer it. With the filter off, anything does --
+            // that is the whole point of turning the filter off: find something
+            // interesting that is on no list, then go and physically find it.
+            if (cat.key !== 'tracker' && !foxhuntMode) return '';
+            const hunting = !!huntMac && huntMac.toUpperCase() === String(m.mac).toUpperCase();
+            // Ring is a GATT write to a Bluetooth characteristic. On a device
+            // only ever heard over Wi-Fi there is nothing to connect to, so the
+            // button would be a guaranteed failure dressed up as an option.
+            const hasBle = String(m.protocol || '').indexOf('BLE') >= 0;
+            return '<div class="scope-actions">' +
+                '<button class="scope-act' + (hunting ? ' hunting' : '') +
+                    '" data-act="hunt" data-mac="' + esc(m.mac) + '">' +
+                    (hunting ? '\u25c9 Hunting \u2014 stop' : '\u25ce Hunt') + '</button>' +
+                (hasBle
+                    ? '<button class="scope-act" data-act="ring" data-mac="' + esc(m.mac) + '">\ud83d\udd14 Ring</button>'
+                    : '') +
+            '</div>';
+        }
+
+        // Map RSSI to a 0-1 meter fill. -95 dBm is the noise floor in practice,
+        // -35 is "in the same room"; anything outside that is clamped.
+        function rssiFrac(rssi) {
+            const r = Number(rssi);
+            if (!isFinite(r)) return 0;
+            return Math.max(0, Math.min(1, (r + 95) / 60));
+        }
+
+        function renderScope() {
+            loadVendors();
+            // Each band shows its own count and the strongest signal in it right
+            // now, whether or not it is the selected band. That is the point of
+            // the strip: you can be reading Drones and still see that something
+            // just got loud in Trackers.
+            const keys = ['all', 'alpr', 'tracker', 'drone'];
+            for (let i = 0; i < keys.length; i++) {
+                const bandRows = liveRows(keys[i]);
+                const el = document.getElementById('n-' + keys[i]);
+                if (el) el.textContent = bandRows.length;
+                const meter = document.getElementById('m-' + keys[i]);
+                const strongest = bandRows.length
+                    ? Math.max.apply(null, bandRows.map(function (m) { return Number(m.rssi) || -999; }))
+                    : null;
+                if (meter) meter.style.width = (strongest == null ? 0 : rssiFrac(strongest) * 100) + '%';
+                const tab = document.querySelector('#bands .band[data-lens="' + keys[i] + '"]');
+                if (tab) tab.classList.toggle('live', bandRows.length > 0);
+            }
+            // The foxhunt panel draws to a canvas and touches elements that may
+            // not exist in every context. It must never be able to take the
+            // device list down with it -- the list is the part you actually
+            // need on screen.
+            try { renderFoxhunt(); } catch (e) { console.warn('foxhunt render failed:', e); }
+
+            const rows = liveRows();
+            const countEl = document.getElementById('scope-count');
+            if (countEl) countEl.textContent = rows.length;
+            const dropEl = document.getElementById('scope-drop');
+            if (dropEl) {
+                // Only worth showing when a real fraction is being lost; the odd
+                // dropped push is normal and not worth alarming anyone about.
+                const total = rxOk + rxDropped;
+                const bad = total > 10 && rxDropped / total > 0.1;
+                dropEl.style.display = bad ? 'inline' : 'none';
+                if (bad) dropEl.textContent = Math.round(100 * rxDropped / total) + '% of updates lost';
+            }
+
+            if (viewMode === 'map') { renderMap(rows); return; }
+
+            const list = document.getElementById('targets-list');
+            if (!list) return;
+
+            if (rows.length === 0) {
+                list.innerHTML = '<div class="scope-empty">' +
+                    (connectionType ? 'Listening\u2026 nothing matched right now. If the buzzer sounds, look around.'
+                                    : 'Connect the device to see live matches. It still beeps on its own without the phone.') +
+                    '</div>';
+                return;
+            }
+
+            let html = '';
+            for (const m of rows) {
+                const cat = categoryOf(m.type || m.rule);
+                // Name it by whatever a person would recognise: its own name,
+                // then the network it is announcing, then the rule it tripped,
+                // then its address. Never invent a word for it.
+                const title = m.name || m.ssid || m.rule || cat.label || m.mac;
+                // With the filter off the list contains devices that matched
+                // nothing. Saying so is the difference between a tool and a
+                // scaremonger: a listed device is not a detection.
+                const band = bandOf(m);
+                const unmatched = band === 'none';
+                const weak = band === 'weak';
+                const isHunted = !!huntMac && String(m.mac).toUpperCase() === huntMac.toUpperCase();
+                // A random address with no company ID has no maker to name;
+                // say so rather than leave the blank unexplained.
+                const vendor = vendorOf(m) || (publicMac(m) || m.cid != null ? '' : 'random MAC');
+                html += '<div class="scope-row' + (unmatched ? ' unmatched' : '') +
+                        (isHunted ? ' hunted' : '') +
+                        '" style="border-left:4px solid ' + cat.color + '">' +
+                    '<div class="scope-main">' +
+                        '<div class="scope-title">' + radioBadges(m.protocol, m.ap) +
+                            (cat.icon ? cat.icon + ' ' : '') + esc(title) +
+                            // A weak hint has no vendor to name -- cat.label is
+                            // just the rule text, which already appears below.
+                            (unmatched || weak ? '' :
+                                ' <span class="scope-cat" style="color:' + cat.color + '">' + esc(cat.label) + '</span>') +
+                            (unmatched ? '<span class="unmatched-tag">no match</span>' : '') +
+                            (weak ? '<span class="unmatched-tag">weak hint</span>' : '') +
+                            (m.tier && !unmatched && !weak ? '<span class="tier-badge" style="color:' + cat.color + '">' + esc(m.tier) + '</span>' : '') +
+                        '</div>' +
+                        // Don't print the address twice when it is also the title.
+                        '<div class="scope-sub">' +
+                            // The protocol is a badge in the title now. Every
+                            // part here is optional, so join what exists rather
+                            // than leave a dangling separator behind.
+                            [ esc(vendor),
+                              (title === m.mac ? '' : '<span class="mono">' + esc(m.mac) + '</span>'),
+                              (m.ssid && m.ssid !== title ? esc(m.ssid) : ''),
+                              (m.rule ? esc(m.rule) : ''),
+                              (unmatched ? '' : 'conf ' + (m.confidence | 0))
+                            ].filter(Boolean).join(' \u00b7 ') + '</div>' +
+                    '</div>' +
+                    '<div class="scope-signal">' +
+                        '<div class="scope-bars" style="color:' + cat.color + '">' + signalBars(m.rssi) + '</div>' +
+                        '<div class="scope-rssi mono">' + esc(m.rssi) + ' dBm</div>' +
+                    '</div>' +
+                    detailLine(m, cat) +
+                    actionRow(m, cat) +
+                '</div>';
+            }
+            list.innerHTML = html;
+        }
+
+        // ---- Hunt / Ring ----------------------------------------------------
+        // Hunt is the one thing the app can change about firmware behaviour: the
+        // device's buzzer becomes an RSSI-driven Geiger clicker for that MAC so
+        // you can physically walk it down. Detection never stops meanwhile.
+        let huntMac = '';
+        let foxhuntMode = false;      // filter off: list everything, hunt anything
+        // A push already in flight when you tap still carries the old scan_all,
+        // and adopting it flipped the button back for a frame. Local intent
+        // wins briefly; after that the device is the authority again, so a
+        // write that never landed still repaints the truth.
+        let filterPendingUntil = 0;
+        // Signal strength for the locked target over the last ~40 samples. In
+        // memory, cleared when the hunt stops or the link drops. It is a signal
+        // trace, not a track -- there is no position in it.
+        let huntTrace = [];
+        const HUNT_TRACE_MAX = 40;
+
+        function currentHuntMac() { return huntMac; }
+
+        // Only append when the sample is actually new, so standing still doesn't
+        // fill the trace with duplicates of one reading. Fed by both the 1 Hz
+        // push and the 4 Hz hunt frame.
+        function pushHuntSample(rssi, ts) {
+            const last = huntTrace.length ? huntTrace[huntTrace.length - 1] : null;
+            if (last && last.ts === ts) return;
+            huntTrace.push({ rssi: Number(rssi), ts: ts });
+            if (huntTrace.length > HUNT_TRACE_MAX) huntTrace.shift();
+        }
+
+        function toggleFoxhunt() {
+            if (!connectionType) { showToast('Connect the device first', '…'); return; }
+            foxhuntMode = !foxhuntMode;
+            // Listing only. The buzzer stays gated by the firmware's alert
+            // threshold either way, so turning the filter off shows you every
+            // phone in the room without beeping at a single one.
+            sendCommand({ scan_all: foxhuntMode });
+            filterPendingUntil = Date.now() + 1500;
+            paintFilter();
+            // The radio strip is always on screen and its choice is yours, not
+            // the filter's — it used to appear and reset with foxhunt mode.
+            if (!foxhuntMode && huntMac) stopHunt();
+            showToast(foxhuntMode ? 'Filter off \u2014 showing everything'
+                                  : 'Filter on \u2014 matches only',
+                      foxhuntMode ? '\u25ce' : '\u25c9');
+            renderScope();
+        }
+
+        // Lit means filtering, which is the normal state. It used to be lit
+        // when the filter was OFF and read "Filter: matches" unlit, backwards.
+        // With nothing connected the board's filter is unknown, so it shows
+        // "—" like Alerts rather than a confident "On".
+        function paintFilter() {
+            const btn = document.getElementById('btn-foxhunt');
+            if (!btn) return;
+            if (!connectionType) {
+                btn.classList.remove('on');
+                btn.textContent = '◉ Filter: —';
+                return;
+            }
+            btn.classList.toggle('on', !foxhuntMode);
+            btn.textContent = foxhuntMode ? '\u25ce Filter: Off' : '\u25c9 Filter: On';
+        }
+
+        function huntTarget(mac) {
+            const same = huntMac && huntMac.toUpperCase() === String(mac).toUpperCase();
+            if (same) { stopHunt(); return; }
+            huntMac = String(mac);
+            huntTrace = [];
+            sendCommand({ hunt: huntMac });
+            showToast('Locked on \u2014 follow the beeps', '\u25c9');
+            renderScope();
+            // You locked on from halfway down a long list; the instrument is at
+            // the top of it. Bring it to you -- the hunted card is pinned
+            // directly beneath, so both land on screen together.
+            const fox = document.getElementById('fox');
+            if (fox && fox.scrollIntoView) fox.scrollIntoView({ block: 'start', behavior: 'smooth' });
+        }
+
+        function stopHunt() {
+            huntMac = '';
+            huntTrace = [];
+            sendCommand({ hunt: '' });   // "" clears; see ble_serial.cpp
+            showToast('Hunt stopped', '\u25cb');
+            renderScope();
+        }
+
+        // The foxhunt instrument. Big enough to read at arm's length, because
+        // you are meant to be walking and listening to the device, not staring
+        // at the phone.
+        function renderFoxhunt() {
+            const panel = document.getElementById('fox');
+            if (!panel) return;
+            if (!huntMac) { panel.style.display = 'none'; return; }
+            panel.style.display = 'block';
+
+            const m = liveMatches[huntMac] ||
+                      liveMatches[Object.keys(liveMatches).find(function (k) {
+                          return k.toUpperCase() === huntMac.toUpperCase();
+                      })];
+
+            const nameEl  = document.getElementById('fox-name');
+            const macEl   = document.getElementById('fox-mac');
+            const rssiEl  = document.getElementById('fox-rssi');
+            const trendEl = document.getElementById('fox-trend');
+            if (macEl) macEl.textContent = huntMac;
+
+            if (!m) {
+                if (nameEl)  nameEl.textContent = 'Lost signal';
+                if (rssiEl)  rssiEl.textContent = '--';
+                if (trendEl) { trendEl.textContent = 'no signal'; trendEl.style.color = 'var(--ss-dim)'; }
+                drawTrace();
+                return;
+            }
+
+            const cat = categoryOf(m.type || m.rule);
+            if (nameEl) nameEl.textContent = m.name || m.rule || cat.label;
+            if (rssiEl) rssiEl.textContent = m.rssi;
+
+            pushHuntSample(m.rssi, m.ts);
+
+            // Warmer/colder from the last handful of samples against the ones
+            // before them. 3 dB is roughly the smallest change worth acting on;
+            // below that the reading is just multipath noise.
+            if (trendEl) {
+                const t = huntTrace.map(function (p) { return p.rssi; });
+                if (t.length < 4) {
+                    trendEl.textContent = 'reading\u2026';
+                    trendEl.style.color = 'var(--ss-dim)';
+                } else {
+                    const avg = (a) => a.reduce(function (x, y) { return x + y; }, 0) / a.length;
+                    // Last three samples against the three before them. At the
+                    // hunt frame's 4 Hz that is ~1.5 s of history; the old
+                    // 4-against-6 window was ~10 s at 1 Hz, which is why the
+                    // screen read cold while the buzzer was already warming.
+                    const delta = avg(t.slice(-3)) - avg(t.slice(-6, -3));
+                    if (delta > 3)       { trendEl.textContent = 'warmer';  trendEl.style.color = 'var(--ss-live)'; }
+                    else if (delta < -3) { trendEl.textContent = 'colder';  trendEl.style.color = 'var(--accent-amber)'; }
+                    else                 { trendEl.textContent = 'holding'; trendEl.style.color = 'var(--ss-dim)'; }
+                }
+            }
+            drawTrace();
+        }
+
+        function drawTrace() {
+            const cv = document.getElementById('fox-trace');
+            if (!cv || !cv.getContext) return;
+            const dpr = window.devicePixelRatio || 1;
+            const w = cv.clientWidth, h = cv.clientHeight;
+            if (!w || !h) return;
+            if (cv.width !== w * dpr || cv.height !== h * dpr) {
+                cv.width = w * dpr; cv.height = h * dpr;
+            }
+            const ctx = cv.getContext('2d');
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            ctx.clearRect(0, 0, w, h);
+
+            // Baseline so an empty trace still reads as an instrument at rest
+            // rather than a broken element.
+            ctx.strokeStyle = 'rgba(140,170,210,0.18)';
+            ctx.lineWidth = 1;
+            ctx.beginPath(); ctx.moveTo(0, h - 0.5); ctx.lineTo(w, h - 0.5); ctx.stroke();
+            if (huntTrace.length < 2) return;
+
+            const step = w / (HUNT_TRACE_MAX - 1);
+            const y = (r) => h - 2 - rssiFrac(r) * (h - 4);
+            const x0 = w - (huntTrace.length - 1) * step;
+
+            ctx.beginPath();
+            huntTrace.forEach(function (p, i) {
+                const x = x0 + i * step;
+                if (i === 0) ctx.moveTo(x, y(p.rssi)); else ctx.lineTo(x, y(p.rssi));
+            });
+            ctx.strokeStyle = '#ff3ac8';
+            ctx.lineWidth = 2;
+            ctx.lineJoin = 'round';
+            ctx.stroke();
+
+            ctx.lineTo(x0 + (huntTrace.length - 1) * step, h);
+            ctx.lineTo(x0, h);
+            ctx.closePath();
+            ctx.fillStyle = 'rgba(255,58,200,0.14)';
+            ctx.fill();
+        }
+
+        function ringTarget(mac) {
+            sendCommand({ ring: String(mac) });
+            showToast('Ring sent \u2014 listen for it', '\ud83d\udd14');
+        }
+
+        // Delegated, because a MAC is device-supplied text and must never be
+        // interpolated into an onclick string.
+        document.addEventListener('click', function (ev) {
+            if (!ev.target || !ev.target.closest) return;
+            // Must match the band-strip markup in index.html. This selector
+            // was left pointing at the old '#lens-row .lens-tab' when the tabs
+            // were rebuilt as '#bands .band', which silently made every tab
+            // dead: no error, no visual difference, just nothing happening.
+            const tab = ev.target.closest('#bands .band');
+            if (tab) { setLens(tab.getAttribute('data-lens')); return; }
+            const pl = ev.target.closest('#pin-lens .radio-tab');
+            if (pl) { setPinLens(pl.getAttribute('data-pin')); return; }
+            const rt = ev.target.closest('#radios .radio-tab');
+            if (rt) { setRadio(rt.getAttribute('data-radio')); return; }
+            const wr = ev.target.closest('#wifi-roles .radio-tab');
+            if (wr) { setWifiRole(wr.getAttribute('data-role')); return; }
+            const lm = ev.target.closest('#led-modes .radio-tab');
+            if (lm) { setLed(Number(lm.getAttribute('data-led'))); return; }
+            const sm = ev.target.closest('#sound-modes .radio-tab');
+            if (sm) { setSound(sm.getAttribute('data-sound') === '1'); return; }
+            const act = ev.target.closest('.scope-act');
+            if (!act) return;
+            const mac = act.getAttribute('data-mac');
+            if (act.getAttribute('data-act') === 'hunt') huntTarget(mac);
+            else if (act.getAttribute('data-act') === 'ring') ringTarget(mac);
+        });
+
+        // =====================================================================
+        //  Live map. Live ONLY.
+        // =====================================================================
+        // The map came back; the trail it used to come with did not. Rules that
+        // hold here, and the reason each one exists:
+        //
+        //   * ONE-SHOT position only (getFix), never watchPosition. A passive
+        //     position watch is a location history in RAM, and a location
+        //     history is the thing this whole redesign exists to not have.
+        //   * No breadcrumb polyline. Same reason.
+        //   * No offline tile cache. Cached tiles persist on disk and record
+        //     which areas you downloaded -- a weak trail, but a real one.
+        //   * Nothing here is written to storage, and it all clears on
+        //     disconnect along with liveMatches.
+        //
+        // What gets drawn:
+        //   * You: a small dot at your last fix.
+        //   * Drones: a solid marker at their DECODED coordinate. That number is
+        //     real -- the aircraft broadcast it.
+        //   * Everything else: a dashed circle of RSSI-estimated radius around
+        //     YOU. Deliberately not a marker, because we do not know where the
+        //     thing is; we only know roughly how far. A pin would be a lie.
+        //   * Saved pins: only once unlocked. Detecting never asks for the PIN.
+        let map = null, meLayer = null, liveLayer = null, pinLayer = null;
+        let mapFix = null;   // {lat, lng, acc} -- last one-shot fix, memory only
+
+        // Very rough log-distance path loss. Good enough to say "close" vs "far"
+        // and nothing more, which is exactly what the dashed ring claims.
+        // ponytail: fixed exponent; add a calibration knob if it reads badly in
+        // the field, since real environments vary far more than this model does.
+        function rssiMeters(rssi) {
+            const r = Number(rssi);
+            if (!isFinite(r)) return 100;
+            const m = Math.pow(10, (-59 - r) / 20);
+            return Math.max(5, Math.min(400, m * 10));
+        }
+
+        function initMap() {
+            if (map || !window.L) return;
+            const el = document.getElementById('map');
+            if (!el) return;
+            map = window.L.map(el, { zoomControl: true, attributionControl: true })
+                    .setView([0, 0], 2);
+            // Standard OSM tiles, darkened in CSS rather than a ready-made dark
+            // basemap: CARTO's dark_all now returns "API KEY REQUIRED" stamped
+            // across every tile, and a detector should not depend on a keyed
+            // service to draw a map at all.
+            window.L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 19,
+                attribution: '&copy; OpenStreetMap contributors'
+            }).addTo(map);
+            meLayer   = window.L.layerGroup().addTo(map);
+            liveLayer = window.L.layerGroup().addTo(map);
+            pinLayer  = window.L.layerGroup().addTo(map);
+            recenterMap();
+        }
+
+        async function recenterMap() {
+            try {
+                const fix = await getFix();
+                mapFix = { lat: fix.lat, lng: fix.lng, acc: fix.acc };
+                if (map) map.setView([mapFix.lat, mapFix.lng], 16);
+                renderScope();
+            } catch (e) {
+                showToast('No location fix available', '!');
+            }
+        }
+
+        function renderMap(rows) {
+            if (!map || !window.L) return;
+            meLayer.clearLayers();
+            liveLayer.clearLayers();
+
+            if (mapFix) {
+                window.L.circleMarker([mapFix.lat, mapFix.lng], {
+                    radius: 6, color: '#34d399', fillColor: '#34d399', fillOpacity: 0.9, weight: 2
+                }).addTo(meLayer).bindPopup('You');
+                if (mapFix.acc) {
+                    window.L.circle([mapFix.lat, mapFix.lng], {
+                        radius: mapFix.acc, color: '#34d399', weight: 1, opacity: 0.3, fill: false
+                    }).addTo(meLayer);
+                }
+            }
+
+            let ringed = 0;
+            for (const m of rows) {
+                const cat = categoryOf(m.type || m.rule);
+                const title = esc(m.name || m.rule || cat.label);
+                if (m.lat != null && m.lng != null) {
+                    // A real, broadcast coordinate: it gets a real marker.
+                    window.L.circleMarker([m.lat, m.lng], {
+                        radius: 8, color: cat.color, fillColor: cat.color, fillOpacity: 0.85, weight: 2
+                    }).addTo(liveLayer).bindPopup(cat.icon + ' ' + title + '<br>' + esc(m.mac));
+                    if (m.opLat != null && m.opLng != null) {
+                        window.L.circleMarker([m.opLat, m.opLng], {
+                            radius: 6, color: cat.color, fillColor: '#000', fillOpacity: 0.6, weight: 2
+                        }).addTo(liveLayer).bindPopup('Operator of ' + title);
+                    }
+                } else if (mapFix) {
+                    // Distance only. Dashed, unfilled, centred on you -- it must
+                    // never read as "the thing is here".
+                    window.L.circle([mapFix.lat, mapFix.lng], {
+                        radius: rssiMeters(m.rssi), color: cat.color, weight: 1.5,
+                        dashArray: '6 6', fill: false, opacity: 0.8
+                    }).addTo(liveLayer).bindPopup(cat.icon + ' ' + title + '<br>' + esc(m.mac) +
+                        '<br>within ~' + Math.round(rssiMeters(m.rssi)) + ' m (signal strength only)');
+                    ringed++;
+                }
+            }
+
+            renderMapPins();
+
+            const note = document.getElementById('map-note');
+            if (note) {
+                note.innerHTML = (mapFix ? '' : 'No fix yet. ') +
+                    'Solid markers are broadcast coordinates (drones). ' +
+                    'Dashed rings are distance-from-you estimates from signal strength \u2014 ' +
+                    'not locations. ' + (ringed ? ringed + ' ring(s). ' : '') +
+                    '<button class="scope-act" style="margin-left:6px" onclick="recenterMap()">\u27f3 Recenter</button>' +
+                    (pinsCache.length ? '' : ' <span style="opacity:0.7">Saved pins appear once unlocked.</span>');
+            }
+        }
+
+        // Saved pins are drawn only when the store is already unlocked in this
+        // session. Opening the map must never prompt for the PIN -- the PIN
+        // gates viewing and export, and nothing else.
+        function renderMapPins() {
+            if (!pinLayer || !window.L) return;
+            pinLayer.clearLayers();
+            if (!pinKey) return;
+            for (const pin of pinsCache) {
+                if (pin.lat == null || pin.lng == null) continue;
+                const cat = categoryOf(pin.category || pin.rule);
+                window.L.marker([pin.lat, pin.lng]).addTo(pinLayer)
+                    .bindPopup('\ud83d\udccd ' + esc(pin.name || pin.rule || cat.label) +
+                               '<br>' + esc(pin.mac) +
+                               '<br>' + esc(new Date(pin.ts).toLocaleString()));
+            }
+        }
+
+        // Repaint on a timer so stale rows fade even when no new data arrives.
+        setInterval(renderScope, 1500);
+        // Paint the resting state immediately: an unpainted status strip looks
+        // like a hung app, and the resting state ("nothing connected, location
+        // off, not recording") is the honest answer on first load.
+        if (typeof document !== 'undefined' && document.addEventListener) {
+            document.addEventListener('DOMContentLoaded', function () {
+                renderStatusStrip();
+                renderScope();
+            });
+        }
+
+        // =====================================================================
+        //  Incoming telemetry
+        // =====================================================================
+        // BLE notifications are unacknowledged, and a telemetry push is split
+        // across many of them. Lose one chunk and the reassembled line is
+        // truncated JSON, so the whole second's data is discarded -- which looks
+        // exactly like "the device found nothing". Count it and show it, rather
+        // than logging to a console nobody has open on a phone.
+        let rxDropped = 0;
+        let rxOk = 0;
+
+        function processIncomingData(dataStr) {
+            try {
+                const data = JSON.parse(dataStr);
+                rxOk++;
+                // The 4 Hz hunt frame: one target, one number, and deliberately
+                // NOT a renderScope() -- rebuilding the list four times a second
+                // would put the rows back to moving under your thumb, which is
+                // the thing this whole path exists to stop.
+                if ('hunt_rssi' in data) {
+                    const hm = liveMatches[data.hunt] ||
+                               liveMatches[Object.keys(liveMatches).find(function (k) {
+                                   return k.toUpperCase() === String(data.hunt).toUpperCase();
+                               })];
+                    const now = Date.now();
+                    if (hm) { hm.rssi = data.hunt_rssi; hm.ts = now; }
+                    pushHuntSample(data.hunt_rssi, now);
+                    try { renderFoxhunt(); } catch (e) { console.warn('foxhunt render failed:', e); }
+                    return;
+                }
+                // The device is the authority on its own state. Both flags
+                // persist in NVS (sweep-st), so a board that ran headless
+                // comes back still hunting or still unfiltered -- the app has
+                // to adopt what the telemetry says in either direction rather
+                // than assume defaults. Adopted BEFORE rendering: the other
+                // order drew one push under the old filter, which left stale
+                // unmatched rows (with Hunt buttons) up until the next push.
+                if ('targets' in data) syncDeviceState(data);
+                if (data.targets) {
+                    ingestTargets(data.targets);
+                    renderScope();
+                }
+                if (data.cfg) {
+                    cfgSeen = true;
+                    applyConfigToSettings(data);
+                    // A board that has been running headless may already be
+                    // hunting something or have its filter off. Adopt that on
+                    // connect rather than waiting for the first push.
+                    syncDeviceState(data);
+                }
+                // Reply to CMD:SIGS. Carries neither `targets` nor `cfg`.
+                if (Array.isArray(data.signatures)) setSigUi(data.signatures);
+            } catch (e) {
+                rxDropped++;
+                console.warn('Data parse error (dropped ' + rxDropped + ' of ' +
+                             (rxDropped + rxOk) + '):', e);
+            }
+        }
+
+        // =====================================================================
+        //  Opt-in, consented, encrypted location pins (evidence you choose).
+        // =====================================================================
+        // Default OFF. When ON and a known device is detected, we ask once per
+        // device whether to drop a pin. A yes captures ONE location fix (never a
+        // continuous track) and stores it as ciphertext behind a PIN.
+        const RECORD_PREF_KEY = 'recordEnabled';
+        const PIN_STORE_KEY   = 'pinStoreV1';
+        let recordEnabled = false;
+        // Which band asks to be pinned. App-side, because pins are: looking
+        // for Flock cameras should not mean being asked about every AirTag.
+        // A band tab sets it; the Pins sheet can override it.
+        let pinLens = 'all';
+        try { pinLens = localStorage.getItem('pinLens') || 'all'; } catch (e) {}
+        let pinKey = null;            // CryptoKey, set once unlocked this session
+        let pinSalt = null;            // Uint8Array, persisted with the store
+        let pinsCache = [];            // decrypted pins, in memory only while unlocked
+        const handledMacs = new Set(); // asked-or-recorded this session (no re-prompt)
+        let consentQueue = [];         // pending {match}
+
+        function b64(bytes) { return btoa(String.fromCharCode(...new Uint8Array(bytes))); }
+        function unb64(s) { return Uint8Array.from(atob(s), c => c.charCodeAt(0)); }
+
+        async function deriveKey(pin, saltBytes) {
+            const enc = new TextEncoder();
+            const base = await crypto.subtle.importKey('raw', enc.encode(pin), 'PBKDF2', false, ['deriveKey']);
+            return crypto.subtle.deriveKey(
+                { name: 'PBKDF2', salt: saltBytes, iterations: 150000, hash: 'SHA-256' },
+                base, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+        }
+
+        function pinStoreExists() {
+            try { return !!localStorage.getItem(PIN_STORE_KEY); } catch (e) { return false; }
+        }
+
+        async function savePins() {
+            if (!pinKey || !pinSalt) return;
+            const iv = crypto.getRandomValues(new Uint8Array(12));
+            const enc = new TextEncoder();
+            const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, pinKey,
+                enc.encode(JSON.stringify(pinsCache)));
+            const payload = { v: 1, salt: b64(pinSalt), iv: b64(iv), ct: b64(ct) };
+            try { localStorage.setItem(PIN_STORE_KEY, JSON.stringify(payload)); }
+            catch (e) { showToast('Could not save pin', '✕'); }
+        }
+
+        // Create a brand-new store with this PIN (first time recording).
+        async function createPinStore(pin) {
+            pinSalt = crypto.getRandomValues(new Uint8Array(16));
+            pinKey = await deriveKey(pin, pinSalt);
+            pinsCache = [];
+            await savePins();
+        }
+
+        // Unlock an existing store. Throws if the PIN is wrong (GCM auth fails).
+        async function unlockPins(pin) {
+            const raw = JSON.parse(localStorage.getItem(PIN_STORE_KEY));
+            const salt = unb64(raw.salt), iv = unb64(raw.iv), ct = unb64(raw.ct);
+            const key = await deriveKey(pin, salt);
+            const dec = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ct); // throws on bad PIN
+            pinsCache = JSON.parse(new TextDecoder().decode(dec));
+            pinKey = key; pinSalt = salt;
+        }
+
+        function wipePins() {
+            try { localStorage.removeItem(PIN_STORE_KEY); } catch (e) {}
+            pinKey = null; pinSalt = null; pinsCache = [];
+        }
+
+        // ---- Location status ------------------------------------------------
+        // A fix vaguer than this is worse than no fix: a pin is evidence of
+        // where a camera is, and one saved at plus-or-minus 200 m points at the
+        // wrong building. The old build discarded such fixes silently, so a
+        // whole drive could record nothing while looking healthy. Show it.
+        const FIX_ACCURACY_MAX_M = 50;
+
+        // Deliberately NOT a live GPS state: there is no watchPosition here, so
+        // this reports the last one-shot fix and nothing more. "Off" genuinely
+        // means nothing has asked for location yet, which is the resting state.
+        let gpsState = { state: 'off', acc: null };
+
+        function setGpsState(state, acc) {
+            gpsState = { state: state, acc: (acc == null ? null : acc) };
+            renderStatusStrip();
+        }
+
+        function gpsDisplay() {
+            switch (gpsState.state) {
+                case 'locating': return { dot: 'warn', text: 'Locating\u2026' };
+                case 'denied':   return { dot: 'bad',  text: 'Permission denied' };
+                case 'failed':   return { dot: 'bad',  text: 'No fix' };
+                case 'fix': {
+                    const a = Math.round(gpsState.acc);
+                    return (gpsState.acc <= FIX_ACCURACY_MAX_M)
+                        ? { dot: 'ok',   text: '\u00b1' + a + ' m' }
+                        : { dot: 'warn', text: '\u00b1' + a + ' m \u2014 too vague to pin' };
+                }
+                default: return { dot: 'off', text: 'Off' };
+            }
+        }
+
+        // Which board this is and how long it has been up. Name comes from
+        // CMD:CFG, because over a cable all you would otherwise see is a port.
+        // Uptime is asked once and counted on here; the alert count rides the
+        // push. All three belong to one board and are cleared on disconnect.
+        let devName = '';
+        let bootAt = null;
+        let alertCount = null;
+
+        // The header's connection bar button. It is a labelled button, not a
+        // tappable name: a glyph on the name line was a control nobody would
+        // find. Disconnecting asks first, since it sits under a thumb.
+        function hdrTap() {
+            if (!connectionType) { openConnModal(); return; }
+            if (confirm('Disconnect from ' + (devName || 'the device') + '?\n\n' +
+                        'It keeps scanning and beeping on its own.')) disconnectDevice();
+        }
+
+        function fmtUptime(s) {
+            if (s < 60) return s + 's';
+            const m = Math.floor(s / 60);
+            if (m < 60) return m + 'm';
+            const h = Math.floor(m / 60);
+            if (h < 24) return h + 'h ' + (m % 60) + 'm';
+            return Math.floor(h / 24) + 'd ' + (h % 24) + 'h';
+        }
+
+        function renderStatusStrip() {
+            const set = (dotId, textId, cls, text) => {
+                const d = document.getElementById(dotId);
+                const t = document.getElementById(textId);
+                if (d) d.className = 'statdot ' + cls;
+                if (t) t.textContent = text;
+            };
+            const via = { BLE: 'Bluetooth', USB: 'USB', SERIAL: 'USB serial' }[connectionType] || connectionType;
+            set('hdr-dot', 'hdr-dev',
+                connectionType ? 'ok' : 'off',
+                !connectionType ? 'Not connected'
+                    : devName ? devName + ' · ' + via : via);
+            const act = document.getElementById('hdr-act');
+            if (act) {
+                act.textContent = connectionType ? 'Disconnect' : 'Connect';
+                act.classList.toggle('disc', !!connectionType);
+            }
+            const txt = (id, text) => { const e = document.getElementById(id); if (e) e.textContent = text; };
+            txt('st-up', bootAt === null ? '—'
+                : fmtUptime(Math.max(0, Math.floor((Date.now() - bootAt) / 1000))));
+            txt('st-alerts', alertCount === null ? '—' : String(alertCount));
+            const g = gpsDisplay();
+            set('st-gps-dot', 'st-gps', g.dot, g.text);
+            // Here rather than only on a change: a reconnect whose scan_all
+            // matches the old value would otherwise leave "—" up.
+            paintFilter();
+        }
+
+        // One-shot location (never watchPosition — no passive trail).
+        function getFix() {
+            return new Promise((resolve, reject) => {
+                const ok = (pos) => resolve({
+                    lat: pos.coords.latitude, lng: pos.coords.longitude,
+                    acc: pos.coords.accuracy
+                });
+                setGpsState('locating');
+                const done = (pos) => { setGpsState('fix', pos.coords.accuracy); ok(pos); };
+                const failed = (err) => {
+                    // A refused permission and a cold lock that timed out need
+                    // opposite responses: one is a settings problem, the other
+                    // is worth standing still outside for another few seconds.
+                    const denied = err && (err.code === 1 ||
+                        /denied|permission/i.test(err.message || ''));
+                    setGpsState(denied ? 'denied' : 'failed');
+                    reject(err);
+                };
+                if (window.Geolocation && window.Geolocation.getCurrentPosition) {
+                    window.Geolocation.getCurrentPosition({ enableHighAccuracy: true, timeout: 15000 })
+                        .then(done).catch(failed);
+                } else if (navigator.geolocation) {
+                    navigator.geolocation.getCurrentPosition(done, failed, { enableHighAccuracy: true, timeout: 15000 });
+                } else {
+                    setGpsState('failed');
+                    reject(new Error('No geolocation available'));
+                }
+            });
+        }
+
+        // ---- Consent flow ----
+        function toggleRecording() {
+            recordEnabled = !recordEnabled;
+            try { localStorage.setItem(RECORD_PREF_KEY, recordEnabled ? '1' : '0'); } catch (e) {}
+            paintRecord();
+            showToast(recordEnabled ? 'Will ask to pin each match' : 'Not asking to pin', '📍');
+        }
+
+        // The switch lives in the Pins sheet; the header 📍 lights while it is
+        // on, so an armed prompt is visible without opening anything.
+        function paintRecord() {
+            const btn = document.getElementById('btn-record');
+            if (btn) {
+                btn.classList.toggle('on', recordEnabled);
+                btn.textContent = recordEnabled ? 'On' : 'Off';
+            }
+            const hdr = document.getElementById('btn-pins');
+            if (hdr) hdr.classList.toggle('lit', recordEnabled);
+            paintPinLens();
+        }
+
+        function setPinLens(key) {
+            pinLens = key;
+            try { localStorage.setItem('pinLens', key); } catch (e) {}
+            paintPinLens();
+        }
+        function paintPinLens() {
+            document.querySelectorAll('#pin-lens .radio-tab').forEach(function (el) {
+                el.setAttribute('aria-pressed', el.getAttribute('data-pin') === pinLens ? 'true' : 'false');
+            });
+        }
+
+        function maybeOfferRecord(match) {
+            if (!recordEnabled) return;
+            // With the filter off the device reports everything it hears, and
+            // without this the app would ask permission to pin every phone on
+            // the street. Pins are for things that actually matched.
+            if (!match.type && !match.rule) return;
+            // Before handledMacs, so a device the filter skipped is still
+            // offered if the filter widens later.
+            if (!inLens(match, pinLens)) return;
+            if (handledMacs.has(match.mac)) return;
+            handledMacs.add(match.mac);
+            consentQueue.push(match);
+            if (consentQueue.length === 1) showNextConsent();
+        }
+
+        function showNextConsent() {
+            const m = consentQueue[0];
+            if (!m) return;
+            // Called from inside the ingest loop, so a missing element must not
+            // throw: that would abandon the rest of the telemetry batch and
+            // leave the live list half-populated.
+            const textEl = document.getElementById('consent-text');
+            if (!textEl) return;
+            const cat = categoryOf(m.type || m.rule);
+            textEl.innerHTML =
+                'Record <strong style="color:' + cat.color + '">' + esc(cat.label) + '</strong> here?<br>' +
+                '<span style="color:var(--text-muted); font-size:0.85rem">' + esc(m.name || m.rule || m.mac) + '</span>';
+            const modal = document.getElementById('consent-modal');
+            if (modal) modal.classList.add('active');
+        }
+
+        function consentDismiss() {
+            document.getElementById('consent-modal').classList.remove('active');
+            consentQueue.shift();
+            if (consentQueue.length) setTimeout(showNextConsent, 300);
+        }
+
+        async function consentYes() {
+            const m = consentQueue[0];
+            document.getElementById('consent-modal').classList.remove('active');
+            try {
+                const fix = await getFix();
+                if (fix.acc > FIX_ACCURACY_MAX_M && !confirm(
+                        'This fix is only accurate to about ' + Math.round(fix.acc) +
+                        ' m, so the pin could land on the wrong block. Save it anyway?')) {
+                    showToast('Pin not saved', '✕');
+                    consentQueue.shift();
+                    if (consentQueue.length) setTimeout(showNextConsent, 300);
+                    return;
+                }
+                // Ensure the store is unlocked / created before writing.
+                if (!pinKey) {
+                    pendingPinAction = async () => { await writePin(m, fix); };
+                    openPinGate(pinStoreExists() ? 'unlock' : 'create');
+                } else {
+                    await writePin(m, fix);
+                }
+            } catch (e) {
+                showToast('No GPS fix — pin not saved', '✕');
+            }
+            consentQueue.shift();
+            if (consentQueue.length) setTimeout(showNextConsent, 300);
+        }
+
+        async function writePin(m, fix) {
+            const cat = categoryOf(m.type || m.rule);
+            pinsCache.push({
+                mac: m.mac, category: cat.label, rule: m.rule || '', name: m.name || '',
+                rssi: m.rssi, lat: fix.lat, lng: fix.lng, acc: fix.acc, ts: Date.now()
+            });
+            await savePins();
+            showToast('Pin saved (' + pinsCache.length + ' total)', '📍');
+        }
+
+        // ---- PIN gate modal ----
+        let pendingPinAction = null;   // run after a successful unlock/create
+        let pinGateMode = 'unlock';    // 'unlock' | 'create'
+        function openPinGate(mode) {
+            pinGateMode = mode;
+            document.getElementById('pin-input').value = '';
+            document.getElementById('pin-gate-title').textContent =
+                mode === 'create' ? 'Set a PIN to protect your pins' : 'Enter PIN to unlock pins';
+            document.getElementById('pin-error').textContent = '';
+            document.getElementById('pin-gate-modal').classList.add('active');
+            setTimeout(() => document.getElementById('pin-input').focus(), 100);
+        }
+        function closePinGate() {
+            document.getElementById('pin-gate-modal').classList.remove('active');
+            pendingPinAction = null;
+        }
+        async function submitPin() {
+            const pin = document.getElementById('pin-input').value;
+            if (!pin || pin.length < 4) {
+                document.getElementById('pin-error').textContent = 'Use at least 4 digits/characters.';
+                return;
+            }
+            try {
+                if (pinGateMode === 'create') await createPinStore(pin);
+                else await unlockPins(pin);
+                document.getElementById('pin-gate-modal').classList.remove('active');
+                const act = pendingPinAction; pendingPinAction = null;
+                if (act) await act();
+            } catch (e) {
+                document.getElementById('pin-error').textContent = 'Wrong PIN — nothing revealed.';
+            }
+        }
+
+        // ---- Pins view / export ----
+        // Always opens: the "ask to pin" switch lives here and must never sit
+        // behind the PIN -- only viewing saved pins does.
+        function openPins() {
+            paintRecord();
+            if (pinKey || !pinStoreExists()) { renderPins(); return; }
+            document.getElementById('pins-body').innerHTML =
+                '<div class="scope-empty">Saved pins are locked.<br>' +
+                '<button class="ctrl-btn" style="margin-top:0.7rem" onclick="unlockPinsView()">Unlock to view</button></div>';
+            document.getElementById('pins-modal').classList.add('active');
+        }
+        // The PIN gate sits under the Pins sheet in the DOM, so close the sheet
+        // first; renderPins() reopens it once unlocked.
+        function unlockPinsView() {
+            document.getElementById('pins-modal').classList.remove('active');
+            pendingPinAction = renderPins;
+            openPinGate('unlock');
+        }
+        function renderPins() {
+            const body = document.getElementById('pins-body');
+            if (pinsCache.length === 0) {
+                body.innerHTML = '<div class="scope-empty">No pins yet. Turn on <strong>Ask to pin matches</strong> and confirm a device to drop one.</div>';
+            } else {
+                body.innerHTML = pinsCache.map((p, i) => {
+                    const cat = categoryOf(p.category);
+                    return '<div class="scope-row" style="border-left:4px solid ' + cat.color + '">' +
+                        '<div class="scope-main">' +
+                            '<div class="scope-title">' + cat.icon + ' ' + esc(p.category) + '</div>' +
+                            '<div class="scope-sub">' + esc(p.mac) + ' · ' + p.lat.toFixed(5) + ', ' + p.lng.toFixed(5) +
+                                ' · ±' + Math.round(p.acc) + 'm · ' + new Date(p.ts).toLocaleString() + '</div>' +
+                        '</div>' +
+                        '<button class="scope-del" onclick="deletePin(' + i + ')">✕</button>' +
+                    '</div>';
+                }).join('');
+            }
+            document.getElementById('pins-modal').classList.add('active');
+        }
+        async function deletePin(i) {
+            pinsCache.splice(i, 1);
+            await savePins();
+            renderPins();
+        }
+        function wipePinsConfirm() {
+            if (!confirm('Delete ALL recorded pins permanently? This cannot be undone.')) return;
+            wipePins();
+            document.getElementById('pins-modal').classList.remove('active');
+            showToast('All pins wiped', '🗑');
+        }
+
+        function xmlAttr(v) { return esc(v); }
+        function exportPinsFile() {
+            if (pinsCache.length === 0) { showToast('No pins to export', 'ℹ'); return; }
+            const blob = new Blob([JSON.stringify(pinsCache, null, 2)], { type: 'application/json' });
+            downloadBlob(blob, 'signalsweep-pins-' + Date.now() + '.json');
+        }
+        // OSM: exporting CAMERA locations is the DeFlock use case, not a movement
+        // leak — the pins are devices you consented to mark, never a track of you.
+        function exportPinsOSM() {
+            if (pinsCache.length === 0) { showToast('No pins to export', 'ℹ'); return; }
+            let xml = '<?xml version="1.0" encoding="UTF-8"?>\n<osm version="0.6" generator="SignalSweep">\n';
+            pinsCache.forEach((p, i) => {
+                xml += '  <node id="-' + (i + 1) + '" lat="' + p.lat.toFixed(7) + '" lon="' + p.lng.toFixed(7) + '">\n';
+                xml += '    <tag k="man_made" v="surveillance"/>\n';
+                xml += '    <tag k="surveillance:type" v="camera"/>\n';
+                xml += '    <tag k="signalsweep:category" v="' + xmlAttr(p.category) + '"/>\n';
+                if (p.mac) xml += '    <tag k="signalsweep:mac" v="' + xmlAttr(p.mac) + '"/>\n';
+                xml += '  </node>\n';
+            });
+            xml += '</osm>\n';
+            downloadBlob(new Blob([xml], { type: 'application/xml' }), 'signalsweep-pins-' + Date.now() + '.osm');
+        }
+        function downloadBlob(blob, name) {
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = name;
+            document.body.appendChild(a); a.click(); a.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+            showToast('Exported ' + name, '✓');
+        }
+
+        // =====================================================================
+        //  Alarm tuning + signature editor (device commands)
+        // =====================================================================
+        // Null until the device tells us. The mute persists on the board, so a
+        // detector muted in the field comes back muted -- an app that assumed
+        // ON would show a lie, and with two boards around it would show the
+        // wrong board's lie. Painted only from CMD:CFG, like the radios.
+        let buzzerOn = null;
+        // ---- Device identity (name / random address) ------------------------
+        // Both live in the firmware's NVS and are read at boot before the BLE
+        // stack comes up, so saving either restarts the board. The device is
+        // the source of truth -- with more than one board around, the app must
+        // never assume it knows what a given device is called. We ask on
+        // connect (CMD:CFG) rather than have the firmware push it every second;
+        // identity is static config and the 1 Hz payload is the tight budget.
+        function applyConfigToSettings(cfg) {
+            const nameEl = document.getElementById('cfg-name');
+            const rndEl  = document.getElementById('cfg-randmac');
+            if (nameEl && typeof cfg.ble_name === 'string') nameEl.value = cfg.ble_name;
+            if (rndEl) rndEl.checked = !!cfg.rand_mac;
+            setRxOnlyUi(!!cfg.rx_only);
+            setRadioUi(cfg);
+            if (typeof cfg.beep_mask === 'number') setBeepUi(cfg.beep_mask);
+            setBuzzerUi(cfg.buzzer);
+            setLedUi(cfg.led);
+            devName = (typeof cfg.ble_name === 'string' && cfg.ble_name) || 'SignalSweep';
+            if (typeof cfg.uptime === 'number') bootAt = Date.now() - cfg.uptime * 1000;
+            renderStatusStrip();
+        }
+
+        // Which categories the buzzer is allowed to speak. One bit per firmware
+        // AlertCategory -- this bit order IS the contract with
+        // hardware_manager.h's enum; change one, change both.
+        const BEEP_BITS = { alpr: 1, bodycam: 2, drone: 4, tracker: 8, generic: 16 };
+
+        // The mask each band tab sets. Cameras is the same umbrella inLens()
+        // uses: ALPR + body cam + the vendor categories with no keyword,
+        // which the firmware sounds as GENERIC.
+        const LENS_MASK = {
+            all:     31,
+            alpr:    BEEP_BITS.alpr | BEEP_BITS.bodycam | BEEP_BITS.generic,
+            tracker: BEEP_BITS.tracker,
+            drone:   BEEP_BITS.drone
+        };
+        // The tab a mask corresponds to, or null for a custom mix from the
+        // Alerts sheet (the tab then stays where it is).
+        function lensOfMask(mask) {
+            for (const k in LENS_MASK) if (LENS_MASK[k] === mask) return k;
+            return null;
+        }
+
+        // Device is the authority, same as the radios: the boxes paint from the
+        // last CMD:CFG, never optimistically. The mask persists on the board, so
+        // one that ran headless comes back with its own idea of what beeps.
+        // The last mask the DEVICE confirmed, null until it tells us. Every
+        // toggle is computed from this, never from the DOM -- that is the whole
+        // fix. These rows used to be <input type="checkbox">, and a checkbox
+        // flips itself on tap before any write is even attempted, so a rejected
+        // or dropped write left the box showing a mask the board did not have,
+        // for the rest of the session, with nothing on screen to say so.
+        let deviceBeepMask = null;
+        // What we have asked the device for but have not yet seen echoed back.
+        // Toggles chain off this so a second tap inside the ~1 s echo window
+        // builds on the first instead of overwriting it -- computing every tap
+        // from the last CONFIRMED mask silently discarded the earlier one
+        // (measured on the bench: five quick taps that should have muted
+        // everything left two categories still sounding). This decides only
+        // what the next command asks for; the rows still paint from the device.
+        let pendingMask = null;
+        let pendingSince = 0;
+        // A write that never lands must not leave a phantom for later taps to
+        // build on, so intent expires and the next tap resyncs to the truth.
+        const PENDING_TTL_MS = 3000;
+
+        function setBeepUi(mask) {
+            if (pendingMask !== null &&
+                (mask === pendingMask || Date.now() - pendingSince > PENDING_TTL_MS)) {
+                pendingMask = null;
+            }
+            if (typeof mask !== 'number') pendingMask = null;
+            deviceBeepMask = (typeof mask === 'number') ? mask : null;
+            for (const key in BEEP_BITS) {
+                const el = document.getElementById('beep-' + key);
+                if (el) el.classList.remove('pending');
+            }
+            paintAlertRows();
+            setSoundsSummary();
+            // Adopt the board's tab. This is what makes a board set headless
+            // (or from another phone) open on the right tab. It follows what
+            // we asked for while that is in flight, so the echo gap cannot
+            // flip a fresh tap back.
+            const k = lensOfMask(pendingMask !== null ? pendingMask : deviceBeepMask);
+            if (k && k !== lens) { paintLens(k); setPinLens(k); }
+        }
+
+        // Flip one bit off the device-confirmed mask and send the whole mask.
+        // No optimistic paint and no success toast: the acknowledgement is the
+        // next frame from the device, which the 1 Hz echo guarantees is under a
+        // second away. If the write never lands, that frame repaints the old
+        // value and the row goes back on its own -- self-healing, with
+        // sendCommand's own transport error toast saying why.
+        function toggleBeep(key) {
+            const base = pendingMask !== null ? pendingMask : deviceBeepMask;
+            if (base === null) { showToast('Waiting for the device', '…'); return; }
+            const bit = BEEP_BITS[key];
+            if (!bit) return;
+            pendingMask = base ^ bit;
+            pendingSince = Date.now();
+            const el = document.getElementById('beep-' + key);
+            if (el) el.classList.add('pending');
+            sendCommand({ beep_mask: pendingMask });
+        }
+
+        // What one category's alert will actually do, given the two outputs.
+        // The buzzer mute is sound only and a category switch gates both its
+        // beep and its light, so a bare ON/OFF lied both ways -- that is how
+        // "Buzzer: OFF" sat above five rows still reading ON. Outputs not yet
+        // reported (null; older firmware has no LED mode) count as on.
+        function alertChip(on, sound, led) {
+            if (on === null) return '—';
+            if (!on) return 'Off';
+            const s = sound !== false, l = led !== 0;
+            return s && l ? '🔊 💡' : s ? '🔊' : l ? '💡' : 'Silent';
+        }
+        function paintAlertRows() {
+            for (const key in BEEP_BITS) {
+                const el = document.getElementById('beep-' + key);
+                if (!el) continue;
+                const on = deviceBeepMask === null ? null : (deviceBeepMask & BEEP_BITS[key]) !== 0;
+                const chip = alertChip(on, buzzerOn, ledMode);
+                el.dataset.on = on === null ? '' : (on ? '1' : '0');
+                el.classList.toggle('on', on === true && chip !== 'Silent');
+                el.classList.toggle('off', on === false);
+                el.classList.toggle('idle', chip === 'Silent');
+                const state = el.querySelector('.snd-state');
+                if (state) state.textContent = chip;
+            }
+        }
+
+        // The toolbar label, so what is muted is legible without opening
+        // anything -- the old controls were three taps deep in Settings.
+        // The icon says how (🔔 both, 🔊 sound only, 💡 lights only, 🔕 nothing
+        // can alert), the word says how many categories.
+        function setSoundsSummary() {
+            const btn = document.getElementById('btn-buzzer');
+            if (!btn) return;
+            if (deviceBeepMask === null || buzzerOn === null) {
+                btn.textContent = '🔔 Alerts: —';
+                btn.classList.remove('on');
+                return;
+            }
+            const keys = Object.keys(BEEP_BITS);
+            const n = keys.filter(k => (deviceBeepMask & BEEP_BITS[k]) !== 0).length;
+            const sound = buzzerOn, light = ledMode !== 0;
+            const icon = n === 0 || (!sound && !light) ? '🔕'
+                       : sound && light ? '🔔' : sound ? '🔊' : '💡';
+            const one = { alpr: 'cameras', tracker: 'trackers', drone: 'drones' }[lensOfMask(deviceBeepMask)];
+            const what = !sound && !light ? 'off'
+                       : n === 0 ? 'none' : n === keys.length ? 'all' : one || n + '/' + keys.length;
+            btn.textContent = icon + ' Alerts: ' + what;
+            btn.classList.toggle('on', icon !== '🔕');
+        }
+
+        function openSounds() {
+            document.getElementById('sounds-modal').classList.add('active');
+        }
+
+        // The device is the authority on the radios too: the toggles never
+        // paint themselves optimistically, they paint what the last cfg reply
+        // said, and the firmware answers every BLE_SCAN/WIFI_SCAN command with
+        // a fresh one. Absent keys (older firmware) leave the button alone.
+        function setRadioUi(cfg) {
+            const paint = (id, on) => {
+                const b = document.getElementById(id);
+                if (!b || typeof on !== 'boolean') return;
+                b.textContent = on ? 'Scanning' : 'Paused';
+                b.classList.toggle('on', on);
+                b.classList.toggle('off', !on);
+                b.dataset.on = on ? '1' : '0';
+            };
+            paint('btn-ble-scan', cfg.ble_scan);
+            paint('btn-wifi-scan', cfg.wifi_scan);
+        }
+
+        function toggleRadio(id, cmdPrefix) {
+            const b = document.getElementById(id);
+            const on = !b || b.dataset.on !== '0';
+            sendCommand({ raw: cmdPrefix + (on ? ':OFF' : ':ON') });
+        }
+        function toggleBleScan()  { toggleRadio('btn-ble-scan', 'CMD:BLE_SCAN'); }
+        function toggleWifiScan() { toggleRadio('btn-wifi-scan', 'CMD:WIFI_SCAN'); }
+
+        // The device is the authority on this; the app only mirrors what the
+        // last CMD:CFG said.
+        let deviceRxOnly = false;
+        function setRxOnlyUi(quiet) {
+            deviceRxOnly = quiet;
+            const label = document.getElementById('cfg-rxonly');
+            if (label) label.textContent = quiet ? 'receive-only' : 'advertising';
+            const btn = document.getElementById('btn-rxonly');
+            if (btn) {
+                btn.textContent = quiet ? 'Advertise' : 'Go quiet';
+                btn.classList.toggle('on', quiet);
+                btn.classList.toggle('off', !quiet);
+            }
+        }
+
+        // Deliberately a toggle, not a one-way door. Over BLE, going quiet
+        // severs the link that carries the command, so the only way back is
+        // the BOOT button. Over a USB cable nothing is severed at all -- the
+        // radio goes quiet and the wire keeps working -- so the app must be
+        // able to put the device back on the air. A control that could only
+        // ever silence would strand the operator in the one situation where
+        // recovery is trivial.
+        function toggleReceiveOnly() {
+            if (deviceRxOnly) {
+                sendCommand({ rx_only: false });
+                setRxOnlyUi(false);
+                showToast('Advertising again', '✓');
+                return;
+            }
+            const overBle = connectionType === 'BLE';
+            const warning = overBle
+                ? 'THIS CONNECTION WILL DROP and the app will not reconnect on its own. ' +
+                  'Tap the BOOT button on the device to make it discoverable again for ' +
+                  'two minutes.'
+                : 'This cable is unaffected and keeps full control -- only the radio ' +
+                  'goes quiet. Bluetooth clients will not see the device until you ' +
+                  'turn advertising back on here, or tap BOOT.';
+            if (!confirm(
+                'Receive-only stops the device advertising itself, so nobody — ' +
+                'including whatever it is watching for — can see it on the air.\n\n' +
+                warning + '\n\nIt keeps scanning and keeps beeping.')) return;
+            sendCommand({ rx_only: true });
+            // Only meaningful on BLE: stand down the capped-backoff loop,
+            // because the device is deliberately gone rather than faulty.
+            if (overBle) cancelReconnect();
+            setRxOnlyUi(true);
+            showToast(overBle ? 'Receive-only — tap BOOT to return' : 'Receive-only — radio quiet', '●');
+        }
+
+        function syncDeviceState(data) {
+            const devHunt = data.hunt || '';
+            if (devHunt.toUpperCase() !== huntMac.toUpperCase()) {
+                huntMac = devHunt;
+                huntTrace = [];
+            }
+            // The sound settings ride the 1 Hz push as well as the CMD:CFG
+            // reply, so the controls reconcile with the board every second
+            // rather than once per connection. This is what makes a lost write
+            // self-heal instead of stranding the app until a factory reset.
+            if (typeof data.beep_mask === 'number') setBeepUi(data.beep_mask);
+            if (typeof data.buzzer === 'boolean') setBuzzerUi(data.buzzer);
+            if (typeof data.led === 'number') setLedUi(data.led);
+            const devAll = !!data.scan_all;
+            if (devAll !== foxhuntMode && Date.now() > filterPendingUntil) {
+                foxhuntMode = devAll;
+                paintFilter();
+            }
+            if (typeof data.alerts === 'number') alertCount = data.alerts;
+            // Every push, so uptime ticks with no timer of its own.
+            renderStatusStrip();
+        }
+
+        // BLE notifications are unacknowledged, and the app asks for the config
+        // exactly once. If that one reply is dropped every settings control
+        // paints a stale or default value for the whole session, silently. So
+        // ask again until one lands, then stop.
+        let cfgSeen = false;
+        const CFG_RETRY_MS = [400, 1500, 4000];
+
+        function requestConfig() {
+            cfgSeen = false;
+            CFG_RETRY_MS.forEach(ms => setTimeout(() => {
+                if (!cfgSeen && connectionType) sendCommand({ raw: 'CMD:CFG' });
+            }, ms));
+        }
+
+        function saveIdentity() {
+            const nameEl = document.getElementById('cfg-name');
+            const rndEl  = document.getElementById('cfg-randmac');
+            const name = nameEl ? nameEl.value.trim() : '';
+            const rand = rndEl ? !!rndEl.checked : false;
+            if (rand && !confirm(
+                'Randomizing the BLE address means the phone cannot silently reconnect ' +
+                'after the device reboots \u2014 you will have to pick it from the dialog ' +
+                'every time. Turn it on anyway?')) {
+                if (rndEl) rndEl.checked = false;
+                return;
+            }
+            // Empty name is meaningful: it restores the "SignalSweep" default.
+            sendCommand({ ble_name: name, rand_mac: rand });
+            showToast('Saved \u2014 device is restarting', '\u21bb');
+        }
+
+        // Device is the authority: a tap asks and the firmware's cfg reply
+        // repaints. No optimistic paint -- if the command never lands the
+        // button must not claim it did.
+        function setSound(on) {
+            if (buzzerOn === null) { showToast('Waiting for the device', '…'); return; }
+            if (on === buzzerOn) return;
+            const el = document.querySelector('#sound-modes .radio-tab[data-sound="' + (on ? 1 : 0) + '"]');
+            if (el) el.classList.add('pending');
+            sendCommand({ buzzer: on });
+        }
+
+        function setBuzzerUi(on) {
+            buzzerOn = (typeof on === 'boolean') ? on : null;
+            document.querySelectorAll('#sound-modes .radio-tab').forEach(function (el) {
+                const pressed = buzzerOn !== null && (el.getAttribute('data-sound') === '1') === buzzerOn;
+                el.setAttribute('aria-pressed', pressed ? 'true' : 'false');
+                el.classList.remove('pending');
+            });
+            paintAlertRows();
+            setSoundsSummary();
+        }
+
+        // LED mode: 0 off, 1 one LED, 2 dim, 3 full (firmware LedMode). Same
+        // contract as the buzzer -- painted only from device frames, a tap
+        // just asks and marks the button pending until the reply lands.
+        let ledMode = null;
+        function setLedUi(n) {
+            ledMode = (typeof n === 'number') ? n : null;
+            document.querySelectorAll('#led-modes .radio-tab').forEach(function (el) {
+                const on = ledMode !== null && Number(el.getAttribute('data-led')) === ledMode;
+                el.setAttribute('aria-pressed', on ? 'true' : 'false');
+                el.classList.remove('pending');
+            });
+            paintAlertRows();
+            setSoundsSummary();
+        }
+        function setLed(n) {
+            if (ledMode === null) { showToast('Waiting for the device', '…'); return; }
+            if (n === ledMode) return;
+            const el = document.querySelector('#led-modes .radio-tab[data-led="' + n + '"]');
+            if (el) el.classList.add('pending');
+            sendCommand({ led: n });
+        }
+
+        // The rules the device is actually carrying. Until they arrive the box
+        // is not editable and Save is disabled: the editor used to open blank
+        // against an unknown board, so saving replaced a rule set nobody had
+        // ever seen. Requested on open, never on connect -- the reply is
+        // multi-KB and the 1 Hz push is the tightest budget on the device.
+        let sigsLoaded = false;
+
+        function setSigUi(rules) {
+            const box  = document.getElementById('sig-input');
+            const save = document.getElementById('btn-sig-save');
+            sigsLoaded = Array.isArray(rules);
+            if (box) {
+                box.value = sigsLoaded ? JSON.stringify(rules, null, 2) : '';
+                box.placeholder = sigsLoaded ? ''
+                    : connectionType ? 'Reading rules from the device…'
+                                     : 'Connect to a device to see the rules it is carrying.';
+                box.readOnly = !sigsLoaded;
+            }
+            if (save) save.disabled = !sigsLoaded;
+        }
+
+        function requestSignatures() {
+            setSigUi(null);
+            sendCommand({ raw: 'CMD:SIGS' });
+        }
+
+        function openSignatures() {
+            document.getElementById('sig-modal').classList.add('active');
+            requestSignatures();
+        }
+        function saveSignatures() {
+            if (!sigsLoaded) { showToast('Device rules not loaded yet', '…'); return; }
+            const txt = document.getElementById('sig-input').value.trim();
+            if (!txt) { showToast('Nothing to send', 'ℹ'); return; }
+            let arr;
+            try { arr = JSON.parse(txt); } catch (e) { showToast('Invalid JSON', '✕'); return; }
+            if (!Array.isArray(arr)) { showToast('Expected a JSON array of rules', '✕'); return; }
+            sendCommand({ signatures: arr });
+            showToast('Signature rules sent', '✓');
+            document.getElementById('sig-modal').classList.remove('active');
+        }
+        function resetSignatures() {
+            if (!confirm('Restore the built-in signature rules on the device?')) return;
+            sendCommand({ raw: 'CMD:SIGS:RESET' });
+            showToast('Reset to defaults', '✓');
+            // Repaint from the device rather than assuming what the defaults are.
+            setTimeout(requestSignatures, 300);
+        }
+
+        // =====================================================================
+        //  BLE / Serial transport  (preserved from the original app)
+        // =====================================================================
+        let bleDevice = null;
+        let gattServer = null;
+        let rxCharacteristic = null;
+        let txCharacteristic = null;
+        let serialPort = null;
+        let serialReader = null;
+        let serialWriter = null;
+        let rxBuffer = '';
+
+        function checkApiSupport() {
+            const bleBadge = document.getElementById('bleSupportBadge');
+            const serialBadge = document.getElementById('serialSupportBadge');
+            if ('bluetooth' in navigator) {
+                bleBadge.className = 'api-badge ok'; bleBadge.textContent = 'Supported';
+            } else {
+                bleBadge.className = 'api-badge warn'; bleBadge.textContent = 'Not Supported';
+            }
+            // Two different transports reach the same cable: WebSerial in a
+            // desktop browser, and the Android USB host stack through the
+            // plugin. Show the button wherever either exists, and hide it
+            // where neither does rather than offering a control whose only
+            // outcome is an alert.
+            const serialBtn = document.getElementById('btnConnSerial');
+            const serialSub = document.getElementById('connSerialSub');
+            const usbNative = nativeUsbAvailable();
+            const usbWeb = 'serial' in navigator;
+            if (usbNative || usbWeb) {
+                serialBadge.className = 'api-badge ok';
+                serialBadge.textContent = usbNative ? 'Native USB host' : 'Supported';
+                if (serialSub) serialSub.textContent = usbNative
+                    ? 'USB-C cable, 115200 baud'
+                    : '115200 baud serial stream';
+                if (serialBtn) serialBtn.hidden = false;
+            } else {
+                serialBadge.className = 'api-badge warn'; serialBadge.textContent = 'Not Supported';
+                if (serialBtn) serialBtn.hidden = true;
+            }
+        }
+
+        // Backdrop click and Escape close whatever modal is open. Settings is
+        // tall enough to scroll on a phone, which can push the x off the top of
+        // the screen -- a modal you can scroll must have a way out that does not
+        // depend on scrolling back up. The PIN gate is included deliberately:
+        // dismissing it just leaves the store locked.
+        document.addEventListener('click', (e) => {
+            if (e.target.classList && e.target.classList.contains('modal-overlay')) {
+                e.target.classList.remove('active');
+            }
+        });
+        document.addEventListener('keydown', (e) => {
+            if (e.key !== 'Escape') return;
+            document.querySelectorAll('.modal-overlay.active').forEach(m => m.classList.remove('active'));
+        });
+
+        function openConnModal()  { document.getElementById('connModal').classList.add('active'); }
+        function closeConnModal() { document.getElementById('connModal').classList.remove('active'); }
+
+        function updateConnectionUI(isConnected, type = '') {
+            const pulseDot = document.getElementById('pulseDot');
+            const connStatusText = document.getElementById('connStatusText');
+
+            if (isConnected) {
+                connectionType = type;
+                pulseDot.className = 'pulse-dot connected';
+                connStatusText.textContent = `CONNECTED (${type})`;
+                closeConnModal();
+                renderStatusStrip();
+                showToast(`Connected via ${type}`, '✓');
+                // Ask the device what it is, and what it was already doing.
+                // Done here rather than at each of the five connect sites.
+                // requestConfig() owns its own delay and retries -- the first
+                // attempt waits for the NUS notify subscription to come up.
+                requestConfig();
+                setHostKeepalive(type === 'USB' || type === 'SERIAL');
+            } else {
+                setHostKeepalive(false);
+                connectionType = null;
+                // Stop showing the last board's settings as if they were this
+                // one's -- with two boards around that is how you mute the
+                // wrong device.
+                setBuzzerUi(null);
+                setLedUi(null);
+                // Same reason: the category mask is per-board too, and it used
+                // to survive a disconnect as five checkboxes still showing the
+                // last device's settings.
+                setBeepUi(null);
+                setSigUi(null);
+                devName = ''; bootAt = null; alertCount = null;
+                pulseDot.className = 'pulse-dot';
+                connStatusText.textContent = 'DISCONNECTED';
+                renderStatusStrip();
+                showToast('Device disconnected', '✕');
+            }
+        }
+
+        // Subscribe to TX notifications for a native BLE device (shared by
+        // connect and by reconcileConnection after a resume).
+        async function subscribeNative(deviceId) {
+            await window.BleClient.startNotifications(
+                deviceId, NUS_SERVICE_UUID, NUS_TX_UUID,
+                (value) => {
+                    const chunk = new TextDecoder('utf-8').decode(value.buffer);
+                    processIncomingChunk(chunk);
+                }
+            );
+        }
+
+        async function connectNativeBluetooth() {
+            const pulseDot = document.getElementById('pulseDot');
+            const connStatusText = document.getElementById('connStatusText');
+            pulseDot.className = 'pulse-dot connecting';
+            connStatusText.textContent = 'CONNECTING NATIVE BLE...';
+            try {
+                await window.BleClient.initialize({ androidNeverForLocation: true });
+                // Always show the picker. This used to adopt whatever
+                // getConnectedDevices() returned first, which meant Android's
+                // still-alive GATT link to the last board silently won and the
+                // picker never opened -- there was no way to reach a second
+                // device. An explicit Connect tap means "let me choose"; the
+                // silent path that still exists is auto-reconnect after a drop
+                // (tryReconnect) and reconcileConnection on resume.
+                // The filter is the NUS service UUID, not the name, so a
+                // renamed board still appears.
+                const device = await window.BleClient.requestDevice({
+                    services: [NUS_SERVICE_UUID], optionalServices: [NUS_SERVICE_UUID]
+                });
+                // Picking a board the OS is already connected to throws; that
+                // is success, not failure.
+                try { await window.BleClient.connect(device.deviceId, () => onDeviceDisconnected()); } catch (e) { /* already connected */ }
+                bleDevice = device;
+                await subscribeNative(device.deviceId);
+                rememberDevice(device.deviceId);
+                wantConnection = true;
+                reconnectDelay = 0;
+                updateConnectionUI(true, 'BLE');
+            } catch (err) {
+                console.error('Native BLE Connect Failed:', err);
+                updateConnectionUI(false);
+                showToast(`Native BLE Connect Failed: ${err.message || err}`, '✕');
+            }
+        }
+
+        async function reconcileConnection() {
+            if (!(window.Capacitor && window.Capacitor.isNativePlatform() && window.BleClient)) return;
+            try {
+                const connected = await window.BleClient.getConnectedDevices([NUS_SERVICE_UUID]);
+                const device = connected && connected[0];
+                if (device) {
+                    if (connectionType !== 'BLE' || !bleDevice) {
+                        bleDevice = device;
+                        try { await subscribeNative(device.deviceId); } catch (e) { /* already subscribed */ }
+                        updateConnectionUI(true, 'BLE');
+                    }
+                } else if (connectionType === 'BLE') {
+                    onDeviceDisconnected();
+                }
+            } catch (e) {
+                console.warn('reconcileConnection error:', e);
+            }
+        }
+
+        async function connectWebBluetooth() {
+            if (window.Capacitor && window.Capacitor.isNativePlatform()) {
+                await connectNativeBluetooth();
+                return;
+            }
+            if (!('bluetooth' in navigator)) {
+                alert('Web Bluetooth API is not supported by your browser. Please use Google Chrome, Microsoft Edge, or Opera.');
+                return;
+            }
+            const pulseDot = document.getElementById('pulseDot');
+            const connStatusText = document.getElementById('connStatusText');
+            pulseDot.className = 'pulse-dot connecting';
+            connStatusText.textContent = 'CONNECTING BLE...';
+            try {
+                let device;
+                try {
+                    device = await navigator.bluetooth.requestDevice({
+                        filters: [
+                            { services: [NUS_SERVICE_UUID] },
+                            { namePrefix: 'SignalSweep' },
+                            { namePrefix: 'ESP32' }
+                        ],
+                        optionalServices: [NUS_SERVICE_UUID]
+                    });
+                } catch (filterErr) {
+                    device = await navigator.bluetooth.requestDevice({
+                        acceptAllDevices: true, optionalServices: [NUS_SERVICE_UUID]
+                    });
+                }
+                bleDevice = device;
+                bleDevice.addEventListener('gattserverdisconnected', onDeviceDisconnected);
+                gattServer = await bleDevice.gatt.connect();
+                const service = await gattServer.getPrimaryService(NUS_SERVICE_UUID);
+                rxCharacteristic = await service.getCharacteristic(NUS_RX_UUID);
+                txCharacteristic = await service.getCharacteristic(NUS_TX_UUID);
+                await txCharacteristic.startNotifications();
+                txCharacteristic.addEventListener('characteristicvaluechanged', handleBleNotification);
+                updateConnectionUI(true, 'BLE');
+            } catch (err) {
+                console.error('Web Bluetooth connection failed:', err);
+                updateConnectionUI(false);
+                if (err.name !== 'NotFoundError') {
+                    showToast(`BLE Connect Failed: ${err.message || err}`, '✕');
+                }
+            }
+        }
+
+        function handleBleNotification(event) {
+            const chunk = new TextDecoder('utf-8').decode(event.target.value);
+            processIncomingChunk(chunk);
+        }
+
+        // =====================================================================
+        //  Native USB serial (Android)
+        // =====================================================================
+        // Android has no WebSerial at all -- the API is absent from the
+        // platform -- so a phone can only reach the device over a cable
+        // through the USB host stack directly. That matters because
+        // receive-only deliberately severs the BLE link: without this, going
+        // quiet from the phone left the phone with no way back to the device
+        // it had just silenced.
+        //
+        // The board is a CDC/ACM device (ARDUINO_USB_CDC_ON_BOOT=1, Espressif
+        // VID 0x303A), which usb-serial-for-android identifies by interface
+        // class, so no custom prober is needed.
+        const USB_VID_ESPRESSIF = 0x303A;
+        let usbPortId = null;
+        let usbListeners = [];
+        // Kept across events: a UTF-8 sequence can straddle two data callbacks,
+        // and a fresh decoder per chunk would turn a split character into
+        // replacement bytes. Device names and SSIDs are chosen by whatever
+        // hardware is being observed, so assuming ASCII is not safe.
+        const usbDecoder = new TextDecoder('utf-8');
+
+        function nativeUsbAvailable() {
+            return !!(window.Capacitor && window.Capacitor.isNativePlatform() && window.UsbSerial);
+        }
+
+        function b64ToBytes(b64) {
+            const bin = atob(b64);
+            const bytes = new Uint8Array(bin.length);
+            for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+            return bytes;
+        }
+        function bytesToB64(bytes) {
+            let bin = '';
+            for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+            return btoa(bin);
+        }
+
+        // The modal button. Same shape as connectWebBluetooth forking to
+        // connectNativeBluetooth: one control, the platform picks the path.
+        async function connectUsb() {
+            if (nativeUsbAvailable()) return connectNativeUsb();
+            return connectWebSerial();
+        }
+
+        async function connectNativeUsb() {
+            const pulseDot = document.getElementById('pulseDot');
+            const connStatusText = document.getElementById('connStatusText');
+            pulseDot.className = 'pulse-dot connecting';
+            connStatusText.textContent = 'CONNECTING USB...';
+            try {
+                const { devices } = await window.UsbSerial.listDevices();
+                if (!devices || devices.length === 0) {
+                    updateConnectionUI(false);
+                    showToast('No USB device found — check the cable supports data', '✕');
+                    return;
+                }
+                // Prefer the board over whatever else is on the bus (a hub, a
+                // charger's control chip); fall back to the first device so an
+                // unusual build is still reachable.
+                const dev = devices.find(d => d.vendorId === USB_VID_ESPRESSIF) || devices[0];
+
+                if (!dev.hasPermission) {
+                    // Android's own dialog. A decline resolves granted:false
+                    // rather than throwing, so this is a branch, not a catch.
+                    const { granted } = await window.UsbSerial.requestPermission({ deviceId: dev.deviceId });
+                    if (!granted) {
+                        updateConnectionUI(false);
+                        showToast('USB permission denied', '✕');
+                        return;
+                    }
+                }
+
+                const { portId } = await window.UsbSerial.open({ deviceId: dev.deviceId });
+                usbPortId = portId;
+                await window.UsbSerial.setParameters({
+                    portId, baudRate: 115200, dataBits: 8, stopBits: 1, parity: 'none'
+                });
+
+                usbListeners.push(await window.UsbSerial.addListener('data', (ev) => {
+                    if (ev.portId !== usbPortId) return;
+                    // Straight into the same line reassembler BLE and WebSerial
+                    // feed. One parser, three transports.
+                    processIncomingChunk(usbDecoder.decode(b64ToBytes(ev.data), { stream: true }));
+                }));
+                usbListeners.push(await window.UsbSerial.addListener('detached', () => {
+                    showToast('USB device unplugged', '✕');
+                    onDeviceDisconnected();
+                }));
+                usbListeners.push(await window.UsbSerial.addListener('error', (ev) => {
+                    console.warn('USB stream error:', ev && ev.message);
+                }));
+
+                await window.UsbSerial.startReading({ portId });
+                updateConnectionUI(true, 'USB');
+                offerReceiveOnlyOnCable();
+            } catch (err) {
+                console.error('USB connect failed:', err);
+                usbPortId = null;
+                updateConnectionUI(false);
+                showToast(`USB Connect Failed: ${(err && (err.code || err.message)) || err}`, '✕');
+            }
+        }
+
+        async function teardownUsb() {
+            for (const sub of usbListeners) { try { await sub.remove(); } catch (e) {} }
+            usbListeners = [];
+            if (usbPortId && window.UsbSerial) {
+                try { await window.UsbSerial.stopReading({ portId: usbPortId }); } catch (e) {}
+                try { await window.UsbSerial.close({ portId: usbPortId }); } catch (e) {}
+            }
+            usbPortId = null;
+        }
+
+        // A hint, deliberately NOT a dialog. This used to be a confirm() fired
+        // the instant the port opened -- which on Android put it in the same
+        // screen region as the system USB-permission dialog, milliseconds
+        // after it, so the tap that granted permission carried straight
+        // through onto its OK and silenced the device nobody had asked to
+        // silence. Measured on the bench: {"rx_only":true} went out 100 ms
+        // after connect with no human input. Silencing the detector is a
+        // deliberate act and it lives behind a deliberate control.
+        function offerReceiveOnlyOnCable() {
+            showToast('On the cable — Settings can stop the radio advertising', '✓');
+        }
+
+        async function connectWebSerial() {
+            if (!('serial' in navigator)) {
+                alert('WebSerial API is not supported by your browser. Please use Google Chrome, Microsoft Edge, or Opera.');
+                return;
+            }
+            const pulseDot = document.getElementById('pulseDot');
+            const connStatusText = document.getElementById('connStatusText');
+            pulseDot.className = 'pulse-dot connecting';
+            connStatusText.textContent = 'CONNECTING SERIAL...';
+            try {
+                serialPort = await navigator.serial.requestPort();
+                await serialPort.open({ baudRate: 115200 });
+                serialPort.addEventListener('disconnect', onDeviceDisconnected);
+                const textDecoder = new TextDecoderStream();
+                serialPort.readable.pipeTo(textDecoder.writable);
+                serialReader = textDecoder.readable.getReader();
+                const textEncoder = new TextEncoderStream();
+                textEncoder.readable.pipeTo(serialPort.writable);
+                serialWriter = textEncoder.writable.getWriter();
+                updateConnectionUI(true, 'SERIAL');
+                readSerialLoop();
+                offerReceiveOnlyOnCable();
+            } catch (err) {
+                console.error('WebSerial connection failed:', err);
+                updateConnectionUI(false);
+                if (err.name !== 'NotFoundError') {
+                    showToast(`Serial Connect Failed: ${err.message || err}`, '✕');
+                }
+            }
+        }
+
+        async function readSerialLoop() {
+            try {
+                while (serialReader) {
+                    const { value, done } = await serialReader.read();
+                    if (done) break;
+                    if (value) processIncomingChunk(value);
+                }
+            } catch (err) {
+                console.error('Serial read loop error:', err);
+            } finally {
+                onDeviceDisconnected();
+            }
+        }
+
+        function processIncomingChunk(chunk) {
+            rxBuffer += chunk;
+            let lines = rxBuffer.split('\n');
+            rxBuffer = lines.pop();
+            for (const line of lines) {
+                const trimmed = line.trim();
+                if (trimmed) processIncomingData(trimmed);
+            }
+        }
+
+        // GATT permits exactly one write in flight per connection. A second
+        // issued while the first is outstanding is rejected outright
+        // (InvalidStateError / "GATT operation already in progress"), and since
+        // nothing awaits sendCommand the command is simply lost -- with a
+        // "BLE Transmit Error" toast as the only trace. That was reachable from
+        // ordinary use: the five sound toggles each fired their own command, so
+        // muting three categories quickly raced three writes against each other.
+        // One chain serializes every device command on every transport. Callers
+        // stay fire-and-forget; this is a queue, not an awaited API.
+        let txChain = Promise.resolve();
+        // Cable host session. The firmware can't tell an open port from a cable
+        // that is merely plugged in, so the app announces itself: CMD:HOST every
+        // 2 s while it holds a USB/serial port (first one chirps "connected"),
+        // CMD:HOST:BYE on a deliberate disconnect. If they just stop -- cable
+        // yanked, app killed -- the board chirps "gone" after 6 s. See loop() in
+        // firmware/src/main.cpp. BLE needs none of this: GATT has real events.
+        const HOST_KEEPALIVE_MS = 2000;
+        let hostTimer = null;
+        function setHostKeepalive(on) {
+            if (hostTimer) { clearInterval(hostTimer); hostTimer = null; }
+            if (!on) return;
+            sendCommand({ raw: 'CMD:HOST' });
+            hostTimer = setInterval(function () { sendCommand({ raw: 'CMD:HOST' }); }, HOST_KEEPALIVE_MS);
+        }
+
+        function sendCommand(cmdObj) {
+            // Same handler on both arms: a failed write must not break the chain
+            // and strand every command after it.
+            const run = () => sendCommandNow(cmdObj);
+            txChain = txChain.then(run, run);
+            return txChain;
+        }
+
+        async function sendCommandNow(cmdObj) {
+            const jsonStr = (cmdObj.raw || JSON.stringify(cmdObj)) + '\n';
+            if (connectionType === 'BLE') {
+                try {
+                    const data = new TextEncoder().encode(jsonStr);
+                    if (window.Capacitor && window.Capacitor.isNativePlatform()) {
+                        await window.BleClient.write(bleDevice.deviceId, NUS_SERVICE_UUID, NUS_RX_UUID, new DataView(data.buffer));
+                    } else if (rxCharacteristic) {
+                        if (rxCharacteristic.writeValueWithoutResponse) {
+                            await rxCharacteristic.writeValueWithoutResponse(data);
+                        } else {
+                            await rxCharacteristic.writeValueWithResponse(data);
+                        }
+                    }
+                    return true;
+                } catch (err) {
+                    console.error('BLE write error:', err);
+                    showToast(`BLE Transmit Error: ${err.message}`, '✕');
+                    return false;
+                }
+            } else if (connectionType === 'USB' && usbPortId) {
+                try {
+                    await window.UsbSerial.write({
+                        portId: usbPortId,
+                        data: bytesToB64(new TextEncoder().encode(jsonStr))
+                    });
+                    return true;
+                } catch (err) {
+                    console.error('USB write error:', err);
+                    showToast(`USB Transmit Error: ${(err && (err.code || err.message)) || err}`, '\u2715');
+                    return false;
+                }
+            } else if (connectionType === 'SERIAL' && serialWriter) {
+                try { await serialWriter.write(jsonStr); return true; }
+                catch (err) {
+                    console.error('Serial write error:', err);
+                    showToast(`Serial Transmit Error: ${err.message}`, '✕');
+                    return false;
+                }
+            } else {
+                openConnModal();
+                showToast('Please connect to device first', '✕');
+                return false;
+            }
+        }
+
+        async function disconnectDevice() {
+            cancelReconnect();
+            if (bleDevice) {
+                if (bleDevice.gatt && bleDevice.gatt.connected) {
+                    bleDevice.gatt.disconnect();
+                } else if (window.BleClient && bleDevice.deviceId) {
+                    try { await window.BleClient.disconnect(bleDevice.deviceId); } catch (e) { console.error(e); }
+                }
+            } else if (window.BleClient) {
+                // The UI can say "disconnected" while Android still holds the
+                // GATT link -- after an app restart, bleDevice is null but the
+                // OS link survived. Without this, Disconnect is a no-op on that
+                // zombie and it keeps taking the reconnect path.
+                try {
+                    const stale = await window.BleClient.getConnectedDevices([NUS_SERVICE_UUID]);
+                    for (const d of (stale || [])) await window.BleClient.disconnect(d.deviceId);
+                } catch (e) { /* BLE unavailable or nothing connected */ }
+            }
+            // Say goodbye while the port is still open, so the board chirps now
+            // rather than after its 6 s timeout.
+            if (connectionType === 'USB' || connectionType === 'SERIAL') {
+                setHostKeepalive(false);
+                try { await sendCommand({ raw: 'CMD:HOST:BYE' }); } catch (e) {}
+            }
+            await teardownUsb();
+            if (serialReader) { try { await serialReader.cancel(); } catch (e) {} serialReader = null; }
+            if (serialWriter) { try { await serialWriter.close(); } catch (e) {} serialWriter = null; }
+            if (serialPort)   { try { await serialPort.close(); } catch (e) {} serialPort = null; }
+            onDeviceDisconnected();
+        }
+
+        // ---- Auto-reconnect (BLE only) ----
+        const LAST_DEVICE_KEY = 'lastBleDeviceId';
+        let wantConnection = false;
+        let reconnectTimer = null;
+        let reconnectDelay = 0;
+
+        function rememberDevice(deviceId) {
+            if (!deviceId) return;
+            try { localStorage.setItem(LAST_DEVICE_KEY, deviceId); } catch (e) {}
+        }
+        function cancelReconnect() {
+            wantConnection = false;
+            if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+            reconnectDelay = 0;
+        }
+        function scheduleReconnect() {
+            if (!wantConnection || reconnectTimer) return;
+            reconnectDelay = Math.min(reconnectDelay ? reconnectDelay * 2 : 2000, 30000);
+            const secs = Math.round(reconnectDelay / 1000);
+            const el = document.getElementById('connStatusText');
+            if (el) el.textContent = 'RECONNECTING (' + secs + 's)...';
+            reconnectTimer = setTimeout(async () => {
+                reconnectTimer = null;
+                if (!wantConnection) return;
+                const ok = await tryReconnect();
+                if (!ok) scheduleReconnect();
+            }, reconnectDelay);
+        }
+        async function tryReconnect() {
+            try {
+                if (window.Capacitor && window.Capacitor.isNativePlatform() && window.BleClient) {
+                    let id = null;
+                    try {
+                        const existing = await window.BleClient.getConnectedDevices([NUS_SERVICE_UUID]);
+                        if (existing && existing[0]) id = existing[0].deviceId;
+                    } catch (e) {}
+                    if (!id) { try { id = localStorage.getItem(LAST_DEVICE_KEY); } catch (e) {} }
+                    if (!id) return false;
+                    await window.BleClient.connect(id, () => onDeviceDisconnected());
+                    await subscribeNative(id);
+                    bleDevice = { deviceId: id };
+                    updateConnectionUI(true, 'BLE');
+                    reconnectDelay = 0;
+                    showToast('Reconnected', '✓');
+                    return true;
+                }
+            } catch (e) {
+                console.warn('reconnect attempt failed', e);
+            }
+            return false;
+        }
+        function onDeviceDisconnected() {
+            bleDevice = null; gattServer = null; rxCharacteristic = null; txCharacteristic = null;
+            serialPort = null; serialReader = null; serialWriter = null;
+            // Fire and forget: the cable may already be gone, in which case
+            // every call inside throws and none of it matters. wantConnection
+            // is only ever set on the native BLE path, so a yanked cable does
+            // not start a BLE backoff loop.
+            if (usbPortId || usbListeners.length) teardownUsb();
+            clearLiveState();
+            updateConnectionUI(false);
+            if (wantConnection) scheduleReconnect();
+        }
+
+        // Drop everything the device told us. This is the "no passive trail"
+        // property actually being enforced rather than merely described: rows
+        // aged out of the VIEW after LIVE_STALE_MS, but liveMatches itself kept
+        // every MAC, name and RSSI of the whole session in memory -- and now it
+        // would also hold decoded drone and operator coordinates. Nothing here
+        // was ever written to disk, but a session-long list in a live tab is
+        // still a list, so it goes when the link does.
+        //
+        // Deliberately NOT cleared: handledMacs (the per-device "already asked
+        // about recording" set), because a flapping BLE link would otherwise
+        // re-prompt for consent on every reconnect.
+        function clearLiveState() {
+            liveMatches = {};
+            mapFix = null;
+            huntMac = '';
+            huntTrace = [];
+            if (liveLayer) liveLayer.clearLayers();
+            if (meLayer) meLayer.clearLayers();
+            renderScope();
+        }
+
+        function showToast(msg, icon = '✓') {
+            const toast = document.getElementById('toast');
+            const toastMsg = document.getElementById('toast-msg');
+            const toastIcon = document.getElementById('toast-icon');
+            if (toast && toastMsg && toastIcon) {
+                toastMsg.textContent = msg;
+                toastIcon.textContent = icon;
+                toast.classList.add('show');
+                setTimeout(() => toast.classList.remove('show'), 3000);
+            }
+        }
+
+        // Re-sync on foreground so a background/resume can't strand the UI.
+        if (window.App) {
+            window.App.addListener('appStateChange', (state) => {
+                if (state && state.isActive) reconcileConnection();
+            });
+        }
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') reconcileConnection();
+        });
+
+        document.addEventListener('DOMContentLoaded', () => {
+            // Restore only the recording toggle (a preference, not a trail).
+            try { recordEnabled = localStorage.getItem(RECORD_PREF_KEY) === '1'; } catch (e) {}
+            paintRecord();
+
+            checkApiSupport();
+            renderScope();
+            setTimeout(async () => {
+                await reconcileConnection();
+                if (!connectionType) openConnModal();
+            }, 600);
+
+            setTimeout(() => {
+                if (window.App) {
+                    window.App.addListener('backButton', () => window.App.exitApp());
+                }
+            }, 1000);
+        });
+
+        // ---- Self-test hook (see selftest.js) ----
+        // Exposed so node can exercise the crypto round-trip and category map
+        // without a browser. Guarded because window === global under node.
+        if (typeof window !== 'undefined') {
+            window.__signalsweepSelfTest = async function () {
+                const results = {};
+                // Category routing
+                results.catDrone   = categoryOf('Remote ID Drone').key === 'drone';
+                results.catTracker = categoryOf('Apple Find My Tracker').key === 'tracker';
+                results.catBodycam = categoryOf('Axon').key === 'bodycam';
+                results.catAlpr    = categoryOf('Flock Safety').key === 'alpr';
+
+                // Lens filtering. The lens must never be able to hide a match
+                // from its own tab, and 'all' must never hide anything -- the
+                // detector sees everything, so the UI has to be able to show
+                // everything. Also checks that the drone block survives ingest.
+                liveMatches = {};
+                ingestTargets([
+                    { mac: 'AA:00:01', type: 'Flock Safety',           rssi: -50, confidence: 80 },
+                    { mac: 'AA:00:02', type: 'Axon',                   rssi: -60, confidence: 80 },
+                    { mac: 'AA:00:03', type: 'Tracker',                rssi: -70, confidence: 80 },
+                    { mac: 'AA:00:04', type: 'Drone', uas_id: 'X7',    rssi: -80, confidence: 90,
+                      lat: 30.2, lng: -92.0, op_lat: 30.1, op_lng: -92.1, alt: 120, speed: 4.5 }
+                ]);
+                results.lensAll     = liveRows('all').length === 4;
+                results.lensDrone   = liveRows('drone').length === 1;
+                results.lensTracker = liveRows('tracker').length === 1;
+                // Surveillance is the umbrella over ALPR + body cam.
+                results.lensAlpr    = liveRows('alpr').length === 2;
+                // Strongest-first ordering is what the list relies on.
+                results.lensSorted  = liveRows('all')[0].mac === 'AA:00:01';
+                const drone = liveMatches['AA:00:04'];
+                results.droneFields = drone.uasId === 'X7' && drone.lat === 30.2 &&
+                                      drone.opLat === 30.1 && drone.alt === 120;
+                // Detail line renders the decoded values, escaped.
+                results.droneDetail = detailLine(drone, categoryOf('Drone')).indexOf('X7') > 0;
+                // A device-chosen name must never reach the DOM as markup.
+                results.escapesName = esc('<img src=x onerror=1>').indexOf('<') === -1;
+                // Location badge states. "Off" and "no fix" mean opposite
+                // things -- one is resting, one is a problem -- and a vague fix
+                // has to be called out rather than shown as a good one.
+                setGpsState('off');       results.gpsOff      = gpsDisplay().dot === 'off';
+                setGpsState('locating');  results.gpsLocating = gpsDisplay().dot === 'warn';
+                setGpsState('denied');    results.gpsDenied   = gpsDisplay().dot === 'bad';
+                setGpsState('fix', 12);   results.gpsGood     = gpsDisplay().dot === 'ok';
+                setGpsState('fix', 250);
+                results.gpsVague = gpsDisplay().dot === 'warn' &&
+                                   gpsDisplay().text.indexOf('too vague') > 0;
+                setGpsState('off');
+
+                // Meter scaling: clamped at both ends, monotonic in between.
+                results.meterScale = rssiFrac(-999) === 0 && rssiFrac(0) === 1 &&
+                                     rssiFrac(-40) > rssiFrac(-80);
+
+                // With the filter off, an unmatched device must be listed but
+                // never dressed up as a detection, and must never trigger a
+                // request to pin it.
+                foxhuntMode = true;
+                recordEnabled = true;
+                consentQueue = [];
+                handledMacs.clear();
+                liveMatches = {};
+                ingestTargets([
+                    { mac: 'BB:00:01', rssi: -55, confidence: 0 },              // unmatched
+                    { mac: 'BB:00:02', rssi: -60, confidence: 80, type: 'Tracker' }
+                ]);
+                results.pinsOnlyMatches = consentQueue.length === 1 &&
+                                          consentQueue[0].mac === 'BB:00:02';
+                // An unmatched device is its own state: no category, no icon,
+                // and above all not counted as a camera.
+                results.noMatchIsOwnBand = categoryOf('').key === 'none' &&
+                                           categoryOf('').icon === '' &&
+                                           liveRows('alpr').length === 0 &&
+                                           liveRows('all').length === 2;
+                // Hunt is offered on anything while the filter is off.
+                results.huntAnyInFoxhunt =
+                    actionRow(liveMatches['BB:00:01'], categoryOf('')).indexOf('data-act="hunt"') > 0;
+                foxhuntMode = false;
+                results.huntTrackersOnly =
+                    actionRow(liveMatches['BB:00:01'], categoryOf('')) === '';
+                // Filter on hides the unmatched row at once, not 8 s later
+                // when it goes stale.
+                results.filterOnHidesUnmatched = liveRows('all').length === 1 &&
+                                                 liveRows('all')[0].mac === 'BB:00:02';
+
+                // Pin filter: looking at cameras must not ask about trackers,
+                // and a skipped tracker is still offered once the filter widens.
+                pinLens = 'alpr';
+                consentQueue = [];
+                handledMacs.clear();
+                ingestTargets([
+                    { mac: 'DD:00:01', type: 'Flock Safety', rssi: -50, confidence: 80 },
+                    { mac: 'DD:00:02', type: 'Tracker',      rssi: -60, confidence: 80 }
+                ]);
+                results.pinFilterSkips = consentQueue.length === 1 && consentQueue[0].mac === 'DD:00:01';
+                pinLens = 'all';
+                ingestTargets([{ mac: 'DD:00:02', type: 'Tracker', rssi: -60, confidence: 80 }]);
+                results.pinFilterWidens = consentQueue.length === 2 && consentQueue[1].mac === 'DD:00:02';
+
+                // Band tabs <-> device mask. Every preset maps back to its tab,
+                // Everything is every bit, and a custom mix is no tab at all.
+                results.lensMaskRoundTrip =
+                    Object.keys(LENS_MASK).every(k => lensOfMask(LENS_MASK[k]) === k) &&
+                    LENS_MASK.all === Object.values(BEEP_BITS).reduce((a, b) => a | b, 0) &&
+                    lensOfMask(LENS_MASK.tracker | LENS_MASK.drone) === null;
+                // A board set headless opens on its tab; a custom mix leaves
+                // the tab alone; tapping the selected tab goes back to all.
+                setBeepUi(LENS_MASK.tracker);
+                const adopted = lens === 'tracker' && pinLens === 'tracker';
+                setBeepUi(LENS_MASK.tracker | LENS_MASK.drone);
+                const kept = lens === 'tracker';
+                setBeepUi(null);
+                setLens('drone'); setLens('drone');
+                results.lensAdoptsDevice = adopted && kept && lens === 'all';
+                pinLens = 'all';
+
+                recordEnabled = false;
+                consentQueue = [];
+                handledMacs.clear();
+
+                // Radio filter, SSID display, and the weak-hint band.
+                foxhuntMode = true;
+                liveMatches = {};
+                ingestTargets([
+                    { mac: 'CC:00:01', type: 'Flock Safety', matched_rule: 'Flock Safety MAC',
+                      rssi: -50, protocol: 'BLE', confidence: 85, tier: 'Confirmed' },
+                    // The real-world case: a consumer camera on Lite-On silicon.
+                    // It matched a rule, but the firmware deliberately declines
+                    // to name a vendor, so it must NOT land under Cameras.
+                    { mac: 'CC:00:02', matched_rule: 'Lite-On Vendor IE (weak)',
+                      rssi: -60, protocol: 'WiFi', ssid: 'NestCam_5G', confidence: 30 },
+                    { mac: 'CC:00:03', rssi: -70, protocol: 'WiFi', ssid: 'HomeNet' },
+                    { mac: 'CC:00:04', type: 'Tracker', matched_rule: 'Apple Find My Tracker',
+                      rssi: -80, protocol: 'BLE', confidence: 80, tier: 'Confirmed' }
+                ]);
+                results.weakIsNotACamera = bandOf(liveMatches['CC:00:02']) === 'weak' &&
+                                           liveRows('alpr').length === 1;
+                results.ssidCarried = liveMatches['CC:00:02'].ssid === 'NestCam_5G';
+
+                setRadio('WiFi');
+                results.radioWifi = liveRows('all').length === 2;
+                setRadio('BLE');
+                results.radioBle = liveRows('all').length === 2;
+                setRadio('any');
+                results.radioAny = liveRows('all').length === 4;
+
+                // AP / client split inside the Wi-Fi tab, and nowhere else.
+                liveMatches['CC:00:02'].ap = 1;
+                liveMatches['CC:00:03'].ap = 0;
+                setRadio('WiFi');
+                setWifiRole('ap');
+                const apRows = liveRows('all');
+                setWifiRole('client');
+                const clientRows = liveRows('all');
+                setRadio('any');   // role still 'client': must not hide anything here
+                results.wifiRoleFilter = apRows.length === 1 && apRows[0].mac === 'CC:00:02' &&
+                                         clientRows.length === 1 && clientRows[0].mac === 'CC:00:03' &&
+                                         liveRows('all').length === 4;
+                setWifiRole('any');
+
+                // The badge is how you tell the two apart in a wall of rows.
+                results.radioBadges =
+                    radioBadges('WiFi').indexOf('wifi') > 0 &&
+                    radioBadges('WiFi').indexOf('ble') === -1 &&
+                    radioBadges('BLE').indexOf('ble') > 0 &&
+                    radioBadges('BLE+WiFi').indexOf('ble') > 0 &&
+                    radioBadges('BLE+WiFi').indexOf('wifi') > 0 &&
+                    radioBadges('') === '';
+                // AP vs client, and plain Wi-Fi when the firmware doesn't say.
+                results.wifiRoleBadges =
+                    radioBadges('WiFi', 1).indexOf('AP') > 0 &&
+                    radioBadges('WiFi', 0).indexOf('Client') > 0 &&
+                    radioBadges('WiFi').indexOf('AP') === -1 &&
+                    radioBadges('WiFi').indexOf('Client') === -1;
+
+                // Vendor: company ID wins, a public MAC falls back to its OUI,
+                // a randomized address names nobody.
+                const savedOui = ouiNames, savedBt = btNames;
+                ouiNames = new Map([['001A11', 'Google'], ['021A11', 'WRONG'], ['98173C', 'Private']]);
+                btNames = new Map([[76, 'Apple'], [1, 'Nokia']]);
+                results.vendorLookup =
+                    vendorOf({ mac: '00:1A:11:00:00:01', protocol: 'WiFi' }) === 'Google' &&
+                    vendorOf({ mac: '02:1A:11:00:00:01', protocol: 'WiFi' }) === '' &&
+                    vendorOf({ mac: '00:1A:11:00:00:01', protocol: 'BLE' }) === '' &&
+                    vendorOf({ mac: '00:1A:11:00:00:01', protocol: 'BLE', pub: true }) === 'Google' &&
+                    vendorOf({ mac: 'F2:00:00:00:00:01', protocol: 'BLE', cid: 76 }) === 'Apple' &&
+                    vendorOf({ mac: 'F2:00:00:00:00:01', protocol: 'BLE', cid: 9999 }) === '' &&
+                    // A registered OUI beats a self-declared (junk) company ID...
+                    vendorOf({ mac: '00:1A:11:00:00:01', protocol: 'BLE', pub: true, cid: 1 }) === 'Google' &&
+                    // ...but a "Private" registration names nobody, so fall back.
+                    vendorOf({ mac: '98:17:3C:00:00:01', protocol: 'BLE', pub: true, cid: 76 }) === 'Apple';
+                ouiNames = savedOui; btNames = savedBt;
+
+                // A category chip says what its alert will actually do. The
+                // buzzer mute is sound only, so with sound off a row must read
+                // lights-only, not ON (as if it beeps) nor Off (as if it's dark).
+                results.alertChip =
+                    alertChip(true, true, 3) === '🔊 💡' &&
+                    alertChip(true, false, 3) === '💡' &&
+                    alertChip(true, true, 0) === '🔊' &&
+                    alertChip(true, false, 0) === 'Silent' &&
+                    alertChip(false, true, 3) === 'Off' &&
+                    alertChip(null, true, 3) === '—' &&
+                    alertChip(true, null, null) === '🔊 💡';
+
+                // Ring is a Bluetooth write: never offer it on a Wi-Fi-only row.
+                const wifiOnly = actionRow(liveMatches['CC:00:03'], categoryOf(''));
+                const bleRow = actionRow(liveMatches['CC:00:04'], categoryOf('Tracker'));
+                results.noRingOnWifi = wifiOnly.indexOf('data-act="ring"') === -1 &&
+                                       wifiOnly.indexOf('data-act="hunt"') > 0;
+                results.ringOnBle = bleRow.indexOf('data-act="ring"') > 0;
+
+                // The hunted row is pinned to the top of the list even when it
+                // is the weakest thing on screen -- the instrument is up there
+                // and you should not have to scroll to the card it describes.
+                huntMac = 'CC:00:04';
+                results.huntPinnedTop = liveRows('all')[0].mac === 'CC:00:04' &&
+                                        liveRows('all').length === 4;
+                // The 4 Hz hunt frame feeds the trace without disturbing the
+                // list: no new rows, no re-render of the thing under your thumb.
+                huntTrace = [];
+                const beforeKeys = Object.keys(liveMatches).length;
+                processIncomingData('{"hunt":"CC:00:04","hunt_rssi":-52}');
+                results.huntFrameFeedsTrace = huntTrace.length === 1 &&
+                                              huntTrace[0].rssi === -52 &&
+                                              liveMatches['CC:00:04'].rssi === -52 &&
+                                              Object.keys(liveMatches).length === beforeKeys;
+                huntMac = ''; huntTrace = [];
+
+                // Ordering is bucketed to 5 dB so multipath jitter cannot swap
+                // two rows under a thumb that is already reaching for one.
+                liveMatches = {};
+                ingestTargets([
+                    { mac: 'DD:00:02', rssi: -60, confidence: 80, type: 'Tracker' },
+                    { mac: 'DD:00:01', rssi: -62, confidence: 80, type: 'Tracker' }
+                ]);
+                const order1 = liveRows('all').map(function (m) { return m.mac; }).join();
+                liveMatches['DD:00:02'].rssi = -63;   // jitter, same bucket
+                results.orderStableUnderJitter =
+                    order1 === 'DD:00:01,DD:00:02' &&
+                    liveRows('all').map(function (m) { return m.mac; }).join() === order1;
+
+                foxhuntMode = false;
+
+                // Disconnect drops the whole live set, not just the view.
+                clearLiveState();
+                results.clearsOnDisconnect = Object.keys(liveMatches).length === 0 &&
+                                             huntTrace.length === 0 && huntMac === '';
+
+                // Crypto round-trip: create → save → reload → unlock
+                await createPinStore('1234');
+                pinsCache.push({ mac: 'AA:BB', category: 'ALPR / Camera', lat: 30.2, lng: -92.0, acc: 5, ts: 1 });
+                await savePins();
+                pinKey = null; pinsCache = [];
+                await unlockPins('1234');
+                results.cryptoRoundTrip = pinsCache.length === 1 && pinsCache[0].mac === 'AA:BB';
+                // Wrong PIN reveals nothing
+                pinKey = null; pinsCache = [];
+                let wrongFailed = false;
+                try { await unlockPins('9999'); } catch (e) { wrongFailed = true; }
+                results.wrongPinRejected = wrongFailed && pinsCache.length === 0;
+                return results;
+            };
+        }

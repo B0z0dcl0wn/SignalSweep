@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SignalSweep — a detector that tells you what it heard</title>
+<meta name="description" content="Headless ESP32-S3 RF detector. Scans BLE and Wi-Fi, beeps a different pattern per category. No cloud, no history, no trail.">
+<link rel="icon" href="favicon.svg">
+<style>
+  :root{
+    --bg:#090d16; --panel:#0d1320; --line:rgba(140,170,210,.14);
+    --text:#f3f4f6; --dim:#9ca3af; --cyan:#00f2fe;
+    --alpr:#ef4444; --bodycam:#ff7a1a; --drone:#3aa0ff; --tracker:#a855f7;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:var(--bg); color:var(--text); line-height:1.6;
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+    background-image:radial-gradient(circle at 12% 10%,rgba(0,242,254,.07) 0%,transparent 42%),
+                     radial-gradient(circle at 88% 82%,rgba(168,85,247,.06) 0%,transparent 42%);
+    background-attachment:fixed;
+  }
+  .wrap{max-width:760px;margin:0 auto;padding:0 1.25rem}
+  header{padding:5rem 0 3rem;text-align:center}
+  h1{font-size:clamp(2.4rem,7vw,3.4rem);letter-spacing:-.03em;font-weight:700}
+  h1 span{color:var(--cyan)}
+  .tag{color:var(--dim);font-size:1.12rem;margin-top:.9rem;max-width:34rem;margin-inline:auto}
+  h2{font-size:1.35rem;margin:0 0 1rem;letter-spacing:-.01em}
+  section{padding:2.5rem 0;border-top:1px solid var(--line)}
+  p{margin-bottom:1rem;color:#d4d8e0}
+  a{color:var(--cyan)}
+  code{font-family:var(--mono);font-size:.9em;background:rgba(255,255,255,.06);
+    padding:.15rem .4rem;border-radius:4px}
+  .flash{background:var(--panel);border:1px solid var(--line);border-radius:14px;
+    padding:2rem;text-align:center;margin:2.5rem 0}
+  .flash h2{margin-bottom:.4rem}
+  .flash .sub{color:var(--dim);font-size:.95rem;margin-bottom:1.5rem}
+  .btn{display:inline-block;background:var(--cyan);color:#04121a;font-weight:650;
+    text-decoration:none;padding:.8rem 1.6rem;border-radius:9px;border:0;
+    font-size:1rem;cursor:pointer}
+  .btn.ghost{background:transparent;color:var(--cyan);border:1px solid rgba(0,242,254,.45)}
+  .row{display:flex;gap:.7rem;justify-content:center;flex-wrap:wrap;margin-top:1rem}
+  .nope{font-size:.85rem;color:var(--dim);margin-top:1.1rem}
+  ul.beeps{list-style:none;display:grid;gap:.55rem}
+  ul.beeps li{display:flex;align-items:baseline;gap:.8rem;background:var(--panel);
+    border:1px solid var(--line);border-left:3px solid var(--c);border-radius:9px;
+    padding:.75rem 1rem}
+  ul.beeps b{flex:0 0 9.5rem;font-weight:600}
+  ul.beeps span{color:var(--dim);font-family:var(--mono);font-size:.88rem}
+  ul.plain{list-style:none;display:grid;gap:.5rem;margin-bottom:1rem}
+  ul.plain li{padding-left:1.4rem;position:relative;color:#d4d8e0}
+  ul.plain li::before{content:"—";position:absolute;left:0;color:var(--dim)}
+  footer{padding:3rem 0 4rem;border-top:1px solid var(--line);color:var(--dim);font-size:.9rem}
+  footer a{color:var(--dim)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>Signal<span>Sweep</span></h1>
+  <p class="tag">A headless RF detector that tells you what is near by the noise
+  it makes. Plug it in and walk away — the phone is optional.</p>
+</header>
+
+<div class="flash">
+  <h2>Flash it from this page</h2>
+  <p class="sub">No Python, no PlatformIO, no drivers. Plug a XIAO ESP32-S3 in
+  with a data-capable USB-C cable.</p>
+  <esp-web-install-button manifest="manifest.json">
+    <button slot="activate" class="btn">Connect &amp; flash</button>
+    <span slot="unsupported">Your browser cannot do this — use desktop Chrome, Edge or Opera.</span>
+    <span slot="not-allowed">Serial access was blocked. Check site permissions and reload.</span>
+  </esp-web-install-button>
+  <div class="row">
+    <a class="btn ghost" href="app/">Open the app</a>
+    <!-- Points at the releases page rather than a file: the APK filename
+         carries its version, so any direct link would go stale on the next
+         tag. There is no Play Store listing -- sideloading is the channel. -->
+    <a class="btn ghost" href="https://github.com/B0z0dcl0wn/SignalSweep/releases/latest">Download the Android app</a>
+  </div>
+  <p class="nope">Flashing needs Web Serial: desktop Chrome, Edge or Opera.
+  The app itself also runs on Android Chrome over Bluetooth.</p>
+</div>
+
+<section>
+  <h2>What it does</h2>
+  <p>SignalSweep scans Bluetooth LE and Wi-Fi at the same time and matches what
+  it hears against a signature list. When something matches it plays a
+  <strong>different buzzer pattern per category</strong> — that is how a device
+  with no screen tells you <em>what</em> it found, not just that it found
+  something.</p>
+  <ul class="beeps">
+    <li style="--c:var(--alpr)"><b>📷 ALPR / camera</b> <span>two long beeps</span></li>
+    <li style="--c:var(--bodycam)"><b>🎥 Body cam</b> <span>long · short · short</span></li>
+    <li style="--c:var(--drone)"><b>🛸 Drone</b> <span>rising trill</span></li>
+    <li style="--c:var(--tracker)"><b>📍 Tracker</b> <span>fast ticking</span></li>
+  </ul>
+  <p style="margin-top:1rem">Drone detection is a full ASTM F3411 Remote ID
+  decode over BLE, Wi-Fi beacon and Wi-Fi NAN, so a drone is drawn at the real
+  coordinate it broadcasts. Everything else is only ever <em>roughly this far
+  away</em>, never a pin — that is all the radio actually knows, and a pin would
+  be a lie.</p>
+</section>
+
+<section>
+  <h2>What it deliberately does not do</h2>
+  <p>This is a receiver. Offensive capability was removed on purpose, and should
+  not grow back:</p>
+  <ul class="plain">
+    <li>No jamming, no deauth, no packet injection.</li>
+    <li>No advertisement spoofing — the <code>ble_spoof</code> primitive was cut.</li>
+    <li>No arbitrary GATT writes. Ringing a tracker is one fixed Immediate Alert
+        write, with a MAC as its only parameter.</li>
+    <li>No cloud, no telemetry, no analytics, no account.</li>
+  </ul>
+  <p>It keeps <strong>no history</strong>. The app is a live scope, not a
+  logbook: it shows what the device is matching right now and forgets it on
+  disconnect. There is no passive location tracking. The only thing ever written
+  to disk is a location pin you explicitly confirm, one device at a time,
+  encrypted with AES-GCM behind a PIN — and detecting and beeping never ask for
+  that PIN.</p>
+  <p>It can also stop advertising itself entirely. A counter-surveillance tool
+  that announces <code>SignalSweep</code> to every scanner in range — including
+  the hardware it is hunting — is doing the opposite of its job.</p>
+</section>
+
+<section>
+  <h2>Get the hardware</h2>
+  <p>One Seeed Studio XIAO ESP32-S3, about $15. Add a U.FL antenna, a NeoPixel
+  and a buzzer for the full build — see
+  <a href="https://github.com/B0z0dcl0wn/SignalSweep/blob/main/firmware/WIRING.md">WIRING.md</a>.
+  It runs off any USB power: a battery pack, or a car's USB port.</p>
+</section>
+
+<section>
+  <h2>Standing on other people's work</h2>
+  <p>SignalSweep exists because of
+  <a href="https://github.com/colonelpanichacks/oui-spy-unified-blue">Colonel Panic's OUI Spy</a>,
+  and everything it knows about Flock Safety hardware comes from the OUI
+  research of <a href="https://github.com/nitekry">OrdoOuroborous / @NitekryDPaul</a>.
+  The full list is in
+  <a href="https://github.com/B0z0dcl0wn/SignalSweep/blob/main/CREDITS.md">CREDITS.md</a>
+  — read it, then go read their repos.</p>
+</section>
+
+<footer>
+  <p>GPL-3.0-or-later ·
+  <a href="https://github.com/B0z0dcl0wn/SignalSweep">Source on GitHub</a> ·
+  <a href="https://github.com/B0z0dcl0wn/SignalSweep/blob/main/CREDITS.md">Credits</a></p>
+  <p style="margin-top:.6rem">Receiving radio signals is legal in most places.
+  Transmitting generally is not, and this device does not — beyond a Bluetooth
+  advert you can switch off. Know your local law; it is not the same everywhere.</p>
+</footer>
+
+</div>
+<script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
+</body>
+</html>
