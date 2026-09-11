@@ -14,7 +14,13 @@ static const char *TAG = "HardwareManager";
 // The buzzer mute is operator state on a headless device, so it lives in NVS
 // like the hunt target and the beep mask. It was read here at boot and never
 // written, which meant a board muted in the field came back beeping.
+// The LED mode lives here too (key "led"): this namespace is the output prefs,
+// and a new one would be one more thing a rename could orphan.
 #define BUZZER_NVS_NS "sweep-bz"
+
+#define LED_FULL_BRIGHTNESS 50
+// ponytail: 8/255 is a guess for the bench bars; raise it if Dim reads as off.
+#define LED_DIM_BRIGHTNESS  8
 
 static Adafruit_NeoPixel strip(NEOPIXEL_COUNT, NEOPIXEL_PIN, NEO_GRB + NEO_KHZ800);
 static SemaphoreHandle_t hwMutex = NULL;
@@ -30,6 +36,9 @@ static OperatingMode currentHwMode = MODE_SELECTOR;
 // setBuzzerEnabled() skipped the RAM write while the NVS write below still
 // landed, leaving a board that beeps now and boots silent later.
 static volatile bool buzzerEnabled = true;
+// Same contract as buzzerEnabled: one byte, read by the render loop and written
+// by the command handler without hwMutex, so changing it can never fail on a lock.
+static volatile uint8_t ledMode = LED_FULL;
 static bool rxOnlyIndicator = false;
 
 // Arduino's tone() attaches the LEDC channel lazily on first use, and noTone()
@@ -332,6 +341,9 @@ static void HardwareManagerTask(void *pvParameters) {
             uint32_t currentPixelColor = strip.Color(0, 0, 0);
             bool onePixel = false;  // idle heartbeat lights LED 0 only
             bool drawn = false;     // an animation or the meter owns the frame
+            // No-op when unchanged. Its rescale of the stored pixels is lossy,
+            // which doesn't matter: the frame is rebuilt from scratch below.
+            strip.setBrightness(ledMode == LED_DIM ? LED_DIM_BRIGHTNESS : LED_FULL_BRIGHTNESS);
             strip.clear();
 
             if (flashActive && now >= flashEndTime) flashActive = false;
@@ -406,6 +418,23 @@ static void HardwareManagerTask(void *pvParameters) {
                 if (onePixel) strip.setPixelColor(0, currentPixelColor);
                 else strip.fill(currentPixelColor);
             }
+            // LED mode, applied to the finished frame so nothing above needs
+            // to know about it. Off means off -- boot sweep and the BOOT-hold
+            // flash included. One LED keeps the frame's brightest colour on
+            // pixel 0, so the hunt meter still reads red/yellow/green and an
+            // alert still shows its category colour.
+            if (ledMode == LED_OFF) {
+                strip.clear();
+            } else if (ledMode == LED_ONE) {
+                uint8_t *px = strip.getPixels();
+                int best = 0, bestSum = -1;
+                for (int i = 0; i < NEOPIXEL_COUNT; i++) {
+                    int s = px[i * 3] + px[i * 3 + 1] + px[i * 3 + 2];
+                    if (s > bestSum) { bestSum = s; best = i; }
+                }
+                memmove(px, px + best * 3, 3);
+                memset(px + 3, 0, (NEOPIXEL_COUNT - 1) * 3);
+            }
             if (memcmp(lastFrame, strip.getPixels(), sizeof(lastFrame)) != 0) {
                 memcpy(lastFrame, strip.getPixels(), sizeof(lastFrame));
                 strip.show();
@@ -435,6 +464,8 @@ void hardwareInit() {
     Preferences prefs;
     if (prefs.begin(BUZZER_NVS_NS, true)) {
         buzzerEnabled = prefs.getBool("on", true);
+        uint8_t led = prefs.getUChar("led", LED_FULL);
+        ledMode = led > LED_FULL ? LED_FULL : led;
         prefs.end();
     } else {
         buzzerEnabled = true;
@@ -552,6 +583,22 @@ bool isBuzzerEnabled() {
     // 1 Hz push, and the app now paints its sound controls from it, so it must
     // never fall back to a cheerful default.
     return buzzerEnabled;
+}
+
+void setLedMode(uint8_t mode) {
+    ledMode = mode > LED_FULL ? LED_FULL : mode;   // the render loop picks it up next tick
+    // Outside hwMutex, for the same reason as setBuzzerEnabled(): NVS is slow.
+    Preferences prefs;
+    if (prefs.begin(BUZZER_NVS_NS, false)) {
+        prefs.putUChar("led", ledMode);
+        prefs.end();
+    } else {
+        ESP_LOGW(TAG, "Could not open %s — LED mode will not survive a reboot", BUZZER_NVS_NS);
+    }
+}
+
+uint8_t getLedMode() {
+    return ledMode;
 }
 
 void triggerLedFlash(uint8_t r, uint8_t g, uint8_t b, uint32_t durationMs) {

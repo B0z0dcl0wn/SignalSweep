@@ -924,25 +924,34 @@
             background:rgba(255,255,255,0.05); border:1px solid var(--card-border);
             border-radius:10px; color:var(--text-main); font:inherit; font-size:0.9rem;
             cursor:pointer; transition:border-color 0.2s ease, opacity 0.2s ease; }
-        .snd-row + .snd-row { margin-top:8px; }
+        /* The category rows are one list, not five cards. */
+        .snd-list { border:1px solid var(--card-border); border-radius:10px; overflow:hidden; }
+        .snd-list .snd-row { border:0; border-radius:0; background:transparent; }
+        .snd-list .snd-row + .snd-row { border-top:1px solid var(--card-border); }
         .snd-row.on  { border-color:var(--accent-emerald); }
         .snd-row.off { opacity:0.55; }
-        .snd-master { margin-bottom:14px; padding-bottom:1rem;
-            border-bottom:1px solid var(--card-border); border-radius:10px; }
+        /* Alerts sheet sections: How (outputs) and What (categories). */
+        .alert-sec { font-size:0.7rem; font-weight:700; letter-spacing:0.12em;
+            text-transform:uppercase; color:var(--text-muted); margin:18px 0 8px; }
+        .out-row { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+        .out-row + .out-row { margin-top:8px; }
+        .alert-note { margin-top:10px; }
         .snd-label { display:flex; flex-direction:column; gap:2px; }
         .snd-label em { font-style:normal; font-size:0.72rem; color:var(--text-muted); }
-        .snd-state, .snd-toggle { flex:none; min-width:52px; padding:6px 12px; border-radius:6px;
+        .snd-state { flex:none; min-width:64px;  /* fits "🔊 💡", so the chip doesn't shift as outputs toggle */ padding:6px 12px; border-radius:6px;
             font-weight:700; font-size:0.78rem; text-align:center;
             background:rgba(255,255,255,0.07); border:1px solid var(--card-border);
             color:var(--text-muted); cursor:pointer; transition:all 0.2s ease; }
-        .snd-row.on .snd-state, .snd-toggle.on {
+        .snd-row.on .snd-state {
             background:var(--accent-emerald); border-color:var(--accent-emerald); color:#000; }
-        .snd-row.off .snd-state, .snd-toggle.off {
+        .snd-row.off .snd-state {
             background:rgba(239,68,68,0.2); border-color:var(--accent-red); color:var(--accent-red); }
         /* Sent, awaiting the device's next frame (under a second). Deliberately
            does NOT change the ON/OFF text -- a tap must never claim an outcome
            the board has not confirmed. */
-        .snd-row.pending, .snd-toggle.pending { opacity:0.45; }
+        .snd-row.pending { opacity:0.45; }
+        /* Category on, but Sound and Lights are both off: nothing will happen. */
+        .snd-row.idle { opacity:0.55; }
 
         /* ------------------------------------------------------------------
            Band selector + foxhunt instrument.
@@ -1033,6 +1042,14 @@
         .radio-tab:focus-visible { outline:2px solid var(--accent-cyan); outline-offset:-2px; }
         /* The Wi-Fi sub-filter tucks under the radio strip it belongs to. */
         .radios.sub { margin-top:-0.5rem; }
+        /* Segmented pickers in the Alerts sheet (Sound, Lights). */
+        .seg { margin:0; flex:0 1 auto; }
+        #sound-modes { grid-template-columns:repeat(2,1fr); }
+        #led-modes { grid-template-columns:repeat(4,1fr); }
+        .seg .radio-tab { min-height:44px; min-width:52px; }
+        .seg .radio-tab[aria-pressed="true"] { background:#141c2c; color:#e8eef7;
+            box-shadow:inset 0 -2px 0 var(--accent-emerald); }
+        .seg .radio-tab.pending { opacity:0.45; }
 
         /* ---- Foxhunt: the one place this app raises its voice --------------
            Walking a hidden transmitter down by signal strength is the most
@@ -1188,7 +1205,7 @@
         <!-- Controls -->
         <div class="toolbar">
             <button class="ctrl-btn" id="btn-record" onclick="toggleRecording()">○ Recording: OFF</button>
-            <button class="ctrl-btn" id="btn-buzzer" onclick="openSounds()">🔊 Sounds: —</button>
+            <button class="ctrl-btn" id="btn-buzzer" onclick="openSounds()">🔔 Alerts: —</button>
             <button class="ctrl-btn" id="btn-foxhunt" onclick="toggleFoxhunt()">◎ Filter: matches</button>
             <button class="ctrl-btn" onclick="openPins()">📍 Pins</button>
             <button class="ctrl-btn" onclick="openSignatures()">✎ Signatures</button>
@@ -1362,48 +1379,68 @@
         </div>
     </div>
 
-    <!-- Sounds: the one home for everything the buzzer does. Every control here
-         paints from the device (1 Hz push + CMD:CFG) and never from itself, so
-         it cannot show a setting the board does not hold. Rows are buttons on
-         purpose: a checkbox flips on tap before the write is even attempted. -->
+    <!-- Alerts: HOW the device gets your attention (sound, lights) and WHAT
+         for (the categories). Every control paints from the device (1 Hz push +
+         CMD:CFG) and never from itself, so it cannot show a setting the board
+         does not hold. Buttons on purpose: a checkbox flips on tap before the
+         write is even attempted. Sound is not a master over the categories --
+         the buzzer mute is sound only, while a category switch gates its beep
+         AND its light -- so each row's chip (alertChip) says what it will do. -->
     <div class="modal-overlay" id="sounds-modal">
         <div class="modal-card">
             <button class="modal-close-btn" onclick="document.getElementById('sounds-modal').classList.remove('active')">&times;</button>
             <div class="modal-header">
-                <h2>Sounds</h2>
-                <p>What the device is allowed to make a noise about. Saved on the board &mdash; it survives a power cycle, so you can set this and walk away.</p>
+                <h2>Alerts</h2>
+                <p>How the device gets your attention, and what for. Saved on the board, so you can set it and walk away.</p>
             </div>
 
-            <div class="snd-row snd-master">
-                <span class="snd-label"><strong>Buzzer</strong><em>Master mute &mdash; silences everything below</em></span>
-                <button class="snd-toggle" id="btn-buzzer-master" onclick="toggleBuzzer()">&mdash;</button>
+            <div class="alert-sec">How</div>
+            <div class="out-row">
+                <span class="snd-label"><strong>&#128266; Sound</strong></span>
+                <div class="radios seg" id="sound-modes" role="group" aria-label="Sound">
+                    <button class="radio-tab" data-sound="0" aria-pressed="false">Off</button>
+                    <button class="radio-tab" data-sound="1" aria-pressed="false">On</button>
+                </div>
+            </div>
+            <div class="out-row">
+                <span class="snd-label"><strong>&#128161; Lights</strong></span>
+                <div class="radios seg" id="led-modes" role="group" aria-label="Lights">
+                    <button class="radio-tab" data-led="0" aria-pressed="false">Off</button>
+                    <button class="radio-tab" data-led="1" aria-pressed="false">One</button>
+                    <button class="radio-tab" data-led="2" aria-pressed="false">Dim</button>
+                    <button class="radio-tab" data-led="3" aria-pressed="false">Full</button>
+                </div>
+            </div>
+            <p class="set-note alert-note">One lights a single LED in the alert&rsquo;s colour. Off stays dark, even during an alert.</p>
+
+            <div class="alert-sec">What</div>
+            <div class="snd-list">
+                <button class="snd-row" id="beep-alpr" onclick="toggleBeep('alpr')">
+                    <span class="snd-label"><strong>&#128247; ALPR / camera</strong><em>Two long beeps &middot; red sweep</em></span>
+                    <span class="snd-state">&mdash;</span>
+                </button>
+                <button class="snd-row" id="beep-bodycam" onclick="toggleBeep('bodycam')">
+                    <span class="snd-label"><strong>&#127909; Body cam</strong><em>Long&#8209;short&#8209;short &middot; flash pops</em></span>
+                    <span class="snd-state">&mdash;</span>
+                </button>
+                <button class="snd-row" id="beep-drone" onclick="toggleBeep('drone')">
+                    <span class="snd-label"><strong>&#128760; Drone (Remote ID)</strong><em>Rising trill &middot; spinning rotors</em></span>
+                    <span class="snd-state">&mdash;</span>
+                </button>
+                <button class="snd-row" id="beep-tracker" onclick="toggleBeep('tracker')">
+                    <span class="snd-label"><strong>&#128205; Tracker</strong><em>Fast ticking &middot; sonar pings</em></span>
+                    <span class="snd-state">&mdash;</span>
+                </button>
+                <button class="snd-row" id="beep-generic" onclick="toggleBeep('generic')">
+                    <span class="snd-label"><strong>Other matches</strong><em>Plain warning &middot; amber glow</em></span>
+                    <span class="snd-state">&mdash;</span>
+                </button>
             </div>
 
-            <button class="snd-row" id="beep-alpr" onclick="toggleBeep('alpr')">
-                <span class="snd-label"><strong>&#128247; ALPR / camera</strong><em>Two long beeps</em></span>
-                <span class="snd-state">&mdash;</span>
-            </button>
-            <button class="snd-row" id="beep-bodycam" onclick="toggleBeep('bodycam')">
-                <span class="snd-label"><strong>&#127909; Body cam</strong><em>Long&#8209;short&#8209;short</em></span>
-                <span class="snd-state">&mdash;</span>
-            </button>
-            <button class="snd-row" id="beep-drone" onclick="toggleBeep('drone')">
-                <span class="snd-label"><strong>&#128760; Drone (Remote ID)</strong><em>Rising trill</em></span>
-                <span class="snd-state">&mdash;</span>
-            </button>
-            <button class="snd-row" id="beep-tracker" onclick="toggleBeep('tracker')">
-                <span class="snd-label"><strong>&#128205; Tracker</strong><em>Fast ticking</em></span>
-                <span class="snd-state">&mdash;</span>
-            </button>
-            <button class="snd-row" id="beep-generic" onclick="toggleBeep('generic')">
-                <span class="snd-label"><strong>Other matches</strong><em>Plain warning</em></span>
-                <span class="snd-state">&mdash;</span>
-            </button>
-
-            <p class="set-note" style="margin-top:14px;">
-                A muted category is <strong>still detected and still listed</strong> in the live
-                scope &mdash; only the buzzer goes quiet. This is not receive&#8209;only, which stops
-                the device announcing itself on the air; that lives in Settings.
+            <p class="set-note alert-note">
+                A category you switch off stops beeping and flashing, but is <strong>still
+                detected and listed</strong>. To stop the device announcing itself on the air,
+                use Receive&#8209;only in Settings.
             </p>
         </div>
     </div>
@@ -1430,7 +1467,7 @@
 
                 <h3 class="set-label">What beeps</h3>
                 <p class="set-note">
-                    Moved to <strong>&#128266; Sounds</strong> on the main screen &mdash; silencing a
+                    Moved to <strong>&#128276; Alerts</strong> on the main screen &mdash; silencing a
                     category is something you do in the field, not three taps deep in here.
                 </p>
 

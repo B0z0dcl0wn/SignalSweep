@@ -64,6 +64,16 @@ void setBuzzerEnabled(bool enabled);
  */
 bool isBuzzerEnabled();
 
+// How much of the LED bar may light. Applied as the last step of every frame,
+// so every animation, the hunt meter and the heartbeat obey it. Persisted.
+enum LedMode : uint8_t { LED_OFF = 0, LED_ONE = 1, LED_DIM = 2, LED_FULL = 3 };
+
+/** @brief Set the LED mode (clamped to LED_FULL) and persist it. */
+void setLedMode(uint8_t mode);
+
+/** @brief Current LED mode; no mutex, reported by CMD:CFG and the 1 Hz push. */
+uint8_t getLedMode();
+
 /**
  * @brief Swap the idle blink to dim blue while the device is in receive-only.
  * The only visible sign that it has stopped advertising.

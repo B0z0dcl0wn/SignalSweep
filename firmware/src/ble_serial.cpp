@@ -131,6 +131,7 @@ String getBleConfigJson() {
     // buzzer control from here rather than assuming a freshly-connected board
     // is audible. It used to be the one setting the phone owned by guessing.
     doc["buzzer"] = isBuzzerEnabled();
+    doc["led"] = getLedMode();   // 0 off, 1 one LED, 2 dim, 3 full
     doc["rx_only"] = rxOnly;
     doc["ble_scan"] = bleScanOn;
     doc["wifi_scan"] = wifiScanOn;
@@ -373,6 +374,13 @@ void processIncomingCommand(const String& rawCommand) {
             ESP_LOGI(TAG, "Buzzer %s by command", doc["buzzer"].as<bool>() ? "enabled" : "muted");
             // Answer, so the app's button paints from the device rather than
             // optimistically -- same contract as beep_mask and the radios.
+            sendConfigReply();
+        }
+
+        // 2b. Lights: {"led":0..3} = off / one LED / dim / full. Persisted,
+        // and answered so the app paints from the device, like the buzzer.
+        if (doc["led"].is<int>()) {
+            setLedMode((uint8_t)constrain(doc["led"].as<int>(), 0, (int)LED_FULL));
             sendConfigReply();
         }
 

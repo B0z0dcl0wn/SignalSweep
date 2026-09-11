@@ -613,6 +613,10 @@
             if (rt) { setRadio(rt.getAttribute('data-radio')); return; }
             const wr = ev.target.closest('#wifi-roles .radio-tab');
             if (wr) { setWifiRole(wr.getAttribute('data-role')); return; }
+            const lm = ev.target.closest('#led-modes .radio-tab');
+            if (lm) { setLed(Number(lm.getAttribute('data-led'))); return; }
+            const sm = ev.target.closest('#sound-modes .radio-tab');
+            if (sm) { setSound(sm.getAttribute('data-sound') === '1'); return; }
             const act = ev.target.closest('.scope-act');
             if (!act) return;
             const mac = act.getAttribute('data-mac');
@@ -1181,6 +1185,7 @@
             setRadioUi(cfg);
             if (typeof cfg.beep_mask === 'number') setBeepUi(cfg.beep_mask);
             setBuzzerUi(cfg.buzzer);
+            setLedUi(cfg.led);
         }
 
         // Which categories the buzzer is allowed to speak. One bit per firmware
@@ -1220,16 +1225,9 @@
             deviceBeepMask = (typeof mask === 'number') ? mask : null;
             for (const key in BEEP_BITS) {
                 const el = document.getElementById('beep-' + key);
-                if (!el) continue;
-                const on = deviceBeepMask === null
-                         ? null : (deviceBeepMask & BEEP_BITS[key]) !== 0;
-                el.dataset.on = on === null ? '' : (on ? '1' : '0');
-                el.classList.toggle('on', on === true);
-                el.classList.toggle('off', on === false);
-                el.classList.remove('pending');
-                const state = el.querySelector('.snd-state');
-                if (state) state.textContent = on === null ? '—' : (on ? 'ON' : 'OFF');
+                if (el) el.classList.remove('pending');
             }
+            paintAlertRows();
             setSoundsSummary();
         }
 
@@ -1251,25 +1249,53 @@
             sendCommand({ beep_mask: pendingMask });
         }
 
+        // What one category's alert will actually do, given the two outputs.
+        // The buzzer mute is sound only and a category switch gates both its
+        // beep and its light, so a bare ON/OFF lied both ways -- that is how
+        // "Buzzer: OFF" sat above five rows still reading ON. Outputs not yet
+        // reported (null; older firmware has no LED mode) count as on.
+        function alertChip(on, sound, led) {
+            if (on === null) return '—';
+            if (!on) return 'Off';
+            const s = sound !== false, l = led !== 0;
+            return s && l ? '🔊 💡' : s ? '🔊' : l ? '💡' : 'Silent';
+        }
+        function paintAlertRows() {
+            for (const key in BEEP_BITS) {
+                const el = document.getElementById('beep-' + key);
+                if (!el) continue;
+                const on = deviceBeepMask === null ? null : (deviceBeepMask & BEEP_BITS[key]) !== 0;
+                const chip = alertChip(on, buzzerOn, ledMode);
+                el.dataset.on = on === null ? '' : (on ? '1' : '0');
+                el.classList.toggle('on', on === true && chip !== 'Silent');
+                el.classList.toggle('off', on === false);
+                el.classList.toggle('idle', chip === 'Silent');
+                const state = el.querySelector('.snd-state');
+                if (state) state.textContent = chip;
+            }
+        }
+
         // The toolbar label, so what is muted is legible without opening
         // anything -- the old controls were three taps deep in Settings.
+        // The icon says how (🔔 both, 🔊 sound only, 💡 lights only, 🔕 nothing
+        // can alert), the word says how many categories.
         function setSoundsSummary() {
             const btn = document.getElementById('btn-buzzer');
             if (!btn) return;
-            const keys = Object.keys(BEEP_BITS);
-            let label;
-            if (buzzerOn === false) {
-                label = '🔇 Sounds: off';
-            } else if (deviceBeepMask === null || buzzerOn === null) {
-                label = '🔊 Sounds: —';
-            } else {
-                const n = keys.filter(k => (deviceBeepMask & BEEP_BITS[k]) !== 0).length;
-                label = n === 0 ? '🔇 Sounds: none'
-                      : n === keys.length ? '🔊 Sounds: all'
-                      : '🔊 Sounds: ' + n + '/' + keys.length;
+            if (deviceBeepMask === null || buzzerOn === null) {
+                btn.textContent = '🔔 Alerts: —';
+                btn.classList.remove('on');
+                return;
             }
-            btn.textContent = label;
-            btn.classList.toggle('on', buzzerOn === true && deviceBeepMask !== 0);
+            const keys = Object.keys(BEEP_BITS);
+            const n = keys.filter(k => (deviceBeepMask & BEEP_BITS[k]) !== 0).length;
+            const sound = buzzerOn, light = ledMode !== 0;
+            const icon = n === 0 || (!sound && !light) ? '🔕'
+                       : sound && light ? '🔔' : sound ? '🔊' : '💡';
+            const what = !sound && !light ? 'off'
+                       : n === 0 ? 'none' : n === keys.length ? 'all' : n + '/' + keys.length;
+            btn.textContent = icon + ' Alerts: ' + what;
+            btn.classList.toggle('on', icon !== '🔕');
         }
 
         function openSounds() {
@@ -1362,6 +1388,7 @@
             // self-heal instead of stranding the app until a factory reset.
             if (typeof data.beep_mask === 'number') setBeepUi(data.beep_mask);
             if (typeof data.buzzer === 'boolean') setBuzzerUi(data.buzzer);
+            if (typeof data.led === 'number') setLedUi(data.led);
             const devAll = !!data.scan_all;
             if (devAll !== foxhuntMode) {
                 foxhuntMode = devAll;
@@ -1404,27 +1431,48 @@
             showToast('Saved \u2014 device is restarting', '\u21bb');
         }
 
-        // Device is the authority: send the inverse and let the firmware's cfg
-        // reply repaint. No optimistic paint -- if the command never lands the
+        // Device is the authority: a tap asks and the firmware's cfg reply
+        // repaints. No optimistic paint -- if the command never lands the
         // button must not claim it did.
-        function toggleBuzzer() {
+        function setSound(on) {
             if (buzzerOn === null) { showToast('Waiting for the device', '…'); return; }
-            const btn = document.getElementById('btn-buzzer-master');
-            if (btn) btn.classList.add('pending');
-            sendCommand({ buzzer: !buzzerOn });
+            if (on === buzzerOn) return;
+            const el = document.querySelector('#sound-modes .radio-tab[data-sound="' + (on ? 1 : 0) + '"]');
+            if (el) el.classList.add('pending');
+            sendCommand({ buzzer: on });
         }
 
         function setBuzzerUi(on) {
             buzzerOn = (typeof on === 'boolean') ? on : null;
-            const btn = document.getElementById('btn-buzzer-master');
-            if (btn) {
-                btn.classList.toggle('on', buzzerOn === true);
-                btn.classList.toggle('off', buzzerOn === false);
-                btn.classList.remove('pending');
-                btn.textContent = buzzerOn === null ? '—'
-                                : buzzerOn ? 'ON' : 'OFF';
-            }
+            document.querySelectorAll('#sound-modes .radio-tab').forEach(function (el) {
+                const pressed = buzzerOn !== null && (el.getAttribute('data-sound') === '1') === buzzerOn;
+                el.setAttribute('aria-pressed', pressed ? 'true' : 'false');
+                el.classList.remove('pending');
+            });
+            paintAlertRows();
             setSoundsSummary();
+        }
+
+        // LED mode: 0 off, 1 one LED, 2 dim, 3 full (firmware LedMode). Same
+        // contract as the buzzer -- painted only from device frames, a tap
+        // just asks and marks the button pending until the reply lands.
+        let ledMode = null;
+        function setLedUi(n) {
+            ledMode = (typeof n === 'number') ? n : null;
+            document.querySelectorAll('#led-modes .radio-tab').forEach(function (el) {
+                const on = ledMode !== null && Number(el.getAttribute('data-led')) === ledMode;
+                el.setAttribute('aria-pressed', on ? 'true' : 'false');
+                el.classList.remove('pending');
+            });
+            paintAlertRows();
+            setSoundsSummary();
+        }
+        function setLed(n) {
+            if (ledMode === null) { showToast('Waiting for the device', '…'); return; }
+            if (n === ledMode) return;
+            const el = document.querySelector('#led-modes .radio-tab[data-led="' + n + '"]');
+            if (el) el.classList.add('pending');
+            sendCommand({ led: n });
         }
 
         // The rules the device is actually carrying. Until they arrive the box
@@ -1566,6 +1614,7 @@
                 // one's -- with two boards around that is how you mute the
                 // wrong device.
                 setBuzzerUi(null);
+                setLedUi(null);
                 // Same reason: the category mask is per-board too, and it used
                 // to survive a disconnect as five checkboxes still showing the
                 // last device's settings.
@@ -2273,6 +2322,18 @@
                     // ...but a "Private" registration names nobody, so fall back.
                     vendorOf({ mac: '98:17:3C:00:00:01', protocol: 'BLE', pub: true, cid: 76 }) === 'Apple';
                 ouiNames = savedOui; btNames = savedBt;
+
+                // A category chip says what its alert will actually do. The
+                // buzzer mute is sound only, so with sound off a row must read
+                // lights-only, not ON (as if it beeps) nor Off (as if it's dark).
+                results.alertChip =
+                    alertChip(true, true, 3) === '🔊 💡' &&
+                    alertChip(true, false, 3) === '💡' &&
+                    alertChip(true, true, 0) === '🔊' &&
+                    alertChip(true, false, 0) === 'Silent' &&
+                    alertChip(false, true, 3) === 'Off' &&
+                    alertChip(null, true, 3) === '—' &&
+                    alertChip(true, null, null) === '🔊 💡';
 
                 // Ring is a Bluetooth write: never offer it on a Wi-Fi-only row.
                 const wifiOnly = actionRow(liveMatches['CC:00:03'], categoryOf(''));

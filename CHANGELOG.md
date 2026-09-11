@@ -4,6 +4,30 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Added — lights: off, one LED, dim, or full
+
+The toolbar's Sounds sheet is now **Alerts**, in two sections: *How* (Sound
+on/off and a four-way Lights picker) and *What* (the five categories). Lights:
+**Off** (the bar never lights, boot sweep and BOOT-hold flash included),
+**One** (only the first LED lights, in the frame's brightest colour, so the hunt
+meter still reads red/yellow/green and each alert keeps its category colour),
+**Dim** (the whole bar at about a sixth of normal brightness) and **Full**. It
+is one post-processing step on the finished frame in `HardwareManagerTask`, so
+every animation obeys it without knowing it exists. Set with `{"led":0..3}`,
+saved in NVS (`sweep-bz`/`led`) so it survives power loss, and reported in
+`CMD:CFG` and the 1 Hz push for the same reason as the buzzer mute: the app
+paints the picker only from the device, so a lost write self-heals within a
+second.
+
+It is called Alerts, not Notifications, because on Android "notifications"
+means the phone's notification shade, and this app posts none. The old Buzzer
+row billed itself as a master mute that "silences everything below", and with
+it off, the five rows under it still read ON. Both were half true: the buzzer
+mute is sound only, while a category switch gates its beep *and* its light. So
+each category row now shows what its alert will actually do given the two
+outputs: 🔊 💡, 💡 (sound off), 🔊 (lights off), Silent (both off) or Off.
+That label comes from `alertChip()`, which the selftest covers.
+
 ### Added — the cable chirps like the Bluetooth link
 
 Connecting and disconnecting over USB serial (Android USB host or desktop
