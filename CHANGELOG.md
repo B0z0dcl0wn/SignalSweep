@@ -4,6 +4,8 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-09-11 — Lights, a cleaner top, and tabs that choose what alerts
+
 ### Changed: a band tab picks what alerts, and what asks to be pinned
 
 Picking **Cameras**, **Trackers** or **Drones** now makes the device beep and

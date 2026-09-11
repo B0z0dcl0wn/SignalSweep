@@ -35,6 +35,12 @@ Flock beacon and an AirTag signature.)*
 - **Mutes by category.** Every AirTag in traffic tripping the tracker pattern is
   the detector working correctly and still not worth listening to. Mute that one
   word; the rest keep sounding, and the app keeps showing what the buzzer skipped.
+  Picking the Cameras, Trackers or Drones tab does the same in one tap.
+- **Lights, if you want them.** Each category has its own LED animation, and the
+  bar can be off, one LED, dim or full, so it does not light up a dark car.
+- **Names what it hears.** Vendor names come from offline IEEE and Bluetooth SIG
+  tables (no MAC ever leaves the phone), and Wi-Fi rows say access point or
+  client.
 - **Foxhunts.** Point it at one MAC and walk the signal down by ear, or make a
   Find My tracker ring so you can hear where it is hidden.
 - **Decodes drone Remote ID in full** (ASTM F3411 / OpenDroneID) over BLE,
