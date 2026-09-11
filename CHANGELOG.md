@@ -4,6 +4,32 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Added — who made it, and which end of the Wi-Fi link it is
+
+The detector always listed both Wi-Fi access points (beacons, probe responses)
+and clients (probe requests), but the app drew both as the same "Wi‑Fi" chip.
+The push now carries `"ap":1|0` for Wi-Fi rows and the chip reads **📡 AP** or
+**📱 Client**; rows from older firmware keep the plain chip. Selecting the
+Wi‑Fi tab opens a second strip, **All Wi‑Fi · 📡 APs · 📱 Clients**. It filters
+only while Wi‑Fi is selected, so a choice left behind cannot silently hide rows
+under Both or Bluetooth.
+
+Rows also name their manufacturer, two ways. A globally-unique MAC is looked
+up in the IEEE OUI registry. For BLE the push adds `"cid"`, the company ID from
+the advert's manufacturer data (Apple is `0x004C`), plus `"pub":1` when the
+address is public. The company ID is what makes BLE work at all: most BLE
+addresses, and most modern phones' Wi-Fi probes, are randomized. A random
+address has no vendor, and running it through the OUI table anyway gives a
+confident wrong answer. Such rows say "random MAC" instead. Where both lookups
+apply, the IEEE registry wins, because a company ID is self-declared. Govee's
+Telink thermometers send `0x0001` (Nokia) on public Telink addresses, so the
+company ID is only used for random addresses and "Private" registrations.
+
+Both lists ship with the app (`app/public/oui.txt`, `app/public/bt-company.txt`,
+refreshed by `app/tools/fetch-vendors.mjs`) and are looked up offline. **Never
+switch this to an online OUI API.** That would send every MAC the device hears
+to a third party, which is the passive trail this project exists not to leave.
+
 ### Changed — the LED bar speaks, and stops shouting when idle
 
 Every indicator used to `fill()` the whole 8-LED bar with one colour, a holdover

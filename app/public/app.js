@@ -58,10 +58,59 @@
         // It used to be a word buried in the grey sub-line, which is unreadable
         // in a wall of rows, so it leads the title as a chip instead. Fixed
         // literals only — nothing device-supplied, nothing to escape.
-        function radioBadges(protocol) {
+        // `ap` is the firmware's link role: 1 = access point (beacons), 0 =
+        // client (probe requests), undefined = not known / older firmware.
+        function radioBadges(protocol, ap) {
             const p = String(protocol || '');
+            const wifi = ap === 1 ? '📡 AP' : ap === 0 ? '📱 Client' : 'Wi‑Fi';
             return (p.indexOf('BLE')  >= 0 ? '<span class="radio-badge ble">BLE</span>' : '') +
-                   (p.indexOf('WiFi') >= 0 ? '<span class="radio-badge wifi">Wi‑Fi</span>' : '');
+                   (p.indexOf('WiFi') >= 0 ? '<span class="radio-badge wifi">' + wifi + '</span>' : '');
+        }
+
+        // ---- Vendor names -------------------------------------------------
+        // Looked up OFFLINE from lists bundled in public/ (refresh with
+        // tools/fetch-vendors.mjs). Never an online OUI API: that would hand
+        // every MAC the device hears to a third party.
+        // ponytail: ~1 MB OUI list, fetched once on first render; a trimmed
+        // list is the upgrade if the bundle size ever matters.
+        let ouiNames = new Map();   // 'AABBCC' -> vendor
+        let btNames = new Map();    // BT SIG company id -> company
+        let vendorsRequested = false;
+        function loadVendors() {
+            if (vendorsRequested || typeof fetch !== 'function') return;
+            vendorsRequested = true;
+            const text = function (u) { return fetch(u).then(function (r) { return r.ok ? r.text() : Promise.reject(u); }); };
+            const parse = function (t, key) {
+                const out = new Map();
+                for (const line of t.split(/\r?\n/)) {
+                    const i = line.indexOf('\t');
+                    if (i > 0) out.set(key(line.slice(0, i)), line.slice(i + 1));
+                }
+                return out;
+            };
+            Promise.all([text('oui.txt'), text('bt-company.txt')]).then(function (r) {
+                ouiNames = parse(r[0], String);
+                btNames = parse(r[1], Number);
+                renderScope();
+            }).catch(function () { /* no names; rows still render. selftest.js checks the files ship. */ });
+        }
+        // Only a globally-unique address names its maker. BLE says so itself
+        // (`pub`); for Wi-Fi the locally-administered bit (0x02 of the first
+        // byte) marks a randomized MAC, which carries no vendor at all.
+        function publicMac(m) {
+            if (m.pub) return true;
+            if (String(m.protocol || '').indexOf('WiFi') < 0) return false;
+            return (parseInt(String(m.mac).slice(0, 2), 16) & 0x02) === 0;
+        }
+        // The registry wins wherever it applies. A public address's OUI was
+        // assigned by the IEEE; a BLE company ID is whatever the firmware put
+        // there, and cheap silicon puts junk (Govee's Telink thermometers send
+        // 0x0001, which is Nokia -- seen on the bench). The company ID is the
+        // fallback for random addresses and "Private" registrations.
+        function vendorOf(m) {
+            const o = publicMac(m) ? ouiNames.get(String(m.mac).replace(/[:-]/g, '').slice(0, 6).toUpperCase()) : '';
+            if (o && o !== 'Private') return o;
+            return (m.cid != null && btNames.get(m.cid)) || '';
         }
 
         // =====================================================================
@@ -80,6 +129,7 @@
                     mac: t.mac, name: t.name || '', type: t.type || '',
                     rule: t.matched_rule || '', rssi: t.rssi,
                     protocol: t.protocol || 'BLE', ssid: t.ssid || '',
+                    ap: t.ap, pub: !!t.pub, cid: t.cid,
                     confidence: t.confidence || 0,
                     tier: t.tier || '', ts: now,
                     // Decoded ASTM Remote ID, present only on drones. The
@@ -149,6 +199,10 @@
         // radio's devices are noise -- and with the filter off most of the list
         // is Wi-Fi access points.
         let radio = 'any';   // 'any' | 'BLE' | 'WiFi'
+        // Wi-Fi sub-filter, from the firmware's `ap` field. It only applies
+        // (and is only on screen) while the Wi-Fi tab is selected, so a choice
+        // left behind can never silently hide rows under another tab.
+        let wifiRole = 'any';   // 'any' | 'ap' | 'client'
 
         function setRadio(key) {
             radio = key;
@@ -156,13 +210,26 @@
                 el.setAttribute('aria-selected',
                     el.getAttribute('data-radio') === key ? 'true' : 'false');
             });
+            const roles = document.getElementById('wifi-roles');
+            if (roles) roles.hidden = key !== 'WiFi';
+            renderScope();
+        }
+
+        function setWifiRole(key) {
+            wifiRole = key;
+            document.querySelectorAll('#wifi-roles .radio-tab').forEach(function (el) {
+                el.setAttribute('aria-selected',
+                    el.getAttribute('data-role') === key ? 'true' : 'false');
+            });
             renderScope();
         }
 
         // A device seen on both radios counts as either.
         function matchesRadio(m) {
             if (radio === 'any') return true;
-            return String(m.protocol || '').indexOf(radio) >= 0;
+            if (String(m.protocol || '').indexOf(radio) < 0) return false;
+            if (radio !== 'WiFi' || wifiRole === 'any') return true;
+            return m.ap === (wifiRole === 'ap' ? 1 : 0);
         }
 
         // Live rows: heard recently, matching the current lens, strongest first.
@@ -258,6 +325,7 @@
         }
 
         function renderScope() {
+            loadVendors();
             // Each band shows its own count and the strongest signal in it right
             // now, whether or not it is the selected band. That is the point of
             // the strip: you can be reading Drones and still see that something
@@ -321,11 +389,14 @@
                 const unmatched = band === 'none';
                 const weak = band === 'weak';
                 const isHunted = !!huntMac && String(m.mac).toUpperCase() === huntMac.toUpperCase();
+                // A random address with no company ID has no maker to name;
+                // say so rather than leave the blank unexplained.
+                const vendor = vendorOf(m) || (publicMac(m) || m.cid != null ? '' : 'random MAC');
                 html += '<div class="scope-row' + (unmatched ? ' unmatched' : '') +
                         (isHunted ? ' hunted' : '') +
                         '" style="border-left:4px solid ' + cat.color + '">' +
                     '<div class="scope-main">' +
-                        '<div class="scope-title">' + radioBadges(m.protocol) +
+                        '<div class="scope-title">' + radioBadges(m.protocol, m.ap) +
                             (cat.icon ? cat.icon + ' ' : '') + esc(title) +
                             // A weak hint has no vendor to name -- cat.label is
                             // just the rule text, which already appears below.
@@ -340,7 +411,8 @@
                             // The protocol is a badge in the title now. Every
                             // part here is optional, so join what exists rather
                             // than leave a dangling separator behind.
-                            [ (title === m.mac ? '' : '<span class="mono">' + esc(m.mac) + '</span>'),
+                            [ esc(vendor),
+                              (title === m.mac ? '' : '<span class="mono">' + esc(m.mac) + '</span>'),
                               (m.ssid && m.ssid !== title ? esc(m.ssid) : ''),
                               (m.rule ? esc(m.rule) : ''),
                               (unmatched ? '' : 'conf ' + (m.confidence | 0))
@@ -539,6 +611,8 @@
             if (tab) { setLens(tab.getAttribute('data-lens')); return; }
             const rt = ev.target.closest('#radios .radio-tab');
             if (rt) { setRadio(rt.getAttribute('data-radio')); return; }
+            const wr = ev.target.closest('#wifi-roles .radio-tab');
+            if (wr) { setWifiRole(wr.getAttribute('data-role')); return; }
             const act = ev.target.closest('.scope-act');
             if (!act) return;
             const mac = act.getAttribute('data-mac');
@@ -2130,6 +2204,20 @@
                 setRadio('any');
                 results.radioAny = liveRows('all').length === 4;
 
+                // AP / client split inside the Wi-Fi tab, and nowhere else.
+                liveMatches['CC:00:02'].ap = 1;
+                liveMatches['CC:00:03'].ap = 0;
+                setRadio('WiFi');
+                setWifiRole('ap');
+                const apRows = liveRows('all');
+                setWifiRole('client');
+                const clientRows = liveRows('all');
+                setRadio('any');   // role still 'client': must not hide anything here
+                results.wifiRoleFilter = apRows.length === 1 && apRows[0].mac === 'CC:00:02' &&
+                                         clientRows.length === 1 && clientRows[0].mac === 'CC:00:03' &&
+                                         liveRows('all').length === 4;
+                setWifiRole('any');
+
                 // The badge is how you tell the two apart in a wall of rows.
                 results.radioBadges =
                     radioBadges('WiFi').indexOf('wifi') > 0 &&
@@ -2138,6 +2226,30 @@
                     radioBadges('BLE+WiFi').indexOf('ble') > 0 &&
                     radioBadges('BLE+WiFi').indexOf('wifi') > 0 &&
                     radioBadges('') === '';
+                // AP vs client, and plain Wi-Fi when the firmware doesn't say.
+                results.wifiRoleBadges =
+                    radioBadges('WiFi', 1).indexOf('AP') > 0 &&
+                    radioBadges('WiFi', 0).indexOf('Client') > 0 &&
+                    radioBadges('WiFi').indexOf('AP') === -1 &&
+                    radioBadges('WiFi').indexOf('Client') === -1;
+
+                // Vendor: company ID wins, a public MAC falls back to its OUI,
+                // a randomized address names nobody.
+                const savedOui = ouiNames, savedBt = btNames;
+                ouiNames = new Map([['001A11', 'Google'], ['021A11', 'WRONG'], ['98173C', 'Private']]);
+                btNames = new Map([[76, 'Apple'], [1, 'Nokia']]);
+                results.vendorLookup =
+                    vendorOf({ mac: '00:1A:11:00:00:01', protocol: 'WiFi' }) === 'Google' &&
+                    vendorOf({ mac: '02:1A:11:00:00:01', protocol: 'WiFi' }) === '' &&
+                    vendorOf({ mac: '00:1A:11:00:00:01', protocol: 'BLE' }) === '' &&
+                    vendorOf({ mac: '00:1A:11:00:00:01', protocol: 'BLE', pub: true }) === 'Google' &&
+                    vendorOf({ mac: 'F2:00:00:00:00:01', protocol: 'BLE', cid: 76 }) === 'Apple' &&
+                    vendorOf({ mac: 'F2:00:00:00:00:01', protocol: 'BLE', cid: 9999 }) === '' &&
+                    // A registered OUI beats a self-declared (junk) company ID...
+                    vendorOf({ mac: '00:1A:11:00:00:01', protocol: 'BLE', pub: true, cid: 1 }) === 'Google' &&
+                    // ...but a "Private" registration names nobody, so fall back.
+                    vendorOf({ mac: '98:17:3C:00:00:01', protocol: 'BLE', pub: true, cid: 76 }) === 'Apple';
+                ouiNames = savedOui; btNames = savedBt;
 
                 // Ring is a Bluetooth write: never offer it on a Wi-Fi-only row.
                 const wifiOnly = actionRow(liveMatches['CC:00:03'], categoryOf(''));

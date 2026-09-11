@@ -580,6 +580,16 @@ static bool bleIsAirtag(NimBLEAdvertisedDevice* dev) {
     return company == 0x004C && static_cast<uint8_t>(mfg[2]) == 0x12;
 }
 
+// Bluetooth SIG company ID from the manufacturer data, or -1 if this advert
+// carries none. The app names the vendor from it -- the one vendor hint that
+// survives a randomized address, which is most of BLE.
+static int32_t bleCompanyId(NimBLEAdvertisedDevice* dev) {
+    if (!dev->haveManufacturerData()) return -1;
+    std::string mfg = dev->getManufacturerData();
+    if (mfg.length() < 2) return -1;
+    return static_cast<uint8_t>(mfg[0]) | (static_cast<uint8_t>(mfg[1]) << 8);
+}
+
 /**
  * @brief NimBLE Scan Callbacks for Watcher's Watch
  */
@@ -594,6 +604,8 @@ class WatchersScanCallbacks : public NimBLEAdvertisedDeviceCallbacks {
         int rssi = advertisedDevice->getRSSI();
         uint32_t now = millis();
         String devName = advertisedDevice->haveName() ? String(advertisedDevice->getName().c_str()) : "";
+        bool pubAddr = advertisedDevice->getAddress().getType() == BLE_ADDR_PUBLIC;
+        int32_t company = bleCompanyId(advertisedDevice);
 
         // Hunting: every advert from the target refreshes the click rate. Done
         // before the mutex so a busy detector never delays the feedback you are
@@ -672,6 +684,10 @@ class WatchersScanCallbacks : public NimBLEAdvertisedDeviceCallbacks {
                         if (merged > target.confidence) target.confidence = merged;
                         target.tier = tierForConfidence(target.confidence);
                         if (devName.length() > 0) target.name = devName;
+                        target.blePublic = pubAddr;
+                        // A scan response often has no manufacturer data; don't
+                        // let it erase the company the advert already gave.
+                        if (company >= 0) target.bleCompany = company;
                         // Don't let a later non-matching advert wipe a category
                         // an earlier rule match established.
                         if (matchedCategory.length() > 0) {
@@ -696,6 +712,8 @@ class WatchersScanCallbacks : public NimBLEAdvertisedDeviceCallbacks {
                     newTarget.lastSeenMs = now;
                     newTarget.count = 1;
                     newTarget.protocol = "BLE";
+                    newTarget.blePublic = pubAddr;
+                    newTarget.bleCompany = company;
                     newTarget.confidence = confidence;
                     newTarget.tier = tierForConfidence(confidence);
                     newTarget.lastReportedMs = 0;
@@ -848,6 +866,8 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
         String matchedCategory = "";
         bool droneDecoded = false;
         String foundSsid = "";
+        // Beacons and probe responses come from an AP, probe requests from a client.
+        uint8_t role = (fsubtype == 4) ? 1 : 2;
 
         // 1. Check OUI (weak signal)
         String mac = "";
@@ -996,6 +1016,7 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
                         target.matchedRule = matchedRule;
                     }
                     if (foundSsid.length() > 0) target.ssid = foundSsid;
+                    if (role > target.wifiRole) target.wifiRole = role;
                     if (droneDecoded) applyDroneData(target, wifiUas);
                     noteAlertForTarget(target, bestWeight, matchedCategory);
                     found = true;
@@ -1014,6 +1035,7 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
                 newTarget.count = 1;
                 newTarget.protocol = "WiFi";
                 newTarget.ssid = foundSsid;
+                newTarget.wifiRole = role;
                 newTarget.confidence = wifiConfidence;
                 newTarget.tier = tierForConfidence(wifiConfidence);
                 newTarget.lastReportedMs = 0;
@@ -1531,6 +1553,11 @@ String getWatchersTargetsJson() {
             // Worth its bytes even in a filter-off push: a network name is the
             // one field that lets a person recognise their own hardware.
             if (t.ssid.length() > 0) obj["ssid"] = t.ssid;
+            // Vendor and link-role hints, a few bytes each and only when known.
+            // The app does the name lookups offline from bundled lists.
+            if (t.wifiRole > 0)    obj["ap"]  = t.wifiRole == 2 ? 1 : 0;
+            if (t.blePublic)       obj["pub"] = 1;
+            if (t.bleCompany >= 0) obj["cid"] = t.bleCompany;
 
             // A device that matched nothing is only in this list because the
             // filter is off, and the app shows it as an address, a protocol and

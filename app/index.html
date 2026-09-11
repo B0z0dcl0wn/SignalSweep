@@ -1031,6 +1031,8 @@
             cursor:pointer; }
         .radio-tab[aria-selected="true"] { background:#141c2c; color:#e8eef7; }
         .radio-tab:focus-visible { outline:2px solid var(--accent-cyan); outline-offset:-2px; }
+        /* The Wi-Fi sub-filter tucks under the radio strip it belongs to. */
+        .radios.sub { margin-top:-0.5rem; }
 
         /* ---- Foxhunt: the one place this app raises its voice --------------
            Walking a hidden transmitter down by signal strength is the most
@@ -1231,6 +1233,12 @@
             <button class="radio-tab" role="tab" aria-selected="true" data-radio="any">Both radios</button>
             <button class="radio-tab" role="tab" aria-selected="false" data-radio="BLE">Bluetooth</button>
             <button class="radio-tab" role="tab" aria-selected="false" data-radio="WiFi">Wi&#8209;Fi</button>
+        </div>
+        <!-- Wi-Fi only: access points (beacons) vs clients (probe requests). -->
+        <div class="radios sub" id="wifi-roles" role="tablist" hidden>
+            <button class="radio-tab" role="tab" aria-selected="true" data-role="any">All Wi&#8209;Fi</button>
+            <button class="radio-tab" role="tab" aria-selected="false" data-role="ap">📡 APs</button>
+            <button class="radio-tab" role="tab" aria-selected="false" data-role="client">📱 Clients</button>
         </div>
 
         <!-- Foxhunt readout, shown only while a target is locked. -->

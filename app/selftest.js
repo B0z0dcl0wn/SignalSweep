@@ -109,6 +109,14 @@ if (cfgKeys.length < 5 || cfgUnread.length) {
 }
 console.log('[signalsweep self-test] app reads every CMD:CFG field: ok');
 
+// The vendor lists load with a silent catch (a missing name must never take
+// the scope down), so this is the only place a list that stopped shipping shows.
+for (const [f, min] of [['oui.txt', 20000], ['bt-company.txt', 1000]]) {
+    const n = readFileSync(new URL('./public/' + f, import.meta.url), 'utf8').split('\n').filter(Boolean).length;
+    if (n < min) { console.log('FAIL: public/' + f + ' has', n, 'entries'); process.exit(1); }
+}
+console.log('[signalsweep self-test] vendor lists ship: ok');
+
 const results = await global.__signalsweepSelfTest();
 const failed = Object.entries(results).filter(([, v]) => !v).map(([k]) => k);
 console.log('[signalsweep self-test]', results);

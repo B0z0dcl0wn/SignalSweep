@@ -45,6 +45,16 @@ struct WatcherTargetInfo {
     // comment on noteAlertForTarget() in the .cpp.
     bool alerted = false;
 
+    // Who made it, and which side of a Wi-Fi link it is. The app turns these
+    // into a vendor name and an AP/client badge; the lookups live on the phone.
+    // wifiRole: 0 unknown, 1 client (probe request), 2 AP (beacon / probe
+    // response). AP is sticky -- a device that beacons is infrastructure even
+    // if it also probes. bleCompany is the manufacturer-data company ID, -1
+    // when none has been heard (0x0000 is a real company).
+    uint8_t wifiRole   = 0;
+    bool    blePublic  = false;
+    int32_t bleCompany = -1;
+
     // Decoded ASTM F3411 Remote ID, populated only for drones (hasDrone).
     // Everything else leaves this zeroed and it never reaches the wire — the
     // 1 Hz push is the tightest budget on the board, so these fields are
