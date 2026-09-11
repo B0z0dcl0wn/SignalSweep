@@ -12,13 +12,13 @@ per category, no screen required.
 
 The phone app is optional. It is a live scope, not a logbook.
 
-| Live scope | Foxhunt | Drone on the map |
+| `live` | `hunt <mac>` | `map` |
 |---|---|---|
 | ![Live scope](docs/img/scope.png) | ![Foxhunt](docs/img/foxhunt.png) | ![Drone on the map](docs/img/map-drone.png) |
-| Everything the device is matching right now, by category. | Lock one MAC and the device clicks like a Geiger counter as you close in. | Drones are drawn at their own broadcast coordinate — a full ASTM F3411 decode. |
+| Live matches, strongest first. Cleared when you disconnect. | One target. The beeps speed up as you close in. Walk, don't watch the screen. | Full ASTM F3411 decode: aircraft position and operator position. |
 
-*(Screenshots are the bench rig: a second ESP32 transmitting a test drone, a
-Flock beacon and an AirTag signature.)*
+*Bench rig: a second $15 board faking a drone, a Flock camera and an AirTag, so
+there's a known signal to check against.*
 
 ---
 

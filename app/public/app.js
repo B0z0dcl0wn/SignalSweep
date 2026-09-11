@@ -525,7 +525,7 @@
             huntMac = String(mac);
             huntTrace = [];
             sendCommand({ hunt: huntMac });
-            showToast('Locked on \u2014 the device is clicking now', '\u25c9');
+            showToast('Locked on \u2014 follow the beeps', '\u25c9');
             renderScope();
             // You locked on from halfway down a long list; the instrument is at
             // the top of it. Bring it to you -- the hunted card is pinned
