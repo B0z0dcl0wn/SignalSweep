@@ -4,6 +4,20 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Added — the cable chirps like the Bluetooth link
+
+Connecting and disconnecting over USB serial (Android USB host or desktop
+WebSerial) now plays the same rising and falling chirps as a BLE connect.
+Plugging in a cable does not. The board cannot tell those apart by itself: the
+USB-Serial-JTAG stack's "connected" only means a host is sending frames, which
+is true the moment the cable goes in, and opening the port resets the board
+anyway. So the app announces itself. It sends `CMD:HOST` every 2 s while it
+holds the port (the first one chirps) and `CMD:HOST:BYE` on a deliberate
+disconnect. If the keepalive just stops (cable yanked, app killed), the board
+plays the disconnect chirp after 6 s. Other serial traffic, such as a terminal
+or a bench script, never chirps. `node app/selftest.js` fails if either side
+renames the two commands.
+
 ### Added — who made it, and which end of the Wi-Fi link it is
 
 The detector always listed both Wi-Fi access points (beacons, probe responses)

@@ -126,13 +126,42 @@ void loop() {
 
     bleSerialTick();
 
+    // USB host session, chirped like the BLE link. A plugged-in cable is not a
+    // connection: the USB-Serial-JTAG stack's idea of "connected" is a host
+    // sending SOFs (i.e. merely plugged in), and nothing reports the port being
+    // opened -- opening it resets the board anyway. So the app says it is there:
+    // CMD:HOST every ~2 s while it holds the port, CMD:HOST:BYE on a deliberate
+    // disconnect. Silence past the timeout is a yanked cable or a killed app.
+    // Other serial traffic (bench scripts, a terminal) never chirps.
+    static const uint32_t SERIAL_HOST_TIMEOUT_MS = 6000;
+    // A separate flag, not a "0 = none" timestamp: the first version stored
+    // millis() | 1 to dodge zero, which on an even millisecond is 1 ms in the
+    // future -- millis() - that underflows to ~4e9 and the session timed out
+    // the instant it opened (bench: "connected" and "gone" in the same ms).
+    static bool serialHost = false;
+    static uint32_t serialHostMs = 0;
+
     // Process incoming commands from USB Hardware Serial
     while (Serial.available()) {
         String cmd = Serial.readStringUntil('\n');
         cmd.trim();
-        if (cmd.length() > 0) {
+        // The printlns are the bench witness: nothing else shows a chirp
+        // without someone in the room to hear it.
+        if (cmd == "CMD:HOST") {
+            if (!serialHost) { playConnectionChirp(); Serial.println("[USB] host connected"); }
+            serialHost = true;
+            serialHostMs = millis();
+        } else if (cmd == "CMD:HOST:BYE") {
+            if (serialHost) { playDisconnectionChirp(); Serial.println("[USB] host closed"); }
+            serialHost = false;
+        } else if (cmd.length() > 0) {
             processIncomingCommand(cmd);
         }
+    }
+    if (serialHost && millis() - serialHostMs > SERIAL_HOST_TIMEOUT_MS) {
+        serialHost = false;
+        playDisconnectionChirp();
+        Serial.println("[USB] host gone");
     }
 
     // Yield to free CPU resources for background tasks

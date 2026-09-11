@@ -109,6 +109,19 @@ if (cfgKeys.length < 5 || cfgUnread.length) {
 }
 console.log('[signalsweep self-test] app reads every CMD:CFG field: ok');
 
+// The cable chirp is a two-sided handshake with no reply to fail loudly on: if
+// either side renames a command the board just goes quiet. Both strings must
+// appear on both sides.
+const mainSrc = readFileSync(new URL('../firmware/src/main.cpp', import.meta.url), 'utf8');
+for (const c of ["'CMD:HOST'", "'CMD:HOST:BYE'"]) {
+    const fw = '"' + c.slice(1, -1) + '"';
+    if (!appSrc.includes(c) || !mainSrc.includes(fw)) {
+        console.log('FAIL: host handshake', c, 'missing from', appSrc.includes(c) ? 'main.cpp' : 'app.js');
+        process.exit(1);
+    }
+}
+console.log('[signalsweep self-test] cable host handshake matches firmware: ok');
+
 // The vendor lists load with a silent catch (a missing name must never take
 // the scope down), so this is the only place a list that stopped shipping shows.
 for (const [f, min] of [['oui.txt', 20000], ['bt-company.txt', 1000]]) {

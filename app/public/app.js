@@ -1558,7 +1558,9 @@
                 // requestConfig() owns its own delay and retries -- the first
                 // attempt waits for the NUS notify subscription to come up.
                 requestConfig();
+                setHostKeepalive(type === 'USB' || type === 'SERIAL');
             } else {
+                setHostKeepalive(false);
                 connectionType = null;
                 // Stop showing the last board's settings as if they were this
                 // one's -- with two boards around that is how you mute the
@@ -1888,6 +1890,21 @@
         // One chain serializes every device command on every transport. Callers
         // stay fire-and-forget; this is a queue, not an awaited API.
         let txChain = Promise.resolve();
+        // Cable host session. The firmware can't tell an open port from a cable
+        // that is merely plugged in, so the app announces itself: CMD:HOST every
+        // 2 s while it holds a USB/serial port (first one chirps "connected"),
+        // CMD:HOST:BYE on a deliberate disconnect. If they just stop -- cable
+        // yanked, app killed -- the board chirps "gone" after 6 s. See loop() in
+        // firmware/src/main.cpp. BLE needs none of this: GATT has real events.
+        const HOST_KEEPALIVE_MS = 2000;
+        let hostTimer = null;
+        function setHostKeepalive(on) {
+            if (hostTimer) { clearInterval(hostTimer); hostTimer = null; }
+            if (!on) return;
+            sendCommand({ raw: 'CMD:HOST' });
+            hostTimer = setInterval(function () { sendCommand({ raw: 'CMD:HOST' }); }, HOST_KEEPALIVE_MS);
+        }
+
         function sendCommand(cmdObj) {
             // Same handler on both arms: a failed write must not break the chain
             // and strand every command after it.
@@ -1959,6 +1976,12 @@
                     const stale = await window.BleClient.getConnectedDevices([NUS_SERVICE_UUID]);
                     for (const d of (stale || [])) await window.BleClient.disconnect(d.deviceId);
                 } catch (e) { /* BLE unavailable or nothing connected */ }
+            }
+            // Say goodbye while the port is still open, so the board chirps now
+            // rather than after its 6 s timeout.
+            if (connectionType === 'USB' || connectionType === 'SERIAL') {
+                setHostKeepalive(false);
+                try { await sendCommand({ raw: 'CMD:HOST:BYE' }); } catch (e) {}
             }
             await teardownUsb();
             if (serialReader) { try { await serialReader.cancel(); } catch (e) {} serialReader = null; }
