@@ -1481,13 +1481,15 @@ String getWatchersTargetsJson() {
     // with no way back but a factory reset. ~30 B on an ~84 B idle payload;
     // telemetry is the tightest budget on the device, so nothing else joins
     // these three without re-measuring the 60 s push soak. (The LED mode
-    // joined for the same reason as the other two, ~8 B.)
+    // joined for the same reason as the other two, ~8 B. The alert count joined
+    // so the header's "alerts since power-on" ticks live, ~12 B.)
     //
     // Unconditional, unlike scan_all: "absent" must not be ambiguous between
     // "the default" and "firmware too old to send it".
     doc["beep_mask"] = beepMask;
     doc["buzzer"] = isBuzzerEnabled();
     doc["led"] = getLedMode();
+    doc["alerts"] = getAlertCount();
 
     if (watchersMutex != NULL && xSemaphoreTake(watchersMutex, pdMS_TO_TICKS(200)) == pdTRUE) {
 

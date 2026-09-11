@@ -4,6 +4,50 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Changed — the top of the screen says which board, and the toolbar is two buttons
+
+The header now names the board you are connected to and the link type
+("SignalSweep666 · USB"). The name comes from `CMD:CFG`'s `ble_name`, so it
+works over a cable too, where you would otherwise see only a port. The status
+strip shows **Uptime** and **Alerts since boot** next to Location. Uptime comes
+from a new `uptime` field (seconds) in `CMD:CFG`: the app asks once and counts
+on from there. The alert count (`alerts`, the same counter `CMD:CFG` already
+had) now rides the 1 Hz push so it ticks live. The idle push measured 132 B,
+and a 60 s soak got 60 of 60 pushes. CPU, heap and chip temperature were left
+out. CPU usage needs FreeRTOS run-time stats, which cost time on every context
+switch. Heap never moves. The S3's die temperature is uncalibrated.
+
+The toolbar is down to **Alerts** and **Filter**. The filter button used to
+read "Filter: matches" unlit in its normal state and lit up when the filter was
+*off*, which is backwards. It now reads **Filter: On**, lit green while it is
+filtering, and **Filter: Off**, unlit, while showing everything. "Recording" is
+now **Ask to pin matches**, a switch in the Pins sheet behind a new 📍 header
+icon. The icon lights green while the switch is on, so an armed prompt is still
+visible from the main screen. The sheet opens without the PIN; only viewing
+saved pins asks for it. Signatures moved into Settings.
+
+Connection gets its own bar inside the header card: the board and link on the
+left ("SignalSweep666 · Bluetooth"), and a labelled button on the right. The
+button is a red-outlined **Disconnect**, which asks first, or a cyan
+**Connect**. It replaces a lone Disconnect button that sat on a row of its own
+outside the card. An earlier draft made the name line itself tappable, with a ⏏
+glyph, and nobody would have found it. The amber "Device disconnected" banner
+is gone. Its Connect Now button duplicated the header's Connect, and its
+message ("it still beeps on its own") is already what the empty list says.
+
+### Fixed — turning the filter back on left the whole list up
+
+After Filter went back on, every unmatched row stayed listed, with Hunt
+buttons, until it aged out 8 s later. There were two causes. `liveRows()`
+relied on the device no longer reporting those rows instead of hiding them
+itself. And a push sent before the board applied the command still carried
+`scan_all:true`: the app drew that push under the old mode and adopted the
+state only *after* drawing. The list now drops unmatched rows at once while
+the filter is on, the device's state is adopted before rendering, and a
+disagreeing echo is ignored for 1.5 s after your own tap. After that the
+device is the authority again, so a write that never landed still repaints
+the truth.
+
 ### Added — lights: off, one LED, dim, or full
 
 The toolbar's Sounds sheet is now **Alerts**, in two sections: *How* (Sound

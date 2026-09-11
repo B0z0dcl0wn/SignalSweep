@@ -56,7 +56,7 @@
             border: 1px solid var(--card-border);
             border-radius: 16px;
             padding: 1.5rem 2rem;
-            margin-bottom: 2rem;
+            margin-bottom: 1rem;
             display: flex;
             justify-content: space-between;
             align-items: center;
@@ -217,37 +217,6 @@
         .btn-disconnect:hover {
             background: rgba(239, 68, 68, 0.35);
             color: #fff;
-        }
-
-        /* Banner Disconnected Alert */
-        .conn-alert-banner {
-            background: rgba(245, 158, 11, 0.12);
-            border: 1px solid rgba(245, 158, 11, 0.3);
-            border-radius: 12px;
-            padding: 1rem 1.5rem;
-            margin-bottom: 2rem;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            gap: 1rem;
-            backdrop-filter: blur(10px);
-        }
-
-        .conn-alert-text {
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-            font-size: 0.9rem;
-            color: #fde68a;
-        }
-
-        .conn-alert-text svg {
-            width: 20px;
-            height: 20px;
-            fill: none;
-            stroke: var(--accent-amber);
-            stroke-width: 2;
-            flex-shrink: 0;
         }
 
         /* Grid Section */
@@ -904,6 +873,24 @@
             font-size:0.8rem; cursor:pointer; transition:all 0.2s ease; }
         .set-toggle.on  { background:var(--accent-emerald); border:1px solid var(--accent-emerald); color:#000; }
         .set-toggle.off { background:rgba(239,68,68,0.2); border:1px solid var(--accent-red); color:var(--accent-red); }
+        /* Neither on nor alarming: an off switch that is a normal choice. */
+        .set-toggle:not(.on):not(.off) { background:transparent; border:1px solid var(--card-border); color:var(--text-muted); }
+        /* Header: which board, and the pins icon lit while asking is armed. */
+        .hdr-conn { flex-basis:100%; display:flex; align-items:center; gap:8px; min-width:0;
+            padding-top:0.8rem; border-top:1px solid var(--card-border);
+            font-size:0.85rem; color:var(--text-muted); }
+        #hdr-dev { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .hdr-btn { flex:none; min-height:40px; padding:0 16px; border-radius:20px; cursor:pointer;
+            font-weight:700; font-size:0.8rem; border:1px solid var(--accent-cyan);
+            background:rgba(0,242,254,0.1); color:var(--accent-cyan); }
+        .hdr-btn.disc { border-color:rgba(239,68,68,0.5); background:rgba(239,68,68,0.12); color:#f87171; }
+        .btn-help.lit { color:var(--accent-emerald) !important; }
+        /* Three header icons beside the name must fit one row on a phone. */
+        @media (max-width: 480px) {
+            header { padding: 1rem 1.1rem; }
+            .hdr-icons { gap: 2px !important; }
+            header .btn-help { padding: 6px !important; }
+        }
         .set-text { width:100%; padding:0.7rem 0.85rem; font-size:1rem; border-radius:10px;
             border:1px solid rgba(255,255,255,0.15); background:rgba(0,0,0,0.3); color:#fff; }
         .set-check { display:flex; gap:10px; align-items:flex-start; cursor:pointer; font-size:0.82rem; line-height:1.5; }
@@ -983,7 +970,7 @@
         }
         .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 
-        /* Status strip: device / GPS / recording, each with its own state dot.
+        /* Status strip: uptime / alerts / GPS (device identity is in the header).
            Three separate cells rather than one run-on line, because they fail
            independently and you need to see which one went dark. */
         .statstrip { display:grid; grid-template-columns:repeat(3,1fr); gap:1px;
@@ -1143,11 +1130,16 @@
                 </div>
                 <div class="brand-text">
                     <h1>SignalSweep</h1>
-                    <p>Surveillance detector</p>
                 </div>
             </div>
-            <div style="display: flex; gap: 10px;">
-                <button class="btn-help" onclick="document.getElementById('settings-modal').classList.add('active')" style="background:none;border:none;color:white;cursor:pointer;padding:10px;">
+            <div class="hdr-icons" style="display: flex; gap: 10px;">
+                <button class="btn-help" id="btn-pins" onclick="openPins()" title="Pins" aria-label="Pins" style="background:none;border:none;color:white;cursor:pointer;padding:10px;">
+                    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+                        <circle cx="12" cy="10" r="3"></circle>
+                    </svg>
+                </button>
+                <button class="btn-help" title="Settings" aria-label="Settings" onclick="document.getElementById('settings-modal').classList.add('active')" style="background:none;border:none;color:white;cursor:pointer;padding:10px;">
                     <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <circle cx="12" cy="12" r="3"></circle>
                         <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
@@ -1161,6 +1153,12 @@
                     </svg>
                 </button>
             </div>
+            <!-- Which board, over what, and a real button to connect or leave. -->
+            <div class="hdr-conn">
+                <span class="statdot off" id="hdr-dot"></span>
+                <span id="hdr-dev">Not connected</span>
+                <button class="hdr-btn" id="hdr-act" onclick="hdrTap()">Connect</button>
+            </div>
         </header>
 
         <div class="header-controls">
@@ -1170,45 +1168,28 @@
                 <div class="pulse-dot" id="pulseDot"></div>
                 <div class="status-info"><span id="connStatusText"></span></div>
             </div>
-            <button class="btn-header-conn" id="btnConnectHeader" onclick="openConnModal()">Connect Device</button>
-            <button class="btn-disconnect" id="btnDisconnectHeader" onclick="disconnectDevice()">Disconnect</button>
         </div>
 
-        <!-- Disconnected Alert Banner -->
-        <div class="conn-alert-banner" id="connBanner">
-            <div class="conn-alert-text">
-                <svg viewBox="0 0 24 24">
-                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
-                    <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
-                </svg>
-                <span><strong>Device disconnected.</strong> It still beeps on its own — connect the phone only for a live view, tuning, or to record a location.</span>
-            </div>
-            <button class="btn-header-conn" style="padding:0.4rem 0.9rem; font-size:0.8rem;" onclick="openConnModal()">Connect Now</button>
-        </div>
-
-        <!-- Status strip: three things that fail independently. -->
+        <!-- Status strip. Which board and how it is linked is in the header. -->
         <div class="statstrip">
-            <div class="statcell">
-                <div class="statcell-k">Device</div>
-                <div class="statcell-v"><span class="statdot off" id="st-dev-dot"></span><span id="st-dev">Not connected</span></div>
+            <div class="statcell" title="Time since the board last powered on. A reset here means it lost power.">
+                <div class="statcell-k">Uptime</div>
+                <div class="statcell-v"><span id="st-up">—</span></div>
+            </div>
+            <div class="statcell" title="Alerts the board has sounded since it powered on, including while nothing was connected.">
+                <div class="statcell-k">Alerts since boot</div>
+                <div class="statcell-v"><span id="st-alerts">—</span></div>
             </div>
             <div class="statcell" title="Location is taken as a single fix when you confirm a pin, or when you recenter the map. It is never tracked continuously.">
                 <div class="statcell-k">Location</div>
                 <div class="statcell-v"><span class="statdot off" id="st-gps-dot"></span><span id="st-gps">Off</span></div>
             </div>
-            <div class="statcell">
-                <div class="statcell-k">Recording</div>
-                <div class="statcell-v"><span class="statdot off" id="st-rec-dot"></span><span id="st-rec">Off</span></div>
-            </div>
         </div>
 
-        <!-- Controls -->
+        <!-- Controls. Pins live behind the header 📍, signatures in Settings. -->
         <div class="toolbar">
-            <button class="ctrl-btn" id="btn-record" onclick="toggleRecording()">○ Recording: OFF</button>
             <button class="ctrl-btn" id="btn-buzzer" onclick="openSounds()">🔔 Alerts: —</button>
-            <button class="ctrl-btn" id="btn-foxhunt" onclick="toggleFoxhunt()">◎ Filter: matches</button>
-            <button class="ctrl-btn" onclick="openPins()">📍 Pins</button>
-            <button class="ctrl-btn" onclick="openSignatures()">✎ Signatures</button>
+            <button class="ctrl-btn on" id="btn-foxhunt" onclick="toggleFoxhunt()">◉ Filter: On</button>
         </div>
 
         <!-- Live scope -->
@@ -1356,7 +1337,12 @@
     <div class="modal-overlay" id="pins-modal">
         <div class="modal-card">
             <button class="modal-close-btn" onclick="document.getElementById('pins-modal').classList.remove('active')">&times;</button>
-            <div class="modal-header"><h2>Recorded Pins</h2><p>Devices you chose to mark. Nothing else is stored.</p></div>
+            <div class="modal-header"><h2>Pins</h2><p>Locations you chose to mark, encrypted behind your PIN. Nothing else is stored.</p></div>
+            <div class="set-row">
+                <span>Ask to pin matches</span>
+                <button class="set-toggle" id="btn-record" onclick="toggleRecording()">Off</button>
+            </div>
+            <p class="set-note" style="margin:0.5rem 0 1rem;">When on, each matched device asks before saving one GPS fix. Detecting never needs the PIN.</p>
             <div id="pins-body" style="max-height:50vh;overflow-y:auto;margin-bottom:1rem;"></div>
             <div class="modal-actions" style="display:flex;gap:10px;flex-wrap:wrap;">
                 <button class="ctrl-btn" onclick="exportPinsFile()">Export JSON</button>
@@ -1495,9 +1481,13 @@
                 </label>
                 <button class="ctrl-btn" style="width:100%;" onclick="saveIdentity()">Save &amp; restart device</button>
 
+                <h3 class="set-label">Signatures</h3>
+                <p class="set-note">The rules the device matches against, read back from the board.</p>
+                <button class="ctrl-btn" style="width:100%;" onclick="document.getElementById('settings-modal').classList.remove('active'); openSignatures()">Edit signature rules</button>
+
                 <h3 class="set-label">Opsec</h3>
                 <p class="set-note">
-                    This app keeps no history of what it detected or where you went. The only thing stored is location pins you explicitly confirm, encrypted behind your PIN. Manage them under <strong>Pins</strong>.
+                    This app keeps no history of what it detected or where you went. The only thing stored is location pins you explicitly confirm, encrypted behind your PIN. Manage them under <strong>&#128205; Pins</strong> in the header.
                 </p>
             </div>
         </div>
@@ -1522,8 +1512,8 @@
                    📍 <strong>Tracker</strong> — fast ticking</p>
                 <h3 style="color:white;margin-top:15px;">The phone (optional)</h3>
                 <p>Connect for a live view of what's matching right now, to tune the alarm, or to edit the signature list. Nothing is stored when you close it.</p>
-                <h3 style="color:white;margin-top:15px;">Recording is opt-in</h3>
-                <p>Turn <strong>Recording</strong> on and the app asks, per device, whether to save its location. Those pins are the only thing kept — encrypted behind your PIN, so a lost phone reveals nothing.</p>
+                <h3 style="color:white;margin-top:15px;">Pins are opt-in</h3>
+                <p>Tap <strong>&#128205;</strong> in the header and turn on <strong>Ask to pin matches</strong>, and the app asks, per device, whether to save its location. Those pins are the only thing kept — encrypted behind your PIN, so a lost phone reveals nothing.</p>
             </div>
         </div>
     </div>

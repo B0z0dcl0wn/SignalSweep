@@ -97,9 +97,8 @@ console.log('[signalsweep self-test] beep mask bits match firmware AlertCategory
 const cfgKeys = [...readFileSync(new URL('../firmware/src/ble_serial.cpp', import.meta.url), 'utf8')
     .match(/String getBleConfigJson\(\) \{[\s\S]*?\n\}/)[0]
     .matchAll(/doc\["(\w+)"\]\s*=/g)].map(m => m[1]);
-// Deliberately unread: `cfg` is the discriminator itself, `alerts` is a
-// bench-only counter with no UI.
-const cfgIgnored = new Set(['cfg', 'alerts']);
+// Deliberately unread: `cfg` is the discriminator itself.
+const cfgIgnored = new Set(['cfg']);
 const cfgUnread = cfgKeys.filter(k => !cfgIgnored.has(k) &&
     !appSrc.includes('cfg.' + k) && !appSrc.includes('data.' + k));
 if (cfgKeys.length < 5 || cfgUnread.length) {

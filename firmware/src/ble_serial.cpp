@@ -136,6 +136,9 @@ String getBleConfigJson() {
     doc["ble_scan"] = bleScanOn;
     doc["wifi_scan"] = wifiScanOn;
     doc["alerts"] = getAlertCount();
+    // Seconds since boot, asked once on connect; the app counts on from there
+    // rather than have it ride the 1 Hz push.
+    doc["uptime"] = millis() / 1000;
     String out;
     serializeJson(doc, out);
     return out;

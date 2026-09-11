@@ -238,6 +238,13 @@
             const k = forLens || lens;
             const rows = Object.values(liveMatches)
                 .filter(function (m) { return now - m.ts < LIVE_STALE_MS; })
+                // Filter on hides unmatched rows at once. The device stops
+                // reporting them, but waiting for them to go stale left the
+                // whole unfiltered list on screen for 8 s after the tap.
+                .filter(function (m) {
+                    return foxhuntMode || bandOf(m) !== 'none' ||
+                        String(m.mac).toUpperCase() === huntMac.toUpperCase();
+                })
                 .filter(matchesRadio)
                 .filter(function (m) {
                     if (k === 'all') return true;
@@ -435,6 +442,11 @@
         // you can physically walk it down. Detection never stops meanwhile.
         let huntMac = '';
         let foxhuntMode = false;      // filter off: list everything, hunt anything
+        // A push already in flight when you tap still carries the old scan_all,
+        // and adopting it flipped the button back for a frame. Local intent
+        // wins briefly; after that the device is the authority again, so a
+        // write that never landed still repaints the truth.
+        let filterPendingUntil = 0;
         // Signal strength for the locked target over the last ~40 samples. In
         // memory, cleared when the hunt stops or the link drops. It is a signal
         // trace, not a track -- there is no position in it.
@@ -459,18 +471,24 @@
             // threshold either way, so turning the filter off shows you every
             // phone in the room without beeping at a single one.
             sendCommand({ scan_all: foxhuntMode });
-            const btn = document.getElementById('btn-foxhunt');
-            if (btn) {
-                btn.classList.toggle('on', foxhuntMode);
-                btn.textContent = foxhuntMode ? '\u25c9 Filter: off' : '\u25ce Filter: matches';
-            }
+            filterPendingUntil = Date.now() + 1500;
+            paintFilter();
             // The radio strip is always on screen and its choice is yours, not
             // the filter's — it used to appear and reset with foxhunt mode.
             if (!foxhuntMode && huntMac) stopHunt();
-            showToast(foxhuntMode ? 'Showing everything the radios hear'
-                                  : 'Showing signature matches only',
-                      foxhuntMode ? '\u25c9' : '\u25ce');
+            showToast(foxhuntMode ? 'Filter off \u2014 showing everything'
+                                  : 'Filter on \u2014 matches only',
+                      foxhuntMode ? '\u25ce' : '\u25c9');
             renderScope();
+        }
+
+        // Lit means filtering, which is the normal state. It used to be lit
+        // when the filter was OFF and read "Filter: matches" unlit, backwards.
+        function paintFilter() {
+            const btn = document.getElementById('btn-foxhunt');
+            if (!btn) return;
+            btn.classList.toggle('on', !foxhuntMode);
+            btn.textContent = foxhuntMode ? '\u25ce Filter: Off' : '\u25c9 Filter: On';
         }
 
         function huntTarget(mac) {
@@ -806,6 +824,14 @@
                     try { renderFoxhunt(); } catch (e) { console.warn('foxhunt render failed:', e); }
                     return;
                 }
+                // The device is the authority on its own state. Both flags
+                // persist in NVS (sweep-st), so a board that ran headless
+                // comes back still hunting or still unfiltered -- the app has
+                // to adopt what the telemetry says in either direction rather
+                // than assume defaults. Adopted BEFORE rendering: the other
+                // order drew one push under the old filter, which left stale
+                // unmatched rows (with Hunt buttons) up until the next push.
+                if ('targets' in data) syncDeviceState(data);
                 if (data.targets) {
                     ingestTargets(data.targets);
                     renderScope();
@@ -818,12 +844,6 @@
                     // connect rather than waiting for the first push.
                     syncDeviceState(data);
                 }
-                // The device is the authority on its own state. Both flags
-                // persist in NVS (sweep-st), so a board that ran headless
-                // comes back still hunting or still unfiltered -- the app has
-                // to adopt what the telemetry says in either direction rather
-                // than assume defaults.
-                if ('targets' in data) syncDeviceState(data);
                 // Reply to CMD:SIGS. Carries neither `targets` nor `cfg`.
                 if (Array.isArray(data.signatures)) setSigUi(data.signatures);
             } catch (e) {
@@ -929,6 +949,32 @@
             }
         }
 
+        // Which board this is and how long it has been up. Name comes from
+        // CMD:CFG, because over a cable all you would otherwise see is a port.
+        // Uptime is asked once and counted on here; the alert count rides the
+        // push. All three belong to one board and are cleared on disconnect.
+        let devName = '';
+        let bootAt = null;
+        let alertCount = null;
+
+        // The header's connection bar button. It is a labelled button, not a
+        // tappable name: a glyph on the name line was a control nobody would
+        // find. Disconnecting asks first, since it sits under a thumb.
+        function hdrTap() {
+            if (!connectionType) { openConnModal(); return; }
+            if (confirm('Disconnect from ' + (devName || 'the device') + '?\n\n' +
+                        'It keeps scanning and beeping on its own.')) disconnectDevice();
+        }
+
+        function fmtUptime(s) {
+            if (s < 60) return s + 's';
+            const m = Math.floor(s / 60);
+            if (m < 60) return m + 'm';
+            const h = Math.floor(m / 60);
+            if (h < 24) return h + 'h ' + (m % 60) + 'm';
+            return Math.floor(h / 24) + 'd ' + (h % 24) + 'h';
+        }
+
         function renderStatusStrip() {
             const set = (dotId, textId, cls, text) => {
                 const d = document.getElementById(dotId);
@@ -936,14 +982,22 @@
                 if (d) d.className = 'statdot ' + cls;
                 if (t) t.textContent = text;
             };
-            set('st-dev-dot', 'st-dev',
+            const via = { BLE: 'Bluetooth', USB: 'USB', SERIAL: 'USB serial' }[connectionType] || connectionType;
+            set('hdr-dot', 'hdr-dev',
                 connectionType ? 'ok' : 'off',
-                connectionType ? 'Connected' : 'Not connected');
+                !connectionType ? 'Not connected'
+                    : devName ? devName + ' · ' + via : via);
+            const act = document.getElementById('hdr-act');
+            if (act) {
+                act.textContent = connectionType ? 'Disconnect' : 'Connect';
+                act.classList.toggle('disc', !!connectionType);
+            }
+            const txt = (id, text) => { const e = document.getElementById(id); if (e) e.textContent = text; };
+            txt('st-up', bootAt === null ? '—'
+                : fmtUptime(Math.max(0, Math.floor((Date.now() - bootAt) / 1000))));
+            txt('st-alerts', alertCount === null ? '—' : String(alertCount));
             const g = gpsDisplay();
             set('st-gps-dot', 'st-gps', g.dot, g.text);
-            set('st-rec-dot', 'st-rec',
-                recordEnabled ? 'ok' : 'off',
-                recordEnabled ? 'On' : 'Off');
         }
 
         // One-shot location (never watchPosition — no passive trail).
@@ -979,14 +1033,21 @@
         // ---- Consent flow ----
         function toggleRecording() {
             recordEnabled = !recordEnabled;
-            setTimeout(renderStatusStrip, 0);
             try { localStorage.setItem(RECORD_PREF_KEY, recordEnabled ? '1' : '0'); } catch (e) {}
+            paintRecord();
+            showToast(recordEnabled ? 'Will ask to pin each match' : 'Not asking to pin', '📍');
+        }
+
+        // The switch lives in the Pins sheet; the header 📍 lights while it is
+        // on, so an armed prompt is visible without opening anything.
+        function paintRecord() {
             const btn = document.getElementById('btn-record');
             if (btn) {
                 btn.classList.toggle('on', recordEnabled);
-                btn.textContent = recordEnabled ? '● Recording: ON' : '○ Recording: OFF';
+                btn.textContent = recordEnabled ? 'On' : 'Off';
             }
-            showToast(recordEnabled ? 'Location recording ON (you will be asked per device)' : 'Location recording OFF', recordEnabled ? '●' : '○');
+            const hdr = document.getElementById('btn-pins');
+            if (hdr) hdr.classList.toggle('lit', recordEnabled);
         }
 
         function maybeOfferRecord(match) {
@@ -1094,15 +1155,27 @@
         }
 
         // ---- Pins view / export ----
+        // Always opens: the "ask to pin" switch lives here and must never sit
+        // behind the PIN -- only viewing saved pins does.
         function openPins() {
-            if (!pinStoreExists()) { showToast('No pins recorded yet', 'ℹ'); return; }
-            if (!pinKey) { pendingPinAction = renderPins; openPinGate('unlock'); return; }
-            renderPins();
+            paintRecord();
+            if (pinKey || !pinStoreExists()) { renderPins(); return; }
+            document.getElementById('pins-body').innerHTML =
+                '<div class="scope-empty">Saved pins are locked.<br>' +
+                '<button class="ctrl-btn" style="margin-top:0.7rem" onclick="unlockPinsView()">Unlock to view</button></div>';
+            document.getElementById('pins-modal').classList.add('active');
+        }
+        // The PIN gate sits under the Pins sheet in the DOM, so close the sheet
+        // first; renderPins() reopens it once unlocked.
+        function unlockPinsView() {
+            document.getElementById('pins-modal').classList.remove('active');
+            pendingPinAction = renderPins;
+            openPinGate('unlock');
         }
         function renderPins() {
             const body = document.getElementById('pins-body');
             if (pinsCache.length === 0) {
-                body.innerHTML = '<div class="scope-empty">No pins yet. Turn Recording ON and confirm a device to drop one.</div>';
+                body.innerHTML = '<div class="scope-empty">No pins yet. Turn on <strong>Ask to pin matches</strong> and confirm a device to drop one.</div>';
             } else {
                 body.innerHTML = pinsCache.map((p, i) => {
                     const cat = categoryOf(p.category);
@@ -1186,6 +1259,9 @@
             if (typeof cfg.beep_mask === 'number') setBeepUi(cfg.beep_mask);
             setBuzzerUi(cfg.buzzer);
             setLedUi(cfg.led);
+            devName = (typeof cfg.ble_name === 'string' && cfg.ble_name) || 'SignalSweep';
+            if (typeof cfg.uptime === 'number') bootAt = Date.now() - cfg.uptime * 1000;
+            renderStatusStrip();
         }
 
         // Which categories the buzzer is allowed to speak. One bit per firmware
@@ -1390,14 +1466,13 @@
             if (typeof data.buzzer === 'boolean') setBuzzerUi(data.buzzer);
             if (typeof data.led === 'number') setLedUi(data.led);
             const devAll = !!data.scan_all;
-            if (devAll !== foxhuntMode) {
+            if (devAll !== foxhuntMode && Date.now() > filterPendingUntil) {
                 foxhuntMode = devAll;
-                const btn = document.getElementById('btn-foxhunt');
-                if (btn) {
-                    btn.classList.toggle('on', foxhuntMode);
-                    btn.textContent = foxhuntMode ? '◉ Filter: off' : '◎ Filter: matches';
-                }
+                paintFilter();
             }
+            if (typeof data.alerts === 'number') alertCount = data.alerts;
+            // Every push, so uptime ticks with no timer of its own.
+            renderStatusStrip();
         }
 
         // BLE notifications are unacknowledged, and the app asks for the config
@@ -1587,17 +1662,11 @@
         function updateConnectionUI(isConnected, type = '') {
             const pulseDot = document.getElementById('pulseDot');
             const connStatusText = document.getElementById('connStatusText');
-            const btnConnectHeader = document.getElementById('btnConnectHeader');
-            const btnDisconnectHeader = document.getElementById('btnDisconnectHeader');
-            const connBanner = document.getElementById('connBanner');
 
             if (isConnected) {
                 connectionType = type;
                 pulseDot.className = 'pulse-dot connected';
                 connStatusText.textContent = `CONNECTED (${type})`;
-                btnConnectHeader.style.display = 'none';
-                btnDisconnectHeader.style.display = 'block';
-                connBanner.style.display = 'none';
                 closeConnModal();
                 renderStatusStrip();
                 showToast(`Connected via ${type}`, '✓');
@@ -1620,11 +1689,9 @@
                 // last device's settings.
                 setBeepUi(null);
                 setSigUi(null);
+                devName = ''; bootAt = null; alertCount = null;
                 pulseDot.className = 'pulse-dot';
                 connStatusText.textContent = 'DISCONNECTED';
-                btnConnectHeader.style.display = 'flex';
-                btnDisconnectHeader.style.display = 'none';
-                connBanner.style.display = 'flex';
                 renderStatusStrip();
                 showToast('Device disconnected', '✕');
             }
@@ -2149,8 +2216,7 @@
         document.addEventListener('DOMContentLoaded', () => {
             // Restore only the recording toggle (a preference, not a trail).
             try { recordEnabled = localStorage.getItem(RECORD_PREF_KEY) === '1'; } catch (e) {}
-            const rb = document.getElementById('btn-record');
-            if (rb) { rb.classList.toggle('on', recordEnabled); rb.textContent = recordEnabled ? '● Recording: ON' : '○ Recording: OFF'; }
+            paintRecord();
 
             checkApiSupport();
             renderScope();
@@ -2246,6 +2312,10 @@
                 foxhuntMode = false;
                 results.huntTrackersOnly =
                     actionRow(liveMatches['BB:00:01'], categoryOf('')) === '';
+                // Filter on hides the unmatched row at once, not 8 s later
+                // when it goes stale.
+                results.filterOnHidesUnmatched = liveRows('all').length === 1 &&
+                                                 liveRows('all')[0].mac === 'BB:00:02';
                 recordEnabled = false;
                 consentQueue = [];
                 handledMacs.clear();
