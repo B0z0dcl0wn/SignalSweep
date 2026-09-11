@@ -48,6 +48,10 @@ disagreeing echo is ignored for 1.5 s after your own tap. After that the
 device is the authority again, so a write that never landed still repaints
 the truth.
 
+While nothing is connected, Filter now reads "Filter: —", unlit, like Alerts,
+instead of a confident "On" for a board the app cannot see. Tapping it says to
+connect first, instead of flipping a setting no board would receive.
+
 ### Added — lights: off, one LED, dim, or full
 
 The toolbar's Sounds sheet is now **Alerts**, in two sections: *How* (Sound

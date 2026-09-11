@@ -466,6 +466,7 @@
         }
 
         function toggleFoxhunt() {
+            if (!connectionType) { showToast('Connect the device first', '…'); return; }
             foxhuntMode = !foxhuntMode;
             // Listing only. The buzzer stays gated by the firmware's alert
             // threshold either way, so turning the filter off shows you every
@@ -484,9 +485,16 @@
 
         // Lit means filtering, which is the normal state. It used to be lit
         // when the filter was OFF and read "Filter: matches" unlit, backwards.
+        // With nothing connected the board's filter is unknown, so it shows
+        // "—" like Alerts rather than a confident "On".
         function paintFilter() {
             const btn = document.getElementById('btn-foxhunt');
             if (!btn) return;
+            if (!connectionType) {
+                btn.classList.remove('on');
+                btn.textContent = '◉ Filter: —';
+                return;
+            }
             btn.classList.toggle('on', !foxhuntMode);
             btn.textContent = foxhuntMode ? '\u25ce Filter: Off' : '\u25c9 Filter: On';
         }
@@ -998,6 +1006,9 @@
             txt('st-alerts', alertCount === null ? '—' : String(alertCount));
             const g = gpsDisplay();
             set('st-gps-dot', 'st-gps', g.dot, g.text);
+            // Here rather than only on a change: a reconnect whose scan_all
+            // matches the old value would otherwise leave "—" up.
+            paintFilter();
         }
 
         // One-shot location (never watchPosition — no passive trail).
