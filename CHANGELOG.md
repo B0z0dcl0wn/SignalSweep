@@ -4,6 +4,23 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Changed: a band tab picks what alerts, and what asks to be pinned
+
+Picking **Cameras**, **Trackers** or **Drones** now makes the device beep and
+flash for that category only; **Everything** (or tapping the selected tab again)
+turns them all back on. A tab is a preset `beep_mask`, the same persisted mask
+the Alerts sheet edits, so it survives a power cycle and the board keeps it
+headless. Cameras covers ALPR, body cams and the generic vendor categories,
+the same umbrella the list uses. The device still detects and lists every
+category, and every band still counts what it hears. Only the beep and the
+light are narrowed. When the app connects it opens on the tab that matches
+the board's mask. A custom mix set in the Alerts sheet leaves the tab where it
+is, and the toolbar shows it as "n/5".
+
+The tab also sets which matches ask to be pinned, so looking for Flock cameras
+no longer asks about every AirTag. The Pins sheet has its own picker to
+override it. The pin filter is stored in the app, like the pins themselves.
+
 ### Changed — the top of the screen says which board, and the toolbar is two buttons
 
 The header now names the board you are connected to and the link type

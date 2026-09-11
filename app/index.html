@@ -1200,8 +1200,9 @@
             <button class="scope-act" id="btn-view" onclick="toggleView()">Map</button>
         </div>
 
-        <!-- Band selector: four channels of one receiver. Switching sends
-             nothing to the device -- it is always watching all four. -->
+        <!-- Band selector: four channels of one receiver. A tab picks which
+             category the device alerts for (a preset beep_mask) and which asks
+             to be pinned; the device still watches and lists all four. -->
         <div class="bands" id="bands" role="tablist">
             <button class="band" role="tab" aria-selected="true" data-lens="all" style="--band:var(--accent-cyan)">
                 <span class="band-n" id="n-all">0</span>
@@ -1343,6 +1344,13 @@
                 <button class="set-toggle" id="btn-record" onclick="toggleRecording()">Off</button>
             </div>
             <p class="set-note" style="margin:0.5rem 0 1rem;">When on, each matched device asks before saving one GPS fix. Detecting never needs the PIN.</p>
+            <div class="radios seg" id="pin-lens" role="group" aria-label="Pin which">
+                <button class="radio-tab" data-pin="all" aria-pressed="true">Everything</button>
+                <button class="radio-tab" data-pin="alpr" aria-pressed="false">Cameras</button>
+                <button class="radio-tab" data-pin="tracker" aria-pressed="false">Trackers</button>
+                <button class="radio-tab" data-pin="drone" aria-pressed="false">Drones</button>
+            </div>
+            <p class="set-note" style="margin:0.5rem 0 1rem;">Only matches in this category ask to be pinned. Picking a band tab sets this too.</p>
             <div id="pins-body" style="max-height:50vh;overflow-y:auto;margin-bottom:1rem;"></div>
             <div class="modal-actions" style="display:flex;gap:10px;flex-wrap:wrap;">
                 <button class="ctrl-btn" onclick="exportPinsFile()">Export JSON</button>
