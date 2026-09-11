@@ -1,16 +1,16 @@
 # SignalSweep
 
-A headless RF detector on a $15 ESP32-S3. It scans Bluetooth LE and Wi-Fi
-continuously, matches what it hears against a signature list of surveillance
-hardware, and **tells you what is nearby by ear** — a different buzzer pattern
-per category, no screen required.
+A $15 ESP32-S3 that listens for the gear that's watching you. It sweeps
+Bluetooth LE and Wi-Fi nonstop, checks everything it hears against a list of
+known surveillance hardware, and **tells you what it found by ear**. Every
+category has its own beep, so it works with no screen at all.
 
-- 📷 **ALPR / camera** — two long beeps
-- 🎥 **Body cam** — long, short, short
-- 🛸 **Drone (Remote ID)** — rising trill
-- 📍 **Tracker (AirTag/Tile)** — fast ticking
+- 📷 **ALPR / camera**: two long beeps
+- 🎥 **Body cam**: long, short, short
+- 🛸 **Drone (Remote ID)**: rising trill
+- 📍 **Tracker (AirTag/Tile)**: fast ticking
 
-The phone app is optional. It is a live scope, not a logbook.
+The phone app is optional. It shows what's here right now, then forgets it.
 
 | `live` | `hunt <mac>` | `map` |
 |---|---|---|
@@ -24,100 +24,103 @@ there's a known signal to check against.*
 
 ## What it does
 
-- **Runs headless.** USB power bank in a bag, or wired into a car. It scans and
-  beeps on its own, with nothing connected.
-- **Remembers everything.** Buzzer mute, muted categories, hunt target, filter
-  state, BLE name and signature rules all survive a power cycle — because
-  unplugging it is the normal way to use it.
-- **Goes quiet.** Receive-only stops the device advertising itself, so it is not
-  announcing `SignalSweep` to every scanner in range — including the hardware it
-  is looking for. It keeps scanning, matching and beeping while quiet.
-- **Mutes by category.** Every AirTag in traffic tripping the tracker pattern is
-  the detector working correctly and still not worth listening to. Mute that one
-  word; the rest keep sounding, and the app keeps showing what the buzzer skipped.
-  Picking the Cameras, Trackers or Drones tab does the same in one tap.
-- **Lights, if you want them.** Each category has its own LED animation, and the
-  bar can be off, one LED, dim or full, so it does not light up a dark car.
-- **Names what it hears.** Vendor names come from offline IEEE and Bluetooth SIG
-  tables (no MAC ever leaves the phone), and Wi-Fi rows say access point or
-  client.
-- **Foxhunts.** Point it at one MAC and walk the signal down by ear, or make a
-  Find My tracker ring so you can hear where it is hidden.
-- **Decodes drone Remote ID in full** (ASTM F3411 / OpenDroneID) over BLE,
-  Wi-Fi beacons and Wi-Fi NAN — ID, position, altitude, heading and the
-  operator's location, usually before you can hear the aircraft.
-- **Takes your own rules.** Signatures are a JSON file on the device, editable
-  from the app — match on OUI, company ID, device name, service UUID or SSID.
-  No recompile.
+- **Runs headless.** Throw it in a bag with a battery or wire it into the car.
+  It scans and beeps with nothing connected.
+- **Survives the plug-pull.** Mute, muted categories, hunt target, filter, BLE
+  name and signature rules all come back after a power cycle. Yanking the cable
+  is how you're supposed to use it.
+- **Keeps its mouth shut.** Receive-only kills its Bluetooth advertising, so it
+  isn't announcing `SignalSweep` to every scanner in range, including the gear
+  it's hunting. It keeps listening, matching and beeping.
+- **Mutes what you don't care about.** Every AirTag on the bus trips the tracker
+  beep. That's the detector working, and you still don't need to hear it. Mute
+  that one category, or tap Cameras, Trackers or Drones to hear only that. The
+  app still lists everything the buzzer skips.
+- **Lights on your terms.** Each category has its own LED animation. Run the bar
+  off, one LED, dim or full, so a parked car doesn't glow like a beacon.
+- **Foxhunts.** Lock one MAC and walk it down by ear. Found an AirTag you didn't
+  put there? Make it ring.
+- **Reads drone Remote ID in full** (ASTM F3411 / OpenDroneID) over BLE, Wi-Fi
+  beacons and Wi-Fi NAN: ID, position, altitude, heading, and where the operator
+  is standing. Often before you can hear the props.
+- **Names what it hears.** Vendor lookup runs offline against the IEEE and
+  Bluetooth SIG tables. No MAC ever leaves your phone. Wi-Fi rows tell access
+  points from clients.
+- **Runs your rules.** Signatures are a JSON file on the device, editable from
+  the app: OUI, company ID, device name, service UUID or SSID. No recompile.
 - **Bluetooth or USB-C.** Plug it into an Android phone and the phone powers it,
-  reads it over the cable, and can shut the Bluetooth radio down entirely.
+  reads it over the cable, and the Bluetooth radio can go dark.
 
-## What it will not do
+## What it won't do
 
-No jamming, no deauth, no packet injection, no advertisement spoofing, no
-arbitrary GATT writes. It is a receiver. Ringing a tracker is one fixed
-Immediate Alert write with a MAC as its only parameter.
+> The only winning move is not to transmit.
 
-No cloud, no telemetry, no accounts, and no history: the app shows what is in
-range right now and clears it on disconnect. The one thing it can persist is
-location pins you confirm per device, stored only as AES-GCM ciphertext behind a
-PIN. Recording defaults to off, and detecting never asks for the PIN.
+No jamming. No deauth. No packet injection. No advert spoofing. No arbitrary
+GATT writes. It's a receiver. Ringing a tracker is one fixed Immediate Alert
+write, and its only parameter is a MAC.
 
-Receiving radio is legal in most places; transmitting generally is not, and this
-device does not — beyond a Bluetooth advertisement you can switch off. Your
-local law is not everyone's. Go and read it.
+No cloud, no telemetry, no accounts, no logs. What's in range shows up, and it's
+wiped when you disconnect. The one thing it can keep is a location pin you say
+yes to, one device at a time, stored as AES-GCM ciphertext behind a PIN. Pinning
+is off by default, and detection never asks for the PIN.
+
+Listening to radio is legal in most places. Transmitting usually isn't, and this
+doesn't, apart from a Bluetooth advert you can switch off. Your local law isn't
+everyone's. Go and read it.
 
 ---
 
 ## Getting started
 
 You need a [Seeed Studio XIAO ESP32-S3](https://www.seeedstudio.com/XIAO-ESP32S3-p-5627.html)
-(~$15) and a USB-C cable.
+(~$15) and a USB-C cable. That's the whole shopping list.
 
-**Web flasher (no install).** Open
+**Browser, zero install.** Open
 [b0z0dcl0wn.github.io/SignalSweep](https://b0z0dcl0wn.github.io/SignalSweep/) in
-Chrome or Edge, plug the board in, click **Connect & flash**. The web app lives
-at `/app/` on the same site and talks to the board over Bluetooth.
+Chrome or Edge, plug the board in, hit **Connect & flash**. The app lives at
+`/app/` on the same site and talks to the board over Bluetooth.
 
-**Android APK + firmware, from a script.**
+**Script: firmware plus the Android APK.**
 
 ```bash
 pip install esptool pyserial
 python install.py
 ```
 
-Flashes the board and sideloads the APK over `adb`. It lists your devices and
-makes you type the target's name back before it writes anything. See
-`install.py --help` for `--apk-only`, `--esp-only` and `--erase`.
+Flashes the board and sideloads the APK over `adb`. It lists what's plugged in
+and makes you type the target's name back before it writes a byte.
+`install.py --help` has `--apk-only`, `--esp-only` and `--erase`.
 
 ## Hardware and controls
 
-The bare board works. Add a **passive buzzer** and a **WS2812 LED bar** for
-physical alerts — parts list and wiring in the
+The bare board works. Add a **passive buzzer** and a **WS2812 LED bar** and it
+gets loud and bright. Parts and wiring are in the
 **[Wiring Guide](firmware/WIRING.md)**.
 
 | BOOT button | What it does |
 |---|---|
-| **Quick tap** | If the device went quiet, advertise for two minutes so the app can connect, then go quiet again. |
-| **Hold 5 s** | Factory reset: wipes settings and signatures, then reboots. Release early to abort. |
+| **Quick tap** | Gone quiet? Advertises for two minutes so the app can connect, then goes dark again. |
+| **Hold 5 s** | Factory reset: settings and signatures wiped, then a reboot. Let go early to abort. |
 
 ## Contributing
 
-SignalSweep is only as good as its signature list. Found a new tracker, body cam
-or ALPR? Send a PR — see [CONTRIBUTING.md](CONTRIBUTING.md).
+SignalSweep is only as good as its signature list. Spotted a tracker, body cam
+or ALPR it misses? Send a PR. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
-Full documentation — threat model, serial protocol, build-from-source and the
-design record — is in **[docs/README-full.md](docs/README-full.md)** and
-[CHANGELOG.md](CHANGELOG.md).
+The deep end (threat model, serial protocol, building from source, and why
+everything is the way it is) lives in
+**[docs/README-full.md](docs/README-full.md)** and [CHANGELOG.md](CHANGELOG.md).
 
 ## Credits
 
-- **[Colonel Panic](https://colonelpanic.tech)** — the
+- **[Colonel Panic](https://colonelpanic.tech)**: the
   [OUI Spy Unified Blue](https://github.com/colonelpanichacks/oui-spy-unified-blue)
   concept this hardware approach came from.
-- **[OrdoOuroborous / @NitekryDPaul](https://github.com/nitekry)** — the Flock
+- **[OrdoOuroborous / @NitekryDPaul](https://github.com/nitekry)**: the Flock
   Safety OUI research the camera detection runs on.
 
 Everyone else is in [CREDITS.md](CREDITS.md).
 
-GPL-3.0-or-later — see [LICENSE](LICENSE). Some vendored components are Apache-2.0.
+GPL-3.0-or-later. See [LICENSE](LICENSE). Some vendored components are Apache-2.0.
+
+*Hack the planet.*
