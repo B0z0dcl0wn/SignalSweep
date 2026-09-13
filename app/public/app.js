@@ -38,10 +38,12 @@
             if (c.indexOf('track') >= 0 || c.indexOf('airtag') >= 0 || c.indexOf('tile') >= 0 ||
                 c.indexOf('tag') >= 0 || c.indexOf('beacon') >= 0)
                 return { key: 'tracker', label: 'Tracker',    color: '#ff3ac8', icon: '📍' };
-            if (c.indexOf('body') >= 0 || c.indexOf('axon') >= 0 || c.indexOf('cam') >= 0)
-                return { key: 'bodycam', label: 'Body Cam',   color: '#ff5a1a', icon: '🎥' };
+            // ALPR before body cam, as in the firmware's alertCategoryFromName():
+            // "ALPR / Camera" and "Surveillance Camera" both contain "cam".
             if (c.indexOf('flock') >= 0 || c.indexOf('alpr') >= 0 || c.indexOf('plate') >= 0 || c.indexOf('surveil') >= 0)
                 return { key: 'alpr',    label: 'ALPR / Camera', color: '#ef4444', icon: '📷' };
+            if (c.indexOf('body') >= 0 || c.indexOf('axon') >= 0 || c.indexOf('cam') >= 0)
+                return { key: 'bodycam', label: 'Body Cam',   color: '#ff5a1a', icon: '🎥' };
             return { key: 'other', label: (type || 'Match'), color: '#f59e0b', icon: '⚠️' };
         }
 
@@ -1554,6 +1556,21 @@
         // On-phone port of analyze-capture.py's core: parse the .sscap records,
         // walk 802.11 IEs, and find devices carrying the exact Flock fingerprint
         // 50:6f:9a:16:03:01:03. Returns a suspect + a signature to attach.
+        // The firmware's Flock OUI list (mode_watchers_watch.cpp flockOuis[]).
+        // selftest.js fails if the two drift. The analyzer calls a capture Flock
+        // only under the detector's own rule: one of these OUIs + a wildcard
+        // probe + the IE. The IE alone rides consumer WiFi (a China Dragon
+        // module at the bench), so on any other MAC it says nothing.
+        const FLOCK_OUIS = [
+            "b4:1e:52", "70:c9:4e", "3c:91:80", "d8:f3:bc", "80:30:49", "b8:35:32",
+            "14:5a:fc", "74:4c:a1", "08:3a:88", "9c:2f:9d", "c0:35:32", "94:08:53",
+            "e4:aa:ea", "f4:6a:dd", "24:b2:b9", "00:f4:8d", "d0:39:57",
+            "e8:d0:fc", "e0:4f:43", "b8:1e:a4", "70:08:94", "58:8e:81", "ec:1b:bd",
+            "58:00:e3", "90:35:ea", "5c:93:a2", "64:6e:69", "48:27:ea", "14:b5:cd",
+            "04:0d:84", "1c:34:f1", "38:5b:44", "94:34:69",
+            "b4:e3:f9", "f0:82:c0", "e0:0a:f6"
+        ];
+        const FLOCK_OUI_SET = new Set(FLOCK_OUIS);
         function analyzeCaptureText(text) {
             const FLOCK = [0x50, 0x6f, 0x9a, 0x16, 0x03, 0x01, 0x03];
             let wifi = 0, ble = 0, strongest = null, n = 0;
@@ -1582,11 +1599,12 @@
                 const mac = a2.map(b => b.toString(16).padStart(2, '0')).join(':');
                 const random = !!(a2[0] & 0x02);
                 if (!strongest || rssi > strongest.rssi) strongest = { mac, rssi, random };
-                let i = fsub === 4 ? 24 : 36, ssid = null, hasFlock = false;
+                let i = fsub === 4 ? 24 : 36, ssid = null, hasFlock = false, wildcard = false;
                 while (i + 2 <= payload.length) {
                     const id = payload[i], ln = payload[i + 1];
                     if (i + 2 + ln > payload.length) break;
                     if (id === 0 && ln > 0) { try { ssid = new TextDecoder().decode(payload.subarray(i + 2, i + 2 + ln)); } catch (e) {} }
+                    if (id === 0 && ln === 0 && fsub === 4) wildcard = true;
                     if (id === 221 && ln === 7) {
                         let m = true;
                         for (let k = 0; k < 7; k++) if (payload[i + 2 + k] !== FLOCK[k]) { m = false; break; }
@@ -1594,7 +1612,8 @@
                     }
                     i += 2 + ln;
                 }
-                if (hasFlock) {
+                // The detector's rule, exactly: listed Flock OUI + wildcard + IE.
+                if (hasFlock && wildcard && FLOCK_OUI_SET.has(mac.slice(0, 8))) {
                     const f = flock[mac] || (flock[mac] = { rssi: -999, count: 0, random, ssid: null });
                     f.rssi = Math.max(f.rssi, rssi); f.count++;
                     if (ssid) f.ssid = ssid;
@@ -1609,9 +1628,9 @@
                 flockStrongest: list.length ? list[0].rssi : null,
                 suspect: list[0] || strongest,
                 signature: list.length > 0
-                    ? { type: 'flock-ie', label: 'IE 50:6f:9a:16:03:01:03 (hint, not proof)',
+                    ? { type: 'flock-ie', label: 'Flock probe + IE (listed Flock OUI)',
                         macs: list.length, randomMacs: randomN, rssi: list[0].rssi, sampleMac: list[0].mac }
-                    : (strongest ? { type: 'strongest', label: 'strongest device (no Flock IE)',
+                    : (strongest ? { type: 'strongest', label: 'strongest device (no Flock signature)',
                         rssi: strongest.rssi, sampleMac: strongest.mac, random: strongest.random } : null)
             };
         }
@@ -1622,12 +1641,11 @@
             const a = lastAnalysis;
             if (!a) { el.innerHTML = ''; return; }
             if (a.flockDetected) {
-                // Not red, not "detected": ordinary WiFi modules send this IE too
-                // (AzureWave and others, seen on the bench). Only proximity counts.
-                el.innerHTML = '<div style="color:var(--accent-amber,#f59e0b);font-weight:700;font-size:1.05rem;">Possible Flock hint</div>' +
-                    '<p class="set-note">' + a.flockMacs + ' device(s) carrying IE <code>50:6f:9a:16:03:01:03</code>, ' +
-                    a.flockRandom + ' on random MACs, strongest <strong>' + a.flockStrongest + ' dBm</strong>. Consumer WiFi sends this too, so it is not proof. ' +
-                    'Only a strong signal (around −40 dBm or better) with the board at the pole is worth logging.</p>';
+                // Only ever the detector's own rule (listed Flock OUI + wildcard
+                // probe + IE), so the phone never cries wolf where the board wouldn't.
+                el.innerHTML = '<div style="color:var(--accent-red,#ef4444);font-weight:700;font-size:1.05rem;">⚠ Flock signature</div>' +
+                    '<p class="set-note">' + a.flockMacs + ' device(s) on a known Flock MAC prefix sending wildcard probes with the Flock IE, ' +
+                    'strongest <strong>' + a.flockStrongest + ' dBm</strong>. This is the same rule the detector beeps on.</p>';
             } else {
                 el.innerHTML = '<p class="set-note">No Flock signature in this capture. Strongest device: ' +
                     (a.suspect ? esc(a.suspect.mac) + ' at ' + a.suspect.rssi + ' dBm' : 'none') +
@@ -1638,7 +1656,11 @@
         // Log a device to the encrypted finds database. Photo-survives-GPS: the
         // photo is saved and the find is created FIRST; GPS is filled in after,
         // so a slow fix in the field never throws away a good shot.
-        async function logDevice() {
+        // category is the operator's call, from the picker: 'ALPR / Camera',
+        // 'Surveillance Camera' or 'Unconfirmed'. Only the first two export as
+        // map points (findOsmNode).
+        async function logDevice(category) {
+            category = category || 'Unconfirmed';
             if (!window.Camera || !capNativeFs()) { showToast('Camera unavailable on this platform', '✕'); return; }
             ensurePinUnlocked(async () => {
                 const sig = lastAnalysis && lastAnalysis.signature ? lastAnalysis.signature : null;
@@ -1646,18 +1668,18 @@
                 // photo then comes back through appRestoredResult to a fresh app
                 // that has lost lastAnalysis and the PIN key. Stash what the find
                 // needs; the capture file beside it is already plaintext on disk.
-                try { localStorage.setItem(PENDING_FIND_KEY, JSON.stringify({ sig: sig, capture: capFileName || null })); } catch (e) {}
+                try { localStorage.setItem(PENDING_FIND_KEY, JSON.stringify({ sig: sig, capture: capFileName || null, category: category })); } catch (e) {}
                 let shot;
                 try {
                     shot = await window.Camera.getPhoto({ quality: 70, allowEditing: false, resultType: 'base64', source: 'CAMERA', saveToGallery: false });
                 } catch (e) { showToast('Photo cancelled', '…'); return; }
                 if (!shot || !shot.base64String) { showToast('No photo taken', '✕'); return; }
-                await saveFindFromShot(shot.base64String, sig, capFileName || null);
+                await saveFindFromShot(shot.base64String, sig, capFileName || null, category);
             });
         }
 
         const PENDING_FIND_KEY = 'pendingFind';
-        async function saveFindFromShot(base64, sig, capture) {
+        async function saveFindFromShot(base64, sig, capture, category) {
                 let photoName = null;
                 try {
                     const enc = await encryptBytes(unb64(base64));
@@ -1666,7 +1688,7 @@
                 } catch (e) { showToast('Could not save the photo', '✕'); return; }
                 const find = {
                     id: 'f' + Date.now(), ts: Date.now(),
-                    category: 'ALPR / Camera', label: '',
+                    category: category || 'Unconfirmed', label: '',
                     signature: sig, photo: photoName, capture: capture,
                     lat: null, lng: null, acc: null
                 };
@@ -1698,7 +1720,7 @@
                 try { ctx = JSON.parse(localStorage.getItem(PENDING_FIND_KEY)) || {}; } catch (e) {}
                 openFinder();
                 showToast('Android restarted the app — unlock to save the photo', '📷');
-                ensurePinUnlocked(() => saveFindFromShot(r.data.base64String, ctx.sig || null, ctx.capture || null));
+                ensurePinUnlocked(() => saveFindFromShot(r.data.base64String, ctx.sig || null, ctx.capture || null, ctx.category || 'Unconfirmed'));
             });
         }
 
@@ -1709,6 +1731,21 @@
         // coordinates + signature (OSM + CSV), and copy the linked raw captures
         // into one folder. A find with no GPS yet still exports photo + signature
         // + capture -- just no OSM node.
+        // Only a camera the operator confirmed becomes a map point. A "Not sure"
+        // photo in cameras.osm would put a surveillance node on OpenStreetMap on
+        // a guess; it stays in the CSV and the log instead.
+        const FIND_OSM_TYPE = { 'ALPR / Camera': 'ALPR', 'Surveillance Camera': 'camera' };
+        function findOsmNode(f, i, sigLabel, photoOut) {
+            const type = FIND_OSM_TYPE[f.category];
+            if (!type || f.lat == null) return '';
+            return '  <node id="-' + (i + 1) + '" lat="' + f.lat.toFixed(7) + '" lon="' + f.lng.toFixed(7) + '">\n' +
+                   '    <tag k="man_made" v="surveillance"/>\n' +
+                   '    <tag k="surveillance:type" v="' + type + '"/>\n' +
+                   '    <tag k="signalsweep:category" v="' + xmlAttr(f.category) + '"/>\n' +
+                   '    <tag k="signalsweep:signature" v="' + xmlAttr(sigLabel) + '"/>\n' +
+                   (photoOut ? '    <tag k="signalsweep:photo" v="' + photoOut + '"/>\n' : '') +
+                   '  </node>\n';
+        }
         async function exportEvidenceBundle() {
             if (!capNativeFs()) { showToast('File storage unavailable', '✕'); return; }
             ensurePinUnlocked(async () => {
@@ -1726,15 +1763,7 @@
                     csv += [f.ts, f.lat != null ? f.lat : '', f.lng != null ? f.lng : '',
                             f.acc != null ? Math.round(f.acc) : '', '"' + (f.category || '') + '"',
                             '"' + sigLabel + '"', sampleMac, photoOut, f.capture || ''].join(',') + '\n';
-                    if (f.lat != null) {
-                        osm += '  <node id="-' + (i + 1) + '" lat="' + f.lat.toFixed(7) + '" lon="' + f.lng.toFixed(7) + '">\n' +
-                               '    <tag k="man_made" v="surveillance"/>\n' +
-                               '    <tag k="surveillance:type" v="camera"/>\n' +
-                               '    <tag k="signalsweep:category" v="' + xmlAttr(f.category || '') + '"/>\n' +
-                               '    <tag k="signalsweep:signature" v="' + xmlAttr(sigLabel) + '"/>\n' +
-                               (photoOut ? '    <tag k="signalsweep:photo" v="' + photoOut + '"/>\n' : '') +
-                               '  </node>\n';
-                    }
+                    osm += findOsmNode(f, i, sigLabel, photoOut);
                     if (f.photo) {
                         try {
                             const r = await window.CapFilesystem.readFile({ path: f.photo, directory: D });
@@ -3218,6 +3247,13 @@
                 pinKey = null; pinsCache = []; findsCache = [];
                 await unlockPins('1234');
                 results.findsRoundTrip = findsCache.length === 1 && findsCache[0].signature.label === 'Flock IE' && pinsCache.length === 1;
+                // Only confirmed cameras with a fix become OSM nodes.
+                results.findOsmTags =
+                    findOsmNode({ category: 'ALPR / Camera', lat: 1, lng: 2 }, 0, 's', '').indexOf('surveillance:type" v="ALPR"') > 0 &&
+                    findOsmNode({ category: 'Surveillance Camera', lat: 1, lng: 2 }, 0, 's', '').indexOf('surveillance:type" v="camera"') > 0 &&
+                    findOsmNode({ category: 'Unconfirmed', lat: 1, lng: 2 }, 0, 's', '') === '' &&
+                    findOsmNode({ category: 'ALPR / Camera', lat: null, lng: null }, 0, 's', '') === '' &&
+                    categoryOf('ALPR / Camera').key === 'alpr' && categoryOf('Surveillance Camera').key === 'alpr';
 
                 // v1 store (a bare pins array) still unlocks; finds default to [].
                 {
@@ -3234,17 +3270,23 @@
 
                 // The on-phone analyzer finds the exact Flock fingerprint in a
                 // hand-built probe-request record (same wire format as the board).
+                // Flags only under the detector's rule: the same wildcard probe +
+                // IE is a Flock match from a listed OUI, and nothing from the China
+                // Dragon module that tripped the bench.
                 {
-                    const frame = [0x40, 0x00, 0, 0].concat([0xff,0xff,0xff,0xff,0xff,0xff])
-                        .concat([0x6a,0x03,0xca,0x5b,0x77,0x77]).concat([0xff,0xff,0xff,0xff,0xff,0xff])
-                        .concat([0, 0, 0, 0])   // seq + wildcard SSID IE (id0 len0)
-                        .concat([221, 7, 0x50, 0x6f, 0x9a, 0x16, 0x03, 0x01, 0x03]);
-                    const hdr = [0, 1,0,0,0, 0,0,0,0, 6, (-30)&0xff, frame.length & 0xff, (frame.length>>8)&0xff, frame.length & 0xff, (frame.length>>8)&0xff];
-                    const rec = new Uint8Array(hdr.concat(frame));
-                    const line = b64(rec);
-                    const a = analyzeCaptureText('#SSCAP\n' + line + '\n');
-                    results.analyzerFlock = a.flockDetected && a.flockMacs === 1 && a.flockRandom === 1 &&
-                                            a.signature.type === 'flock-ie';
+                    const probe = (mac) => {
+                        const frame = [0x40, 0x00, 0, 0].concat([0xff,0xff,0xff,0xff,0xff,0xff])
+                            .concat(mac).concat([0xff,0xff,0xff,0xff,0xff,0xff])
+                            .concat([0, 0, 0, 0])   // seq + wildcard SSID IE (id0 len0)
+                            .concat([221, 7, 0x50, 0x6f, 0x9a, 0x16, 0x03, 0x01, 0x03]);
+                        const hdr = [0, 1,0,0,0, 0,0,0,0, 6, (-30)&0xff, frame.length & 0xff, (frame.length>>8)&0xff, frame.length & 0xff, (frame.length>>8)&0xff];
+                        return analyzeCaptureText('#SSCAP\n' + b64(new Uint8Array(hdr.concat(frame))) + '\n');
+                    };
+                    const flock = probe([0xb4, 0x1e, 0x52, 0x53, 0x53, 0x01]);
+                    const chinaDragon = probe([0x1c, 0x79, 0x2d, 0xe5, 0x93, 0x25]);
+                    const randomMac = probe([0x6a, 0x03, 0xca, 0x5b, 0x77, 0x77]);
+                    results.analyzerFlock = flock.flockDetected && flock.flockMacs === 1 && flock.signature.type === 'flock-ie' &&
+                                            !chinaDragon.flockDetected && !randomMac.flockDetected;
                 }
                 return results;
             };

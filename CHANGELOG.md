@@ -10,7 +10,7 @@ Capture, log-a-device and evidence export were scattered across Settings and the
 Pins sheet; they are now one **full-screen Site Survey page** (🔎 header icon; first called "Device Finder", renamed because it read like Hunt) with a
 top-to-bottom workflow: **1) Investigate** an environment (the capture, USB only),
 **2)** the app **analyzes the `.sscap` on the phone** and surfaces the suspect —
-the `50:6f:9a:16:03:01:03` IE shows as an amber hint, never a verdict (see below) — then
+it says Flock only under the detector's own rule, never on the IE alone (see below) — then
 **3) Log this device**: a photo + the detected signature + the raw capture, into
 an encrypted **finds database** listed right on the page. **Export evidence
 bundle** decrypts it all (photos + OSM/CSV with the signature + the raw captures)
@@ -44,6 +44,15 @@ off the phone, newest first, so viewing needs no PIN and nothing new is stored.
 Tap a survey to analyze it again and log a photo against it. Once the log is
 unlocked, photos and locations appear under the survey they belong to, and ✕
 deletes a capture from the phone.
+
+**Log this device asks what it is.** Three buttons: Flock / ALPR camera, Other
+camera, Not sure. Only a confirmed camera with a GPS fix becomes a node in
+`cameras.osm` (`surveillance:type=ALPR` or `camera`). A Not sure photo stays in
+the CSV and the log, so a guess never lands on OpenStreetMap. The choice rides
+the camera-restart stash, and falls back to Not sure, never to a camera.
+`findOsmTags` in the self-test holds the line. The app's `categoryOf()` now
+tests ALPR before body cam, the same order the firmware relies on: "ALPR /
+Camera" contains "cam", and those finds had been painting as body cams.
 
 **Trap — the capture crashed the app until the USB stream was batched.** A
 capture floods the app with USB `data` events, and the listener decoded + parsed
@@ -98,8 +107,13 @@ What ships:
   own Google BLE adverts (`FEF3`/`FCF1`) turn up in every capture, home and lot
   alike. Android won't let an app switch a radio off, so it asks. Each capture
   header records `phone_net=`.
-- **Hints, not verdicts.** The on-phone analyzer and `analyze-capture.py` report
-  the IE as an amber hint.
+- **No verdict the detector wouldn't give.** The on-phone analyzer calls a
+  capture Flock only under the detector's own rule, a listed Flock OUI sending
+  wildcard probes with the IE. Its OUI list is pinned to the firmware's by the
+  self-test. A bench survey had flagged a China Dragon Technology module (public
+  MAC, -77 dBm, wildcard probes carrying the IE) as a possible Flock; it now
+  reads as nothing, and `analyzerFlock` holds both cases. `analyze-capture.py`
+  keeps the IE as a labelled hint for digging on a PC.
 - **A bar for the next tell.** Capture at the pole with every phone's radio off,
   plus a capture about 100 m away. A candidate has to be absent from every home
   and bench capture, and its full tag order must not match a phone. Random-MAC

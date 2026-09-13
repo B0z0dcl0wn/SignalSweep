@@ -1588,7 +1588,12 @@
                     <div id="cap-analysis" style="margin:10px 0;"></div>
                     <h3 class="set-label">2 · Log this device</h3>
                     <p class="set-note">A photo drops the device into your encrypted database with the detected signature and this capture attached. GPS fills in on its own — a slow fix won't lose the photo. (Your camera app keeps its own copy of the shot.)</p>
-                    <button class="ctrl-btn on" style="width:100%;" onclick="logDevice()">📷 Log this device</button>
+                    <p class="set-note">What are you photographing? Only a camera you're sure of goes on the map in the export.</p>
+                    <div style="display:flex;flex-direction:column;gap:8px;">
+                        <button class="ctrl-btn on" onclick="logDevice('ALPR / Camera')">📷 Flock / ALPR camera</button>
+                        <button class="ctrl-btn" onclick="logDevice('Surveillance Camera')">📷 Other camera</button>
+                        <button class="ctrl-btn" onclick="logDevice('Unconfirmed')">📷 Not sure</button>
+                    </div>
                     <details style="margin-top:10px;"><summary class="set-note" style="cursor:pointer;">Pull the raw capture to a PC</summary><p class="set-note" style="font-family:monospace;font-size:0.8rem;word-break:break-all;" id="cap-path"></p></details>
                     <button class="ctrl-btn" style="width:100%;margin-top:10px;" onclick="closeCapture()">Done — new capture</button>
                 </div>

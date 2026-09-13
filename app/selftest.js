@@ -171,6 +171,14 @@ if (!/if\s*\(sig\.category == "Flock Safety"\) flockOui = true;/.test(fw)) flock
 if (!/elen == 7[\s\S]{0,200}0x50[\s\S]{0,60}0x6F[\s\S]{0,60}0x9A[\s\S]{0,60}0x16[\s\S]{0,40}0x03[\s\S]{0,40}0x01[\s\S]{0,40}0x03/.test(fw))
     flockFail.push('Lite-On IE-sig bytes (50 6f 9a 16 03 01 03 / elen 7) not found in order');
 
+// The phone analyzer calls a capture Flock only under the detector's own rule
+// (listed OUI + wildcard + IE), so its OUI list must be exactly the firmware's.
+const ouiRe = /[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}/g;
+const fwOuis = ((fw.match(/const char\* flockOuis\[\] = \{([^}]*)\}/) || [])[1] || '').match(ouiRe) || [];
+const appOuis = ((appSrc.match(/const FLOCK_OUIS = \[([^\]]*)\]/) || [])[1] || '').match(ouiRe) || [];
+if (!fwOuis.length || fwOuis.slice().sort().join() !== appOuis.slice().sort().join())
+    flockFail.push('app.js FLOCK_OUIS (' + appOuis.length + ') does not match firmware flockOuis[] (' + fwOuis.length + ')');
+
 if (flockFail.length) {
     console.log('FAIL: Flock wildcard-probe signature:', flockFail);
     process.exit(1);
