@@ -4,6 +4,32 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Fixed — Bluetooth Remote ID decoded a byte off, and the bench could not see it
+
+A real Bluetooth 4 Remote ID advert carries UUID `0xFFFA`, the app code `0x0D`,
+a **1-byte message counter**, then the 25-byte ASTM message — exactly 31 bytes.
+`bleDecodeRemoteId()` skipped the app code but decoded from the counter, so every
+field of a real drone came out shifted by a byte: junk serial, junk coordinates on
+the map. Presence still alerted (a malformed decode still means "a drone is
+broadcasting here"), which is why the beep looked healthy. The bench emitter hid
+it: it sent the bare message with no app code and no counter, which took the
+other branch. The emitter now uses real framing, and `selftest.js` fails if the
+decode offset moves back onto the counter.
+
+The two Wi-Fi paths (beacon vendor IE, NAN action frames) had never seen a frame
+on hardware. The emitter gained `dronewifi` and `dronenan` personas built with
+the upstream `odid_wifi.c` encoder, so the detector is tested against the
+reference implementation rather than our reading of the spec. Bench, two boards:
+all three paths decode `SS-TEST-DRONE-0001` at 37.33182 / -122.03118 with
+altitude, speed, heading and operator position intact; Wi-Fi caught 5 of ~87
+beacons and 10 of ~105 NAN frames across 25 s (the hopper is elsewhere most of
+the time — a real drone sends ~10/s); 59 pushes in 60 s.
+
+The channel hopper also grants a channel that just carried Remote ID one extra
+dwell — never two in a row, so a drone overhead cannot park the hopper and blind
+the other channels. Still out of reach on this hardware: 5.8 GHz Remote ID (the
+S3 is 2.4 GHz only) and BT5 long-range adverts (`CONFIG_BT_NIMBLE_EXT_ADV` off).
+
 ### Changed — while hunting, only the hunt makes noise
 
 Lock onto one device and it is now the only thing the board beeps or lights for:

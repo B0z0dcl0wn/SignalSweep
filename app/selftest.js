@@ -171,6 +171,11 @@ if (!/if\s*\(sig\.category == "Flock Safety"\) flockOui = true;/.test(fw)) flock
 if (!/elen == 7[\s\S]{0,200}0x50[\s\S]{0,60}0x6F[\s\S]{0,60}0x9A[\s\S]{0,60}0x16[\s\S]{0,40}0x03[\s\S]{0,40}0x01[\s\S]{0,40}0x03/.test(fw))
     flockFail.push('Lite-On IE-sig bytes (50 6f 9a 16 03 01 03 / elen 7) not found in order');
 
+// BLE Remote ID is UUID 0xFFFA, app code 0x0D, a message counter, then the
+// message. Decoding from offset+5 (the counter) shifted every field a byte.
+if (!/payload\[offset \+ 4\] == 0x0D\)[\s\S]{0,80}&payload\[offset \+ 6\]/.test(fw))
+    flockFail.push('BLE Remote ID must decode from offset+6 (after app code 0x0D and the counter)');
+
 // The phone analyzer calls a capture Flock only under the detector's own rule
 // (listed OUI + wildcard + IE), so its OUI list must be exactly the firmware's.
 const ouiRe = /[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}/g;

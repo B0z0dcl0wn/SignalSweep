@@ -108,6 +108,9 @@ static bool huntAudible = false;
 static volatile int huntWifiRssi = 0;
 static volatile uint32_t huntWifiRssiMs = 0;
 static volatile int huntChannel = 0;
+// Set by the promiscuous callback on any Remote ID frame; the hopper reads and
+// clears it to grant that channel one extra dwell.
+static volatile bool odidHeard = false;
 
 // Freshest RSSI for the hunted target, from whichever radio heard it. Written
 // from both callbacks (volatile only -- the promiscuous handler must not take a
@@ -585,19 +588,15 @@ static bool bleDecodeRemoteId(NimBLEAdvertisedDevice* dev, ODID_UAS_Data& out) {
         if (adType == 0x16 && adLen >= 3) {
             uint16_t uuid = payload[offset + 2] | (payload[offset + 3] << 8);
             if (uuid == 0xFFFA) {
-                // Optionally followed by the Open Drone ID application code
-                // (0x0D); skip it when present.
-                const uint8_t* data;
-                size_t dataLen;
-                if (adLen >= 4 && payload[offset + 4] == 0x0D) {
-                    data = &payload[offset + 5];
-                    dataLen = adLen - 4;
-                } else {
-                    data = &payload[offset + 4];
-                    dataLen = adLen - 3;
-                }
+                // ASTM F3411 BT4 framing: UUID, app code 0x0D, a 1-byte message
+                // counter, THEN the 25-byte message (1+2+1+1+25 = adLen 30).
+                // This used to skip the app code and decode from the counter,
+                // shifting every field by a byte; the bench emitter sent no
+                // app code or counter at all, so the bench never showed it.
                 memset(&out, 0, sizeof(out));
-                odidDecodeInto(out, data, dataLen);
+                if (adLen >= 5 + ODID_MESSAGE_SIZE && payload[offset + 4] == 0x0D) {
+                    odidDecodeInto(out, &payload[offset + 6], adLen - 5);
+                }
                 // A malformed or unsupported frame still means "a drone is
                 // broadcasting Remote ID here", which is the alert-worthy fact.
                 // Report presence either way; the decoded detail is a bonus.
@@ -791,9 +790,17 @@ static void watchersWifiChannelHopperTask(void *pvParameters) {
     // missed. (ESP32-S3 is 2.4 GHz only.)
     const uint8_t channels[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
     int chIndex = 0;
+    bool extended = false;
     while (watchersRunning) {
         vTaskDelay(pdMS_TO_TICKS(150));
         if (!watchersRunning) break;
+        // A drone beacons on one fixed channel, so a channel that just carried
+        // Remote ID earns one extra dwell before moving on -- never two in a
+        // row, or a drone overhead would park the hopper and blind the rest.
+        bool heard = odidHeard;
+        odidHeard = false;
+        if (heard && !extended && huntMac.length() == 0) { extended = true; continue; }
+        extended = false;
         // Parked while hunting a Wi-Fi device. Sweeping thirteen channels means
         // hearing a given access point about one dwell in thirteen, which is
         // fine for finding things and useless for walking one down: the clicker
@@ -883,6 +890,7 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
     {
         static const uint8_t nanDest[6] = {0x51, 0x6F, 0x9A, 0x01, 0x00, 0x00};
         if (memcmp(nanDest, addr1, 6) == 0) {
+            odidHeard = true;
             memset(&wifiUas, 0, sizeof(wifiUas));
             char nanMacRaw[6] = {0};
             if (odid_wifi_receive_message_pack_nan_action_frame(&wifiUas, nanMacRaw, payload, length) == 0
@@ -1005,6 +1013,7 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
                 if (id == 221 && elen >= 6 &&
                     ((body[b+2] == 0x90 && body[b+3] == 0x3A && body[b+4] == 0xE6) ||
                      (body[b+2] == 0xFA && body[b+3] == 0x0B && body[b+4] == 0xBC))) {
+                    odidHeard = true;
                     wifiConfidence += W_DRONE;
                     if (W_DRONE > bestWeight) {
                         bestWeight = W_DRONE;
