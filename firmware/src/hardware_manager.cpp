@@ -50,8 +50,8 @@ struct Theme { uint8_t r, g, b; float pitch; };
 static const Theme THEMES[] = {
     {0,   0,   0,   1.0f},  // Classic  -- colour unused, frame left as drawn
     {255, 0,   0,   0.5f},  // Night Ops
-    {20,  255, 60,  2.0f},  // Phosphor
-    {110, 190, 255, 1.5f},  // Ice
+    {20,  255, 60,  2.0f},  // Terminal
+    {110, 190, 255, 1.5f},  // Glacier
     {0,   0,   0,   1.0f},  // Party    -- hue per pixel, see applyTheme()
 };
 
@@ -68,7 +68,7 @@ static volatile bool ledcReady = false;
 // Every sound passes through here, so the theme's pitch is applied once and a
 // rhythm can never change. Classic skips the scaling entirely: byte-for-byte
 // today's tones. The clamp is the piezo's usable range (highest note today is
-// 2500 Hz, so Phosphor's x2 tops out at 5000).
+// 2500 Hz, so Terminal's x2 tops out at 5000).
 static inline void buzzerTone(uint16_t freq) {
     uint8_t th = themeId;
     if (th != THEME_CLASSIC)

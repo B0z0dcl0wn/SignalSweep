@@ -133,7 +133,7 @@ String getBleConfigJson() {
     // is audible. It used to be the one setting the phone owned by guessing.
     doc["buzzer"] = isBuzzerEnabled();
     doc["led"] = getLedMode();   // 0 off, 1 one LED, 2 dim, 3 full
-    doc["theme"] = getTheme();   // 0 classic, 1 night, 2 phosphor, 3 ice, 4 party
+    doc["theme"] = getTheme();   // 0 classic, 1 night, 2 terminal, 3 glacier, 4 party
     doc["rx_only"] = rxOnly;
     doc["ble_scan"] = bleScanOn;
     doc["wifi_scan"] = wifiScanOn;

@@ -78,7 +78,7 @@ uint8_t getLedMode();
 // animation shapes and jingle rhythms -- the alert ID -- never change. One LED
 // mode ignores it (a single pixel has no shape, only colour). Persisted. This
 // order is the wire contract with THEMES in app.js (selftest pins it).
-enum ThemeId : uint8_t { THEME_CLASSIC = 0, THEME_NIGHT = 1, THEME_PHOSPHOR = 2, THEME_ICE = 3, THEME_PARTY = 4 };
+enum ThemeId : uint8_t { THEME_CLASSIC = 0, THEME_NIGHT = 1, THEME_TERMINAL = 2, THEME_GLACIER = 3, THEME_PARTY = 4 };
 
 /** @brief Set the theme (clamped to THEME_PARTY) and persist it. */
 void setTheme(uint8_t theme);

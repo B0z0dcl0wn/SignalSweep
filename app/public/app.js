@@ -2259,7 +2259,7 @@
         // Theme: firmware ThemeId, same index order (selftest pins it). One
         // pick sets the bar's colour and the buzzer's pitch. Same contract as
         // the LED mode -- painted only from device frames, a tap just asks.
-        const THEMES = ['classic', 'night', 'phosphor', 'ice', 'party'];
+        const THEMES = ['classic', 'night', 'terminal', 'glacier', 'party'];
         let themeId = null;
         // The two things a theme costs you, said plainly under the picker.
         function themeNote(theme, led) {

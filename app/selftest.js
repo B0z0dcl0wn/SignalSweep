@@ -109,7 +109,7 @@ if (cfgKeys.length < 5 || cfgUnread.length) {
 console.log('[signalsweep self-test] app reads every CMD:CFG field: ok');
 
 // Themes are an index shared with the firmware: app.js's THEMES order must be
-// hardware_manager.h's ThemeId order, or picking "Ice" lights Party. Like the
+// hardware_manager.h's ThemeId order, or picking "Glacier" lights Party. Like the
 // beep mask, nothing at runtime would say so. The theme also has to ride the
 // push (the device is the authority) and its chips must not be inputs.
 const themeFail = [];
