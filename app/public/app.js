@@ -989,13 +989,20 @@
             // connected to WiFi probes far less, so skip the ask then.
             // ponytail: navigator.connection.type can't tell "WiFi off" from
             // "on but not connected", hence "is it off?" as a one-tap confirm.
+            // Bluetooth is asked every time: the phones' own BLE adverts (Google
+            // FEF3/FCF1 service data) land in every capture, WiFi connected or not.
             const phoneNet = (navigator.connection && navigator.connection.type) || 'unknown';
-            if (phoneNet !== 'wifi' && !confirm(
-                "Is WiFi off on every phone you're carrying?\n\n" +
-                "A phone with WiFi on but not connected probes for networks on a new " +
-                "random MAC each scan, right next to the board. That is what fooled us " +
-                "into 'finding' three Flock cameras, which were this phone. Mobile data is fine.\n\n" +
-                "OK: it's off, start capturing\nCancel: I'll turn it off first")) return;
+            const radios = phoneNet === 'wifi' ? 'Bluetooth' : 'WiFi and Bluetooth';
+            if (!confirm(
+                "Are " + radios + " off on every phone you're carrying?\n\n" +
+                (phoneNet === 'wifi' ? '' :
+                    "A phone with WiFi on but not connected probes for networks on a new " +
+                    "random MAC each scan, right next to the board. That is what fooled us " +
+                    "into 'finding' three Flock cameras, which were this phone. ") +
+                "Phones also advertise over Bluetooth nonstop, and at arm's length they " +
+                "drown out anything on a pole. The board is on the cable, so it doesn't " +
+                "need Bluetooth. Mobile data is fine.\n\n" +
+                "OK: they're off, start capturing\nCancel: I'll turn them off first")) return;
             capFileName = 'signalsweep-capture-' + capStamp() + '.sscap';
             capBuf = '';
             capWriteFailed = false;

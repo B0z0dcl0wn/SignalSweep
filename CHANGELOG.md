@@ -78,10 +78,12 @@ What ships:
   Listed Flock OUI + wildcard probe + IE scores `W_WIFI_IE_SIG` (rule "Flock
   probe + IE"); OUI + wildcard alone stays `W_WIFI_PROBE`. `selftest.js` fails if
   a standalone `if (liteonSig)` gate ever comes back.
-- **Know thy own emissions.** Before a capture, Site Survey asks "Is WiFi off on
-  every phone you're carrying?", unless the phone is connected to WiFi
-  (`navigator.connection.type`; Android won't let an app kill the radio). Each
-  capture header records `phone_net=`.
+- **Know thy own emissions.** Before a capture, Site Survey asks whether WiFi
+  and Bluetooth are off on every phone you're carrying. It asks about Bluetooth
+  alone if the phone is on WiFi (`navigator.connection.type`), because the phones'
+  own Google BLE adverts (`FEF3`/`FCF1`) turn up in every capture, home and lot
+  alike. Android won't let an app switch a radio off, so it asks. Each capture
+  header records `phone_net=`.
 - **Hints, not verdicts.** The on-phone analyzer and `analyze-capture.py` report
   the IE as an amber hint.
 - **A bar for the next tell.** Capture at the pole with every phone's radio off,
