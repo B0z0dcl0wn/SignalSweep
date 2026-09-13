@@ -922,9 +922,13 @@
             background:rgba(0,242,254,0.1); color:var(--accent-cyan); }
         .hdr-btn.disc { border-color:rgba(239,68,68,0.5); background:rgba(239,68,68,0.12); color:#f87171; }
         .btn-help.lit { color:var(--accent-emerald) !important; }
-        /* Three header icons beside the name must fit one row on a phone. */
+        /* Four header icons beside the name must fit one row on a phone: on the
+           OnePlus 7T (411px) brand+icons measured ~341 of ~343px, which wraps.
+           The title shrinks, never the icons -- they are the tap targets. */
         @media (max-width: 480px) {
-            header { padding: 1rem 1.1rem; }
+            header { padding: 1rem 1.1rem; gap: 0.5rem; }
+            .brand { gap: 0.6rem; }
+            .brand-text h1 { font-size: 1.25rem; }
             .hdr-icons { gap: 2px !important; }
             header .btn-help { padding: 6px !important; }
         }
