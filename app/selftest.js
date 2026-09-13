@@ -125,6 +125,19 @@ fwThemes.forEach((t, i) => {
 if (!/doc\["theme"\]\s*=\s*getTheme\(\)/.test(readFileSync(new URL('../firmware/src/mode_watchers_watch.cpp', import.meta.url), 'utf8')))
     themeFail.push('the 1 Hz push does not carry theme');
 if (/<input[^>]*data-theme=/.test(htmlSrc)) themeFail.push('a theme control is an <input>');
+// The theme is applied to the finished frame, like the LED mode, so no draw
+// routine may know about it -- otherwise the next animation someone adds
+// silently ignores themes. And it must run before the LED-mode block, which
+// has to see the recoloured frame.
+const hwSrc = readFileSync(new URL('../firmware/src/hardware_manager.cpp', import.meta.url), 'utf8');
+for (const f of ['drawAnimation', 'drawHuntMeter']) {
+    const body = (hwSrc.match(new RegExp('static void ' + f + '\\([^)]*\\) \\{[\\s\\S]*?\\n\\}')) || [''])[0];
+    if (!body) themeFail.push('cannot find ' + f);
+    if (/themeId|THEMES/.test(body)) themeFail.push(f + ' knows about themes');
+}
+const hwTask = hwSrc.slice(hwSrc.indexOf('static void HardwareManagerTask'));
+const iApply = hwTask.indexOf('applyTheme(now)'), iLedOff = hwTask.indexOf('if (ledMode == LED_OFF)');
+if (iApply < 0 || iApply > iLedOff) themeFail.push('applyTheme must run on the finished frame, before the LED mode');
 if (themeFail.length) { console.log('FAIL: themes:', themeFail); process.exit(1); }
 console.log('[signalsweep self-test] theme ids match firmware ThemeId: ok');
 

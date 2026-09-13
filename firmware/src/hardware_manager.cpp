@@ -43,6 +43,18 @@ static volatile uint8_t ledMode = LED_FULL;
 static volatile uint8_t themeId = THEME_CLASSIC;
 static bool rxOnlyIndicator = false;
 
+// Indexed by ThemeId. Colour is what a mono theme paints every lit pixel;
+// pitch scales every buzzer frequency (Classic and Party keep today's notes).
+// ponytail: colours and multipliers are first guesses; tune them on the bench bar.
+struct Theme { uint8_t r, g, b; float pitch; };
+static const Theme THEMES[] = {
+    {0,   0,   0,   1.0f},  // Classic  -- colour unused, frame left as drawn
+    {255, 0,   0,   0.5f},  // Night Ops
+    {20,  255, 60,  2.0f},  // Phosphor
+    {110, 190, 255, 1.5f},  // Ice
+    {0,   0,   0,   1.0f},  // Party    -- hue per pixel, see applyTheme()
+};
+
 // Arduino's tone() attaches the LEDC channel lazily on first use, and noTone()
 // on a channel that was never attached logs an error every single call. Nothing
 // hit this while a board always booted audible -- tone() ran first. Now that the
@@ -192,6 +204,30 @@ static void drawHuntMeter(int rssi) {
     uint32_t c = fill < 4 ? strip.Color(255, 0, 0) : fill < 6.5f ? strip.Color(255, 180, 0) : strip.Color(0, 255, 0);
     for (int i = 0; i < NEOPIXEL_COUNT; i++)
         strip.setPixelColor(i, dim(c, 0.5f * constrain(fill - i, 0.0f, 1.0f)));
+}
+
+// Recolour the finished frame: each pixel keeps its brightness (the brightest
+// channel) and takes the theme's hue, so an animation's shape and the hunt
+// meter's length -- the parts that carry meaning -- survive any theme. Works
+// on the raw buffer, which is already brightness-scaled, so the result stays
+// in the same space the LED-mode block below expects. NEO_GRB buffer order.
+static void applyTheme(uint32_t now) {
+    uint8_t th = themeId;
+    if (th == THEME_CLASSIC || ledMode == LED_ONE) return;
+    uint8_t *px = strip.getPixels();
+    for (int i = 0; i < NEOPIXEL_COUNT; i++) {
+        uint8_t *p = px + i * 3;
+        uint16_t v = max(p[0], max(p[1], p[2]));
+        if (!v) continue;
+        uint8_t r = THEMES[th].r, g = THEMES[th].g, b = THEMES[th].b;
+        if (th == THEME_PARTY) {
+            uint32_t c = strip.gamma32(strip.ColorHSV((uint16_t)(i * 65536 / NEOPIXEL_COUNT + now * 20)));
+            r = c >> 16; g = c >> 8; b = c;
+        }
+        p[0] = g * v / 255;  // G
+        p[1] = r * v / 255;  // R
+        p[2] = b * v / 255;  // B
+    }
 }
 
 // Calculate Geiger click pitch and repetition interval from RSSI (-95 to -30 dBm)
@@ -345,7 +381,9 @@ static void HardwareManagerTask(void *pvParameters) {
             bool drawn = false;     // an animation or the meter owns the frame
             // No-op when unchanged. Its rescale of the stored pixels is lossy,
             // which doesn't matter: the frame is rebuilt from scratch below.
-            strip.setBrightness(ledMode == LED_DIM ? LED_DIM_BRIGHTNESS : LED_FULL_BRIGHTNESS);
+            // Night Ops is capped at Dim: red light for dark-adapted eyes.
+            strip.setBrightness((ledMode == LED_DIM || themeId == THEME_NIGHT)
+                                    ? LED_DIM_BRIGHTNESS : LED_FULL_BRIGHTNESS);
             strip.clear();
 
             if (flashActive && now >= flashEndTime) flashActive = false;
@@ -378,6 +416,15 @@ static void HardwareManagerTask(void *pvParameters) {
                         break;
                     }
                     case MODE_WATCHERS_WATCH: {
+                        // Party gives up the quiet heartbeat on purpose: the
+                        // whole bar drifts through a dim rainbow. A flat grey
+                        // here becomes the rainbow in applyTheme().
+                        // ponytail: 120 is a guess at "dim but obviously on".
+                        if (themeId == THEME_PARTY) {
+                            strip.fill(strip.Color(120, 120, 120));
+                            drawn = true;
+                            break;
+                        }
                         // Idle heartbeat: one dim pixel glows up and down once
                         // every 4 s. Enough to tell alive from unpowered, not
                         // enough to notice across a room or through a car
@@ -420,6 +467,7 @@ static void HardwareManagerTask(void *pvParameters) {
                 if (onePixel) strip.setPixelColor(0, currentPixelColor);
                 else strip.fill(currentPixelColor);
             }
+            applyTheme(now);
             // LED mode, applied to the finished frame so nothing above needs
             // to know about it. Off means off -- boot sweep and the BOOT-hold
             // flash included. One LED keeps the frame's brightest colour on
