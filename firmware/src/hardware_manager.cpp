@@ -403,7 +403,8 @@ static void HardwareManagerTask(void *pvParameters) {
             // No-op when unchanged. Its rescale of the stored pixels is lossy,
             // which doesn't matter: the frame is rebuilt from scratch below.
             // Night Ops is capped at Dim: red light for dark-adapted eyes.
-            strip.setBrightness((ledMode == LED_DIM || themeId == THEME_NIGHT)
+            // One is exempt -- it's Classic-only, so Night Ops must not dim it.
+            strip.setBrightness((ledMode == LED_DIM || (themeId == THEME_NIGHT && ledMode != LED_ONE))
                                     ? LED_DIM_BRIGHTNESS : LED_FULL_BRIGHTNESS);
             strip.clear();
 
@@ -439,9 +440,12 @@ static void HardwareManagerTask(void *pvParameters) {
                     case MODE_WATCHERS_WATCH: {
                         // Party gives up the quiet heartbeat on purpose: the
                         // whole bar drifts through a dim rainbow. A flat grey
-                        // here becomes the rainbow in applyTheme().
+                        // here becomes the rainbow in applyTheme(). LED One
+                        // is Classic-only (applyTheme skips it), so under One
+                        // this must fall through to the normal heartbeat
+                        // instead of leaving a solid grey LED 0.
                         // ponytail: 120 is a guess at "dim but obviously on".
-                        if (themeId == THEME_PARTY) {
+                        if (themeId == THEME_PARTY && ledMode != LED_ONE) {
                             strip.fill(strip.Color(120, 120, 120));
                             drawn = true;
                             break;
@@ -488,7 +492,10 @@ static void HardwareManagerTask(void *pvParameters) {
                 if (onePixel) strip.setPixelColor(0, currentPixelColor);
                 else strip.fill(currentPixelColor);
             }
-            applyTheme(now);
+            // Flashes are warnings (BOOT-hold factory-reset wipe is red on
+            // purpose, the siren strobe alternates colours), not ID
+            // animations -- never let the theme recolour one.
+            if (!flashActive) applyTheme(now);
             // LED mode, applied to the finished frame so nothing above needs
             // to know about it. Off means off -- boot sweep and the BOOT-hold
             // flash included. One LED keeps the frame's brightest colour on

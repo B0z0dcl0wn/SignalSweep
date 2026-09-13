@@ -145,6 +145,19 @@ if (!/static inline void buzzerTone\([^)]*\) \{[\s\S]{0,400}?THEMES\[/.test(hwSr
     themeFail.push('buzzerTone does not apply the theme pitch');
 if (!/void setTheme\([\s\S]{0,1200}?ANIM_BOOT/.test(hwSrc))
     themeFail.push('setTheme does not preview the theme');
+// LED One is Classic-only: applyTheme must bail before touching the frame,
+// and Party's grey idle fill must not run under One either, or the "One
+// keeps Classic colours" rule is only half enforced.
+const applyThemeBody = (hwSrc.match(/static void applyTheme\([^)]*\) \{[\s\S]*?\n\}/) || [''])[0];
+if (!/LED_ONE/.test(applyThemeBody)) themeFail.push('applyTheme does not return early for LED_ONE');
+if (!/static inline void buzzerTone\([^)]*\) \{[\s\S]{0,400}?THEME_CLASSIC/.test(hwSrc))
+    themeFail.push('buzzerTone does not skip Classic');
+if (!/themeId == THEME_PARTY && ledMode != LED_ONE/.test(hwSrc))
+    themeFail.push('Party idle fill is not gated off LED One');
+// Flash frames (factory-reset red, siren strobe) are warnings, not ID
+// animations -- applyTheme must not recolour them.
+if (!/if \(!flashActive\) applyTheme\(now\)/.test(hwSrc))
+    themeFail.push('flash frames are recoloured by applyTheme');
 if (themeFail.length) { console.log('FAIL: themes:', themeFail); process.exit(1); }
 console.log('[signalsweep self-test] theme ids match firmware ThemeId: ok');
 

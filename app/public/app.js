@@ -2263,9 +2263,11 @@
         let themeId = null;
         // The two things a theme costs you, said plainly under the picker.
         function themeNote(theme, led) {
-            if (theme === 4) return 'Party lights the whole bar all the time. Anyone nearby can see it.';
+            // One LED is Classic-only regardless of theme -- check it first,
+            // or Party's note would show even though One overrides it.
             if (typeof theme === 'number' && theme !== 0 && led === 1)
                 return 'One LED keeps Classic colours, so you can still tell alerts apart.';
+            if (theme === 4 && led !== 0) return 'Party lights the whole bar all the time. Anyone nearby can see it.';
             return '';
         }
         function paintThemeNote() {
@@ -3211,6 +3213,9 @@
 
                 results.themeNote =
                     themeNote(4, 3).startsWith('Party') &&
+                    themeNote(4, 2).startsWith('Party') &&
+                    themeNote(4, 1).startsWith('One LED') &&
+                    themeNote(4, 0) === '' &&
                     themeNote(2, 1).startsWith('One LED') &&
                     themeNote(0, 1) === '' &&
                     themeNote(2, 3) === '' &&
