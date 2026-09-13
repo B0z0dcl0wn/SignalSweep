@@ -163,9 +163,9 @@ const wIeSig = Number((fw.match(/#define W_WIFI_IE_SIG\s+(\d+)/) || [])[1]);
 if (!(wProbe >= alertMin)) flockFail.push('W_WIFI_PROBE ' + wProbe + ' < CONF_ALERT_MIN ' + alertMin);
 if (!(wIeSig >= alertMin)) flockFail.push('W_WIFI_IE_SIG ' + wIeSig + ' < CONF_ALERT_MIN ' + alertMin);
 if (!/if\s*\(flockOui && wildcardSsid\)/.test(fw)) flockFail.push('wildcard-probe scoring is not gated on flockOui && wildcardSsid');
-// The MAC-agnostic path: the exact Lite-On IE fingerprint must alert on its own
-// (modern cameras randomize their MAC, so an OUI gate never fires). Field-proven.
-if (!/if\s*\(liteonSig\)\s*\{/.test(fw)) flockFail.push('Flock IE fingerprint does not alert standalone (liteonSig gate)');
+// The 50:6f:9a:16:03:01:03 IE must NEVER alert on its own: consumer WiFi
+// modules (AzureWave and others) send it, and standalone it beeped at passers-by.
+if (/if\s*\(liteonSig\)\s*\{/.test(fw)) flockFail.push('liteonSig alerts standalone again -- it is a false-positive machine without the Flock OUI + wildcard gate');
 if (!/if\s*\(sig\.category == "Flock Safety"\) flockOui = true;/.test(fw)) flockFail.push('flockOui is not set from the Flock Safety category');
 // The Lite-On IE fingerprint bytes, in order: 50 6f 9a 16 03 01 03 at elen 7.
 if (!/elen == 7[\s\S]{0,200}0x50[\s\S]{0,60}0x6F[\s\S]{0,60}0x9A[\s\S]{0,60}0x16[\s\S]{0,40}0x03[\s\S]{0,40}0x01[\s\S]{0,40}0x03/.test(fw))

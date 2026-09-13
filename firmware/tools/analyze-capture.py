@@ -245,10 +245,11 @@ def summarize(recs, oui):
         print('  *** A device matches the known Flock probe fingerprint. ***')
     elif liteon_sigs:
         n_macs = sum(len(bysig[s]['macs']) for s in liteon_sigs)
-        print('  Lite-On vendor IE (Flock WiFi stack) present on %d MAC(s) across %d'
-              ' fingerprint(s).' % (n_macs, len(liteon_sigs)))
-        print('  If those MACs are mostly RANDOM and strong, that is your rotating')
-        print('  camera -- compare its fingerprint above to the Flock primary sig.')
+        print('  50:6f:9a vendor IE (Wi-Fi Alliance; common on consumer WiFi) on %d'
+              ' MAC(s) across %d fingerprint(s).' % (n_macs, len(liteon_sigs)))
+        print('  Not proof -- even the full 16:03:01:03 payload rides consumer')
+        print('  modules. Only a strong random-MAC cluster at the pole is interesting;')
+        print('  compare its fingerprint above to the Flock primary sig.')
     else:
         print('  No Lite-On / Flock WiFi fingerprint seen. If you were next to a')
         print('  camera, it is likely silent on 2.4GHz WiFi and BLE (5GHz or LTE),')

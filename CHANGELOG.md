@@ -4,13 +4,13 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
-### Added — the Device Finder page (find signatures, build a database)
+### Added — the Site Survey page (find signatures, build a database)
 
 Capture, log-a-device and evidence export were scattered across Settings and the
-Pins sheet; they are now one **full-screen Finder page** (🔎 header icon) with a
+Pins sheet; they are now one **full-screen Site Survey page** (🔎 header icon; first called "Device Finder", renamed because it read like Hunt) with a
 top-to-bottom workflow: **1) Investigate** an environment (the capture, USB only),
 **2)** the app **analyzes the `.sscap` on the phone** and surfaces the suspect —
-if anything carries the Flock IE `50:6f:9a:16:03:01:03` it says so in red — then
+the `50:6f:9a:16:03:01:03` IE shows as an amber hint, never a verdict (see below) — then
 **3) Log this device**: a photo + the detected signature + the raw capture, into
 an encrypted **finds database** listed right on the page. **Export evidence
 bundle** decrypts it all (photos + OSM/CSV with the signature + the raw captures)
@@ -20,7 +20,16 @@ The on-phone analyzer is a JS port of `analyze-capture.py`'s core (self-test
 `analyzerFlock` checks it against a hand-built Flock frame). The encrypted store
 is now `{ pins, finds }` under one PIN, with transparent migration from the old
 pins-only array (`v1Migration` self-test). Pins keep only "ask to pin matches"
-and simple auto-pins; the Finder owns the investigation side.
+and simple auto-pins; Site Survey owns the investigation side. The log is
+**Survey log**; while it's locked the count reads 🔒, not a misleading 0. Export
+lands in `Documents/signalsweep-evidence-<date>/` (Files app, USB, or `adb pull`),
+and the page says so.
+
+**Android can kill the app while the camera is up.** When that happens the shot
+comes back through `appRestoredResult` to a freshly booted page that has lost the
+PIN key and the analysis. `logDevice()` stashes the signature + capture name
+before launching the camera, and the restored result goes through the same
+`saveFindFromShot()` after an unlock, so the photo lands instead of vanishing.
 
 **Trap — the capture crashed the app until the USB stream was batched.** A
 capture floods the app with USB `data` events, and the listener decoded + parsed
@@ -39,25 +48,46 @@ good shot (the old flow aborted the whole log, photo included, if GPS was slow,
 which is why three field cameras logged zero photos). A find with no fix yet still
 lists and still exports its photo, signature and capture.
 
-### Fixed — catch the modern Flock camera (MAC-agnostic IE fingerprint)
+### Changed — field notes: we fingerprinted the Flock IE, then tried to break it
 
-Field-proven at a three-camera parking lot (2026-09-12) with the capture tool
-below: a current Flock camera is a **randomized-MAC WiFi client** spamming probe
-requests that carry vendor IE **`50:6f:9a:16:03:01:03`**. That exact 7-byte
-payload showed up at all three cameras on random MACs at **0 to +5 dBm** (you
-standing at the pole), and on **zero** devices in two home captures — even though
-home carried other `50:6f:9a` (Lite-On) gear, including a Sony Bravia that had
-only the prefix. Clean positive with a clean negative control.
+A parking-lot survey at three Flock cameras (2026-09-12) turned up random-MAC
+probe requests at 0 to +5 dBm carrying vendor IE `50:6f:9a:16:03:01:03`, and home
+captures had none. It looked like the modern Flock tell, so for one commit the
+detector alerted on that IE alone, on any MAC. Then we did what separates a
+signature from a superstition: we attacked it with every capture we had.
 
-The wildcard-probe fix (below) required a *listed Flock OUI*, so it never fired on
-a randomized MAC — the detector stood 25 ft from a camera and stayed silent. Now
-the exact fingerprint (`liteonSig`, which the IE walk already computed) scores
-`W_WIFI_IE_SIG` on its own — **any MAC, no OUI or wildcard needed** — and beeps as
-`Flock Safety` / "Flock IE fingerprint". Older listed-OUI cameras stay covered by
-the wildcard+OUI path. It matches the **full 7-byte payload**, never the bare
-`50:6f:9a` prefix (which rides consumer WiFi), so it stands alone at the alert
-gate without crying wolf — the home negative control is the evidence. `selftest.js`
-asserts the standalone `if (liteonSig)` gate.
+- **The loudest "camera" was our own survey phone.** Disconnected Android probes
+  for WiFi on a fresh random MAC every scan. The OnePlus running the app sends a
+  14-tag probe fingerprint (`0,1,50,3,45,127,191,221:0050f208…,255,127,255,`
+  `221:506f9a16…,221:8cfdf0…,0`). **9 of the 10** strongest lot devices matched
+  it tag for tag. On the bench, disconnected, it rotated through 13 random MACs in
+  two minutes. At home it was connected and quiet, which is why the negative
+  control looked clean.
+- **The 7-byte IE isn't Flock's.** `50:6f:9a` is the Wi-Fi Alliance OUI, and
+  `16 03 01 03` reads as the MBO cellular-capability attribute. An exact-bytes
+  sweep of every capture found it on AzureWave, China Dragon and Guangzhou
+  Shiyuan WiFi modules at -83 to -92 dBm: a neighbour's gadget, which a bench
+  survey promptly called a camera.
+- **Nothing camera-strength survived the diff.** Lot minus home minus bench,
+  with the phone taken out, leaves -56 to -74 dBm passers-by. Whatever those
+  cameras speak at that range, it isn't 2.4 GHz WiFi.
+
+What ships:
+
+- **The IE is a tightener again**, the way upstream (DeFlockJoplin) uses it.
+  Listed Flock OUI + wildcard probe + IE scores `W_WIFI_IE_SIG` (rule "Flock
+  probe + IE"); OUI + wildcard alone stays `W_WIFI_PROBE`. `selftest.js` fails if
+  a standalone `if (liteonSig)` gate ever comes back.
+- **Know thy own emissions.** Before a capture, Site Survey asks "Is WiFi off on
+  every phone you're carrying?", unless the phone is connected to WiFi
+  (`navigator.connection.type`; Android won't let an app kill the radio). Each
+  capture header records `phone_net=`.
+- **Hints, not verdicts.** The on-phone analyzer and `analyze-capture.py` report
+  the IE as an amber hint.
+- **A bar for the next tell.** Capture at the pole with every phone's radio off,
+  plus a capture about 100 m away. A candidate has to be absent from every home
+  and bench capture, and its full tag order must not match a phone. Random-MAC
+  Flock detection stays open until something clears that bar.
 
 ### Added — environment capture (raw packet logging for the unknown)
 

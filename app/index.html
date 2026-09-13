@@ -1173,7 +1173,7 @@
                 </div>
             </div>
             <div class="hdr-icons" style="display: flex; gap: 10px;">
-                <button class="btn-help" id="btn-finder" onclick="openFinder()" title="Device Finder" aria-label="Device Finder" style="background:none;border:none;color:white;cursor:pointer;padding:10px;">
+                <button class="btn-help" id="btn-finder" onclick="openFinder()" title="Site Survey" aria-label="Site Survey" style="background:none;border:none;color:white;cursor:pointer;padding:10px;">
                     <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <circle cx="11" cy="11" r="7"></circle>
                         <path d="M21 21l-4.3-4.3"></path>
@@ -1549,7 +1549,7 @@
     <!-- Finder Page (full-screen investigation workflow) -->
     <div id="finder-page" class="finder-page">
         <div class="finder-topbar">
-            <h2>🔎 Device Finder</h2>
+            <h2>📡 Site Survey</h2>
             <button class="finder-close" onclick="closeFinder()" aria-label="Close">&times;</button>
         </div>
         <div class="finder-body">
@@ -1595,10 +1595,11 @@
             </section>
 
             <section class="finder-card">
-                <h3 class="set-label">Your finds (<span id="finds-count">0</span>)</h3>
+                <h3 class="set-label">Survey log (<span id="finds-count">0</span>)</h3>
                 <p class="set-note">Devices you've logged — signature, photo and location, encrypted behind your PIN.</p>
                 <div id="finds-list" style="margin:0.6rem 0;"></div>
                 <button class="ctrl-btn on" style="width:100%;" onclick="exportEvidenceBundle()">📦 Export evidence bundle</button>
+                <p class="set-note">Export decrypts everything to <code>Documents/signalsweep-evidence-&lt;date&gt;/</code> — photos, <code>cameras.csv</code>, <code>cameras.osm</code> and the raw captures. Grab it with the Files app, a USB file transfer, or <code>adb pull /sdcard/Documents/</code>. That folder is plaintext: delete it once it's off the phone.</p>
             </section>
         </div>
     </div>

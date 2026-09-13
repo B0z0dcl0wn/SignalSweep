@@ -982,11 +982,25 @@
         async function startCapture() {
             if (!capIsUsb()) { showToast('Capture needs the USB cable', '…'); return; }
             if (!capNativeFs()) { showToast('File storage unavailable', '✕'); return; }
+            // A phone hunting for WiFi keeps sending random-MAC probe requests
+            // from right beside the board: the strongest random-MAC device in
+            // the capture, which is exactly what a camera at the pole looks
+            // like. Android won't let an app switch WiFi off, so ask. A phone
+            // connected to WiFi probes far less, so skip the ask then.
+            // ponytail: navigator.connection.type can't tell "WiFi off" from
+            // "on but not connected", hence "is it off?" as a one-tap confirm.
+            const phoneNet = (navigator.connection && navigator.connection.type) || 'unknown';
+            if (phoneNet !== 'wifi' && !confirm(
+                "Is WiFi off on every phone you're carrying?\n\n" +
+                "A phone with WiFi on but not connected probes for networks on a new " +
+                "random MAC each scan, right next to the board. That is what fooled us " +
+                "into 'finding' three Flock cameras, which were this phone. Mobile data is fine.\n\n" +
+                "OK: it's off, start capturing\nCancel: I'll turn it off first")) return;
             capFileName = 'signalsweep-capture-' + capStamp() + '.sscap';
             capBuf = '';
             capWriteFailed = false;
             capStat = { wifi: 0, ble: 0, drops: 0, remain: capReqSecs };
-            const header = '#SSCAP v1 secs=' + capReqSecs + ' t=' + new Date().toISOString() + '\n';
+            const header = '#SSCAP v1 secs=' + capReqSecs + ' phone_net=' + phoneNet + ' t=' + new Date().toISOString() + '\n';
             try {
                 await window.CapFilesystem.writeFile({
                     path: capFileName, data: header,
@@ -1584,7 +1598,7 @@
                 flockStrongest: list.length ? list[0].rssi : null,
                 suspect: list[0] || strongest,
                 signature: list.length > 0
-                    ? { type: 'flock-ie', label: 'Flock IE 50:6f:9a:16:03:01:03',
+                    ? { type: 'flock-ie', label: 'IE 50:6f:9a:16:03:01:03 (hint, not proof)',
                         macs: list.length, randomMacs: randomN, rssi: list[0].rssi, sampleMac: list[0].mac }
                     : (strongest ? { type: 'strongest', label: 'strongest device (no Flock IE)',
                         rssi: strongest.rssi, sampleMac: strongest.mac, random: strongest.random } : null)
@@ -1597,9 +1611,12 @@
             const a = lastAnalysis;
             if (!a) { el.innerHTML = ''; return; }
             if (a.flockDetected) {
-                el.innerHTML = '<div style="color:var(--accent-red,#ef4444);font-weight:700;font-size:1.05rem;">⚠ Flock camera signature detected</div>' +
-                    '<p class="set-note">' + a.flockMacs + ' device(s) carrying the Flock IE <code>50:6f:9a:16:03:01:03</code>, ' +
-                    a.flockRandom + ' on random MACs, strongest <strong>' + a.flockStrongest + ' dBm</strong>. That is a Flock ALPR camera — log it below.</p>';
+                // Not red, not "detected": ordinary WiFi modules send this IE too
+                // (AzureWave and others, seen on the bench). Only proximity counts.
+                el.innerHTML = '<div style="color:var(--accent-amber,#f59e0b);font-weight:700;font-size:1.05rem;">Possible Flock hint</div>' +
+                    '<p class="set-note">' + a.flockMacs + ' device(s) carrying IE <code>50:6f:9a:16:03:01:03</code>, ' +
+                    a.flockRandom + ' on random MACs, strongest <strong>' + a.flockStrongest + ' dBm</strong>. Consumer WiFi sends this too, so it is not proof. ' +
+                    'Only a strong signal (around −40 dBm or better) with the board at the pole is worth logging.</p>';
             } else {
                 el.innerHTML = '<p class="set-note">No Flock signature in this capture. Strongest device: ' +
                     (a.suspect ? esc(a.suspect.mac) + ' at ' + a.suspect.rssi + ' dBm' : 'none') +
@@ -1613,26 +1630,38 @@
         async function logDevice() {
             if (!window.Camera || !capNativeFs()) { showToast('Camera unavailable on this platform', '✕'); return; }
             ensurePinUnlocked(async () => {
+                const sig = lastAnalysis && lastAnalysis.signature ? lastAnalysis.signature : null;
+                // Android can kill the app while the camera is in front, and the
+                // photo then comes back through appRestoredResult to a fresh app
+                // that has lost lastAnalysis and the PIN key. Stash what the find
+                // needs; the capture file beside it is already plaintext on disk.
+                try { localStorage.setItem(PENDING_FIND_KEY, JSON.stringify({ sig: sig, capture: capFileName || null })); } catch (e) {}
                 let shot;
                 try {
                     shot = await window.Camera.getPhoto({ quality: 70, allowEditing: false, resultType: 'base64', source: 'CAMERA', saveToGallery: false });
                 } catch (e) { showToast('Photo cancelled', '…'); return; }
                 if (!shot || !shot.base64String) { showToast('No photo taken', '✕'); return; }
+                await saveFindFromShot(shot.base64String, sig, capFileName || null);
+            });
+        }
+
+        const PENDING_FIND_KEY = 'pendingFind';
+        async function saveFindFromShot(base64, sig, capture) {
                 let photoName = null;
                 try {
-                    const enc = await encryptBytes(unb64(shot.base64String));
+                    const enc = await encryptBytes(unb64(base64));
                     photoName = 'signalsweep-photos/dev-' + Date.now() + '.enc';
                     await window.CapFilesystem.writeFile({ path: photoName, data: b64(enc), directory: window.CapDirectory.Documents, recursive: true });
                 } catch (e) { showToast('Could not save the photo', '✕'); return; }
-                const sig = lastAnalysis && lastAnalysis.signature ? lastAnalysis.signature : null;
                 const find = {
                     id: 'f' + Date.now(), ts: Date.now(),
                     category: 'ALPR / Camera', label: '',
-                    signature: sig, photo: photoName, capture: capFileName || null,
+                    signature: sig, photo: photoName, capture: capture,
                     lat: null, lng: null, acc: null
                 };
                 findsCache.push(find);
                 await savePins();
+                try { localStorage.removeItem(PENDING_FIND_KEY); } catch (e) {}
                 renderFinds();
                 showToast('Device logged — getting GPS…', '📷');
                 // GPS in the background; the find is already saved.
@@ -1645,6 +1674,20 @@
                 } catch (e) {
                     showToast('Saved without GPS — add location later', '⚠');
                 }
+        }
+
+        // The other half of the camera round-trip: Android restarted the app
+        // while the camera was open, so getPhoto()'s promise died with the old
+        // page and the shot arrives here instead. Without this the photo was
+        // silently dropped and the log stayed empty.
+        if (window.App && window.App.addListener) {
+            window.App.addListener('appRestoredResult', (r) => {
+                if (!r || r.pluginId !== 'Camera' || !r.success || !r.data || !r.data.base64String) return;
+                let ctx = {};
+                try { ctx = JSON.parse(localStorage.getItem(PENDING_FIND_KEY)) || {}; } catch (e) {}
+                openFinder();
+                showToast('Android restarted the app — unlock to save the photo', '📷');
+                ensurePinUnlocked(() => saveFindFromShot(r.data.base64String, ctx.sig || null, ctx.capture || null));
             });
         }
 
@@ -1721,7 +1764,8 @@
         function renderFinds() {
             const el = document.getElementById('finds-list');
             const cnt = document.getElementById('finds-count');
-            if (cnt) cnt.textContent = findsCache.length;
+            // Locked reads as 🔒, never 0: a 0 over a locked log looks like data loss.
+            if (cnt) cnt.textContent = (!pinKey && pinStoreExists()) ? '🔒' : findsCache.length;
             if (!el) return;
             if (!pinKey && pinStoreExists()) {
                 el.innerHTML = '<div class="scope-empty">Finds are locked.<br>' +

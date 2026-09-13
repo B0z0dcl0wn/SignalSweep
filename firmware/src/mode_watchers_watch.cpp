@@ -285,8 +285,9 @@ static void ensureSignaturesFileExists() {
 // Research: DeFlockJoplin, via colonelpanichacks/flock-you. Drive-tested in
 // Joplin at 11 of 12 cameras caught with 2 false positives.
 #define W_WIFI_PROBE   70
-// The same, plus the Flock stack's exact Lite-On vendor IE payload
-// (221, len 7, 50:6f:9a:16:03:01:03). This is the discriminating core of
+// The same, plus the exact vendor IE payload (221, len 7, 50:6f:9a:16:03:01:03).
+// Only ever a tightener on that path, never standalone: consumer WiFi sends it
+// too (see the scoring block). This is the discriminating core of
 // upstream's FLOCK_PROBE_IE_SIG_PRIMARY; their full ~200-line fingerprint
 // builder (TLV resync, phantom-overflow recovery, a signature string compared
 // against one hardcoded allowlist entry) buys very little over these 7 bytes
@@ -1047,30 +1048,21 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
                 b += 2 + elen;
             }
 
-            // The exact Flock Lite-On IE fingerprint (50:6f:9a:16:03:01:03) is a
-            // Flock camera by ITSELF, on ANY MAC — no OUI, no wildcard needed.
-            // FIELD-PROVEN 2026-09-12: present on random-MAC probe requests at
-            // every one of three cameras (0..+5 dBm, i.e. right at the pole) and
-            // ABSENT from a normal home that DID carry other 50:6f:9a gear (a
-            // Sony Bravia). Modern cameras randomize their MAC, so the OUI never
-            // matches and the old wildcard+OUI path stayed silent — this IE is
-            // the only reliable tell. It is the full 7-byte payload, never the
-            // bare 50:6f:9a prefix (which rides consumer WiFi), so it stands
-            // alone at CONF_ALERT_MIN. See CHANGELOG / [[capture-tool]].
-            if (liteonSig) {
-                wifiConfidence += W_WIFI_IE_SIG;
-                if (W_WIFI_IE_SIG > bestWeight) {
-                    bestWeight = W_WIFI_IE_SIG;
-                    matchedRule = "Flock IE fingerprint";
-                    matchedCategory = "Flock Safety";
-                }
-            } else if (flockOui && wildcardSsid) {
-                // Older cameras that still use a listed Flock OUI: a wildcard
-                // probe from that OUI, without the IE fingerprint.
-                wifiConfidence += W_WIFI_PROBE;
-                if (W_WIFI_PROBE > bestWeight) {
-                    bestWeight = W_WIFI_PROBE;
-                    matchedRule = "Flock wildcard probe";
+            // The IE 50:6f:9a:16:03:01:03 is NOT a Flock camera on its own. It
+            // alerted standalone for a while and caught passers-by: 2026-09-12
+            // captures found it on AzureWave, China Dragon and Guangzhou Shiyuan
+            // consumer modules (public MACs, -83..-92 dBm, one or two probes
+            // each). 50:6f:9a is the Wi-Fi Alliance OUI, and 16 / 03 01 03 reads
+            // as the MBO "cellular data capability" attribute, which any MBO
+            // client may send. So it only tightens the listed-Flock-OUI wildcard
+            // probe, the way upstream uses it. Random-MAC cameras need a real
+            // tell from a capture at a pole (operator's phone WiFi off) first.
+            if (flockOui && wildcardSsid) {
+                int w = liteonSig ? W_WIFI_IE_SIG : W_WIFI_PROBE;
+                wifiConfidence += w;
+                if (w > bestWeight) {
+                    bestWeight = w;
+                    matchedRule = liteonSig ? "Flock probe + IE" : "Flock wildcard probe";
                     matchedCategory = "Flock Safety";
                 }
             }
