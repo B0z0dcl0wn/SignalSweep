@@ -5,6 +5,7 @@
 #include "hardware_manager.h"
 #include "ble_serial.h"
 #include "mode_manager.h"
+#include "mode_capture.h"
 #include <NimBLEDevice.h>
 #include <nvs_flash.h>
 #include <LittleFS.h>
@@ -125,6 +126,10 @@ void loop() {
     }
 
     bleSerialTick();
+
+    // Resume the detector after a capture ends. The capture task deletes itself,
+    // so it can't restart the detector from inside; it flags this instead.
+    captureTick();
 
     // USB host session, chirped like the BLE link. A plugged-in cable is not a
     // connection: the USB-Serial-JTAG stack's idea of "connected" is a host

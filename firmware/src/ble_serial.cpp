@@ -4,6 +4,7 @@
 #include "ble_serial.h"
 #include "mode_manager.h"
 #include "mode_watchers_watch.h"
+#include "mode_capture.h"
 #include <NimBLEDevice.h>
 #include <ArduinoJson.h>
 #include <esp_log.h>
@@ -493,6 +494,13 @@ void processIncomingCommand(const String& rawCommand) {
             // three independent paths, so lockout is impossible.
             setRxOnly(false, true);
             sendConfigReply();
+        } else if (rawStr.startsWith("CMD:CAP:START:")) {
+            // Stationary diagnostic capture (USB only -- the raw stream is far
+            // too much for BLE NUS). Pauses the detector for the duration.
+            uint32_t secs = (uint32_t)rawStr.substring(14).toInt();  // 14 = len("CMD:CAP:START:")
+            startCapture(secs);
+        } else if (rawStr == "CMD:CAP:STOP") {
+            stopCapture();
         }
     }
 }
