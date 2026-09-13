@@ -518,6 +518,39 @@
             pointer-events: auto;
         }
 
+        /* The PIN gate is summoned from on top of another modal (the capture
+           screen's "Log this camera", the Pins sheet's "Evidence bundle"), and
+           all overlays share a z-index, so DOM order would leave the gate hidden
+           behind them -- a keypad over an invisible prompt. Keep it on top. */
+        #pin-gate-modal { z-index: 1002; }
+
+        /* The Finder is a full-screen page (not a modal): it has its own
+           workflow and a scrolling list, so it slides up over everything. */
+        .finder-page {
+            position: fixed; inset: 0; z-index: 1000;
+            background-color: var(--bg-color, #090d16);
+            overflow-y: auto;
+            transform: translateY(100%);
+            transition: transform 0.25s ease;
+            pointer-events: none;
+        }
+        .finder-page.active { transform: translateY(0); pointer-events: auto; }
+        .finder-topbar {
+            position: sticky; top: 0; z-index: 1;
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 1rem 1.2rem;
+            background: rgba(9, 13, 22, 0.96);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        .finder-topbar h2 { margin: 0; color: var(--accent-cyan, #22d3ee); font-size: 1.3rem; }
+        .finder-close { background: none; border: none; color: var(--text-muted); font-size: 2rem; line-height: 1; cursor: pointer; padding: 0 0.3rem; }
+        .finder-body { padding: 1rem 1.2rem 3rem; max-width: 640px; margin: 0 auto; }
+        .finder-card {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.07);
+            border-radius: 12px; padding: 1rem; margin-bottom: 1rem;
+        }
+
         .modal-card {
             background: rgba(18, 26, 43, 0.95);
             border: 1px solid var(--accent-cyan);
@@ -826,6 +859,10 @@
             color:var(--text-main,#e6edf6); font-weight:600; cursor:pointer; font-size:0.85rem; }
         .ctrl-btn.on { border-color:var(--accent-emerald,#34d399); color:var(--accent-emerald,#34d399);
             background:rgba(52,211,153,0.08); }
+        /* ctrl-btn's min-width:130px makes three-in-a-row overflow the modal
+           (that is why "10 min" ran off screen); let the duration buttons shrink
+           to an equal third instead. */
+        .cap-dur { min-width:0; }
         .scope-row { display:flex; align-items:center; justify-content:space-between;
             background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.07);
             border-radius:10px; padding:0.75rem 0.9rem; margin-bottom:0.6rem; }
@@ -1132,6 +1169,12 @@
                 </div>
             </div>
             <div class="hdr-icons" style="display: flex; gap: 10px;">
+                <button class="btn-help" id="btn-finder" onclick="openFinder()" title="Device Finder" aria-label="Device Finder" style="background:none;border:none;color:white;cursor:pointer;padding:10px;">
+                    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="11" cy="11" r="7"></circle>
+                        <path d="M21 21l-4.3-4.3"></path>
+                    </svg>
+                </button>
                 <button class="btn-help" id="btn-pins" onclick="openPins()" title="Pins" aria-label="Pins" style="background:none;border:none;color:white;cursor:pointer;padding:10px;">
                     <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
@@ -1327,7 +1370,7 @@
             <div class="modal-header"><h2 id="pin-gate-title">Enter PIN</h2></div>
             <input class="pin-input" id="pin-input" type="password" inputmode="numeric" autocomplete="off" placeholder="••••" onkeydown="if(event.key==='Enter')submitPin()">
             <div id="pin-error" style="color:var(--accent-red,#ef4444);font-size:0.8rem;text-align:center;min-height:1em;"></div>
-            <div class="modal-actions"><button class="ctrl-btn on" onclick="submitPin()">Unlock</button></div>
+            <div class="modal-actions"><button class="ctrl-btn on" id="pin-gate-submit" onclick="submitPin()">Unlock</button></div>
             <p style="font-size:0.75rem;color:var(--text-muted);text-align:center;margin-top:0.5rem;">Detecting and beeping never needs a PIN. This only protects your recorded pins. Forget it and the pins are unrecoverable — by design.</p>
         </div>
     </div>
@@ -1496,6 +1539,63 @@
                     This app keeps no history of what it detected or where you went. The only thing stored is location pins you explicitly confirm, encrypted behind your PIN. Manage them under <strong>&#128205; Pins</strong> in the header.
                 </p>
             </div>
+        </div>
+    </div>
+
+    <!-- Finder Page (full-screen investigation workflow) -->
+    <div id="finder-page" class="finder-page">
+        <div class="finder-topbar">
+            <h2>🔎 Device Finder</h2>
+            <button class="finder-close" onclick="closeFinder()" aria-label="Close">&times;</button>
+        </div>
+        <div class="finder-body">
+            <p class="set-note">Stand next to a suspect device, capture the raw air, and the app tells you its signature — then log it (photo + GPS) to your encrypted database and export it for DeFlock. USB cable only.</p>
+
+            <section class="finder-card">
+                <h3 class="set-label">1 · Investigate an environment</h3>
+
+                <div id="cap-idle">
+                    <p class="set-note">Logs every WiFi frame and BLE advert on all channels. Longer is better — one full sweep takes a few minutes, so give it time to catch a rare transmitter. The detector's beeper is paused while capturing.</p>
+                    <div id="cap-usb-warn" class="set-note" style="color:var(--accent-red);display:none;">Connect the board by USB cable first — this is far too much data for Bluetooth.</div>
+                    <h3 class="set-label">Duration</h3>
+                    <div style="display:flex;gap:8px;">
+                        <button class="ctrl-btn cap-dur" data-secs="120" onclick="pickCapDuration(120)">2 min</button>
+                        <button class="ctrl-btn cap-dur on" data-secs="300" onclick="pickCapDuration(300)">5 min</button>
+                        <button class="ctrl-btn cap-dur" data-secs="600" onclick="pickCapDuration(600)">10 min</button>
+                    </div>
+                    <button class="ctrl-btn on" id="cap-start-btn" style="width:100%;margin-top:14px;" onclick="startCapture()">◉ Capture this environment</button>
+                </div>
+
+                <div id="cap-running" style="display:none;">
+                    <p class="set-note">Capturing… keep the board still and next to the device.</p>
+                    <div style="font-size:2.2rem;font-weight:700;text-align:center;color:var(--accent-cyan);" id="cap-remain">—</div>
+                    <div style="text-align:center;color:var(--text-muted);margin-bottom:14px;">remaining</div>
+                    <div style="display:flex;justify-content:space-around;text-align:center;">
+                        <div><div style="font-size:1.4rem;font-weight:700;" id="cap-wifi">0</div><div style="color:var(--text-muted);font-size:0.8rem;">WiFi</div></div>
+                        <div><div style="font-size:1.4rem;font-weight:700;" id="cap-ble">0</div><div style="color:var(--text-muted);font-size:0.8rem;">BLE</div></div>
+                        <div><div style="font-size:1.4rem;font-weight:700;" id="cap-drops">0</div><div style="color:var(--text-muted);font-size:0.8rem;">dropped</div></div>
+                    </div>
+                    <button class="ctrl-btn" style="width:100%;margin-top:16px;" onclick="stopCaptureManual()">Stop &amp; save now</button>
+                </div>
+
+                <div id="cap-done" style="display:none;">
+                    <div style="text-align:center;font-size:1.4rem;margin:8px 0;">✓ Capture saved</div>
+                    <p class="set-note" id="cap-summary"></p>
+                    <div id="cap-analysis" style="margin:10px 0;"></div>
+                    <h3 class="set-label">2 · Log this device</h3>
+                    <p class="set-note">A photo drops the device into your encrypted database with the detected signature and this capture attached. GPS fills in on its own — a slow fix won't lose the photo. (Your camera app keeps its own copy of the shot.)</p>
+                    <button class="ctrl-btn on" style="width:100%;" onclick="logDevice()">📷 Log this device</button>
+                    <details style="margin-top:10px;"><summary class="set-note" style="cursor:pointer;">Pull the raw capture to a PC</summary><p class="set-note" style="font-family:monospace;font-size:0.8rem;word-break:break-all;" id="cap-path"></p></details>
+                    <button class="ctrl-btn" style="width:100%;margin-top:10px;" onclick="closeCapture()">Done — new capture</button>
+                </div>
+            </section>
+
+            <section class="finder-card">
+                <h3 class="set-label">Your finds (<span id="finds-count">0</span>)</h3>
+                <p class="set-note">Devices you've logged — signature, photo and location, encrypted behind your PIN.</p>
+                <div id="finds-list" style="margin:0.6rem 0;"></div>
+                <button class="ctrl-btn on" style="width:100%;" onclick="exportEvidenceBundle()">📦 Export evidence bundle</button>
+            </section>
         </div>
     </div>
 

@@ -6,6 +6,8 @@ import { BleClient } from '@capacitor-community/bluetooth-le';
 import { Geolocation } from '@capacitor/geolocation';
 import { App } from '@capacitor/app';
 import { UsbSerial } from '@leeskies/capacitor-usb-serial';
+import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
+import { Camera } from '@capacitor/camera';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -25,4 +27,14 @@ window.App = App;
 // that rejects every call with UNSUPPORTED_PLATFORM, which is why app.js picks
 // the transport by platform rather than by whether this object exists.
 window.UsbSerial = UsbSerial;
+// Filesystem is used ONLY by the environment-capture diagnostic (a raw packet
+// log the user explicitly starts and saves to a file for PC analysis). It is
+// not a passive trail: nothing is written unless a capture is running.
+window.CapFilesystem = Filesystem;
+window.CapDirectory = Directory;
+window.CapEncoding = Encoding;
+// Camera is used ONLY on the consented "log this camera" evidence path (a photo
+// the user takes of a surveillance camera, encrypted behind their PIN). Like
+// Geolocation, it is one-shot and explicit -- never passive.
+window.Camera = Camera;
 window.L = L;

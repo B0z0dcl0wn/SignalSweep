@@ -16,7 +16,9 @@
     "@capacitor-community/bluetooth-le": "^8.3.0",
     "@capacitor/android": "^8.5.0",
     "@capacitor/app": "^8.1.1",
+    "@capacitor/camera": "^8.0.0",
     "@capacitor/core": "^8.5.0",
+    "@capacitor/filesystem": "^8.0.0",
     "@capacitor/geolocation": "^8.2.2",
     "@leeskies/capacitor-usb-serial": "^0.2.0",
     "leaflet": "^1.9.4"

@@ -836,9 +836,17 @@
         let rxOk = 0;
 
         function processIncomingData(dataStr) {
+            // Capture data lines are raw base64, not JSON, and come fast -- route
+            // them straight to the file writer before the JSON parser sees them.
+            if (capturing && dataStr.charCodeAt(0) === 67 /* 'C' */ && dataStr.startsWith('CAP:')) {
+                capAppend(dataStr.slice(4));
+                return;
+            }
             try {
                 const data = JSON.parse(dataStr);
                 rxOk++;
+                // Capture progress / completion frame ({"cap":{...}}).
+                if (data.cap) { handleCapStat(data.cap); return; }
                 // The 4 Hz hunt frame: one target, one number, and deliberately
                 // NOT a renderScope() -- rebuilding the list four times a second
                 // would put the rows back to moving under your thumb, which is
@@ -884,6 +892,191 @@
         }
 
         // =====================================================================
+        //  Environment capture (USB only): raw packet log to a phone file.
+        // =====================================================================
+        // The detector reports only what it already judged interesting. To find
+        // an UNKNOWN signature -- e.g. a Flock camera on a randomized MAC that
+        // carries only the weak Lite-On IE, which never clears the alert gate --
+        // you need the raw air, not the detector's verdict. The board streams
+        // base64 "CAP:" lines over USB; we append them to a file on the phone,
+        // then pull it to a PC and run analyze-capture.py. BLE NUS is far too
+        // slow for this, so capture is USB/SERIAL only. This is NOT a passive
+        // trail: nothing is written unless the user starts a capture.
+        let capturing = false;
+        let capFileName = null;
+        let capBuf = '';              // accumulates CAP lines between file flushes
+        let capFlushTimer = null;
+        let capReqSecs = 300;
+        let capStat = { wifi: 0, ble: 0, drops: 0, remain: 0 };
+        let capWriteFailed = false;
+        let capWakeLock = null;       // keep the screen on during a capture
+
+        // A capture streams a flood of USB data; if the screen turns off Android
+        // backgrounds the WebView and the capture dies with nothing saved. A
+        // screen wake lock keeps the page foreground for the duration. The lock
+        // is auto-released when the page hides, so re-acquire when it returns.
+        async function capAcquireWake() {
+            try { if (navigator.wakeLock && !capWakeLock) capWakeLock = await navigator.wakeLock.request('screen'); }
+            catch (e) {}
+        }
+        function capReleaseWake() {
+            try { if (capWakeLock) { capWakeLock.release(); capWakeLock = null; } } catch (e) {}
+        }
+        document.addEventListener('visibilitychange', () => {
+            if (capturing && document.visibilityState === 'visible') capAcquireWake();
+        });
+
+        function capNativeFs() {
+            return !!(window.CapFilesystem && window.CapDirectory && window.CapEncoding);
+        }
+        function capIsUsb() {
+            return connectionType === 'USB' || connectionType === 'SERIAL';
+        }
+        function capStamp() {
+            const d = new Date(), p = n => String(n).padStart(2, '0');
+            return d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + '-' +
+                   p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds());
+        }
+
+        // Capture now lives inline on the Finder page; this just opens it.
+        function openCapture() { openFinder(); }
+        // "Done" on the finished-capture panel: reset back to the idle state
+        // within the Finder page (does not close the page or stop anything).
+        function closeCapture() {
+            lastAnalysis = null;
+            paintAnalysis();
+            if (!capturing) { capStat = { wifi: 0, ble: 0, drops: 0, remain: capReqSecs }; }
+            paintCapture();
+            renderFinds();
+        }
+        function pickCapDuration(secs) {
+            capReqSecs = secs;
+            document.querySelectorAll('.cap-dur').forEach(b =>
+                b.classList.toggle('on', Number(b.dataset.secs) === secs));
+        }
+
+        function paintCapture() {
+            const idle = document.getElementById('cap-idle');
+            const run = document.getElementById('cap-running');
+            const done = document.getElementById('cap-done');
+            if (!idle) return;
+            idle.style.display = capturing ? 'none' : 'block';
+            run.style.display = capturing ? 'block' : 'none';
+            done.style.display = 'none';
+            const warn = document.getElementById('cap-usb-warn');
+            const start = document.getElementById('cap-start-btn');
+            const usbOk = capIsUsb() && capNativeFs();
+            if (warn) warn.style.display = usbOk ? 'none' : 'block';
+            if (start) start.disabled = !usbOk;
+            if (capturing) {
+                const m = Math.floor(capStat.remain / 60), s = capStat.remain % 60;
+                document.getElementById('cap-remain').textContent = m + ':' + String(s).padStart(2, '0');
+                document.getElementById('cap-wifi').textContent = capStat.wifi;
+                document.getElementById('cap-ble').textContent = capStat.ble;
+                const d = document.getElementById('cap-drops');
+                d.textContent = capStat.drops;
+                d.style.color = capStat.drops > 0 ? 'var(--accent-red)' : '';
+            }
+        }
+
+        async function startCapture() {
+            if (!capIsUsb()) { showToast('Capture needs the USB cable', '…'); return; }
+            if (!capNativeFs()) { showToast('File storage unavailable', '✕'); return; }
+            capFileName = 'signalsweep-capture-' + capStamp() + '.sscap';
+            capBuf = '';
+            capWriteFailed = false;
+            capStat = { wifi: 0, ble: 0, drops: 0, remain: capReqSecs };
+            const header = '#SSCAP v1 secs=' + capReqSecs + ' t=' + new Date().toISOString() + '\n';
+            try {
+                await window.CapFilesystem.writeFile({
+                    path: capFileName, data: header,
+                    directory: window.CapDirectory.Documents,
+                    encoding: window.CapEncoding.UTF8
+                });
+            } catch (e) {
+                showToast('Could not create capture file', '✕');
+                return;
+            }
+            capturing = true;
+            capAcquireWake();   // keep the screen on so the OS can't kill the capture
+            sendCommand({ raw: 'CMD:CAP:START:' + capReqSecs });
+            capFlushTimer = setInterval(capFlush, 1000);
+            showToast('Capturing — keep the board still', '◉');
+            paintCapture();
+        }
+
+        function stopCaptureManual() {
+            if (capturing) sendCommand({ raw: 'CMD:CAP:STOP' });
+        }
+
+        function capAppend(b64line) {
+            capBuf += b64line + '\n';
+            // Flush eagerly if the buffer gets large, so a crash loses little and
+            // memory stays bounded in a dense environment.
+            if (capBuf.length > 65536) capFlush();
+        }
+        async function capFlush() {
+            if (!capBuf || capWriteFailed) return;
+            const chunk = capBuf; capBuf = '';
+            try {
+                await window.CapFilesystem.appendFile({
+                    path: capFileName, data: chunk,
+                    directory: window.CapDirectory.Documents,
+                    encoding: window.CapEncoding.UTF8
+                });
+            } catch (e) {
+                capWriteFailed = true;
+                showToast('Capture write failed — stopping', '✕');
+                stopCaptureManual();
+            }
+        }
+
+        function handleCapStat(cap) {
+            if (cap.error) { capturing = false; showToast('Capture: ' + cap.error, '✕'); paintCapture(); return; }
+            if ('started' in cap) return;   // ack only
+            capStat.wifi = cap.wifi || 0;
+            capStat.ble = cap.ble || 0;
+            capStat.drops = cap.drops || 0;
+            capStat.remain = cap.remain || 0;
+            if (cap.done) { capFinish(); return; }
+            paintCapture();
+        }
+
+        async function capFinish() {
+            capturing = false;
+            capReleaseWake();
+            if (capFlushTimer) { clearInterval(capFlushTimer); capFlushTimer = null; }
+            await capFlush();
+            let path = capFileName;
+            try {
+                const { uri } = await window.CapFilesystem.getUri({
+                    path: capFileName, directory: window.CapDirectory.Documents
+                });
+                path = decodeURIComponent(uri).replace(/^file:\/\//, '');
+            } catch (e) {}
+            const total = capStat.wifi + capStat.ble;
+            document.getElementById('cap-summary').textContent =
+                total + ' packets (' + capStat.wifi + ' WiFi, ' + capStat.ble + ' BLE)' +
+                (capStat.drops > 0 ? ', ' + capStat.drops + ' dropped — the air was busier than USB could carry' : ', none dropped');
+            document.getElementById('cap-path').textContent = 'adb pull "' + path + '"';
+            // Analyze the capture we just wrote, on the phone, and surface the
+            // suspect signature. This is the "signature finder".
+            lastAnalysis = null;
+            try {
+                const r = await window.CapFilesystem.readFile({
+                    path: capFileName, directory: window.CapDirectory.Documents, encoding: window.CapEncoding.UTF8
+                });
+                lastAnalysis = analyzeCaptureText(r.data);
+            } catch (e) {}
+            paintAnalysis();
+            document.getElementById('cap-idle').style.display = 'none';
+            document.getElementById('cap-running').style.display = 'none';
+            document.getElementById('cap-done').style.display = 'block';
+            showToast(lastAnalysis && lastAnalysis.flockDetected ? '⚠ Flock signature detected' : 'Capture saved',
+                      lastAnalysis && lastAnalysis.flockDetected ? '⚠' : '✓');
+        }
+
+        // =====================================================================
         //  Opt-in, consented, encrypted location pins (evidence you choose).
         // =====================================================================
         // Default OFF. When ON and a known device is detected, we ask once per
@@ -900,6 +1093,7 @@
         let pinKey = null;            // CryptoKey, set once unlocked this session
         let pinSalt = null;            // Uint8Array, persisted with the store
         let pinsCache = [];            // decrypted pins, in memory only while unlocked
+        let findsCache = [];           // decrypted investigation "finds" (Finder page)
         const handledMacs = new Set(); // asked-or-recorded this session (no re-prompt)
         let consentQueue = [];         // pending {match}
 
@@ -918,15 +1112,18 @@
             try { return !!localStorage.getItem(PIN_STORE_KEY); } catch (e) { return false; }
         }
 
+        // Persists the whole encrypted store. v2 holds BOTH the simple location
+        // pins and the richer investigation "finds" (signature + photo + capture)
+        // in one AES-GCM blob under one PIN. (Name kept: it saves the store.)
         async function savePins() {
             if (!pinKey || !pinSalt) return;
             const iv = crypto.getRandomValues(new Uint8Array(12));
             const enc = new TextEncoder();
-            const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, pinKey,
-                enc.encode(JSON.stringify(pinsCache)));
-            const payload = { v: 1, salt: b64(pinSalt), iv: b64(iv), ct: b64(ct) };
+            const body = JSON.stringify({ pins: pinsCache, finds: findsCache });
+            const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, pinKey, enc.encode(body));
+            const payload = { v: 2, salt: b64(pinSalt), iv: b64(iv), ct: b64(ct) };
             try { localStorage.setItem(PIN_STORE_KEY, JSON.stringify(payload)); }
-            catch (e) { showToast('Could not save pin', '✕'); }
+            catch (e) { showToast('Could not save', '✕'); }
         }
 
         // Create a brand-new store with this PIN (first time recording).
@@ -934,6 +1131,7 @@
             pinSalt = crypto.getRandomValues(new Uint8Array(16));
             pinKey = await deriveKey(pin, pinSalt);
             pinsCache = [];
+            findsCache = [];
             await savePins();
         }
 
@@ -943,13 +1141,16 @@
             const salt = unb64(raw.salt), iv = unb64(raw.iv), ct = unb64(raw.ct);
             const key = await deriveKey(pin, salt);
             const dec = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ct); // throws on bad PIN
-            pinsCache = JSON.parse(new TextDecoder().decode(dec));
+            const obj = JSON.parse(new TextDecoder().decode(dec));
+            // v1 stored a bare pins array; v2 stores {pins, finds}. Migrate.
+            if (Array.isArray(obj)) { pinsCache = obj; findsCache = []; }
+            else { pinsCache = obj.pins || []; findsCache = obj.finds || []; }
             pinKey = key; pinSalt = salt;
         }
 
         function wipePins() {
             try { localStorage.removeItem(PIN_STORE_KEY); } catch (e) {}
-            pinKey = null; pinSalt = null; pinsCache = [];
+            pinKey = null; pinSalt = null; pinsCache = []; findsCache = [];
         }
 
         // ---- Location status ------------------------------------------------
@@ -1182,6 +1383,8 @@
             document.getElementById('pin-input').value = '';
             document.getElementById('pin-gate-title').textContent =
                 mode === 'create' ? 'Set a PIN to protect your pins' : 'Enter PIN to unlock pins';
+            document.getElementById('pin-gate-submit').textContent =
+                mode === 'create' ? 'Set PIN' : 'Unlock';
             document.getElementById('pin-error').textContent = '';
             document.getElementById('pin-gate-modal').classList.add('active');
             setTimeout(() => document.getElementById('pin-input').focus(), 100);
@@ -1234,8 +1437,8 @@
                     const cat = categoryOf(p.category);
                     return '<div class="scope-row" style="border-left:4px solid ' + cat.color + '">' +
                         '<div class="scope-main">' +
-                            '<div class="scope-title">' + cat.icon + ' ' + esc(p.category) + '</div>' +
-                            '<div class="scope-sub">' + esc(p.mac) + ' · ' + p.lat.toFixed(5) + ', ' + p.lng.toFixed(5) +
+                            '<div class="scope-title">' + cat.icon + ' ' + esc(p.category) + (p.photo ? ' 📷' : '') + '</div>' +
+                            '<div class="scope-sub">' + esc(p.mac || (p.source === 'camera-log' ? 'photo log' : '')) + ' · ' + p.lat.toFixed(5) + ', ' + p.lng.toFixed(5) +
                                 ' · ±' + Math.round(p.acc) + 'm · ' + new Date(p.ts).toLocaleString() + '</div>' +
                         '</div>' +
                         '<button class="scope-del" onclick="deletePin(' + i + ')">✕</button>' +
@@ -1285,6 +1488,275 @@
             document.body.appendChild(a); a.click(); a.remove();
             setTimeout(() => URL.revokeObjectURL(url), 1000);
             showToast('Exported ' + name, '✓');
+        }
+
+        // =====================================================================
+        //  Camera evidence: a photo + GPS pin of a surveillance camera.
+        // =====================================================================
+        // Triggered from the capture-done screen so the photo and GPS are tied
+        // to that camera's packet capture. The photo is encrypted with the SAME
+        // PIN key as the pins (AES-GCM, its own IV) and stored as a file --
+        // photos are far too big for the localStorage pin blob. Both the pin
+        // index and the photo are ciphertext; nothing readable is written by us.
+        // (The OS camera keeps its own temp copy of the shot -- we encrypt what
+        // we store, we can't scrub the OS cache. The button says so.)
+        async function encryptBytes(bytes) {
+            const iv = crypto.getRandomValues(new Uint8Array(12));
+            const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, pinKey, bytes);
+            const out = new Uint8Array(12 + ct.byteLength);
+            out.set(iv, 0);
+            out.set(new Uint8Array(ct), 12);
+            return out;
+        }
+        async function decryptBytes(buf) {
+            const iv = buf.slice(0, 12), ct = buf.slice(12);
+            const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, pinKey, ct);
+            return new Uint8Array(pt);
+        }
+
+        // Run cb once the pin store is unlocked. Reuses the PIN gate: unlock an
+        // existing store, or create one on first use.
+        function ensurePinUnlocked(cb) {
+            if (pinKey) { cb(); return; }
+            pendingPinAction = cb;
+            openPinGate(pinStoreExists() ? 'unlock' : 'create');
+        }
+
+        // The analysis of the most recent capture, so "Log this device" can
+        // auto-attach the detected signature.
+        let lastAnalysis = null;
+
+        // On-phone port of analyze-capture.py's core: parse the .sscap records,
+        // walk 802.11 IEs, and find devices carrying the exact Flock fingerprint
+        // 50:6f:9a:16:03:01:03. Returns a suspect + a signature to attach.
+        function analyzeCaptureText(text) {
+            const FLOCK = [0x50, 0x6f, 0x9a, 0x16, 0x03, 0x01, 0x03];
+            let wifi = 0, ble = 0, strongest = null, n = 0;
+            const flock = {};   // mac -> {rssi, count, random, ssid}
+            for (const line of text.split('\n')) {
+                const t = line.trim();
+                if (!t || t[0] === '#') continue;
+                // Bound the work: a 10-min dense capture is ~30k records; this cap
+                // can't truncate a real one but stops a pathological file freezing
+                // the UI. The Flock IE rides every probe, so a cap never misses it.
+                if (++n > 60000) break;
+                let rec;
+                try { rec = unb64(t); } catch (e) { continue; }
+                if (rec.length < 15) continue;
+                const radio = rec[0];
+                const rssi = (rec[10] << 24) >> 24;              // int8
+                const capLen = rec[13] | (rec[14] << 8);
+                const payload = rec.subarray(15, 15 + capLen);
+                if (radio === 1) { ble++; continue; }
+                wifi++;
+                if (payload.length < 24) continue;
+                const fc0 = payload[0];
+                if (((fc0 >> 2) & 3) !== 0) continue;            // mgmt only
+                const fsub = (fc0 >> 4) & 0xf;
+                const a2 = Array.from(payload.subarray(10, 16));
+                const mac = a2.map(b => b.toString(16).padStart(2, '0')).join(':');
+                const random = !!(a2[0] & 0x02);
+                if (!strongest || rssi > strongest.rssi) strongest = { mac, rssi, random };
+                let i = fsub === 4 ? 24 : 36, ssid = null, hasFlock = false;
+                while (i + 2 <= payload.length) {
+                    const id = payload[i], ln = payload[i + 1];
+                    if (i + 2 + ln > payload.length) break;
+                    if (id === 0 && ln > 0) { try { ssid = new TextDecoder().decode(payload.subarray(i + 2, i + 2 + ln)); } catch (e) {} }
+                    if (id === 221 && ln === 7) {
+                        let m = true;
+                        for (let k = 0; k < 7; k++) if (payload[i + 2 + k] !== FLOCK[k]) { m = false; break; }
+                        if (m) hasFlock = true;
+                    }
+                    i += 2 + ln;
+                }
+                if (hasFlock) {
+                    const f = flock[mac] || (flock[mac] = { rssi: -999, count: 0, random, ssid: null });
+                    f.rssi = Math.max(f.rssi, rssi); f.count++;
+                    if (ssid) f.ssid = ssid;
+                }
+            }
+            const list = Object.entries(flock).map(([mac, f]) => ({ mac, ...f })).sort((a, b) => b.rssi - a.rssi);
+            const randomN = list.filter(f => f.random).length;
+            return {
+                wifi, ble,
+                flockDetected: list.length > 0,
+                flockMacs: list.length, flockRandom: randomN,
+                flockStrongest: list.length ? list[0].rssi : null,
+                suspect: list[0] || strongest,
+                signature: list.length > 0
+                    ? { type: 'flock-ie', label: 'Flock IE 50:6f:9a:16:03:01:03',
+                        macs: list.length, randomMacs: randomN, rssi: list[0].rssi, sampleMac: list[0].mac }
+                    : (strongest ? { type: 'strongest', label: 'strongest device (no Flock IE)',
+                        rssi: strongest.rssi, sampleMac: strongest.mac, random: strongest.random } : null)
+            };
+        }
+
+        function paintAnalysis() {
+            const el = document.getElementById('cap-analysis');
+            if (!el) return;
+            const a = lastAnalysis;
+            if (!a) { el.innerHTML = ''; return; }
+            if (a.flockDetected) {
+                el.innerHTML = '<div style="color:var(--accent-red,#ef4444);font-weight:700;font-size:1.05rem;">⚠ Flock camera signature detected</div>' +
+                    '<p class="set-note">' + a.flockMacs + ' device(s) carrying the Flock IE <code>50:6f:9a:16:03:01:03</code>, ' +
+                    a.flockRandom + ' on random MACs, strongest <strong>' + a.flockStrongest + ' dBm</strong>. That is a Flock ALPR camera — log it below.</p>';
+            } else {
+                el.innerHTML = '<p class="set-note">No Flock signature in this capture. Strongest device: ' +
+                    (a.suspect ? esc(a.suspect.mac) + ' at ' + a.suspect.rssi + ' dBm' : 'none') +
+                    '. If you were next to a camera and see nothing, it is likely on 5 GHz or cellular, which this hardware cannot hear. You can still log the device.</p>';
+            }
+        }
+
+        // Log a device to the encrypted finds database. Photo-survives-GPS: the
+        // photo is saved and the find is created FIRST; GPS is filled in after,
+        // so a slow fix in the field never throws away a good shot.
+        async function logDevice() {
+            if (!window.Camera || !capNativeFs()) { showToast('Camera unavailable on this platform', '✕'); return; }
+            ensurePinUnlocked(async () => {
+                let shot;
+                try {
+                    shot = await window.Camera.getPhoto({ quality: 70, allowEditing: false, resultType: 'base64', source: 'CAMERA', saveToGallery: false });
+                } catch (e) { showToast('Photo cancelled', '…'); return; }
+                if (!shot || !shot.base64String) { showToast('No photo taken', '✕'); return; }
+                let photoName = null;
+                try {
+                    const enc = await encryptBytes(unb64(shot.base64String));
+                    photoName = 'signalsweep-photos/dev-' + Date.now() + '.enc';
+                    await window.CapFilesystem.writeFile({ path: photoName, data: b64(enc), directory: window.CapDirectory.Documents, recursive: true });
+                } catch (e) { showToast('Could not save the photo', '✕'); return; }
+                const sig = lastAnalysis && lastAnalysis.signature ? lastAnalysis.signature : null;
+                const find = {
+                    id: 'f' + Date.now(), ts: Date.now(),
+                    category: 'ALPR / Camera', label: '',
+                    signature: sig, photo: photoName, capture: capFileName || null,
+                    lat: null, lng: null, acc: null
+                };
+                findsCache.push(find);
+                await savePins();
+                renderFinds();
+                showToast('Device logged — getting GPS…', '📷');
+                // GPS in the background; the find is already saved.
+                try {
+                    const fix = await getFix();
+                    find.lat = fix.lat; find.lng = fix.lng; find.acc = fix.acc;
+                    await savePins();
+                    renderFinds();
+                    showToast('Location added (±' + Math.round(fix.acc) + 'm)', '📍');
+                } catch (e) {
+                    showToast('Saved without GPS — add location later', '⚠');
+                }
+            });
+        }
+
+        // Full evidence bundle for DeFlock verification: decrypt photos, write
+        // coordinates (OSM + CSV), and copy the linked packet captures into one
+        // folder, then report where it landed.
+        // Full evidence bundle for DeFlock: decrypt each find's photo, write
+        // coordinates + signature (OSM + CSV), and copy the linked raw captures
+        // into one folder. A find with no GPS yet still exports photo + signature
+        // + capture -- just no OSM node.
+        async function exportEvidenceBundle() {
+            if (!capNativeFs()) { showToast('File storage unavailable', '✕'); return; }
+            ensurePinUnlocked(async () => {
+                if (!findsCache.length) { showToast('No devices logged yet', 'ℹ'); return; }
+                const dir = 'signalsweep-evidence-' + capStamp();
+                const D = window.CapDirectory.Documents, U = window.CapEncoding.UTF8;
+                let csv = 'ts,lat,lng,acc_m,category,signature,sample_mac,photo,capture\n';
+                let osm = '<?xml version="1.0" encoding="UTF-8"?>\n<osm version="0.6" generator="SignalSweep">\n';
+                let photos = 0, caps = 0;
+                for (let i = 0; i < findsCache.length; i++) {
+                    const f = findsCache[i];
+                    const photoOut = f.photo ? 'photo-' + i + '.jpg' : '';
+                    const sigLabel = f.signature ? f.signature.label : '';
+                    const sampleMac = f.signature ? (f.signature.sampleMac || '') : '';
+                    csv += [f.ts, f.lat != null ? f.lat : '', f.lng != null ? f.lng : '',
+                            f.acc != null ? Math.round(f.acc) : '', '"' + (f.category || '') + '"',
+                            '"' + sigLabel + '"', sampleMac, photoOut, f.capture || ''].join(',') + '\n';
+                    if (f.lat != null) {
+                        osm += '  <node id="-' + (i + 1) + '" lat="' + f.lat.toFixed(7) + '" lon="' + f.lng.toFixed(7) + '">\n' +
+                               '    <tag k="man_made" v="surveillance"/>\n' +
+                               '    <tag k="surveillance:type" v="camera"/>\n' +
+                               '    <tag k="signalsweep:category" v="' + xmlAttr(f.category || '') + '"/>\n' +
+                               '    <tag k="signalsweep:signature" v="' + xmlAttr(sigLabel) + '"/>\n' +
+                               (photoOut ? '    <tag k="signalsweep:photo" v="' + photoOut + '"/>\n' : '') +
+                               '  </node>\n';
+                    }
+                    if (f.photo) {
+                        try {
+                            const r = await window.CapFilesystem.readFile({ path: f.photo, directory: D });
+                            const pt = await decryptBytes(unb64(r.data));
+                            await window.CapFilesystem.writeFile({ path: dir + '/' + photoOut, data: b64(pt), directory: D, recursive: true });
+                            photos++;
+                        } catch (e) {}
+                    }
+                    if (f.capture) {
+                        try {
+                            const c = await window.CapFilesystem.readFile({ path: f.capture, directory: D, encoding: U });
+                            await window.CapFilesystem.writeFile({ path: dir + '/' + f.capture, data: c.data, directory: D, encoding: U, recursive: true });
+                            caps++;
+                        } catch (e) {}
+                    }
+                }
+                osm += '</osm>\n';
+                await window.CapFilesystem.writeFile({ path: dir + '/cameras.csv', data: csv, directory: D, encoding: U, recursive: true });
+                await window.CapFilesystem.writeFile({ path: dir + '/cameras.osm', data: osm, directory: D, encoding: U, recursive: true });
+                showToast(findsCache.length + ' finds · ' + photos + ' photos → Documents/' + dir, '✓');
+            });
+        }
+
+        // ---- The Finder page (full-screen investigation workflow) ----
+        function openFinder() {
+            document.getElementById('finder-page').classList.add('active');
+            if (!capturing) capStat = { wifi: 0, ble: 0, drops: 0, remain: capReqSecs };
+            paintCapture();
+            renderFinds();
+        }
+        function closeFinder() {
+            document.getElementById('finder-page').classList.remove('active');
+        }
+        function unlockFindsView() {
+            pendingPinAction = renderFinds;
+            openPinGate(pinStoreExists() ? 'unlock' : 'create');
+        }
+        function renderFinds() {
+            const el = document.getElementById('finds-list');
+            const cnt = document.getElementById('finds-count');
+            if (cnt) cnt.textContent = findsCache.length;
+            if (!el) return;
+            if (!pinKey && pinStoreExists()) {
+                el.innerHTML = '<div class="scope-empty">Finds are locked.<br>' +
+                    '<button class="ctrl-btn" style="margin-top:0.7rem" onclick="unlockFindsView()">Unlock to view</button></div>';
+                return;
+            }
+            if (findsCache.length === 0) {
+                el.innerHTML = '<div class="scope-empty">No finds yet. Investigate an environment above, then log the device you find.</div>';
+                return;
+            }
+            el.innerHTML = findsCache.map((f, i) => {
+                const cat = categoryOf(f.category);
+                const loc = (f.lat != null)
+                    ? (f.lat.toFixed(5) + ', ' + f.lng.toFixed(5) + ' · ±' + Math.round(f.acc) + 'm')
+                    : '⚠ no location yet';
+                const sig = f.signature
+                    ? esc(f.signature.label) + (f.signature.randomMacs ? ' · ' + f.signature.randomMacs + ' random MACs' : '')
+                    : 'no signature';
+                return '<div class="scope-row" style="border-left:4px solid ' + cat.color + '">' +
+                    '<div class="scope-main">' +
+                        '<div class="scope-title">' + cat.icon + ' ' + esc(f.category) + (f.photo ? ' 📷' : '') + '</div>' +
+                        '<div class="scope-sub">' + sig + '<br>' + loc + ' · ' + new Date(f.ts).toLocaleString() + '</div>' +
+                    '</div>' +
+                    '<button class="scope-del" onclick="deleteFind(' + i + ')">✕</button>' +
+                '</div>';
+            }).join('');
+        }
+        function deleteFind(i) {
+            const f = findsCache[i];
+            if (f && f.photo && window.CapFilesystem) {
+                try { window.CapFilesystem.deleteFile({ path: f.photo, directory: window.CapDirectory.Documents }); } catch (e) {}
+            }
+            findsCache.splice(i, 1);
+            savePins();
+            renderFinds();
         }
 
         // =====================================================================
@@ -1913,6 +2385,33 @@
         // hardware is being observed, so assuming ASCII is not safe.
         const usbDecoder = new TextDecoder('utf-8');
 
+        // A capture floods the USB link with data events. Decoding and parsing
+        // each one synchronously in the listener saturated the main thread and
+        // OOM-crashed the WebView renderer mid-capture (the "capture didn't save"
+        // bug). Instead the listener does O(1) work -- just queue the raw base64
+        // -- and one requestAnimationFrame drain per frame decodes the whole
+        // batch at once. Paced to the display, so the thread breathes, the screen
+        // keeps painting, and allocations batch instead of thrashing the GC.
+        let usbRawQueue = [];
+        let usbDrainScheduled = false;
+        function scheduleUsbDrain() {
+            if (usbDrainScheduled) return;
+            usbDrainScheduled = true;
+            requestAnimationFrame(drainUsbQueue);
+        }
+        function drainUsbQueue() {
+            usbDrainScheduled = false;
+            if (!usbRawQueue.length) return;
+            const batch = usbRawQueue;
+            usbRawQueue = [];
+            let text = '';
+            for (let i = 0; i < batch.length; i++) {
+                try { text += usbDecoder.decode(b64ToBytes(batch[i]), { stream: true }); } catch (e) {}
+            }
+            if (text) processIncomingChunk(text);
+            if (usbRawQueue.length) scheduleUsbDrain();   // more arrived while draining
+        }
+
         function nativeUsbAvailable() {
             return !!(window.Capacitor && window.Capacitor.isNativePlatform() && window.UsbSerial);
         }
@@ -1972,9 +2471,11 @@
 
                 usbListeners.push(await window.UsbSerial.addListener('data', (ev) => {
                     if (ev.portId !== usbPortId) return;
-                    // Straight into the same line reassembler BLE and WebSerial
-                    // feed. One parser, three transports.
-                    processIncomingChunk(usbDecoder.decode(b64ToBytes(ev.data), { stream: true }));
+                    // O(1): queue the raw base64 and let the rAF drain decode the
+                    // batch. The decoded text still feeds the same line reassembler
+                    // BLE and WebSerial use -- one parser, three transports.
+                    usbRawQueue.push(ev.data);
+                    scheduleUsbDrain();
                 }));
                 usbListeners.push(await window.UsbSerial.addListener('detached', () => {
                     showToast('USB device unplugged', '✕');
@@ -2564,11 +3065,55 @@
                 pinKey = null; pinsCache = [];
                 await unlockPins('1234');
                 results.cryptoRoundTrip = pinsCache.length === 1 && pinsCache[0].mac === 'AA:BB';
+                // Photo bytes encrypt->decrypt on the same PIN key (the camera
+                // evidence path). Includes high bytes to catch any text mangling.
+                const photoBytes = new Uint8Array([0, 1, 2, 250, 251, 252, 255, 128, 64]);
+                const encP = await encryptBytes(photoBytes);
+                const decP = await decryptBytes(encP);
+                results.photoRoundTrip = decP.length === photoBytes.length &&
+                                         decP.every((b, i) => b === photoBytes[i]);
                 // Wrong PIN reveals nothing
                 pinKey = null; pinsCache = [];
                 let wrongFailed = false;
                 try { await unlockPins('9999'); } catch (e) { wrongFailed = true; }
                 results.wrongPinRejected = wrongFailed && pinsCache.length === 0;
+
+                // Finds persist in the same encrypted store as pins.
+                await createPinStore('1234');
+                findsCache.push({ id: 'f1', category: 'ALPR / Camera', signature: { label: 'Flock IE', sampleMac: 'aa:bb' }, photo: null, capture: 'c.sscap', lat: null, lng: null, acc: null, ts: 1 });
+                pinsCache.push({ mac: 'PP', category: 'ALPR / Camera', lat: 1, lng: 2, acc: 5, ts: 1 });
+                await savePins();
+                pinKey = null; pinsCache = []; findsCache = [];
+                await unlockPins('1234');
+                results.findsRoundTrip = findsCache.length === 1 && findsCache[0].signature.label === 'Flock IE' && pinsCache.length === 1;
+
+                // v1 store (a bare pins array) still unlocks; finds default to [].
+                {
+                    const salt = crypto.getRandomValues(new Uint8Array(16));
+                    const key = await deriveKey('1234', salt);
+                    const iv = crypto.getRandomValues(new Uint8Array(12));
+                    const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key,
+                        new TextEncoder().encode(JSON.stringify([{ mac: 'OLD', lat: 1, lng: 2, acc: 3, ts: 1, category: 'x' }])));
+                    localStorage.setItem(PIN_STORE_KEY, JSON.stringify({ v: 1, salt: b64(salt), iv: b64(iv), ct: b64(ct) }));
+                    pinKey = null; pinsCache = []; findsCache = [];
+                    await unlockPins('1234');
+                    results.v1Migration = pinsCache.length === 1 && pinsCache[0].mac === 'OLD' && findsCache.length === 0;
+                }
+
+                // The on-phone analyzer finds the exact Flock fingerprint in a
+                // hand-built probe-request record (same wire format as the board).
+                {
+                    const frame = [0x40, 0x00, 0, 0].concat([0xff,0xff,0xff,0xff,0xff,0xff])
+                        .concat([0x6a,0x03,0xca,0x5b,0x77,0x77]).concat([0xff,0xff,0xff,0xff,0xff,0xff])
+                        .concat([0, 0, 0, 0])   // seq + wildcard SSID IE (id0 len0)
+                        .concat([221, 7, 0x50, 0x6f, 0x9a, 0x16, 0x03, 0x01, 0x03]);
+                    const hdr = [0, 1,0,0,0, 0,0,0,0, 6, (-30)&0xff, frame.length & 0xff, (frame.length>>8)&0xff, frame.length & 0xff, (frame.length>>8)&0xff];
+                    const rec = new Uint8Array(hdr.concat(frame));
+                    const line = b64(rec);
+                    const a = analyzeCaptureText('#SSCAP\n' + line + '\n');
+                    results.analyzerFlock = a.flockDetected && a.flockMacs === 1 && a.flockRandom === 1 &&
+                                            a.signature.type === 'flock-ie';
+                }
                 return results;
             };
         }

@@ -4,6 +4,162 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Added — the Device Finder page (find signatures, build a database)
+
+Capture, log-a-device and evidence export were scattered across Settings and the
+Pins sheet; they are now one **full-screen Finder page** (🔎 header icon) with a
+top-to-bottom workflow: **1) Investigate** an environment (the capture, USB only),
+**2)** the app **analyzes the `.sscap` on the phone** and surfaces the suspect —
+if anything carries the Flock IE `50:6f:9a:16:03:01:03` it says so in red — then
+**3) Log this device**: a photo + the detected signature + the raw capture, into
+an encrypted **finds database** listed right on the page. **Export evidence
+bundle** decrypts it all (photos + OSM/CSV with the signature + the raw captures)
+for DeFlock.
+
+The on-phone analyzer is a JS port of `analyze-capture.py`'s core (self-test
+`analyzerFlock` checks it against a hand-built Flock frame). The encrypted store
+is now `{ pins, finds }` under one PIN, with transparent migration from the old
+pins-only array (`v1Migration` self-test). Pins keep only "ask to pin matches"
+and simple auto-pins; the Finder owns the investigation side.
+
+**Trap — the capture crashed the app until the USB stream was batched.** A
+capture floods the app with USB `data` events, and the listener decoded + parsed
+each one synchronously on the main thread. Under the flood that saturated the
+thread and intermittently OOM-crashed the WebView renderer mid-capture — the
+capture died, `capFinish` never ran, and nothing saved ("the capture didn't
+save"). Fix: the listener now does O(1) work — push the raw base64 to a queue —
+and a single `requestAnimationFrame` drain decodes the whole batch once per
+frame, paced to the display so the thread breathes and the screen keeps painting.
+Belt-and-suspenders: a screen wake-lock during capture (a screen-off would
+otherwise background and kill it) and a 60k-record cap on the analyzer.
+
+**Photo-survives-GPS:** logging a device now saves the photo and the find FIRST,
+then fills in GPS in the background — a slow fix in the field never throws away a
+good shot (the old flow aborted the whole log, photo included, if GPS was slow,
+which is why three field cameras logged zero photos). A find with no fix yet still
+lists and still exports its photo, signature and capture.
+
+### Fixed — catch the modern Flock camera (MAC-agnostic IE fingerprint)
+
+Field-proven at a three-camera parking lot (2026-09-12) with the capture tool
+below: a current Flock camera is a **randomized-MAC WiFi client** spamming probe
+requests that carry vendor IE **`50:6f:9a:16:03:01:03`**. That exact 7-byte
+payload showed up at all three cameras on random MACs at **0 to +5 dBm** (you
+standing at the pole), and on **zero** devices in two home captures — even though
+home carried other `50:6f:9a` (Lite-On) gear, including a Sony Bravia that had
+only the prefix. Clean positive with a clean negative control.
+
+The wildcard-probe fix (below) required a *listed Flock OUI*, so it never fired on
+a randomized MAC — the detector stood 25 ft from a camera and stayed silent. Now
+the exact fingerprint (`liteonSig`, which the IE walk already computed) scores
+`W_WIFI_IE_SIG` on its own — **any MAC, no OUI or wildcard needed** — and beeps as
+`Flock Safety` / "Flock IE fingerprint". Older listed-OUI cameras stay covered by
+the wildcard+OUI path. It matches the **full 7-byte payload**, never the bare
+`50:6f:9a` prefix (which rides consumer WiFi), so it stands alone at the alert
+gate without crying wolf — the home negative control is the evidence. `selftest.js`
+asserts the standalone `if (liteonSig)` gate.
+
+### Added — environment capture (raw packet logging for the unknown)
+
+The detector only reports what it already judged interesting, which is useless
+when the signature is unknown — a modern Flock camera, for instance, that
+rotates its MAC every few seconds and carries only the weak Lite-On IE, so it
+never clears the alert gate and shows up (if at all) as one of dozens of
+"Lite-On Vendor IE (weak)" rows. Field screenshots next to a known camera showed
+exactly that: the strongest signals in the environment were random-MAC clients
+carrying `50:6F:9A`, invisible to an OUI-based detector.
+
+So there is now a **stationary capture mode**. Settings → Diagnostics → *Capture
+environment* (USB cable only — the raw stream is far too much for BLE NUS). You
+pick a duration, stand next to the suspect device, and the board logs **every**
+WiFi frame (all types, all channels) and **every** BLE advertisement to a file
+on the phone (`signalsweep-capture-*.sscap`), which you pull to a PC and run
+through `firmware/tools/analyze-capture.py`. The analyzer ranks devices by RSSI
+with offline vendor lookup, flags random MACs and the Lite-On IE, and — the key
+view — **groups probe/beacon frames by their IE fingerprint**, so many random
+MACs sharing one fingerprint reveal a single device rotating its MAC. It also
+exports the WiFi frames to a radiotap pcap for Wireshark, and has a `--minus`
+diff mode to subtract a "walked away" capture from a "next to it" one.
+
+Design honesty, baked in: the ESP32-S3 hears **only 2.4 GHz WiFi and BLE**. If a
+full all-channel capture next to a camera shows nothing that tracks it, that is
+the finding — the camera is on 5 GHz or cellular, which this hardware cannot
+hear. The tool makes that provable instead of a guess.
+
+**Camera evidence, tied to the capture.** The capture-done screen now has *Log
+this camera*: take a photo (`@capacitor/camera`), drop a one-shot GPS pin, and
+save both **encrypted behind the same PIN as the pins** — the photo as its own
+AES-GCM file (`signalsweep-photos/*.enc`, since a photo is far too big for the
+localStorage pin blob), the pin linked to the `.sscap` you just took at that
+camera. *Export evidence bundle* (in Pins, PIN required) decrypts it all to one
+folder: photos, coordinates as OSM (DeFlock-ready) + CSV, and the linked
+captures — a complete package for someone to come back, verify the camera is
+real, and submit it. The photo crypto round-trip is covered by `selftest.js`
+(`photoRoundTrip`). Honest limit surfaced in the UI: the OS camera keeps its own
+temp copy of the shot; we encrypt what we store, we can't scrub the OS cache.
+
+Implementation: `mode_capture.cpp` pauses the detector (a single promiscuous rx
+callback can't be shared), copies frames into two lock-free PSRAM ring buffers
+from the radio callbacks (no malloc/lock/Serial there, same rule as the
+detector), and a drain task base64-streams them over USB. Ring overflow bumps a
+drop counter that is reported every second, so "lose no packets" is honest:
+nothing is lost silently, and you see the exact count if the air out-ran USB.
+
+**Trap (cost a bench cycle):** the S3 time-slices ONE radio between BLE and WiFi,
+so the BLE scan *window* is stolen directly from WiFi promiscuous time. The first
+build set the BLE scan to a near-100% window and WiFi came back with **zero**
+frames while BLE flooded. The scan window is now 40 % (`setWindow(40)`,
+`setInterval(100)`), favouring WiFi as the priority target. Anything that runs
+both radios at once lives under this constraint.
+
+### Fixed — the detector could no longer beep at a Flock camera
+
+The headline capability had gone silently dead, and nothing in the UI could show
+it. Flock's detectable surface collapsed twice: the cameras' management AP was
+deactivated around December 2025 (which killed the SSID path — our only Wi-Fi
+signal strong enough to alert, `W_WIFI_SSID` 80), and BLE stopped working in
+spring 2026 (killing the `flock` / `pigvision` / `fs_` name rules and the mfg-ID
+rule). What a current camera still does is spam **wildcard 802.11 probe
+requests** — a probe with a zero-length SSID IE, "any AP, answer me" — roughly
+every 125 ms on every channel. We already parsed those frames and matched the
+OUI, but an OUI on its own scores `W_WIFI_OUI` (30), below `CONF_LIST_MIN` (60):
+the camera was tracked, never listed, and never sounded.
+
+The fix combines the OUI with the *behaviour*, research from **DeFlockJoplin**
+(via colonelpanichacks/flock-you, drive-tested in Joplin at 11 of 12 cameras with
+2 false positives). A wildcard probe **from a listed Flock OUI** is two
+independent facts at once, and now scores `W_WIFI_PROBE` (70) — enough to clear
+`CONF_ALERT_MIN` on its own, which is the whole point. When the frame also
+carries the Flock stack's exact Lite-On vendor IE payload (tag 221, length 7,
+`50:6f:9a:16:03:01:03`) it scores `W_WIFI_IE_SIG` (80).
+
+Two traps kept as comments in `mode_watchers_watch.cpp`, repeated here because
+they are the ways this path silently breaks:
+
+- **The wildcard signal is gated on the OUI's category being `Flock Safety`,
+  specifically.** A wildcard probe alone is meaningless — *every phone in range
+  sends them* — so without the gate the buzzer would fire on the whole street.
+  And it must be the *Flock* category, not just any listed OUI: a Cradlepoint or
+  Sierra router on a listed prefix sending a wildcard probe is not a camera, and
+  scoring it as one is the same failure as the `bandOf()` bug that once reported a
+  TV as a camera. A hint that names the wrong vendor is worse than no hint.
+- **The FCS is already stripped** by `body_len = length - offset - 4` before the
+  IE walk, which is why this needs none of upstream's retry-with-`(len-4)` dance.
+  Don't "simplify" that subtraction away.
+
+Deliberately **not** taken from upstream: its ~200-line IE-fingerprint builder
+(TLV resync, phantom-overflow recovery, a signature string compared against one
+hardcoded allowlist entry tied to a single camera firmware revision) — the seven
+Lite-On bytes above are its discriminating core; and its **addr1 echo** path
+(catch a sleeping camera via a nearby AP's reply), which upstream itself rates
+tier 1 and false-positive prone. Our confidence model is a sum with no tier to
+demote a noisy path into, so it would only poison the vendor label.
+
+The default Flock OUI list was synced to @NitekryDPaul's 2026-07-16 revision:
+added `14:b5:cd`, removed `f8:a2:d6` (he field-demoted it — it hits a Sony Media
+Player, not a Flock device). `SIG_SCHEMA_VERSION` bumped to 6 so already-deployed
+boards regenerate rather than keeping the stale set for ever.
+
 ## [0.2.0] — 2026-09-11 — Lights, a cleaner top, and tabs that choose what alerts
 
 ### Changed: a band tab picks what alerts, and what asks to be pinned
