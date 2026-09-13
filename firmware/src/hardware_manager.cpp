@@ -39,6 +39,8 @@ static volatile bool buzzerEnabled = true;
 // Same contract as buzzerEnabled: one byte, read by the render loop and written
 // by the command handler without hwMutex, so changing it can never fail on a lock.
 static volatile uint8_t ledMode = LED_FULL;
+// Same contract as ledMode: one byte, no hwMutex.
+static volatile uint8_t themeId = THEME_CLASSIC;
 static bool rxOnlyIndicator = false;
 
 // Arduino's tone() attaches the LEDC channel lazily on first use, and noTone()
@@ -466,6 +468,8 @@ void hardwareInit() {
         buzzerEnabled = prefs.getBool("on", true);
         uint8_t led = prefs.getUChar("led", LED_FULL);
         ledMode = led > LED_FULL ? LED_FULL : led;
+        uint8_t th = prefs.getUChar("theme", THEME_CLASSIC);
+        themeId = th > THEME_PARTY ? THEME_CLASSIC : th;
         prefs.end();
     } else {
         buzzerEnabled = true;
@@ -599,6 +603,22 @@ void setLedMode(uint8_t mode) {
 
 uint8_t getLedMode() {
     return ledMode;
+}
+
+void setTheme(uint8_t theme) {
+    themeId = theme > THEME_PARTY ? THEME_PARTY : theme;   // render + audio pick it up next tick
+    // Outside hwMutex, for the same reason as setLedMode(): NVS is slow.
+    Preferences prefs;
+    if (prefs.begin(BUZZER_NVS_NS, false)) {
+        prefs.putUChar("theme", themeId);
+        prefs.end();
+    } else {
+        ESP_LOGW(TAG, "Could not open %s — theme will not survive a reboot", BUZZER_NVS_NS);
+    }
+}
+
+uint8_t getTheme() {
+    return themeId;
 }
 
 void triggerLedFlash(uint8_t r, uint8_t g, uint8_t b, uint32_t durationMs) {

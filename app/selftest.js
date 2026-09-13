@@ -108,6 +108,26 @@ if (cfgKeys.length < 5 || cfgUnread.length) {
 }
 console.log('[signalsweep self-test] app reads every CMD:CFG field: ok');
 
+// Themes are an index shared with the firmware: app.js's THEMES order must be
+// hardware_manager.h's ThemeId order, or picking "Ice" lights Party. Like the
+// beep mask, nothing at runtime would say so. The theme also has to ride the
+// push (the device is the authority) and its chips must not be inputs.
+const themeFail = [];
+const fwThemes = ((readFileSync(new URL('../firmware/src/hardware_manager.h', import.meta.url), 'utf8')
+    .match(/enum ThemeId[^{]*\{([^}]*)\}/) || [])[1] || '')
+    .match(/THEME_([A-Z]+)/g) || [];
+const appThemes = ((appSrc.match(/const THEMES = \[([^\]]*)\]/) || [])[1] || '').match(/'(\w+)'/g) || [];
+if (fwThemes.length !== 5) themeFail.push('firmware ThemeId has ' + fwThemes.length + ' entries');
+fwThemes.forEach((t, i) => {
+    if (("'" + t.slice(6).toLowerCase() + "'") !== appThemes[i]) themeFail.push(t + ' vs ' + appThemes[i]);
+    if (!htmlSrc.includes('data-theme="' + i + '"')) themeFail.push('no chip for theme ' + i);
+});
+if (!/doc\["theme"\]\s*=\s*getTheme\(\)/.test(readFileSync(new URL('../firmware/src/mode_watchers_watch.cpp', import.meta.url), 'utf8')))
+    themeFail.push('the 1 Hz push does not carry theme');
+if (/<input[^>]*data-theme=/.test(htmlSrc)) themeFail.push('a theme control is an <input>');
+if (themeFail.length) { console.log('FAIL: themes:', themeFail); process.exit(1); }
+console.log('[signalsweep self-test] theme ids match firmware ThemeId: ok');
+
 // The cable chirp is a two-sided handshake with no reply to fail loudly on: if
 // either side renames a command the board just goes quiet. Both strings must
 // appear on both sides.

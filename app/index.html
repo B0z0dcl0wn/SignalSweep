@@ -1074,6 +1074,24 @@
         .seg { margin:0; flex:0 1 auto; }
         #sound-modes { grid-template-columns:repeat(2,1fr); }
         #led-modes { grid-template-columns:repeat(4,1fr); }
+        /* Theme chips: a sideways strip, not a grid -- five names don't fit a
+           phone row, and scrolling keeps every tap target 44 px. */
+        #theme-modes { display:flex; gap:6px; overflow-x:auto; margin-top:8px;
+            padding-bottom:2px; scrollbar-width:none; }
+        .theme-chip { flex:0 0 auto; min-height:44px; display:flex; align-items:center; gap:6px;
+            padding:0 12px; border:1px solid var(--ss-line); border-radius:22px;
+            background:var(--ss-panel); color:var(--ss-dim); font:inherit;
+            font-size:0.75rem; font-weight:600; cursor:pointer; }
+        .theme-chip[aria-pressed="true"] { background:#141c2c; color:#e8eef7;
+            border-color:var(--accent-emerald); }
+        .theme-chip.pending { opacity:0.45; }
+        .theme-chip:focus-visible { outline:2px solid var(--accent-cyan); outline-offset:2px; }
+        .sw { width:12px; height:12px; border-radius:50%; flex:none; }
+        .sw-classic  { background:conic-gradient(#ff2020 0 25%, #ff7a1a 0 50%, #1a8cff 0 75%, #ff1ac8 0); }
+        .sw-night    { background:#d10000; }
+        .sw-phosphor { background:#1aff5a; }
+        .sw-ice      { background:#8fd4ff; }
+        .sw-party    { background:conic-gradient(red, yellow, lime, cyan, blue, magenta, red); }
         .seg .radio-tab { min-height:44px; min-width:52px; }
         .seg .radio-tab[aria-pressed="true"] { background:#141c2c; color:#e8eef7;
             box-shadow:inset 0 -2px 0 var(--accent-emerald); }
@@ -1451,11 +1469,22 @@
                 </div>
             </div>
             <p class="set-note alert-note">One lights a single LED in the alert&rsquo;s colour. Off stays dark, even during an alert.</p>
+            <div class="out-row" style="margin-top:12px;">
+                <span class="snd-label"><strong>&#127912; Theme</strong></span>
+            </div>
+            <div id="theme-modes" role="group" aria-label="Theme">
+                <button class="theme-chip" data-theme="0" aria-pressed="false"><i class="sw sw-classic"></i>Classic</button>
+                <button class="theme-chip" data-theme="1" aria-pressed="false"><i class="sw sw-night"></i>Night Ops</button>
+                <button class="theme-chip" data-theme="2" aria-pressed="false"><i class="sw sw-phosphor"></i>Phosphor</button>
+                <button class="theme-chip" data-theme="3" aria-pressed="false"><i class="sw sw-ice"></i>Ice</button>
+                <button class="theme-chip" data-theme="4" aria-pressed="false"><i class="sw sw-party"></i>Party</button>
+            </div>
+            <p class="set-note alert-note" id="theme-note" hidden></p>
 
             <div class="alert-sec">What</div>
             <div class="snd-list">
                 <button class="snd-row" id="beep-alpr" onclick="toggleBeep('alpr')">
-                    <span class="snd-label"><strong>&#128247; ALPR / camera</strong><em>Two long beeps &middot; red sweep</em></span>
+                    <span class="snd-label"><strong>&#128247; ALPR / camera</strong><em>Two long beeps &middot; sweep</em></span>
                     <span class="snd-state">&mdash;</span>
                 </button>
                 <button class="snd-row" id="beep-bodycam" onclick="toggleBeep('bodycam')">
@@ -1471,7 +1500,7 @@
                     <span class="snd-state">&mdash;</span>
                 </button>
                 <button class="snd-row" id="beep-generic" onclick="toggleBeep('generic')">
-                    <span class="snd-label"><strong>Other matches</strong><em>Plain warning &middot; amber glow</em></span>
+                    <span class="snd-label"><strong>Other matches</strong><em>Plain warning &middot; glow</em></span>
                     <span class="snd-state">&mdash;</span>
                 </button>
             </div>
