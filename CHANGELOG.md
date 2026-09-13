@@ -4,6 +4,24 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Changed — while hunting, only the hunt makes noise
+
+Lock onto one device and it is now the only thing the board beeps or lights for:
+the Geiger clicker owns the buzzer and the hunt meter owns the bar. Before, every
+other match that walked into range still played its category jingle and
+animation, and both outrank the hunt — the jingle stomped the clicker and the
+animation covered the meter, on exactly the walk where you are listening to one
+signal. `noteAlert()` now declines every category alert while a hunt target is
+set, including the hunted device's own (the clicker already is its sound), and
+`setHuntTarget()` drops an alert queued in the second before the lock.
+
+Detection and listing carry on untouched, and a declined alert is not recorded,
+so a target's once-per-appearance flag stays clear: stop hunting and anything
+still nearby sounds once, which tells you what was around while you were busy.
+Bench-verified with two boards and a name rule matching the target at -8 dBm:
+39 pushes while hunting with `alerts` = 0, then 0 → 1 on the first push after
+the hunt was cleared.
+
 ### Added — the Site Survey page (find signatures, build a database)
 
 Capture, log-a-device and evidence export were scattered across Settings and the

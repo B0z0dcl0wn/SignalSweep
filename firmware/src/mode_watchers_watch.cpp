@@ -376,6 +376,12 @@ static uint8_t beepMask = BEEP_MASK_ALL;
 // Returns true if the alert was recorded (i.e. it will actually sound).
 static bool noteAlert(int weight, const char* category) {
     if (weight < CONF_ALERT_MIN) return false;
+    // Hunting: the clicker and the hunt meter are the only sound and light. A
+    // category jingle would stomp the clicker and its animation would cover the
+    // meter, on the one walk where you are listening to a single device. Not
+    // recorded, so the target's alerted flag stays clear and it sounds once the
+    // hunt ends if it is still around.
+    if (huntMac.length() > 0) return false;
     AlertCategory cat = alertCategoryFromName(category);
     if (!(beepMask & (1 << cat))) return false;
     if (weight > pendingAlertConf) {
@@ -1216,6 +1222,7 @@ void setHuntTarget(const String& mac) {
     huntAudible = false;
     huntChannel = 0;
     huntWifiRssiMs = 0;
+    pendingAlertConf = 0;   // an alert queued just before the lock must not sound under it
     setGeigerTargetLock(false);
     ESP_LOGI(TAG, "%s", huntMac.length() > 0
              ? ("Hunting " + huntMac).c_str() : "Hunt cleared");
