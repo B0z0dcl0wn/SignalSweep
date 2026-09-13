@@ -29,10 +29,20 @@ Also theirs, and worth your time:
 **OrdoOuroborous / [@NitekryDPaul](https://github.com/nitekry)** — the Flock
 Safety OUI research.
 
-The 36 MAC prefixes in `firmware/src/mode_watchers_watch.cpp` are his
+The Flock MAC prefixes in `firmware/src/mode_watchers_watch.cpp` are his
 promiscuous-mode set. Compiling that list meant finding the cameras, capturing
 them, and confirming the prefixes — none of which is work you can shortcut.
 Everything this device knows about Flock hardware, it knows because of him.
+
+**DeFlockJoplin** ([DeflockJoplin/flock-you](https://github.com/DeflockJoplin/flock-you),
+[deflockjoplin.today](https://deflockjoplin.today)) — the **wildcard-probe-request
+signature** and the **Lite-On IE fingerprint**. After Flock's management AP and
+BLE both went dark (Dec 2025 / spring 2026), a current camera's only tell is that
+it spams zero-length-SSID probe requests. Pairing that behaviour with the OUI is
+what lets this detector beep at a camera again; the exact Lite-On vendor IE
+payload (`50:6f:9a:16:03:01:03`) tightens it further. Drive-tested in Joplin at
+11 of 12 cameras caught with 2 false positives. Reached us via
+colonelpanichacks/flock-you.
 
 **Will Greenberg ([@wgreenberg](https://github.com/wgreenberg))** — his
 [flock-you](https://github.com/wgreenberg/flock-you) fork advanced the Flock

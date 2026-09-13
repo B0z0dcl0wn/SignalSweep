@@ -47,7 +47,11 @@ static const char *SIG_FILE_PATH = "/data/signatures.json";
 //       ordinary product words matched as substrings, and a four-hex-digit UUID
 //       is substring-matched against every UUID a device advertises. Same
 //       failure shape as the mfg 0x01 rule that labelled Govee bulbs "Flock".
-#define SIG_SCHEMA_VERSION 5
+//   v6: added 14:b5:cd (upstream's 2026-07-16 addition) and removed f8:a2:d6,
+//       which @NitekryDPaul field-demoted in that same revision — it hits a Sony
+//       Media Player, not a Flock device. Same class of false positive as the
+//       Espressif prefixes purged at v2 and the mfg 0x01 rule purged at v3.
+#define SIG_SCHEMA_VERSION 6
 
 static SemaphoreHandle_t watchersMutex = NULL;
 static bool watchersRunning = false;
@@ -167,18 +171,28 @@ static void ensureSignaturesFileExists() {
             // here, because they cannot mean "Flock" and only generate false
             // positives:
             //   a4:cf:12, 3c:71:bf  Espressif — this board's own vendor block,
-            //                       so every ESP32 in range matched.
+            //                       so every ESP32 in range matched. Upstream
+            //                       itself flags a4:cf:12 as low confidence.
             //   cc:cc:cc            not an assigned OUI at all.
             //   82:6b:f2            locally-administered bit set (0x02) — that
             //                       is a randomized-MAC prefix, i.e. phones.
-            // loadWatchersSignatures() also rejects locally-administered
-            // prefixes at load time so a pushed rule set can't reintroduce them.
+            //                       Upstream keeps it deliberately (it is
+            //                       DeFlockJoplin's 12th camera) and warns
+            //                       against filtering it; we cannot, because
+            //                       loadWatchersSignatures() rejects
+            //                       locally-administered prefixes at load time
+            //                       so a pushed rule set can't reintroduce
+            //                       them. Accepted cost: we miss that camera.
+            //
+            // f8:a2:d6 was dropped at v6 — upstream field-demoted it in the
+            // 2026-07-16 revision after it was observed hitting a Sony Media
+            // Player. 14:b5:cd was added in that same revision.
             const char* flockOuis[] = {
                 "b4:1e:52", "70:c9:4e", "3c:91:80", "d8:f3:bc", "80:30:49", "b8:35:32",
                 "14:5a:fc", "74:4c:a1", "08:3a:88", "9c:2f:9d", "c0:35:32", "94:08:53",
-                "e4:aa:ea", "f4:6a:dd", "f8:a2:d6", "24:b2:b9", "00:f4:8d", "d0:39:57",
+                "e4:aa:ea", "f4:6a:dd", "24:b2:b9", "00:f4:8d", "d0:39:57",
                 "e8:d0:fc", "e0:4f:43", "b8:1e:a4", "70:08:94", "58:8e:81", "ec:1b:bd",
-                "58:00:e3", "90:35:ea", "5c:93:a2", "64:6e:69", "48:27:ea",
+                "58:00:e3", "90:35:ea", "5c:93:a2", "64:6e:69", "48:27:ea", "14:b5:cd",
                 "04:0d:84", "1c:34:f1", "38:5b:44", "94:34:69",
                 "b4:e3:f9", "f0:82:c0", "e0:0a:f6"
             };
@@ -258,6 +272,26 @@ static void ensureSignaturesFileExists() {
 // when this was 80. Keep it weak; real confidence needs the SSID or corroboration.
 #define W_WIFI_IE  30
 #define W_WIFI_SSID 80
+// A wildcard probe request (SSID IE tag 0, length 0) is worthless on its own --
+// every phone in range sends them constantly, which is exactly why this is
+// gated on the OUI having matched a *Flock* rule. The two together are two
+// independent facts at once, and it is the only signal a current camera still
+// emits: the management AP was deactivated ~Dec 2025 (taking W_WIFI_SSID with
+// it) and BLE stopped working in spring 2026 (taking the name and mfg rules).
+// Before this, a camera scored W_WIFI_OUI alone = 30 -- under CONF_LIST_MIN, so
+// not even listed, let alone sounded. At 70 it clears CONF_ALERT_MIN on its
+// own, which is the whole point: anything lower and the detector stays silent
+// in front of the hardware it is named after.
+// Research: DeFlockJoplin, via colonelpanichacks/flock-you. Drive-tested in
+// Joplin at 11 of 12 cameras caught with 2 false positives.
+#define W_WIFI_PROBE   70
+// The same, plus the Flock stack's exact Lite-On vendor IE payload
+// (221, len 7, 50:6f:9a:16:03:01:03). This is the discriminating core of
+// upstream's FLOCK_PROBE_IE_SIG_PRIMARY; their full ~200-line fingerprint
+// builder (TLV resync, phantom-overflow recovery, a signature string compared
+// against one hardcoded allowlist entry) buys very little over these 7 bytes
+// and is tied to a single camera firmware revision.
+#define W_WIFI_IE_SIG  80
 #define W_CORROBORATION 15   // same MAC seen on both BLE and WiFi
 // Protocol matches are unambiguous: an ASTM Remote-ID beacon IS a drone, an
 // Apple Find My "offline finding" advert IS a tracker. Presence alone is the
@@ -866,6 +900,12 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
         String matchedCategory = "";
         bool droneDecoded = false;
         String foundSsid = "";
+        // Gate for the wildcard-probe signature below. True only when the OUI
+        // matched a rule whose category is Flock: a Cradlepoint or Sierra router
+        // sending a wildcard probe is not a camera, and scoring it as one would
+        // be the bandOf() mistake again — a weak hint naming the wrong vendor is
+        // worse than no hint at all.
+        bool flockOui = false;
         // Beacons and probe responses come from an AP, probe requests from a client.
         uint8_t role = (fsubtype == 4) ? 1 : 2;
 
@@ -901,6 +941,7 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
                     }
                     if (cleanMac.startsWith(cleanOui)) {
                         wifiConfidence += W_WIFI_OUI;
+                        if (sig.category == "Flock Safety") flockOui = true;
                         if (W_WIFI_OUI > bestWeight) {
                             bestWeight = W_WIFI_OUI;
                             matchedRule = sig.name.length() > 0 ? sig.name : "WiFi OUI Match";
@@ -920,12 +961,28 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
             int body_len = length - offset - 4; // -4 for FCS
             const uint8_t *body = payload + offset;
             bool ieHit = false, ssidHit = false;
+            // The wildcard-probe signature, scored after the loop. The FCS is
+            // already stripped by body_len above, which is why this needs none
+            // of upstream's retry-with-(len-4) dance — do not "simplify" that
+            // subtraction away.
+            bool wildcardSsid = false, liteonSig = false;
 
             int b = 0;
             while (b < body_len - 1) {
                 uint8_t id = body[b];
                 uint8_t elen = body[b+1];
                 if (b + 2 + elen > body_len) break;
+
+                // The Flock stack's exact Lite-On vendor IE: tag 221, length 7,
+                // payload 50:6f:9a:16:03:01:03. Independent of the weak
+                // prefix-only check below (which keeps its own !ieHit guard), so
+                // the two never double-count.
+                if (id == 221 && elen == 7 &&
+                    body[b+2] == 0x50 && body[b+3] == 0x6F && body[b+4] == 0x9A &&
+                    body[b+5] == 0x16 && body[b+6] == 0x03 &&
+                    body[b+7] == 0x01 && body[b+8] == 0x03) {
+                    liteonSig = true;
+                }
 
                 if (!ieHit && id == 221 && elen >= 4 && body[b+2] == 0x50 && body[b+3] == 0x6F && body[b+4] == 0x9A) {
                     ieHit = true;
@@ -960,6 +1017,11 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
                     }
                 }
 
+                // A zero-length SSID IE on a probe request is a wildcard probe:
+                // "any AP, answer me". Meaningless alone — every phone does it
+                // — and the whole signal is that it came from a Flock OUI.
+                if (id == 0 && elen == 0 && fsubtype == 4) wildcardSsid = true;
+
                 if (id == 0 && elen > 0 && elen <= 32) {
                     char ssid[33] = {0};
                     memcpy(ssid, body + b + 2, elen);
@@ -983,6 +1045,34 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
                 }
 
                 b += 2 + elen;
+            }
+
+            // The exact Flock Lite-On IE fingerprint (50:6f:9a:16:03:01:03) is a
+            // Flock camera by ITSELF, on ANY MAC — no OUI, no wildcard needed.
+            // FIELD-PROVEN 2026-09-12: present on random-MAC probe requests at
+            // every one of three cameras (0..+5 dBm, i.e. right at the pole) and
+            // ABSENT from a normal home that DID carry other 50:6f:9a gear (a
+            // Sony Bravia). Modern cameras randomize their MAC, so the OUI never
+            // matches and the old wildcard+OUI path stayed silent — this IE is
+            // the only reliable tell. It is the full 7-byte payload, never the
+            // bare 50:6f:9a prefix (which rides consumer WiFi), so it stands
+            // alone at CONF_ALERT_MIN. See CHANGELOG / [[capture-tool]].
+            if (liteonSig) {
+                wifiConfidence += W_WIFI_IE_SIG;
+                if (W_WIFI_IE_SIG > bestWeight) {
+                    bestWeight = W_WIFI_IE_SIG;
+                    matchedRule = "Flock IE fingerprint";
+                    matchedCategory = "Flock Safety";
+                }
+            } else if (flockOui && wildcardSsid) {
+                // Older cameras that still use a listed Flock OUI: a wildcard
+                // probe from that OUI, without the IE fingerprint.
+                wifiConfidence += W_WIFI_PROBE;
+                if (W_WIFI_PROBE > bestWeight) {
+                    bestWeight = W_WIFI_PROBE;
+                    matchedRule = "Flock wildcard probe";
+                    matchedCategory = "Flock Safety";
+                }
             }
         }
 

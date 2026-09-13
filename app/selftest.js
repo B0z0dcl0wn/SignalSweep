@@ -129,6 +129,54 @@ for (const [f, min] of [['oui.txt', 20000], ['bt-company.txt', 1000]]) {
 }
 console.log('[signalsweep self-test] vendor lists ship: ok');
 
+// The Flock wildcard-probe signature is the only way a current camera reaches
+// the buzzer (management AP dead Dec 2025, BLE dead spring 2026). No host C++
+// compiler ships here and there is no native test env, so we can't unit-test the
+// C directly -- but a JS reimplementation would only prove the copy, not the
+// firmware. So assert the invariants against the real source, the same way the
+// BEEP_BITS and CMD:CFG checks above do. The emitter (over-the-air, two boards)
+// is the runtime half of the proof.
+const fw = readFileSync(new URL('../firmware/src/mode_watchers_watch.cpp', import.meta.url), 'utf8');
+const flockFail = [];
+
+// Schema must be bumped, or deployed boards keep the stale rule set for ever.
+const ver = Number((fw.match(/#define SIG_SCHEMA_VERSION\s+(\d+)/) || [])[1]);
+if (!(ver >= 6)) flockFail.push('SIG_SCHEMA_VERSION is ' + ver + ', expected >= 6');
+
+// Default OUI list invariants: the 2026-07-16 sync, and no randomized-MAC prefix.
+const flockBlock = (fw.match(/const char\* flockOuis\[\] = \{([\s\S]*?)\};/) || [])[1] || '';
+const ouis = [...flockBlock.matchAll(/"([0-9a-fA-F]{2}:[0-9a-fA-F]{2}:[0-9a-fA-F]{2})"/g)].map(m => m[1].toLowerCase());
+if (!ouis.includes('14:b5:cd')) flockFail.push('default OUIs missing 14:b5:cd');
+if (ouis.includes('f8:a2:d6')) flockFail.push('default OUIs still ship f8:a2:d6 (Sony false positive)');
+for (const o of ouis) {
+    // loadWatchersSignatures() rejects these at load; shipping one as a default
+    // means it silently never matches. Bit 1 (0x02) of the first octet.
+    if (parseInt(o.slice(0, 2), 16) & 0x02) flockFail.push('default OUI ' + o + ' is locally-administered');
+}
+
+// The wildcard-probe weights must each be able to trip the alarm alone, and the
+// path must be gated on the Flock category (not just any OUI) and on a wildcard
+// SSID (not just any probe) -- both gates are what stop it firing on every phone.
+const alertMin = Number((fw.match(/#define CONF_ALERT_MIN\s+(\d+)/) || [])[1]);
+const wProbe = Number((fw.match(/#define W_WIFI_PROBE\s+(\d+)/) || [])[1]);
+const wIeSig = Number((fw.match(/#define W_WIFI_IE_SIG\s+(\d+)/) || [])[1]);
+if (!(wProbe >= alertMin)) flockFail.push('W_WIFI_PROBE ' + wProbe + ' < CONF_ALERT_MIN ' + alertMin);
+if (!(wIeSig >= alertMin)) flockFail.push('W_WIFI_IE_SIG ' + wIeSig + ' < CONF_ALERT_MIN ' + alertMin);
+if (!/if\s*\(flockOui && wildcardSsid\)/.test(fw)) flockFail.push('wildcard-probe scoring is not gated on flockOui && wildcardSsid');
+// The MAC-agnostic path: the exact Lite-On IE fingerprint must alert on its own
+// (modern cameras randomize their MAC, so an OUI gate never fires). Field-proven.
+if (!/if\s*\(liteonSig\)\s*\{/.test(fw)) flockFail.push('Flock IE fingerprint does not alert standalone (liteonSig gate)');
+if (!/if\s*\(sig\.category == "Flock Safety"\) flockOui = true;/.test(fw)) flockFail.push('flockOui is not set from the Flock Safety category');
+// The Lite-On IE fingerprint bytes, in order: 50 6f 9a 16 03 01 03 at elen 7.
+if (!/elen == 7[\s\S]{0,200}0x50[\s\S]{0,60}0x6F[\s\S]{0,60}0x9A[\s\S]{0,60}0x16[\s\S]{0,40}0x03[\s\S]{0,40}0x01[\s\S]{0,40}0x03/.test(fw))
+    flockFail.push('Lite-On IE-sig bytes (50 6f 9a 16 03 01 03 / elen 7) not found in order');
+
+if (flockFail.length) {
+    console.log('FAIL: Flock wildcard-probe signature:', flockFail);
+    process.exit(1);
+}
+console.log('[signalsweep self-test] Flock wildcard-probe signature intact: ok');
+
 const results = await global.__signalsweepSelfTest();
 const failed = Object.entries(results).filter(([, v]) => !v).map(([k]) => k);
 console.log('[signalsweep self-test]', results);
