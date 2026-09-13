@@ -65,7 +65,17 @@ static volatile bool ledcReady = false;
 // ledcReady is set AFTER tone() returns: setting it first left a window in
 // which setBuzzerEnabled() on the caller's thread could noTone() a channel
 // tone() had not finished attaching -- one stray error per mute transition.
-static inline void buzzerTone(uint16_t freq) { tone(BUZZER_PIN, freq); ledcReady = true; }
+// Every sound passes through here, so the theme's pitch is applied once and a
+// rhythm can never change. Classic skips the scaling entirely: byte-for-byte
+// today's tones. The clamp is the piezo's usable range (highest note today is
+// 2500 Hz, so Phosphor's x2 tops out at 5000).
+static inline void buzzerTone(uint16_t freq) {
+    uint8_t th = themeId;
+    if (th != THEME_CLASSIC)
+        freq = (uint16_t)constrain((int)(freq * THEMES[th].pitch), 200, 6000);
+    tone(BUZZER_PIN, freq);
+    ledcReady = true;
+}
 static inline void buzzerOff() { if (ledcReady) noTone(BUZZER_PIN); }
 
 struct Note {
@@ -259,6 +269,17 @@ static void loadJingleNotes(OperatingMode mode) {
             jingleLength = 3;
             break;
         case MODE_WATCHERS_WATCH:
+            if (themeId == THEME_PARTY) {  // victory fanfare
+                activeJingle[0] = {523, 90};
+                activeJingle[1] = {659, 90};
+                activeJingle[2] = {784, 90};
+                activeJingle[3] = {1047, 180};
+                activeJingle[4] = {0, 60};
+                activeJingle[5] = {784, 90};
+                activeJingle[6] = {1047, 300};
+                jingleLength = 7;
+                break;
+            }
             activeJingle[0] = {600, 70};
             activeJingle[1] = {900, 70};
             activeJingle[2] = {1200, 120};
@@ -558,9 +579,17 @@ void playConnectionChirp() {
     if (hwMutex != NULL && xSemaphoreTake(hwMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
         jingleIndex = 0;
         noteStartTime = 0;
-        activeJingle[0] = {1500, 100};
-        activeJingle[1] = {2500, 150};
-        jingleLength = 2;
+        if (themeId == THEME_PARTY) {  // arpeggio up
+            activeJingle[0] = {1047, 60};
+            activeJingle[1] = {1319, 60};
+            activeJingle[2] = {1568, 60};
+            activeJingle[3] = {2093, 120};
+            jingleLength = 4;
+        } else {
+            activeJingle[0] = {1500, 100};
+            activeJingle[1] = {2500, 150};
+            jingleLength = 2;
+        }
         jinglePlaying = true;
         xSemaphoreGive(hwMutex);
     }
@@ -570,9 +599,17 @@ void playDisconnectionChirp() {
     if (hwMutex != NULL && xSemaphoreTake(hwMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
         jingleIndex = 0;
         noteStartTime = 0;
-        activeJingle[0] = {2500, 150};
-        activeJingle[1] = {1500, 100};
-        jingleLength = 2;
+        if (themeId == THEME_PARTY) {  // arpeggio down
+            activeJingle[0] = {2093, 60};
+            activeJingle[1] = {1568, 60};
+            activeJingle[2] = {1319, 60};
+            activeJingle[3] = {1047, 120};
+            jingleLength = 4;
+        } else {
+            activeJingle[0] = {2500, 150};
+            activeJingle[1] = {1500, 100};
+            jingleLength = 2;
+        }
         jinglePlaying = true;
         xSemaphoreGive(hwMutex);
     }
@@ -654,7 +691,21 @@ uint8_t getLedMode() {
 }
 
 void setTheme(uint8_t theme) {
-    themeId = theme > THEME_PARTY ? THEME_PARTY : theme;   // render + audio pick it up next tick
+    if (theme > THEME_PARTY) theme = THEME_PARTY;
+    bool changed = theme != themeId;
+    themeId = theme;   // render + audio pick it up next tick
+    // Preview: the boot sweep and boot jingle, now in the new theme, so the
+    // pick visibly does something. Sound Off and LED Off still apply (both
+    // are checked downstream). Never over a hunt: the meter and clicker own
+    // the bar and buzzer while hunting.
+    if (changed && hwMutex != NULL && xSemaphoreTake(hwMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        if (!geigerLocked) {
+            animCat = ANIM_BOOT;
+            animStart = millis();
+            loadJingleNotes(MODE_WATCHERS_WATCH);
+        }
+        xSemaphoreGive(hwMutex);
+    }
     // Outside hwMutex, for the same reason as setLedMode(): NVS is slow.
     Preferences prefs;
     if (prefs.begin(BUZZER_NVS_NS, false)) {

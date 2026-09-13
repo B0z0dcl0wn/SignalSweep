@@ -138,6 +138,13 @@ for (const f of ['drawAnimation', 'drawHuntMeter']) {
 const hwTask = hwSrc.slice(hwSrc.indexOf('static void HardwareManagerTask'));
 const iApply = hwTask.indexOf('applyTheme(now)'), iLedOff = hwTask.indexOf('if (ledMode == LED_OFF)');
 if (iApply < 0 || iApply > iLedOff) themeFail.push('applyTheme must run on the finished frame, before the LED mode');
+// Pitch lives in buzzerTone(), the single door every sound goes through, so
+// jingles, the hunt clicker and the siren all follow the theme and no rhythm
+// can change. And a new theme must preview itself on the board.
+if (!/static inline void buzzerTone\([^)]*\) \{[\s\S]{0,400}?THEMES\[/.test(hwSrc))
+    themeFail.push('buzzerTone does not apply the theme pitch');
+if (!/void setTheme\([\s\S]{0,1200}?ANIM_BOOT/.test(hwSrc))
+    themeFail.push('setTheme does not preview the theme');
 if (themeFail.length) { console.log('FAIL: themes:', themeFail); process.exit(1); }
 console.log('[signalsweep self-test] theme ids match firmware ThemeId: ok');
 
