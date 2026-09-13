@@ -665,6 +665,8 @@
             if (wr) { setWifiRole(wr.getAttribute('data-role')); return; }
             const lm = ev.target.closest('#led-modes .radio-tab');
             if (lm) { setLed(Number(lm.getAttribute('data-led'))); return; }
+            const tc = ev.target.closest('#theme-modes .theme-chip');
+            if (tc) { setTheme(Number(tc.getAttribute('data-theme'))); return; }
             const sm = ev.target.closest('#sound-modes .radio-tab');
             if (sm) { setSound(sm.getAttribute('data-sound') === '1'); return; }
             const act = ev.target.closest('.scope-act');
@@ -1937,6 +1939,7 @@
             if (typeof cfg.beep_mask === 'number') setBeepUi(cfg.beep_mask);
             setBuzzerUi(cfg.buzzer);
             setLedUi(cfg.led);
+            setThemeUi(cfg.theme);
             devName = (typeof cfg.ble_name === 'string' && cfg.ble_name) || 'SignalSweep';
             if (typeof cfg.uptime === 'number') bootAt = Date.now() - cfg.uptime * 1000;
             renderStatusStrip();
@@ -2166,6 +2169,7 @@
             if (typeof data.beep_mask === 'number') setBeepUi(data.beep_mask);
             if (typeof data.buzzer === 'boolean') setBuzzerUi(data.buzzer);
             if (typeof data.led === 'number') setLedUi(data.led);
+            if (typeof data.theme === 'number') setThemeUi(data.theme);
             const devAll = !!data.scan_all;
             if (devAll !== foxhuntMode && Date.now() > filterPendingUntil) {
                 foxhuntMode = devAll;
@@ -2242,6 +2246,7 @@
             });
             paintAlertRows();
             setSoundsSummary();
+            paintThemeNote();
         }
         function setLed(n) {
             if (ledMode === null) { showToast('Waiting for the device', '…'); return; }
@@ -2249,6 +2254,44 @@
             const el = document.querySelector('#led-modes .radio-tab[data-led="' + n + '"]');
             if (el) el.classList.add('pending');
             sendCommand({ led: n });
+        }
+
+        // Theme: firmware ThemeId, same index order (selftest pins it). One
+        // pick sets the bar's colour and the buzzer's pitch. Same contract as
+        // the LED mode -- painted only from device frames, a tap just asks.
+        const THEMES = ['classic', 'night', 'terminal', 'glacier', 'party'];
+        let themeId = null;
+        // The two things a theme costs you, said plainly under the picker.
+        function themeNote(theme, led) {
+            // One LED is Classic-only regardless of theme -- check it first,
+            // or Party's note would show even though One overrides it.
+            if (typeof theme === 'number' && theme !== 0 && led === 1)
+                return 'One LED keeps Classic colours, so you can still tell alerts apart.';
+            if (theme === 4 && led !== 0) return 'Party lights the whole bar all the time. Anyone nearby can see it.';
+            return '';
+        }
+        function paintThemeNote() {
+            const el = document.getElementById('theme-note');
+            if (!el) return;
+            const t = themeNote(themeId, ledMode);
+            el.textContent = t;
+            el.hidden = !t;
+        }
+        function setThemeUi(n) {
+            themeId = (typeof n === 'number') ? n : null;
+            document.querySelectorAll('#theme-modes .theme-chip').forEach(function (el) {
+                const on = themeId !== null && Number(el.getAttribute('data-theme')) === themeId;
+                el.setAttribute('aria-pressed', on ? 'true' : 'false');
+                el.classList.remove('pending');
+            });
+            paintThemeNote();
+        }
+        function setTheme(n) {
+            if (themeId === null) { showToast('Waiting for the device', '…'); return; }
+            if (n === themeId) return;
+            const el = document.querySelector('#theme-modes .theme-chip[data-theme="' + n + '"]');
+            if (el) el.classList.add('pending');
+            sendCommand({ theme: n });
         }
 
         // The rules the device is actually carrying. Until they arrive the box
@@ -2385,6 +2428,7 @@
                 // wrong device.
                 setBuzzerUi(null);
                 setLedUi(null);
+                setThemeUi(null);
                 // Same reason: the category mask is per-board too, and it used
                 // to survive a disconnect as five checkboxes still showing the
                 // last device's settings.
@@ -3166,6 +3210,16 @@
                     alertChip(false, true, 3) === 'Off' &&
                     alertChip(null, true, 3) === '—' &&
                     alertChip(true, null, null) === '🔊 💡';
+
+                results.themeNote =
+                    themeNote(4, 3).startsWith('Party') &&
+                    themeNote(4, 2).startsWith('Party') &&
+                    themeNote(4, 1).startsWith('One LED') &&
+                    themeNote(4, 0) === '' &&
+                    themeNote(2, 1).startsWith('One LED') &&
+                    themeNote(0, 1) === '' &&
+                    themeNote(2, 3) === '' &&
+                    themeNote(null, 1) === '';
 
                 // Ring is a Bluetooth write: never offer it on a Wi-Fi-only row.
                 const wifiOnly = actionRow(liveMatches['CC:00:03'], categoryOf(''));

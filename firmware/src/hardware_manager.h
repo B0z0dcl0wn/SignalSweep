@@ -74,6 +74,18 @@ void setLedMode(uint8_t mode);
 /** @brief Current LED mode; no mutex, reported by CMD:CFG and the 1 Hz push. */
 uint8_t getLedMode();
 
+// A named look + sound. Recolours the finished frame and scales buzzer pitch;
+// animation shapes and jingle rhythms -- the alert ID -- never change. One LED
+// mode ignores it (a single pixel has no shape, only colour). Persisted. This
+// order is the wire contract with THEMES in app.js (selftest pins it).
+enum ThemeId : uint8_t { THEME_CLASSIC = 0, THEME_NIGHT = 1, THEME_TERMINAL = 2, THEME_GLACIER = 3, THEME_PARTY = 4 };
+
+/** @brief Set the theme (clamped to THEME_PARTY) and persist it. */
+void setTheme(uint8_t theme);
+
+/** @brief Current theme; no mutex, reported by CMD:CFG and the 1 Hz push. */
+uint8_t getTheme();
+
 /**
  * @brief Swap the idle blink to dim blue while the device is in receive-only.
  * The only visible sign that it has stopped advertising.

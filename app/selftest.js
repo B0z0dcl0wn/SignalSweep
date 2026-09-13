@@ -108,6 +108,59 @@ if (cfgKeys.length < 5 || cfgUnread.length) {
 }
 console.log('[signalsweep self-test] app reads every CMD:CFG field: ok');
 
+// Themes are an index shared with the firmware: app.js's THEMES order must be
+// hardware_manager.h's ThemeId order, or picking "Glacier" lights Party. Like the
+// beep mask, nothing at runtime would say so. The theme also has to ride the
+// push (the device is the authority) and its chips must not be inputs.
+const themeFail = [];
+const fwThemes = ((readFileSync(new URL('../firmware/src/hardware_manager.h', import.meta.url), 'utf8')
+    .match(/enum ThemeId[^{]*\{([^}]*)\}/) || [])[1] || '')
+    .match(/THEME_([A-Z]+)/g) || [];
+const appThemes = ((appSrc.match(/const THEMES = \[([^\]]*)\]/) || [])[1] || '').match(/'(\w+)'/g) || [];
+if (fwThemes.length !== 5) themeFail.push('firmware ThemeId has ' + fwThemes.length + ' entries');
+fwThemes.forEach((t, i) => {
+    if (("'" + t.slice(6).toLowerCase() + "'") !== appThemes[i]) themeFail.push(t + ' vs ' + appThemes[i]);
+    if (!htmlSrc.includes('data-theme="' + i + '"')) themeFail.push('no chip for theme ' + i);
+});
+if (!/doc\["theme"\]\s*=\s*getTheme\(\)/.test(readFileSync(new URL('../firmware/src/mode_watchers_watch.cpp', import.meta.url), 'utf8')))
+    themeFail.push('the 1 Hz push does not carry theme');
+if (/<input[^>]*data-theme=/.test(htmlSrc)) themeFail.push('a theme control is an <input>');
+// The theme is applied to the finished frame, like the LED mode, so no draw
+// routine may know about it -- otherwise the next animation someone adds
+// silently ignores themes. And it must run before the LED-mode block, which
+// has to see the recoloured frame.
+const hwSrc = readFileSync(new URL('../firmware/src/hardware_manager.cpp', import.meta.url), 'utf8');
+for (const f of ['drawAnimation', 'drawHuntMeter']) {
+    const body = (hwSrc.match(new RegExp('static void ' + f + '\\([^)]*\\) \\{[\\s\\S]*?\\n\\}')) || [''])[0];
+    if (!body) themeFail.push('cannot find ' + f);
+    if (/themeId|THEMES/.test(body)) themeFail.push(f + ' knows about themes');
+}
+const hwTask = hwSrc.slice(hwSrc.indexOf('static void HardwareManagerTask'));
+const iApply = hwTask.indexOf('applyTheme(now)'), iLedOff = hwTask.indexOf('if (ledMode == LED_OFF)');
+if (iApply < 0 || iApply > iLedOff) themeFail.push('applyTheme must run on the finished frame, before the LED mode');
+// Pitch lives in buzzerTone(), the single door every sound goes through, so
+// jingles, the hunt clicker and the siren all follow the theme and no rhythm
+// can change. And a new theme must preview itself on the board.
+if (!/static inline void buzzerTone\([^)]*\) \{[\s\S]{0,400}?THEMES\[/.test(hwSrc))
+    themeFail.push('buzzerTone does not apply the theme pitch');
+if (!/void setTheme\([\s\S]{0,1200}?ANIM_BOOT/.test(hwSrc))
+    themeFail.push('setTheme does not preview the theme');
+// LED One is Classic-only: applyTheme must bail before touching the frame,
+// and Party's grey idle fill must not run under One either, or the "One
+// keeps Classic colours" rule is only half enforced.
+const applyThemeBody = (hwSrc.match(/static void applyTheme\([^)]*\) \{[\s\S]*?\n\}/) || [''])[0];
+if (!/LED_ONE/.test(applyThemeBody)) themeFail.push('applyTheme does not return early for LED_ONE');
+if (!/static inline void buzzerTone\([^)]*\) \{[\s\S]{0,400}?THEME_CLASSIC/.test(hwSrc))
+    themeFail.push('buzzerTone does not skip Classic');
+if (!/themeId == THEME_PARTY && ledMode != LED_ONE/.test(hwSrc))
+    themeFail.push('Party idle fill is not gated off LED One');
+// Flash frames (factory-reset red, siren strobe) are warnings, not ID
+// animations -- applyTheme must not recolour them.
+if (!/if \(!flashActive\) applyTheme\(now\)/.test(hwSrc))
+    themeFail.push('flash frames are recoloured by applyTheme');
+if (themeFail.length) { console.log('FAIL: themes:', themeFail); process.exit(1); }
+console.log('[signalsweep self-test] theme ids match firmware ThemeId: ok');
+
 // The cable chirp is a two-sided handshake with no reply to fail loudly on: if
 // either side renames a command the board just goes quiet. Both strings must
 // appear on both sides.

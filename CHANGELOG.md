@@ -4,6 +4,57 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Added — Themes: one pick sets the bar's colour and the buzzer's pitch
+
+The Alerts sheet has a Theme strip under Lights: **Classic** (the default, and
+exactly today's look and sound), **Night Ops** (deep red, held at Dim
+brightness, half pitch — easy on dark-adapted eyes), **Terminal** (green
+phosphor, double pitch), **Glacier** (cool blue, 1.5× pitch) and **Party**
+(rainbow everything, a drifting rainbow idle bar, its own fanfare and
+connect/disconnect arpeggios). Party gives up the quiet one-pixel heartbeat on
+purpose, and the app says so under the picker. The board stores the theme
+(`sweep-bz`/`theme`), takes `{"theme":0..4}`, and reports it in `CMD:CFG` and
+unconditionally in the 1 Hz push, like the LED mode; the chips paint only from
+those reports. Picking a new theme plays the boot sweep and chirp in it, so the
+tap visibly does something.
+
+How it stays an instrument and not a toy:
+
+- **Under a theme, the animation's shape is the ID** (sweep, flash pops,
+  rotors, sonar), and the jingle's rhythm is the ID by ear. Only colour and
+  frequency change. The category rows now name shapes, not colours, so they
+  stay true in every theme.
+- **The recolour runs on the finished frame** (`applyTheme()`, after the frame
+  is built and before the LED-mode step). Each pixel keeps its brightest channel
+  and takes the theme's hue, so animation shape and hunt-meter length survive
+  and no draw routine knows themes exist — new animations inherit them for free.
+  It edits the brightness-scaled NeoPixel buffer directly, in GRB order.
+- **Pitch lives in `buzzerTone()`**, the one door every sound goes through, so
+  jingles, the hunt clicker and the siren all follow and no rhythm can change.
+  Classic skips the scaling entirely; notes are clamped to 200–6000 Hz; rests
+  never reach it.
+- **One LED mode ignores the theme.** A single pixel has no shape, only colour,
+  so it keeps Classic colours and the normal green/blue heartbeat. The final
+  review caught Party under One painting a steady white dot instead (the Party
+  idle fill was not gated), and Night Ops dimming it; both are now exempt.
+- **Flashes stay Classic.** The BOOT-hold factory-reset warning is red on
+  purpose and the siren strobe alternates; recolouring them turned "about to
+  wipe" green under Terminal. `applyTheme` is skipped on `flashActive` frames.
+
+Known edges, accepted: the preview is suppressed while a hunt target is being
+heard (`geigerLocked`), not for the whole hunt, because the LED code cannot see
+the hunt target; a preview interrupts an alert already playing, but only on an
+operator tap; the Party fanfare plays as a preview, not at power-on (no theme
+plays a power-on jingle). Night Ops' half pitch puts the hunt clicker at
+250–1250 Hz, below a typical piezo's sweet spot — tune the multiplier if it
+reads too quiet. Receive-only's blue heartbeat is a Classic-only cue.
+
+`selftest.js` pins the `ThemeId` order to the app's `THEMES`, the push field,
+that the chips are buttons, that `drawAnimation`/`drawHuntMeter` never mention
+themes, that `applyTheme` runs before the LED-mode step and skips One and
+flashes, that `buzzerTone` skips Classic, and the picker's notes. Bench: flashed
+to the LED board and the phone, every theme picked and previewed on the bar.
+
 ### Fixed — Bluetooth Remote ID decoded a byte off, and the bench could not see it
 
 A real Bluetooth 4 Remote ID advert carries UUID `0xFFFA`, the app code `0x0D`,

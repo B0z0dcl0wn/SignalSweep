@@ -39,7 +39,21 @@ static volatile bool buzzerEnabled = true;
 // Same contract as buzzerEnabled: one byte, read by the render loop and written
 // by the command handler without hwMutex, so changing it can never fail on a lock.
 static volatile uint8_t ledMode = LED_FULL;
+// Same contract as ledMode: one byte, no hwMutex.
+static volatile uint8_t themeId = THEME_CLASSIC;
 static bool rxOnlyIndicator = false;
+
+// Indexed by ThemeId. Colour is what a mono theme paints every lit pixel;
+// pitch scales every buzzer frequency (Classic and Party keep today's notes).
+// ponytail: colours and multipliers are first guesses; tune them on the bench bar.
+struct Theme { uint8_t r, g, b; float pitch; };
+static const Theme THEMES[] = {
+    {0,   0,   0,   1.0f},  // Classic  -- colour unused, frame left as drawn
+    {255, 0,   0,   0.5f},  // Night Ops
+    {20,  255, 60,  2.0f},  // Terminal
+    {110, 190, 255, 1.5f},  // Glacier
+    {0,   0,   0,   1.0f},  // Party    -- hue per pixel, see applyTheme()
+};
 
 // Arduino's tone() attaches the LEDC channel lazily on first use, and noTone()
 // on a channel that was never attached logs an error every single call. Nothing
@@ -51,7 +65,17 @@ static volatile bool ledcReady = false;
 // ledcReady is set AFTER tone() returns: setting it first left a window in
 // which setBuzzerEnabled() on the caller's thread could noTone() a channel
 // tone() had not finished attaching -- one stray error per mute transition.
-static inline void buzzerTone(uint16_t freq) { tone(BUZZER_PIN, freq); ledcReady = true; }
+// Every sound passes through here, so the theme's pitch is applied once and a
+// rhythm can never change. Classic skips the scaling entirely: byte-for-byte
+// today's tones. The clamp is the piezo's usable range (highest note today is
+// 2500 Hz, so Terminal's x2 tops out at 5000).
+static inline void buzzerTone(uint16_t freq) {
+    uint8_t th = themeId;
+    if (th != THEME_CLASSIC)
+        freq = (uint16_t)constrain((int)(freq * THEMES[th].pitch), 200, 6000);
+    tone(BUZZER_PIN, freq);
+    ledcReady = true;
+}
 static inline void buzzerOff() { if (ledcReady) noTone(BUZZER_PIN); }
 
 struct Note {
@@ -192,6 +216,30 @@ static void drawHuntMeter(int rssi) {
         strip.setPixelColor(i, dim(c, 0.5f * constrain(fill - i, 0.0f, 1.0f)));
 }
 
+// Recolour the finished frame: each pixel keeps its brightness (the brightest
+// channel) and takes the theme's hue, so an animation's shape and the hunt
+// meter's length -- the parts that carry meaning -- survive any theme. Works
+// on the raw buffer, which is already brightness-scaled, so the result stays
+// in the same space the LED-mode block below expects. NEO_GRB buffer order.
+static void applyTheme(uint32_t now) {
+    uint8_t th = themeId;
+    if (th == THEME_CLASSIC || ledMode == LED_ONE) return;
+    uint8_t *px = strip.getPixels();
+    for (int i = 0; i < NEOPIXEL_COUNT; i++) {
+        uint8_t *p = px + i * 3;
+        uint16_t v = max(p[0], max(p[1], p[2]));
+        if (!v) continue;
+        uint8_t r = THEMES[th].r, g = THEMES[th].g, b = THEMES[th].b;
+        if (th == THEME_PARTY) {
+            uint32_t c = strip.gamma32(strip.ColorHSV((uint16_t)(i * 65536 / NEOPIXEL_COUNT + now * 20)));
+            r = c >> 16; g = c >> 8; b = c;
+        }
+        p[0] = g * v / 255;  // G
+        p[1] = r * v / 255;  // R
+        p[2] = b * v / 255;  // B
+    }
+}
+
 // Calculate Geiger click pitch and repetition interval from RSSI (-95 to -30 dBm)
 static inline void calculateGeigerParams(int rssi, uint16_t &freqOut, uint32_t &intervalOut) {
     int clampedRssi = rssi;
@@ -221,6 +269,17 @@ static void loadJingleNotes(OperatingMode mode) {
             jingleLength = 3;
             break;
         case MODE_WATCHERS_WATCH:
+            if (themeId == THEME_PARTY) {  // victory fanfare
+                activeJingle[0] = {523, 90};
+                activeJingle[1] = {659, 90};
+                activeJingle[2] = {784, 90};
+                activeJingle[3] = {1047, 180};
+                activeJingle[4] = {0, 60};
+                activeJingle[5] = {784, 90};
+                activeJingle[6] = {1047, 300};
+                jingleLength = 7;
+                break;
+            }
             activeJingle[0] = {600, 70};
             activeJingle[1] = {900, 70};
             activeJingle[2] = {1200, 120};
@@ -343,7 +402,10 @@ static void HardwareManagerTask(void *pvParameters) {
             bool drawn = false;     // an animation or the meter owns the frame
             // No-op when unchanged. Its rescale of the stored pixels is lossy,
             // which doesn't matter: the frame is rebuilt from scratch below.
-            strip.setBrightness(ledMode == LED_DIM ? LED_DIM_BRIGHTNESS : LED_FULL_BRIGHTNESS);
+            // Night Ops is capped at Dim: red light for dark-adapted eyes.
+            // One is exempt -- it's Classic-only, so Night Ops must not dim it.
+            strip.setBrightness((ledMode == LED_DIM || (themeId == THEME_NIGHT && ledMode != LED_ONE))
+                                    ? LED_DIM_BRIGHTNESS : LED_FULL_BRIGHTNESS);
             strip.clear();
 
             if (flashActive && now >= flashEndTime) flashActive = false;
@@ -376,6 +438,18 @@ static void HardwareManagerTask(void *pvParameters) {
                         break;
                     }
                     case MODE_WATCHERS_WATCH: {
+                        // Party gives up the quiet heartbeat on purpose: the
+                        // whole bar drifts through a dim rainbow. A flat grey
+                        // here becomes the rainbow in applyTheme(). LED One
+                        // is Classic-only (applyTheme skips it), so under One
+                        // this must fall through to the normal heartbeat
+                        // instead of leaving a solid grey LED 0.
+                        // ponytail: 120 is a guess at "dim but obviously on".
+                        if (themeId == THEME_PARTY && ledMode != LED_ONE) {
+                            strip.fill(strip.Color(120, 120, 120));
+                            drawn = true;
+                            break;
+                        }
                         // Idle heartbeat: one dim pixel glows up and down once
                         // every 4 s. Enough to tell alive from unpowered, not
                         // enough to notice across a room or through a car
@@ -418,6 +492,10 @@ static void HardwareManagerTask(void *pvParameters) {
                 if (onePixel) strip.setPixelColor(0, currentPixelColor);
                 else strip.fill(currentPixelColor);
             }
+            // Flashes are warnings (BOOT-hold factory-reset wipe is red on
+            // purpose, the siren strobe alternates colours), not ID
+            // animations -- never let the theme recolour one.
+            if (!flashActive) applyTheme(now);
             // LED mode, applied to the finished frame so nothing above needs
             // to know about it. Off means off -- boot sweep and the BOOT-hold
             // flash included. One LED keeps the frame's brightest colour on
@@ -466,6 +544,8 @@ void hardwareInit() {
         buzzerEnabled = prefs.getBool("on", true);
         uint8_t led = prefs.getUChar("led", LED_FULL);
         ledMode = led > LED_FULL ? LED_FULL : led;
+        uint8_t th = prefs.getUChar("theme", THEME_CLASSIC);
+        themeId = th > THEME_PARTY ? THEME_CLASSIC : th;
         prefs.end();
     } else {
         buzzerEnabled = true;
@@ -506,9 +586,17 @@ void playConnectionChirp() {
     if (hwMutex != NULL && xSemaphoreTake(hwMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
         jingleIndex = 0;
         noteStartTime = 0;
-        activeJingle[0] = {1500, 100};
-        activeJingle[1] = {2500, 150};
-        jingleLength = 2;
+        if (themeId == THEME_PARTY) {  // arpeggio up
+            activeJingle[0] = {1047, 60};
+            activeJingle[1] = {1319, 60};
+            activeJingle[2] = {1568, 60};
+            activeJingle[3] = {2093, 120};
+            jingleLength = 4;
+        } else {
+            activeJingle[0] = {1500, 100};
+            activeJingle[1] = {2500, 150};
+            jingleLength = 2;
+        }
         jinglePlaying = true;
         xSemaphoreGive(hwMutex);
     }
@@ -518,9 +606,17 @@ void playDisconnectionChirp() {
     if (hwMutex != NULL && xSemaphoreTake(hwMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
         jingleIndex = 0;
         noteStartTime = 0;
-        activeJingle[0] = {2500, 150};
-        activeJingle[1] = {1500, 100};
-        jingleLength = 2;
+        if (themeId == THEME_PARTY) {  // arpeggio down
+            activeJingle[0] = {2093, 60};
+            activeJingle[1] = {1568, 60};
+            activeJingle[2] = {1319, 60};
+            activeJingle[3] = {1047, 120};
+            jingleLength = 4;
+        } else {
+            activeJingle[0] = {2500, 150};
+            activeJingle[1] = {1500, 100};
+            jingleLength = 2;
+        }
         jinglePlaying = true;
         xSemaphoreGive(hwMutex);
     }
@@ -599,6 +695,36 @@ void setLedMode(uint8_t mode) {
 
 uint8_t getLedMode() {
     return ledMode;
+}
+
+void setTheme(uint8_t theme) {
+    if (theme > THEME_PARTY) theme = THEME_PARTY;
+    bool changed = theme != themeId;
+    themeId = theme;   // render + audio pick it up next tick
+    // Preview: the boot sweep and boot jingle, now in the new theme, so the
+    // pick visibly does something. Sound Off and LED Off still apply (both
+    // are checked downstream). Never over a hunt: the meter and clicker own
+    // the bar and buzzer while hunting.
+    if (changed && hwMutex != NULL && xSemaphoreTake(hwMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        if (!geigerLocked) {
+            animCat = ANIM_BOOT;
+            animStart = millis();
+            loadJingleNotes(MODE_WATCHERS_WATCH);
+        }
+        xSemaphoreGive(hwMutex);
+    }
+    // Outside hwMutex, for the same reason as setLedMode(): NVS is slow.
+    Preferences prefs;
+    if (prefs.begin(BUZZER_NVS_NS, false)) {
+        prefs.putUChar("theme", themeId);
+        prefs.end();
+    } else {
+        ESP_LOGW(TAG, "Could not open %s — theme will not survive a reboot", BUZZER_NVS_NS);
+    }
+}
+
+uint8_t getTheme() {
+    return themeId;
 }
 
 void triggerLedFlash(uint8_t r, uint8_t g, uint8_t b, uint32_t durationMs) {
