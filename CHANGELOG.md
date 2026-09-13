@@ -31,6 +31,20 @@ PIN key and the analysis. `logDevice()` stashes the signature + capture name
 before launching the camera, and the restored result goes through the same
 `saveFindFromShot()` after an unlock, so the photo lands instead of vanishing.
 
+**Photos were silently dropped until `b64()` was chunked.** Base64-encoding the
+encrypted photo spread the whole byte array into `String.fromCharCode(...)`,
+which overflows the JS call stack from about 0.5 MB up, and every real camera
+shot is bigger than that. The save threw, and the log stayed empty. `b64()` now
+converts in 32 KB chunks, and `photoRoundTrip` round-trips a 3 MB buffer, so a
+regression fails the self-test instead of a field survey. Export shared the
+same helper and is fixed with it.
+
+**Every survey is in the Survey log.** The list reads the `.sscap` files straight
+off the phone, newest first, so viewing needs no PIN and nothing new is stored.
+Tap a survey to analyze it again and log a photo against it. Once the log is
+unlocked, photos and locations appear under the survey they belong to, and ✕
+deletes a capture from the phone.
+
 **Trap — the capture crashed the app until the USB stream was batched.** A
 capture floods the app with USB `data` events, and the listener decoded + parsed
 each one synchronously on the main thread. Under the flood that saturated the

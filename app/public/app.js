@@ -967,7 +967,8 @@
             const start = document.getElementById('cap-start-btn');
             const usbOk = capIsUsb() && capNativeFs();
             if (warn) warn.style.display = usbOk ? 'none' : 'block';
-            if (start) start.disabled = !usbOk;
+            // Never disable Start: a disabled button swallows the tap, and then
+            // nothing says why. startCapture() explains instead.
             if (capturing) {
                 const m = Math.floor(capStat.remain / 60), s = capStat.remain % 60;
                 document.getElementById('cap-remain').textContent = m + ':' + String(s).padStart(2, '0');
@@ -980,7 +981,7 @@
         }
 
         async function startCapture() {
-            if (!capIsUsb()) { showToast('Capture needs the USB cable', '…'); return; }
+            if (!capIsUsb()) { showToast('Not connected — plug the board in by USB cable', '✕'); return; }
             if (!capNativeFs()) { showToast('File storage unavailable', '✕'); return; }
             // A phone hunting for WiFi keeps sending random-MAC probe requests
             // from right beside the board: the strongest random-MAC device in
@@ -995,14 +996,9 @@
             const radios = phoneNet === 'wifi' ? 'Bluetooth' : 'WiFi and Bluetooth';
             if (!confirm(
                 "Are " + radios + " off on every phone you're carrying?\n\n" +
-                (phoneNet === 'wifi' ? '' :
-                    "A phone with WiFi on but not connected probes for networks on a new " +
-                    "random MAC each scan, right next to the board. That is what fooled us " +
-                    "into 'finding' three Flock cameras, which were this phone. ") +
-                "Phones also advertise over Bluetooth nonstop, and at arm's length they " +
-                "drown out anything on a pole. The board is on the cable, so it doesn't " +
-                "need Bluetooth. Mobile data is fine.\n\n" +
-                "OK: they're off, start capturing\nCancel: I'll turn them off first")) return;
+                "Phones broadcast nonstop and drown out what you're looking for. " +
+                "Mobile data is fine.\n\n" +
+                "OK: start capturing\nCancel: not yet")) return;
             capFileName = 'signalsweep-capture-' + capStamp() + '.sscap';
             capBuf = '';
             capWriteFailed = false;
@@ -1093,6 +1089,7 @@
             document.getElementById('cap-idle').style.display = 'none';
             document.getElementById('cap-running').style.display = 'none';
             document.getElementById('cap-done').style.display = 'block';
+            renderFinds();
             showToast(lastAnalysis && lastAnalysis.flockDetected ? '⚠ Flock signature detected' : 'Capture saved',
                       lastAnalysis && lastAnalysis.flockDetected ? '⚠' : '✓');
         }
@@ -1118,7 +1115,14 @@
         const handledMacs = new Set(); // asked-or-recorded this session (no re-prompt)
         let consentQueue = [];         // pending {match}
 
-        function b64(bytes) { return btoa(String.fromCharCode(...new Uint8Array(bytes))); }
+        // Chunked: spreading a whole photo into fromCharCode overflows the call
+        // stack from ~0.5 MB up, which silently lost every logged photo.
+        function b64(bytes) {
+            const u = new Uint8Array(bytes);
+            let s = '';
+            for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000));
+            return btoa(s);
+        }
         function unb64(s) { return Uint8Array.from(atob(s), c => c.charCodeAt(0)); }
 
         async function deriveKey(pin, saltBytes) {
@@ -1708,7 +1712,7 @@
         async function exportEvidenceBundle() {
             if (!capNativeFs()) { showToast('File storage unavailable', '✕'); return; }
             ensurePinUnlocked(async () => {
-                if (!findsCache.length) { showToast('No devices logged yet', 'ℹ'); return; }
+                if (!findsCache.length) { showToast('Nothing to export yet — tap a survey, then 📷 Log this device', 'ℹ'); return; }
                 const dir = 'signalsweep-evidence-' + capStamp();
                 const D = window.CapDirectory.Documents, U = window.CapEncoding.UTF8;
                 let csv = 'ts,lat,lng,acc_m,category,signature,sample_mac,photo,capture\n';
@@ -1768,22 +1772,60 @@
             pendingPinAction = renderFinds;
             openPinGate(pinStoreExists() ? 'unlock' : 'create');
         }
-        function renderFinds() {
+        // Every capture on the phone is a survey. The list reads the .sscap files
+        // themselves, so viewing needs no PIN and keeps no second history.
+        // ponytail: verdicts are computed on tap, not per row; analyzing every
+        // capture on each render would stall the page once there are a few.
+        async function listSurveys() {
+            if (!capNativeFs()) return [];
+            try {
+                const r = await window.CapFilesystem.readdir({ path: '', directory: window.CapDirectory.Documents });
+                return r.files.map(f => typeof f === 'string' ? { name: f } : f)
+                    .filter(f => /^signalsweep-capture-\d{8}-\d{6}\.sscap$/.test(f.name))
+                    .sort((a, b) => b.name.localeCompare(a.name));
+            } catch (e) { return []; }
+        }
+        function surveyWhen(name) {
+            const m = name.match(/(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})/);
+            return m ? new Date(+m[1], m[2] - 1, +m[3], +m[4], +m[5], +m[6]).toLocaleString() : name;
+        }
+        async function renderFinds() {
             const el = document.getElementById('finds-list');
             const cnt = document.getElementById('finds-count');
-            // Locked reads as 🔒, never 0: a 0 over a locked log looks like data loss.
-            if (cnt) cnt.textContent = (!pinKey && pinStoreExists()) ? '🔒' : findsCache.length;
             if (!el) return;
-            if (!pinKey && pinStoreExists()) {
-                el.innerHTML = '<div class="scope-empty">Finds are locked.<br>' +
-                    '<button class="ctrl-btn" style="margin-top:0.7rem" onclick="unlockFindsView()">Unlock to view</button></div>';
+            const surveys = await listSurveys();
+            const locked = !pinKey && pinStoreExists();
+            if (cnt) cnt.textContent = surveys.length;
+            const byCap = {};
+            if (!locked) findsCache.forEach((f, i) => { (byCap[f.capture] = byCap[f.capture] || []).push(i); });
+            const photoLine = i => {
+                const f = findsCache[i];
+                const loc = f.lat != null ? f.lat.toFixed(5) + ', ' + f.lng.toFixed(5) + ' · ±' + Math.round(f.acc) + 'm' : '⚠ no location yet';
+                return '<div class="scope-sub">📷 ' + loc + ' · <a href="#" onclick="event.stopPropagation();deleteFind(' + i + ');return false">remove</a></div>';
+            };
+            let html = locked
+                ? '<div class="scope-empty">Photos and locations are locked. ' +
+                  '<button class="ctrl-btn" style="margin-top:0.5rem" onclick="unlockFindsView()">Unlock</button></div>'
+                : '';
+            html += surveys.map(s => {
+                const mine = byCap[s.name] || [];
+                return '<div class="scope-row" style="border-left:4px solid var(--accent-cyan)">' +
+                    '<div class="scope-main" data-survey="' + esc(s.name) + '" style="cursor:pointer">' +
+                        '<div class="scope-title">📡 ' + esc(surveyWhen(s.name)) + (mine.length ? ' · 📷 ' + mine.length : '') + '</div>' +
+                        '<div class="scope-sub">' + (s.size ? Math.round(s.size / 1024) + ' KB · ' : '') + 'tap to analyze</div>' +
+                        mine.map(photoLine).join('') +
+                    '</div>' +
+                    '<button class="scope-del" data-del-survey="' + esc(s.name) + '" aria-label="Delete survey">✕</button>' +
+                '</div>';
+            }).join('');
+            // Logged photos whose capture is gone (deleted, or logged without one).
+            const orphans = locked ? [] : findsCache.map((f, i) => i).filter(i => !surveys.some(s => s.name === findsCache[i].capture));
+            if (!surveys.length && !orphans.length) {
+                el.innerHTML = html + '<div class="scope-empty">No surveys yet. Capture an environment above.</div>';
                 return;
             }
-            if (findsCache.length === 0) {
-                el.innerHTML = '<div class="scope-empty">No finds yet. Investigate an environment above, then log the device you find.</div>';
-                return;
-            }
-            el.innerHTML = findsCache.map((f, i) => {
+            el.innerHTML = html + orphans.map(i => findsCache[i]).map((f, k) => {
+                const i = orphans[k];
                 const cat = categoryOf(f.category);
                 const loc = (f.lat != null)
                     ? (f.lat.toFixed(5) + ', ' + f.lng.toFixed(5) + ' · ±' + Math.round(f.acc) + 'm')
@@ -1800,6 +1842,37 @@
                 '</div>';
             }).join('');
         }
+        // Reopen a saved survey: analyze it again and show the finished-capture
+        // panel, so Log this device attaches the photo to THIS capture.
+        async function openSurvey(name) {
+            if (capturing) { showToast('Finish the running capture first', '…'); return; }
+            try {
+                const r = await window.CapFilesystem.readFile({ path: name, directory: window.CapDirectory.Documents, encoding: window.CapEncoding.UTF8 });
+                lastAnalysis = analyzeCaptureText(r.data);
+            } catch (e) { showToast('Could not read that survey', '✕'); return; }
+            capFileName = name;
+            document.getElementById('cap-summary').textContent = surveyWhen(name) + ' · ' +
+                (lastAnalysis.wifi + lastAnalysis.ble) + ' packets (' + lastAnalysis.wifi + ' WiFi, ' + lastAnalysis.ble + ' BLE)';
+            document.getElementById('cap-path').textContent = 'adb pull "/sdcard/Documents/' + name + '"';
+            paintAnalysis();
+            document.getElementById('cap-idle').style.display = 'none';
+            document.getElementById('cap-running').style.display = 'none';
+            document.getElementById('cap-done').style.display = 'block';
+            document.getElementById('cap-done').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+        async function deleteSurvey(name) {
+            if (!confirm('Delete this survey capture from the phone? Logged photos stay in the log.')) return;
+            try { await window.CapFilesystem.deleteFile({ path: name, directory: window.CapDirectory.Documents }); }
+            catch (e) { showToast('Could not delete that survey', '✕'); return; }
+            if (capFileName === name) closeCapture(); else renderFinds();
+        }
+        // Survey file names ride data- attributes with one delegated listener.
+        document.addEventListener('click', (e) => {
+            const open = e.target.closest('[data-survey]');
+            if (open) { openSurvey(open.dataset.survey); return; }
+            const del = e.target.closest('[data-del-survey]');
+            if (del) deleteSurvey(del.dataset.delSurvey);
+        });
         function deleteFind(i) {
             const f = findsCache[i];
             if (f && f.photo && window.CapFilesystem) {
@@ -3121,8 +3194,16 @@
                 const photoBytes = new Uint8Array([0, 1, 2, 250, 251, 252, 255, 128, 64]);
                 const encP = await encryptBytes(photoBytes);
                 const decP = await decryptBytes(encP);
+                // A real camera photo is megabytes; the tiny case above never
+                // tripped the old spread-based b64() that overflowed at ~0.5 MB.
+                const bigPhoto = new Uint8Array(3 * 1048576).map((_, i) => (i * 131) & 0xff);
+                let bigOk = false;
+                try {
+                    const back = await decryptBytes(unb64(b64(await encryptBytes(bigPhoto))));
+                    bigOk = back.length === bigPhoto.length && back.every((b, i) => b === bigPhoto[i]);
+                } catch (e) {}
                 results.photoRoundTrip = decP.length === photoBytes.length &&
-                                         decP.every((b, i) => b === photoBytes[i]);
+                                         decP.every((b, i) => b === photoBytes[i]) && bigOk;
                 // Wrong PIN reveals nothing
                 pinKey = null; pinsCache = [];
                 let wrongFailed = false;
