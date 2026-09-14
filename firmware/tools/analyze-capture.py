@@ -122,6 +122,39 @@ def wifi_device(payload):
 SUBTYPE = {4: 'probe-req', 5: 'probe-resp', 8: 'beacon', 0: 'assoc-req',
            11: 'auth', 12: 'deauth', 13: 'action'}
 
+# Drone Remote ID (ASTM F3411) markers, the same three the firmware decodes.
+ODID_WIFI_OUIS = (bytes.fromhex('903ae6'), bytes.fromhex('fa0bbc'))
+NAN_DEST = bytes.fromhex('516f9a010000')
+
+
+def remote_id_hits(recs):
+    """(radio, ch, mac, how) for every record that looks like drone Remote ID.
+    Presence only -- the firmware does the full decode."""
+    hits = []
+    for r in recs:
+        p = r['payload']
+        if r['radio'] == 0:
+            if len(p) < 24 or (p[0] >> 2) & 3 != 0:
+                continue
+            fsub = (p[0] >> 4) & 0xf
+            if fsub == 13 and p[4:10] == NAN_DEST:
+                hits.append((0, r['ch'], mac_str(p[10:16]), 'wifi-nan'))
+            elif fsub in (5, 8) and any(t == 221 and d[:3] in ODID_WIFI_OUIS
+                                        for t, d in parse_ies(p[36:])):
+                hits.append((0, r['ch'], mac_str(p[10:16]), 'wifi-beacon'))
+        elif len(p) >= 7:
+            adv = p[7:]
+            i = 0
+            while i + 2 <= len(adv):
+                ln = adv[i]
+                if ln == 0 or i + 1 + ln > len(adv):
+                    break
+                if adv[i + 1] == 0x16 and adv[i + 2:i + 4] == b'\xfa\xff':
+                    hits.append((1, 0, mac_str(p[0:6]), 'ble'))
+                    break
+                i += 1 + ln
+    return hits
+
 
 def summarize(recs, oui):
     wifi = [r for r in recs if r['radio'] == 0]
@@ -139,6 +172,23 @@ def summarize(recs, oui):
     chans = Counter(r['ch'] for r in wifi if r['ch'])
     if chans:
         print('  WiFi channels seen: ' + ', '.join('%d(%d)' % (c, n) for c, n in sorted(chans.items())))
+
+    def band(rs):
+        return len(rs), len({bytes(r['payload'][10:16]) for r in rs})
+    print('  2.4 GHz: %d frames / %d MACs    5 GHz: %d frames / %d MACs' % (
+        band([r for r in wifi if r['ch'] <= 14]) + band([r for r in wifi if r['ch'] > 14])))
+
+    rid = remote_id_hits(recs)
+    print('\n' + '=' * 70)
+    print('DRONE REMOTE ID (presence only)')
+    by = defaultdict(Counter)
+    for radio, ch, mac, how in rid:
+        by[(mac, how)][ch] += 1
+    for (mac, how), chs in sorted(by.items()):
+        print('  %-17s %-11s %s' % (mac, how, ', '.join(
+            ('ch%d:%d' % (c, n)) if c else ('n=%d' % n) for c, n in sorted(chs.items()))))
+    if not rid:
+        print('  none')
 
     # --- WiFi devices by transmitter MAC ---
     dev = defaultdict(lambda: dict(rssi=-999, subs=Counter(), ssids=set(),
@@ -281,9 +331,11 @@ def write_pcap(recs, out):
                 continue
             # Minimal radiotap: present = flags? we expose channel + dBm signal.
             # present bitmap: bit3=Channel(4B: freq u16 + flags u16), bit5=dBm signal(1B)
-            freq = 2407 + 5 * r['ch'] if r['ch'] else 2412
+            ch = r['ch'] or 1
+            # channel flags: 2.4GHz+CCK 0x00a0, 5GHz+OFDM 0x0140
+            freq, cflags = (5000 + 5 * ch, 0x0140) if ch > 14 else (2407 + 5 * ch, 0x00a0)
             rt = struct.pack('<BBH I', 0, 0, 0, (1 << 3) | (1 << 5))
-            rt += struct.pack('<HH', freq, 0x00a0)   # channel freq + flags(2.4GHz)
+            rt += struct.pack('<HH', freq, cflags)
             rt += struct.pack('<b', r['rssi'])        # antenna signal dBm
             rt = rt[:2] + struct.pack('<H', len(rt)) + rt[4:]  # patch it_len
             pkt = rt + r['payload']
@@ -313,6 +365,16 @@ def selftest():
     blob = base64.b64decode(line)
     radio, seq, ts, ch, rssi, olen, clen = HDR.unpack(blob[:HDR.size])
     assert (radio, ch, rssi, olen) == (0, 6, -30, len(frame)), (radio, ch, rssi, olen)
+    # Remote ID hints: a 5 GHz beacon with the ODID vendor IE, a NAN action frame,
+    # a BLE 0xFFFA advert -- and the Flock probe above must stay silent.
+    beacon = bytes([0x80, 0, 0, 0]) + b'\xff' * 6 + bytes.fromhex('60601f112233') * 2 + \
+        bytes(2) + bytes(12) + bytes([0, 0]) + bytes([221, 6]) + bytes.fromhex('fa0bbc0d0000')
+    nan = bytes([0xd0, 0, 0, 0]) + NAN_DEST + bytes.fromhex('0a0b0c0d0e0f') + bytes(12)
+    ble_adv = bytes.fromhex('c0ffee000001') + bytes([1]) + bytes([5, 0x16, 0xfa, 0xff, 0x0d, 0x00])
+    hits = remote_id_hits([dict(radio=0, ch=36, payload=beacon), dict(radio=0, ch=6, payload=frame),
+                           dict(radio=0, ch=149, payload=nan), dict(radio=1, ch=0, payload=ble_adv)])
+    assert hits == [(0, 36, '60:60:1f:11:22:33', 'wifi-beacon'), (0, 149, '0a:0b:0c:0d:0e:0f', 'wifi-nan'),
+                    (1, 0, 'c0:ff:ee:00:00:01', 'ble')], hits
     print('selftest: OK')
 
 

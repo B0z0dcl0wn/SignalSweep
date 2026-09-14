@@ -47,6 +47,13 @@
 
 static const char* TAG = "Capture";
 
+// The XIAO ESP32-C5 (env:c5) is single-core: pinning to core 1 asserts at boot.
+#if CONFIG_IDF_TARGET_ESP32C5
+#define CAP_CORE tskNO_AFFINITY
+#else
+#define CAP_CORE 1
+#endif
+
 #define CAP_MAX_BYTES   256
 #define CAP_HDR_BYTES   15
 #define WIFI_SLOTS      8192   // ~2.2 MB PSRAM: absorbs bursts of dense air
@@ -126,6 +133,23 @@ static void captureWifiCb(void* buf, wifi_promiscuous_pkt_type_t type) {
                pkt->payload, pkt->rx_ctrl.sig_len);
 }
 
+#if CONFIG_IDF_TARGET_ESP32C5
+// env:c5 builds against NimBLE-Arduino 2.x, whose scan callback API changed.
+class CaptureScanCallbacks : public NimBLEScanCallbacks {
+    void onResult(const NimBLEAdvertisedDevice* dev) override {
+        if (!capturing) return;
+        uint8_t tmp[7 + 62];
+        const NimBLEAddress& addr = dev->getAddress();
+        const uint8_t* an = addr.getVal();      // 6 bytes, little-endian
+        for (int i = 0; i < 6; i++) tmp[i] = an[5 - i];   // store big-endian MAC
+        tmp[6] = addr.getType();
+        const std::vector<uint8_t>& pd = dev->getPayload();   // reference, no copy
+        int copy = (int)pd.size(); if (copy > (int)sizeof(tmp) - 7) copy = sizeof(tmp) - 7;
+        for (int i = 0; i < copy; i++) tmp[7 + i] = pd[i];
+        pushRecord(&bleRing, 1, 0, (int8_t)dev->getRSSI(), tmp, 7 + copy);
+    }
+};
+#else
 class CaptureScanCallbacks : public NimBLEAdvertisedDeviceCallbacks {
     void onResult(NimBLEAdvertisedDevice* dev) override {
         if (!capturing) return;
@@ -141,6 +165,7 @@ class CaptureScanCallbacks : public NimBLEAdvertisedDeviceCallbacks {
         pushRecord(&bleRing, 1, 0, (int8_t)dev->getRSSI(), tmp, 7 + copy);
     }
 };
+#endif
 static CaptureScanCallbacks captureScanCallbacks;
 
 static void emitSlot(const CapSlot* s) {
@@ -186,7 +211,15 @@ static void emitStat(bool done) {
 }
 
 static void captureHopTask(void*) {
+#if CONFIG_IDF_TARGET_ESP32C5 && !defined(CAP_24_ONLY)
+    // One band at a time: the C5 cannot hear both at once, so 11 + 25 channels
+    // at 250 ms is a ~9 s sweep. Fine for a stationary capture.
+    static const uint8_t ch[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11,
+        36, 40, 44, 48, 52, 56, 60, 64, 100, 104, 108, 112, 116, 120, 124, 128,
+        132, 136, 140, 144, 149, 153, 157, 161, 165};
+#else
     static const uint8_t ch[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
+#endif
     int i = 0;
     while (capturing) {
         esp_wifi_set_channel(ch[i], WIFI_SECOND_CHAN_NONE);
@@ -247,13 +280,21 @@ void startCapture(uint32_t durationSecs) {
 
     WiFi.mode(WIFI_STA);
     WiFi.disconnect();
+#if CONFIG_IDF_TARGET_ESP32C5
+    esp_wifi_set_country_code(CAP_COUNTRY, true);   // gates legal 5 GHz channels
+    esp_wifi_set_band_mode(WIFI_BAND_MODE_AUTO);
+#endif
     wifi_promiscuous_filter_t f = { .filter_mask = WIFI_PROMIS_FILTER_MASK_ALL };
     esp_wifi_set_promiscuous_filter(&f);
     esp_wifi_set_promiscuous(true);
     esp_wifi_set_promiscuous_rx_cb(&captureWifiCb);
 
     NimBLEScan* sc = NimBLEDevice::getScan();
+#if CONFIG_IDF_TARGET_ESP32C5
+    sc->setScanCallbacks(&captureScanCallbacks, true);
+#else
     sc->setAdvertisedDeviceCallbacks(&captureScanCallbacks, true);
+#endif
     sc->setActiveScan(true);
     // The S3 time-slices ONE radio between BLE and WiFi, so the BLE scan window
     // is stolen straight from WiFi promiscuous. A near-100% window starved WiFi
@@ -261,10 +302,14 @@ void startCapture(uint32_t durationSecs) {
     // only ~40% -- still plenty of adverts, and WiFi actually gets heard.
     sc->setInterval(100);
     sc->setWindow(40);
+#if CONFIG_IDF_TARGET_ESP32C5
+    sc->start(0, false, true);
+#else
     sc->start(0, nullptr, false);
+#endif
 
-    xTaskCreatePinnedToCore(captureHopTask,   "CapHop",   4096, NULL, 1, &hopTaskHandle,   1);
-    xTaskCreatePinnedToCore(captureDrainTask, "CapDrain", 8192, NULL, 2, &drainTaskHandle, 1);
+    xTaskCreatePinnedToCore(captureHopTask,   "CapHop",   4096, NULL, 1, &hopTaskHandle,   CAP_CORE);
+    xTaskCreatePinnedToCore(captureDrainTask, "CapDrain", 8192, NULL, 2, &drainTaskHandle, CAP_CORE);
 
     Serial.printf("{\"cap\":{\"started\":true,\"secs\":%u}}\n", (unsigned)durationSecs);
     ESP_LOGI(TAG, "Capture started for %u s", (unsigned)durationSecs);
