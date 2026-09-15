@@ -7,10 +7,21 @@
 #include <Arduino.h>
 #include "mode_manager.h"
 
+#if CONFIG_IDF_TARGET_ESP32C5
+// XIAO ESP32-C5: the same D1/D2 pads as the S3 harness, different GPIOs
+// (variants/XIAO_ESP32C5/pins_arduino.h: D1 = GPIO0, D2 = GPIO25).
+#define NEOPIXEL_PIN D1
+#define NEOPIXEL_COUNT 8 // External 8-LED strip
+#define BUZZER_PIN   D2
+// Single core: xTaskCreatePinnedToCore(..., 1) asserts at boot.
+#define SWEEP_TASK_CORE tskNO_AFFINITY
+#else
 // Hardware Pin Definitions for XIAO ESP32-S3
 #define NEOPIXEL_PIN 2   // D1 pad (GPIO2)
 #define NEOPIXEL_COUNT 8 // External 8-LED strip
 #define BUZZER_PIN   3   // D2 pad (GPIO3)
+#define SWEEP_TASK_CORE 1
+#endif
 
 /**
  * @brief Initialize NeoPixel and Buzzer hardware and start background FreeRTOS task

@@ -232,8 +232,23 @@ static void startNusAdvertising() {
 #else
     NimBLEAdvertising *pAdvertising = NimBLEDevice::getAdvertising();
     pAdvertising->stop();
+#if CONFIG_IDF_TARGET_ESP32C5
+    // NimBLE 2.x does not put the device name in the advertisement for you, and
+    // setName() only lands in the scan response when the scan response is
+    // enabled FIRST (flags + the 128-bit UUID already use 21 of 31 bytes).
+    // Configured once: addServiceUUID() on every re-advertise would append
+    // duplicates. A name change reboots the board, so once is enough.
+    static bool advConfigured = false;
+    if (!advConfigured) {
+        pAdvertising->addServiceUUID(SERVICE_UUID);
+        pAdvertising->enableScanResponse(true);
+        pAdvertising->setName(getBleDeviceName().c_str());
+        advConfigured = true;
+    }
+#else
     pAdvertising->addServiceUUID(SERVICE_UUID);
     pAdvertising->setScanResponse(true);   // name rides in the scan response
+#endif
     pAdvertising->start();
 #endif
 }
@@ -249,7 +264,11 @@ static uint32_t advWindowEndMs = 0;
 static void setRxOnly(bool quiet, bool announce);
 
 class ServerCallbacks : public NimBLEServerCallbacks {
+#if CONFIG_IDF_TARGET_ESP32C5
+    void onConnect(NimBLEServer* pServer, NimBLEConnInfo& connInfo) override {
+#else
     void onConnect(NimBLEServer* pServer) override {
+#endif
         deviceConnected = true;
         ESP_LOGI(TAG, "BLE Client Connected");
         playConnectionChirp();
@@ -262,12 +281,20 @@ class ServerCallbacks : public NimBLEServerCallbacks {
         }
     }
 
+#if CONFIG_IDF_TARGET_ESP32C5
+    void onMTUChange(uint16_t MTU, NimBLEConnInfo& connInfo) override {
+#else
     void onMTUChange(uint16_t MTU, ble_gap_conn_desc* desc) override {
+#endif
         negotiatedMtu = MTU;
         ESP_LOGI(TAG, "Peer MTU negotiated: %u", (unsigned)MTU);
     }
 
+#if CONFIG_IDF_TARGET_ESP32C5
+    void onDisconnect(NimBLEServer* pServer, NimBLEConnInfo& connInfo, int reason) override {
+#else
     void onDisconnect(NimBLEServer* pServer) override {
+#endif
         deviceConnected = false;
         negotiatedMtu = 23;   // next peer renegotiates from scratch
         playDisconnectionChirp();
@@ -514,7 +541,11 @@ void processIncomingCommand(const String& rawCommand) {
 }
 
 class RxCallbacks : public NimBLECharacteristicCallbacks {
+#if CONFIG_IDF_TARGET_ESP32C5
+    void onWrite(NimBLECharacteristic *pCharacteristic, NimBLEConnInfo& connInfo) override {
+#else
     void onWrite(NimBLECharacteristic *pCharacteristic) override {
+#endif
         std::string rxValue = pCharacteristic->getValue();
         if (rxValue.length() > 0) {
             processIncomingCommand(String(rxValue.c_str()));
@@ -529,7 +560,13 @@ void bleSerialInit() {
     ESP_LOGI(TAG, "Initializing BLE Serial Service (Nordic UART Service)...");
 
     pServer = NimBLEDevice::createServer();
+#if CONFIG_IDF_TARGET_ESP32C5
+    // NimBLE 2.x deletes a callbacks object it is handed unless told not to;
+    // serverCallbacks is static, so deleting it would be a heap corruption.
+    pServer->setCallbacks(&serverCallbacks, false);
+#else
     pServer->setCallbacks(&serverCallbacks);
+#endif
 
     // Ask for a large MTU. The peer decides, and onMTUChange records what we
     // actually got; this only raises the ceiling.

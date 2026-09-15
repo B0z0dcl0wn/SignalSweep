@@ -25,6 +25,15 @@ extern "C" {
 #include "odid_wifi.h"
 }
 
+#if CONFIG_IDF_TARGET_ESP32C5
+// NimBLE-Arduino 2.x hands scan results out as const; 1.x (the S3) does not.
+// A macro rather than a typedef so the S3's preprocessed source stays
+// token-identical (the S3 byte-identical gate).
+#define SWEEP_ADV const NimBLEAdvertisedDevice
+#else
+#define SWEEP_ADV NimBLEAdvertisedDevice
+#endif
+
 static const char *TAG = "WatchersWatch";
 static const char *SIG_FILE_PATH = "/data/signatures.json";
 
@@ -424,7 +433,7 @@ static void noteAlertForTarget(WatcherTargetInfo& t, int bestWeight, const Strin
  * confidence weight (0 = no match). A rule ANDs its non-empty conditions; the
  * returned weight is the sum of the matched conditions' weights (capped 100).
  */
-static int matchDeviceAgainstRule(NimBLEAdvertisedDevice* dev, const WatcherSignature& sig, String& outMatchedRule, String& outCategory) {
+static int matchDeviceAgainstRule(SWEEP_ADV* dev, const WatcherSignature& sig, String& outMatchedRule, String& outCategory) {
     int weight = 0;
 
     // 1. Check OUI (MAC Prefix)
@@ -576,9 +585,15 @@ static void applyDroneData(WatcherTargetInfo& t, const ODID_UAS_Data& d) {
 
 // Decode ASTM Remote ID out of a BLE advert (UUID 0xFFFA in AD type 0x16,
 // Service Data - 16-bit UUID). Returns true and fills `out` on a useful decode.
-static bool bleDecodeRemoteId(NimBLEAdvertisedDevice* dev, ODID_UAS_Data& out) {
+static bool bleDecodeRemoteId(SWEEP_ADV* dev, ODID_UAS_Data& out) {
+#if CONFIG_IDF_TARGET_ESP32C5
+    const std::vector<uint8_t>& raw = dev->getPayload();   // NimBLE 2.x: a reference, no copy
+    const uint8_t* payload = raw.data();
+    size_t len = raw.size();
+#else
     uint8_t* payload = dev->getPayload();
     size_t len = dev->getPayloadLength();
+#endif
     if (!payload || len < 4) return false;
     size_t offset = 0;
     while (offset + 1 < len) {
@@ -612,7 +627,7 @@ static bool bleDecodeRemoteId(NimBLEAdvertisedDevice* dev, ODID_UAS_Data& out) {
 // or other Find My tracker). Apple manufacturer data (company 0x004C) with
 // message type 0x12. Deliberately NOT a bare 0x004C match — that is every
 // iPhone/AirPod in range.
-static bool bleIsAirtag(NimBLEAdvertisedDevice* dev) {
+static bool bleIsAirtag(SWEEP_ADV* dev) {
     if (!dev->haveManufacturerData()) return false;
     std::string mfg = dev->getManufacturerData();
     if (mfg.length() < 3) return false;
@@ -623,7 +638,7 @@ static bool bleIsAirtag(NimBLEAdvertisedDevice* dev) {
 // Bluetooth SIG company ID from the manufacturer data, or -1 if this advert
 // carries none. The app names the vendor from it -- the one vendor hint that
 // survives a randomized address, which is most of BLE.
-static int32_t bleCompanyId(NimBLEAdvertisedDevice* dev) {
+static int32_t bleCompanyId(SWEEP_ADV* dev) {
     if (!dev->haveManufacturerData()) return -1;
     std::string mfg = dev->getManufacturerData();
     if (mfg.length() < 2) return -1;
@@ -633,8 +648,13 @@ static int32_t bleCompanyId(NimBLEAdvertisedDevice* dev) {
 /**
  * @brief NimBLE Scan Callbacks for Watcher's Watch
  */
+#if CONFIG_IDF_TARGET_ESP32C5
+class WatchersScanCallbacks : public NimBLEScanCallbacks {
+    void onResult(const NimBLEAdvertisedDevice* advertisedDevice) override {
+#else
 class WatchersScanCallbacks : public NimBLEAdvertisedDeviceCallbacks {
     void onResult(NimBLEAdvertisedDevice* advertisedDevice) override {
+#endif
         if (!watchersRunning) return;
 
         if (watchersMutex == NULL) return;
@@ -1268,7 +1288,11 @@ static void performRing(const String& mac) {
         // to have no Immediate Alert service — or has wandered out of range —
         // takes the full timeout. Measured on the bench: a ring at the default
         // stalled the push loop long enough to look like a crash.
+#if CONFIG_IDF_TARGET_ESP32C5
+        client->setConnectTimeout(5000);   // NimBLE 2.x takes milliseconds; 5 would be 5 ms
+#else
         client->setConnectTimeout(5);
+#endif
         NimBLEAddress addr(std::string(mac.c_str()), BLE_ADDR_RANDOM);
         if (client->connect(addr, false)) {
             NimBLERemoteService* svc = client->getService(NimBLEUUID((uint16_t)0x1802));
@@ -1478,13 +1502,21 @@ void startWatchersWatch() {
     ESP_LOGI(TAG, "Starting NimBLE scanner for Watcher's Watch...");
 
     NimBLEScan* pScan = NimBLEDevice::getScan();
+#if CONFIG_IDF_TARGET_ESP32C5
+    pScan->setScanCallbacks(&watchersScanCallbacks, true);
+#else
     pScan->setAdvertisedDeviceCallbacks(&watchersScanCallbacks, true);
+#endif
     pScan->setActiveScan(true);
     pScan->setInterval(100);
     pScan->setWindow(50);
 
     
+#if CONFIG_IDF_TARGET_ESP32C5
+    pScan->start(0, false, true);
+#else
     pScan->start(0, nullptr, false);
+#endif
     
     // Start WiFi Promiscuous
     WiFi.mode(WIFI_STA);
@@ -1505,7 +1537,7 @@ void startWatchersWatch() {
             NULL,
             1,
             &watchersWifiHopTaskHandle,
-            1
+            SWEEP_TASK_CORE
         );
     }
 
@@ -1520,7 +1552,7 @@ void startWatchersWatch() {
             NULL,
             1,
             &watchersTaskHandle,
-            1
+            SWEEP_TASK_CORE
         );
     }
 }

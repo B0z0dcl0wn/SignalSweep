@@ -10,7 +10,11 @@
 #include <nvs_flash.h>
 #include <LittleFS.h>
 
+#if CONFIG_IDF_TARGET_ESP32C5
+#define BOOT_BUTTON_PIN BOOT_PIN   // GPIO28 on the XIAO ESP32-C5 (esp32-hal.h)
+#else
 #define BOOT_BUTTON_PIN 0
+#endif
 
 void setup() {
     Serial.begin(115200);

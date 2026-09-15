@@ -56,7 +56,11 @@ void pauseBle(bool pause) {
             pScan->stop();
             ESP_LOGI(TAG, "BLE Scanning paused");
         } else {
+#if CONFIG_IDF_TARGET_ESP32C5
+            pScan->start(0, false, true);
+#else
             pScan->start(0, nullptr, false);
+#endif
             ESP_LOGI(TAG, "BLE Scanning resumed");
         }
     }

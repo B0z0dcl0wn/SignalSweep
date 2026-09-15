@@ -434,7 +434,7 @@ void startCapture(uint32_t durationSecs) {
     WiFi.mode(WIFI_STA);
     WiFi.disconnect();
 #if CONFIG_IDF_TARGET_ESP32C5
-    esp_wifi_set_country_code(CAP_COUNTRY, true);   // gates legal 5 GHz channels
+    esp_wifi_set_country_code(SWEEP_COUNTRY, true);   // gates legal 5 GHz channels
     esp_wifi_set_band_mode(WIFI_BAND_MODE_AUTO);
 #endif
     wifi_promiscuous_filter_t f = { .filter_mask = WIFI_PROMIS_FILTER_MASK_ALL };
