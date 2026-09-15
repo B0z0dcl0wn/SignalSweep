@@ -27,9 +27,4 @@ bool isCapturing();
  */
 void captureTick();
 
-#if CONFIG_IDF_TARGET_ESP32C5
-/** @brief C5 capture experiment: pick hop profile 'A'-'D' for the next capture. */
-void setCaptureProfile(char p);
-#endif
-
 #endif // MODE_CAPTURE_H
