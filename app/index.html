@@ -1532,6 +1532,14 @@
                     <span>Wi&#8209;Fi</span>
                     <button class="set-toggle on" id="btn-wifi-scan" onclick="toggleWifiScan()">Scanning</button>
                 </div>
+                <div class="set-row" id="band-row" hidden>
+                    <span>Wi&#8209;Fi bands</span>
+                    <div class="radios seg" id="band-modes" role="group" aria-label="Wi-Fi bands">
+                        <button class="radio-tab" data-band="0" aria-pressed="false">Both</button>
+                        <button class="radio-tab" data-band="1" aria-pressed="false">2.4 GHz</button>
+                        <button class="radio-tab" data-band="2" aria-pressed="false">5 GHz</button>
+                    </div>
+                </div>
 
                 <h3 class="set-label">What beeps</h3>
                 <p class="set-note">

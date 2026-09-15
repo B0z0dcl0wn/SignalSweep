@@ -134,6 +134,9 @@ String getBleConfigJson() {
     doc["buzzer"] = isBuzzerEnabled();
     doc["led"] = getLedMode();   // 0 off, 1 one LED, 2 dim, 3 full
     doc["theme"] = getTheme();   // 0 classic, 1 night, 2 terminal, 3 glacier, 4 party
+#if CONFIG_IDF_TARGET_ESP32C5
+    doc["band"] = getBand();     // 0 both, 1 2.4 GHz, 2 5 GHz (C5 only)
+#endif
     doc["rx_only"] = rxOnly;
     doc["ble_scan"] = bleScanOn;
     doc["wifi_scan"] = wifiScanOn;
@@ -422,6 +425,13 @@ void processIncomingCommand(const String& rawCommand) {
             setTheme((uint8_t)constrain(doc["theme"].as<int>(), 0, (int)THEME_PARTY));
             sendConfigReply();
         }
+
+#if CONFIG_IDF_TARGET_ESP32C5
+        if (doc["band"].is<int>()) {
+            setBand((uint8_t)constrain(doc["band"].as<int>(), 0, 2));
+            sendConfigReply();
+        }
+#endif
 
         // 3. Hunt: {"hunt":"AA:BB:CC:DD:EE:FF"} locks the Geiger clicker onto
         // one MAC so you can walk it down; {"hunt":null} clears. This is the

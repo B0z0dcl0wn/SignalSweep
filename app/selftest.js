@@ -129,6 +129,25 @@ console.log('[signalsweep self-test] app reads every CMD:CFG field: ok');
 }
 console.log('[signalsweep self-test] C5 radio settings guarded: ok');
 
+// Band select: the enum order is the wire contract, the device is the authority
+// (push + persisted), and the controls are buttons painted from device frames.
+{
+    const fail = [];
+    const radioH = readFileSync(new URL('../firmware/src/c5_radio.h', import.meta.url), 'utf8');
+    if (!/BAND_BOTH\s*=\s*0,\s*BAND_24\s*=\s*1,\s*BAND_5\s*=\s*2/.test(radioH)) fail.push('SweepBand order changed');
+    const wsrc = readFileSync(new URL('../firmware/src/mode_watchers_watch.cpp', import.meta.url), 'utf8');
+    if (!/doc\["band"\]\s*=\s*getBand\(\)/.test(wsrc)) fail.push('the 1 Hz push does not carry band');
+    if (!/prefs\.putUChar\("band"/.test(wsrc) || !/prefs\.getUChar\("band"/.test(wsrc)) fail.push('band is not persisted in sweep-st');
+    const bsrc = readFileSync(new URL('../firmware/src/ble_serial.cpp', import.meta.url), 'utf8');
+    if (!/doc\["band"\]\.is<int>\(\)/.test(bsrc)) fail.push('no {"band":N} command');
+    ['0', '1', '2'].forEach(i => { if (!htmlSrc.includes('data-band="' + i + '"')) fail.push('no band button ' + i); });
+    if (/<input[^>]*data-band=/.test(htmlSrc)) fail.push('a band control is an <input>');
+    if (!appSrc.includes("closest('#band-modes .radio-tab')")) fail.push('band buttons are not wired in the click listener');
+    if (!/typeof data\.band === 'number'/.test(appSrc)) fail.push('syncDeviceState ignores the pushed band');
+    if (fail.length) { console.log('FAIL: band select:', fail); process.exit(1); }
+}
+console.log('[signalsweep self-test] band select contract: ok');
+
 // Themes are an index shared with the firmware: app.js's THEMES order must be
 // hardware_manager.h's ThemeId order, or picking "Glacier" lights Party. Like the
 // beep mask, nothing at runtime would say so. The theme also has to ride the

@@ -188,6 +188,8 @@ void requestRing(const String& mac);
 #if CONFIG_IDF_TARGET_ESP32C5
 /** @brief C5 only: Wi-Fi band the hopper covers (0 both, 1 2.4 GHz, 2 5 GHz). */
 uint8_t getBand();
+/** @brief C5 only: set and persist the band (sweep-st/band); out of range means both. */
+void setBand(uint8_t band);
 #endif
 
 #endif // MODE_WATCHERS_WATCH_H

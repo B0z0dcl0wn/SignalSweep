@@ -1224,6 +1224,9 @@ static void persistState() {
     else                      prefs.remove("hunt");
     prefs.putBool("scanall", scanAll);
     prefs.putUChar("beepmask", beepMask);
+#if CONFIG_IDF_TARGET_ESP32C5
+    prefs.putUChar("band", sweepBand);
+#endif
     prefs.end();
 }
 
@@ -1233,6 +1236,10 @@ void restoreWatchersState() {
     String mac = prefs.getString("hunt", "");
     bool all = prefs.getBool("scanall", false);
     uint8_t mask = prefs.getUChar("beepmask", BEEP_MASK_ALL);
+#if CONFIG_IDF_TARGET_ESP32C5
+    uint8_t band = prefs.getUChar("band", BAND_BOTH);
+    sweepBand = (band <= BAND_5) ? band : BAND_BOTH;
+#endif
     prefs.end();
 
     beepMask = mask & BEEP_MASK_ALL;
@@ -1259,6 +1266,16 @@ void setBeepMask(uint8_t mask) {
 uint8_t getBeepMask() {
     return beepMask;
 }
+
+#if CONFIG_IDF_TARGET_ESP32C5
+void setBand(uint8_t band) {
+    // Does not unpark the hopper: a hunt already parked on a channel keeps it
+    // until the hunt ends, regardless of the band selected here.
+    sweepBand = (band <= BAND_5) ? band : BAND_BOTH;
+    persistState();
+    ESP_LOGI(TAG, "Wi-Fi band %u (0 both, 1 2.4 GHz, 2 5 GHz)", (unsigned)sweepBand);
+}
+#endif
 
 void setScanAll(bool enabled) {
     scanAll = enabled;
@@ -1671,6 +1688,9 @@ String getWatchersTargetsJson() {
     doc["buzzer"] = isBuzzerEnabled();
     doc["led"] = getLedMode();
     doc["theme"] = getTheme();
+#if CONFIG_IDF_TARGET_ESP32C5
+    doc["band"] = getBand();   // C5 only, ~9 B; the device is the authority
+#endif
     doc["alerts"] = getAlertCount();
 
     if (watchersMutex != NULL && xSemaphoreTake(watchersMutex, pdMS_TO_TICKS(200)) == pdTRUE) {
