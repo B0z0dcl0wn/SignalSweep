@@ -20,6 +20,7 @@
 #include "hardware_manager.h"
 #include "capabilities.h"
 #include "mode_manager.h"
+#include "c5_radio.h"
 extern "C" {
 #include "opendroneid.h"
 #include "odid_wifi.h"
@@ -117,6 +118,12 @@ static bool huntAudible = false;
 static volatile int huntWifiRssi = 0;
 static volatile uint32_t huntWifiRssiMs = 0;
 static volatile int huntChannel = 0;
+#if CONFIG_IDF_TARGET_ESP32C5
+// Which Wi-Fi band(s) the hopper covers (SweepBand). Written by setBand() on the
+// command path, read by the hop task each dwell -- a byte, so volatile suffices.
+static volatile uint8_t sweepBand = BAND_BOTH;
+uint8_t getBand() { return sweepBand; }
+#endif
 // Set by the promiscuous callback on any Remote ID frame; the hopper reads and
 // clears it to grant that channel one extra dwell.
 static volatile bool odidHeard = false;
@@ -806,13 +813,30 @@ static TaskHandle_t watchersWifiHopTaskHandle = NULL;
 
 static void watchersWifiChannelHopperTask(void *pvParameters) {
     (void)pvParameters;
+#if CONFIG_IDF_TARGET_ESP32C5
+    // Dual-band: the measured schedule for the selected band (c5_radio.h),
+    // rebuilt whenever the band setting changes.
+    uint8_t channels[20];
+    size_t chCount = 0;
+    uint8_t hopBand = 0xFF;
+#else
     // Hop all US 2.4 GHz channels so a Flock node beaconing off 1/6/11 isn't
     // missed. (ESP32-S3 is 2.4 GHz only.)
     const uint8_t channels[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
+#endif
     int chIndex = 0;
     bool extended = false;
     while (watchersRunning) {
+#if CONFIG_IDF_TARGET_ESP32C5
+        vTaskDelay(pdMS_TO_TICKS(C5_HOP_DWELL_MS));
+        if (hopBand != sweepBand) {
+            hopBand = sweepBand;
+            chCount = c5BuildHop(hopBand, channels, sizeof(channels));
+            chIndex = 0;
+        }
+#else
         vTaskDelay(pdMS_TO_TICKS(150));
+#endif
         if (!watchersRunning) break;
         // A drone beacons on one fixed channel, so a channel that just carried
         // Remote ID earns one extra dwell before moving on -- never two in a
@@ -828,11 +852,19 @@ static void watchersWifiChannelHopperTask(void *pvParameters) {
         // else pauses for the duration, which is the deal you accept when you
         // lock onto one target.
         int parked = huntChannel;
+#if CONFIG_IDF_TARGET_ESP32C5
+        if (huntMac.length() > 0 && parked >= 1 && parked <= 177) {   // 5 GHz targets park too
+#else
         if (huntMac.length() > 0 && parked >= 1 && parked <= 14) {
+#endif
             esp_wifi_set_channel(parked, WIFI_SECOND_CHAN_NONE);
         } else {
             esp_wifi_set_channel(channels[chIndex], WIFI_SECOND_CHAN_NONE);
+#if CONFIG_IDF_TARGET_ESP32C5
+            chIndex = (chIndex + 1) % (int)chCount;
+#else
             chIndex = (chIndex + 1) % (int)(sizeof(channels) / sizeof(channels[0]));
+#endif
         }
     }
     watchersWifiHopTaskHandle = NULL;
@@ -890,6 +922,12 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
     if (type != WIFI_PKT_MGMT) return;
     
     wifi_promiscuous_pkt_t *packet = (wifi_promiscuous_pkt_t *)buf;
+#if CONFIG_IDF_TARGET_ESP32C5
+    // The C5 driver passes frames that failed reception; the S3's never did.
+    // They are random bytes (every type/subtype incl. reserved type 3, thousands of
+    // fake transmitters on the bench) and would feed the IE walk and OUI rules junk.
+    if (packet->rx_ctrl.rx_state != 0) return;
+#endif
     uint8_t *payload = packet->payload;
     int length = packet->rx_ctrl.sig_len;
     int rssi = packet->rx_ctrl.rssi;
@@ -1508,8 +1546,16 @@ void startWatchersWatch() {
     pScan->setAdvertisedDeviceCallbacks(&watchersScanCallbacks, true);
 #endif
     pScan->setActiveScan(true);
+#if CONFIG_IDF_TARGET_ESP32C5
+    // Bench-measured on the C5 (experiment rounds 3-4): 25 ms slices every 50 ms
+    // hear a 2 s AirTag as evenly as the S3 does at 50/100; 40/100 left 3x the
+    // silent stretches, 60%+ duty starved Wi-Fi.
+    pScan->setInterval(50);
+    pScan->setWindow(25);
+#else
     pScan->setInterval(100);
     pScan->setWindow(50);
+#endif
 
     
 #if CONFIG_IDF_TARGET_ESP32C5
@@ -1521,6 +1567,10 @@ void startWatchersWatch() {
     // Start WiFi Promiscuous
     WiFi.mode(WIFI_STA);
     WiFi.disconnect();
+#if CONFIG_IDF_TARGET_ESP32C5
+    esp_wifi_set_country_code(SWEEP_COUNTRY, true);   // gates the legal 5 GHz channels
+    esp_wifi_set_band_mode(WIFI_BAND_MODE_AUTO);      // let set_channel cross bands
+#endif
     // Filter in hardware. The callback only ever handles WIFI_PKT_MGMT, so
     // without this every data/ctrl frame in the air reaches the ISR just to be
     // dropped by the software check.
