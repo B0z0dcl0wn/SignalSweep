@@ -318,15 +318,15 @@ void startCapture(uint32_t durationSecs) {
     sc->setAdvertisedDeviceCallbacks(&captureScanCallbacks, true);
 #endif
     sc->setActiveScan(true);
-    // The S3 time-slices ONE radio between BLE and WiFi, so the BLE scan window
-    // is stolen straight from WiFi promiscuous. A near-100% window starved WiFi
-    // to zero frames on the bench. WiFi is the priority target here, so give BLE
-    // only ~40% -- still plenty of adverts, and WiFi actually gets heard.
 #if CONFIG_IDF_TARGET_ESP32C5
     sc->setInterval(50);   // the detector's measured C5 BLE timing (c5_radio.h rationale)
     sc->setWindow(25);
     sc->start(0, false, true);
 #else
+    // The S3 time-slices ONE radio between BLE and WiFi, so the BLE scan window
+    // is stolen straight from WiFi promiscuous. A near-100% window starved WiFi
+    // to zero frames on the bench. WiFi is the priority target here, so give BLE
+    // only ~40% -- still plenty of adverts, and WiFi actually gets heard.
     sc->setInterval(100);
     sc->setWindow(40);
     sc->start(0, nullptr, false);
@@ -336,7 +336,7 @@ void startCapture(uint32_t durationSecs) {
     // Single core: xTaskCreatePinnedToCore(..., 1) asserts at boot. Same value as
     // hardware_manager.h's SWEEP_TASK_CORE -- not included here, since pulling
     // that header into this file adds hardware_manager.h/mode_manager.h tokens to
-    // the S3 preprocessed output that the S3 gate rejects (see task-6 report).
+    // the S3 preprocessed output that the S3 gate rejects.
     xTaskCreatePinnedToCore(captureHopTask,   "CapHop",   4096, NULL, 1, &hopTaskHandle,   tskNO_AFFINITY);
     xTaskCreatePinnedToCore(captureDrainTask, "CapDrain", 8192, NULL, 2, &drainTaskHandle, tskNO_AFFINITY);
 #else
