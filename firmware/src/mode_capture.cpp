@@ -126,9 +126,21 @@ static inline void pushRecord(CapRing* r, uint8_t radio, uint8_t ch, int8_t rssi
     r->head = next;
 }
 
+#if CONFIG_IDF_TARGET_ESP32C5
+// The C5 driver hands promiscuous mode frames that failed reception (rx_state
+// != 0). The S3 never delivered them. Captured on the bench they were random
+// bytes: every type/subtype including reserved type 3, and ~3300 "unique"
+// transmitters at home where the S3 saw 37. Drop them, and count them so the
+// stat line shows how much noise was filtered.
+static volatile uint32_t wifiBad = 0;
+#endif
+
 static void captureWifiCb(void* buf, wifi_promiscuous_pkt_type_t type) {
     if (!capturing) return;
     wifi_promiscuous_pkt_t* pkt = (wifi_promiscuous_pkt_t*)buf;
+#if CONFIG_IDF_TARGET_ESP32C5
+    if (pkt->rx_ctrl.rx_state != 0) { wifiBad++; return; }
+#endif
     pushRecord(&wifiRing, 0, pkt->rx_ctrl.channel, (int8_t)pkt->rx_ctrl.rssi,
                pkt->payload, pkt->rx_ctrl.sig_len);
 }
@@ -202,11 +214,19 @@ static void emitStat(bool done) {
     uint32_t now = millis();
     uint32_t remain = (capEndMs > now) ? (capEndMs - now) / 1000 : 0;
     char buf[160];
+#if CONFIG_IDF_TARGET_ESP32C5
+    snprintf(buf, sizeof(buf),
+             "{\"cap\":{\"wifi\":%u,\"ble\":%u,\"drops\":%u,\"bad\":%u,\"remain\":%u,\"done\":%s}}",
+             (unsigned)wifiRing.seq, (unsigned)bleRing.seq,
+             (unsigned)(wifiRing.drops + bleRing.drops), (unsigned)wifiBad,
+             (unsigned)remain, done ? "true" : "false");
+#else
     snprintf(buf, sizeof(buf),
              "{\"cap\":{\"wifi\":%u,\"ble\":%u,\"drops\":%u,\"remain\":%u,\"done\":%s}}",
              (unsigned)wifiRing.seq, (unsigned)bleRing.seq,
              (unsigned)(wifiRing.drops + bleRing.drops),
              (unsigned)remain, done ? "true" : "false");
+#endif
     Serial.println(buf);
 }
 
@@ -275,6 +295,9 @@ void startCapture(uint32_t durationSecs) {
     }
 
     stopRequested = false;
+#if CONFIG_IDF_TARGET_ESP32C5
+    wifiBad = 0;
+#endif
     capEndMs = (durationSecs > 0) ? millis() + durationSecs * 1000UL : 0;
     capturing = true;
 
