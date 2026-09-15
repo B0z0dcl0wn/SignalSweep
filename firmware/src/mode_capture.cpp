@@ -138,7 +138,7 @@ static volatile uint32_t wifiBad = 0;
 // variant runs on the same firmware. See captureHopTask.
 static char capProfile = 'A';
 static volatile uint32_t wifiLastNetMs = 0;   // last beacon/probe-resp heard
-void setCaptureProfile(char p) { capProfile = ((p >= 'A' && p <= 'O') || p == 'T') ? p : 'A'; }
+void setCaptureProfile(char p) { capProfile = ((p >= 'A' && p <= 'O') || p == 'T' || p == 'V' || p == 'W' || p == 'X') ? p : 'A'; }
 
 // Hop markers: the hop task logs every channel set as a radio=2 record with a µs
 // timestamp, so the analyzer can measure how long the radio is deaf after a
@@ -269,6 +269,9 @@ static void captureHopTask(void*) {
     //   N  1-11 + UNII-3 (149-165) only        (fewer 5 GHz channels)
     //   O  1,3,5,7,9,11 + non-DFS 5 GHz        (every other 2.4 channel; relies on overlap)
     //   T  ch11 500 ms <-> ch161 500 ms        (deaf-time measurement with hop markers)
+    //   V  park ch1, BLE 25/50                 (aliasing test: beacons vs coex slicing)
+    //   W  park ch1, BLE scan OFF              (aliasing control)
+    //   X  park ch6, BLE scan OFF              (moderate-level OFDM test vs the distant emitter)
     // ponytail: bench experiment; the winning profile replaces this switch.
     static const uint8_t c24[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
     static const uint8_t c5all[] = {36, 40, 44, 48, 52, 56, 60, 64, 100, 104, 108, 112, 116,
@@ -283,7 +286,15 @@ static void captureHopTask(void*) {
     static const uint8_t u1[] = {36, 40, 44, 48};
     static const uint8_t u3[] = {149, 153, 157, 161, 165};
     static const uint8_t c24odd[] = {1, 3, 5, 7, 9, 11};
-    if (capProfile == 'T') {
+    if (capProfile == 'V' || capProfile == 'W') {
+        sched[0].ch = 1; sched[0].ms = 500;
+        n = 1;
+    }
+    else if (capProfile == 'X') {
+        sched[0].ch = 6; sched[0].ms = 500;
+        n = 1;
+    }
+    else if (capProfile == 'T') {
         sched[0].ch = 11;  sched[0].ms = 500;
         sched[1].ch = 161; sched[1].ms = 500;
         n = 2;
@@ -450,10 +461,11 @@ void startCapture(uint32_t durationSecs) {
     if (capProfile == 'I') { sc->setInterval(50); sc->setWindow(30); } // I: 30 / 50
     if (capProfile == 'J') sc->setWindow(90);                          // J: 90 / 100
     if (capProfile == 'K') { sc->setInterval(50); sc->setWindow(20); } // K: 20 / 50
-    if (capProfile == 'L' || capProfile == 'M' || capProfile == 'N' || capProfile == 'O' || capProfile == 'T') {
+    if (capProfile == 'L' || capProfile == 'M' || capProfile == 'N' || capProfile == 'O' || capProfile == 'T' ||
+        capProfile == 'V' || capProfile == 'W') {
         sc->setInterval(50); sc->setWindow(25);                        // L, M, N, O: 25 / 50
     }
-    sc->start(0, false, true);
+    if (capProfile != 'W' && capProfile != 'X') sc->start(0, false, true);   // W/X: no BLE scan
 #else
     sc->start(0, nullptr, false);
 #endif
