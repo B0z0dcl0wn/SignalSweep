@@ -27,7 +27,11 @@ void loop() {
     if (Serial.available()) {
         String s = Serial.readStringUntil('\n');
         s.trim();
-        if (s.startsWith("CMD:CAP:START:")) startCapture((uint32_t)s.substring(14).toInt());
+        if (s.startsWith("CMD:CAP:START:")) {   // CMD:CAP:START:<secs>[:<A-D hop profile>]
+            int c = s.lastIndexOf(':');
+            setCaptureProfile(c > 13 ? s.charAt(c + 1) : 'A');
+            startCapture((uint32_t)s.substring(14).toInt());
+        }
         else if (s == "CMD:CAP:STOP") stopCapture();
         else if (s == "CMD:C5") {   // bench witness: is this the C5 build, and is PSRAM there?
             Serial.printf("[C5] %s rev%d psram=%u heap=%u capturing=%d\n", ESP.getChipModel(),

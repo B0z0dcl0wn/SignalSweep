@@ -133,6 +133,17 @@ static inline void pushRecord(CapRing* r, uint8_t radio, uint8_t ch, int8_t rssi
 // transmitters at home where the S3 saw 37. Drop them, and count them so the
 // stat line shows how much noise was filtered.
 static volatile uint32_t wifiBad = 0;
+
+// Hop-profile test, picked per capture (CMD:CAP:START:<secs>:<A-D>) so every
+// variant runs on the same firmware. See captureHopTask.
+static char capProfile = 'A';
+static volatile uint32_t wifiLastNetMs = 0;   // last beacon/probe-resp heard
+void setCaptureProfile(char p) { capProfile = ((p >= 'A' && p <= 'O') || p == 'T') ? p : 'A'; }
+
+// Hop markers: the hop task logs every channel set as a radio=2 record with a µs
+// timestamp, so the analyzer can measure how long the radio is deaf after a
+// band switch. Its own ring: producer = hop task, consumer = drain task (SPSC).
+static CapRing hopRing = {};
 #endif
 
 static void captureWifiCb(void* buf, wifi_promiscuous_pkt_type_t type) {
@@ -140,6 +151,8 @@ static void captureWifiCb(void* buf, wifi_promiscuous_pkt_type_t type) {
     wifi_promiscuous_pkt_t* pkt = (wifi_promiscuous_pkt_t*)buf;
 #if CONFIG_IDF_TARGET_ESP32C5
     if (pkt->rx_ctrl.rx_state != 0) { wifiBad++; return; }
+    if (type == WIFI_PKT_MGMT && (pkt->payload[0] == 0x80 || pkt->payload[0] == 0x50))
+        wifiLastNetMs = millis();
 #endif
     pushRecord(&wifiRing, 0, pkt->rx_ctrl.channel, (int8_t)pkt->rx_ctrl.rssi,
                pkt->payload, pkt->rx_ctrl.sig_len);
@@ -232,20 +245,116 @@ static void emitStat(bool done) {
 
 static void captureHopTask(void*) {
 #if CONFIG_IDF_TARGET_ESP32C5 && !defined(CAP_24_ONLY)
-    // One band at a time: the C5 cannot hear both at once, so 11 + 25 channels
-    // at 250 ms is a ~9 s sweep. Fine for a stationary capture.
-    static const uint8_t ch[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11,
-        36, 40, 44, 48, 52, 56, 60, 64, 100, 104, 108, 112, 116, 120, 124, 128,
-        132, 136, 140, 144, 149, 153, 157, 161, 165};
+    // The C5 hears one band at a time and shares its one radio with the BLE
+    // scan. Which hop hears the most is being measured, not guessed:
+    //   A  every channel in order, 250 ms                  (Marauder-style)
+    //   B  2.4 1-11 + non-DFS 5 GHz, 120 ms                (OUI Spy detector)
+    //   C  1x 2.4 : 2x 5 GHz interleave, 300 ms on the busy channels, 110 ms
+    //      elsewhere, leaving after 80 ms once 40 ms pass with no beacon
+    //                                                      (OUI Spy wardrive)
+    //   D  C's hop, BLE in 800 ms bursts every 3 s instead of a constant window
+    // Round 2 separates what made B win (shorter dwell or no DFS):
+    //   E  B's channels at A's 250 ms          (dwell only)
+    //   F  A's channels at B's 120 ms          (channel set only)
+    //   G  B's hop + D's BLE bursts            (BLE sharing on the best hop)
+    // Round 3 keeps B's hop and varies only the BLE scan (B itself is 40/100):
+    //   H  window 60 / interval 100
+    //   I  window 30 / interval 50             (Marauder's wardrive setting)
+    //   J  window 90 / interval 100
+    // Round 4 hunts the balance point with short BLE slices (I is 30/50):
+    //   K  window 20 / interval 50             (B's 40% BLE share, short slices)
+    //   L  window 25 / interval 50             (50%)
+    // Round 5 keeps L's BLE (25/50) and varies how much hop time 5 GHz gets:
+    //   M  1-11, UNII-1, 1-11 again, UNII-3    (2.4 GHz twice per sweep)
+    //   N  1-11 + UNII-3 (149-165) only        (fewer 5 GHz channels)
+    //   O  1,3,5,7,9,11 + non-DFS 5 GHz        (every other 2.4 channel; relies on overlap)
+    //   T  ch11 500 ms <-> ch161 500 ms        (deaf-time measurement with hop markers)
+    // ponytail: bench experiment; the winning profile replaces this switch.
+    static const uint8_t c24[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
+    static const uint8_t c5all[] = {36, 40, 44, 48, 52, 56, 60, 64, 100, 104, 108, 112, 116,
+                                    120, 124, 128, 132, 136, 140, 144, 149, 153, 157, 161, 165};
+    static const uint8_t c5nd[] = {36, 40, 44, 48, 149, 153, 157, 161, 165};
+    struct { uint8_t ch; uint16_t ms; } sched[48];
+    int n = 0;
+    const bool interleave = (capProfile == 'C' || capProfile == 'D');
+    auto add = [&](const uint8_t* a, size_t len) {
+        for (size_t k = 0; k < len && n < 48; k++) { sched[n].ch = a[k]; sched[n].ms = 120; n++; }
+    };
+    static const uint8_t u1[] = {36, 40, 44, 48};
+    static const uint8_t u3[] = {149, 153, 157, 161, 165};
+    static const uint8_t c24odd[] = {1, 3, 5, 7, 9, 11};
+    if (capProfile == 'T') {
+        sched[0].ch = 11;  sched[0].ms = 500;
+        sched[1].ch = 161; sched[1].ms = 500;
+        n = 2;
+    }
+    else if (capProfile == 'M') { add(c24, sizeof(c24)); add(u1, sizeof(u1)); add(c24, sizeof(c24)); add(u3, sizeof(u3)); }
+    else if (capProfile == 'N') { add(c24, sizeof(c24)); add(u3, sizeof(u3)); }
+    else if (capProfile == 'O') { add(c24odd, sizeof(c24odd)); add(c5nd, sizeof(c5nd)); }
+    else if (!interleave) {
+        const bool bHop       = (capProfile == 'B' || capProfile == 'G' || capProfile == 'H' ||
+                                 capProfile == 'I' || capProfile == 'J' || capProfile == 'K' ||
+                                 capProfile == 'L');
+        const bool shortDwell = bHop || capProfile == 'F';
+        const bool nonDfs     = bHop || capProfile == 'E';
+        const uint16_t ms = shortDwell ? 120 : 250;
+        for (uint8_t c : c24) { sched[n].ch = c; sched[n].ms = ms; n++; }
+        if (nonDfs) { for (uint8_t c : c5nd)  { sched[n].ch = c; sched[n].ms = ms; n++; } }
+        else        { for (uint8_t c : c5all) { sched[n].ch = c; sched[n].ms = ms; n++; } }
+    } else {
+        auto dwell = [](uint8_t c) -> uint16_t {
+            return (c == 1 || c == 6 || c == 11 || c == 44 || c == 149 || c == 157) ? 300 : 110;
+        };
+        size_t i24 = 0, i5 = 0;
+        while (n < 48 && (i24 < sizeof(c24) || i5 < sizeof(c5all))) {
+            if (i24 < sizeof(c24)) { sched[n].ch = c24[i24]; sched[n].ms = dwell(c24[i24]); n++; i24++; }
+            for (int b = 0; b < 2 && i5 < sizeof(c5all) && n < 48; b++) {
+                sched[n].ch = c5all[i5]; sched[n].ms = dwell(c5all[i5]); n++; i5++;
+            }
+        }
+    }
+    NimBLEScan* sc = NimBLEDevice::getScan();
+    uint32_t bleT = millis();
+    bool bleOn = true;
+    int i = 0;
+    static const uint8_t noPayload = 0;
+    while (capturing) {
+        // radio=3 before the call, radio=2 after: the gap is how long the call blocks.
+        // The before-marker is pushed first so its rssi byte can't carry the result;
+        // the after-marker's rssi carries the return code's low byte (0 = ESP_OK).
+        pushRecord(&hopRing, 3, sched[i].ch, 0, &noPayload, 0);
+        esp_err_t hopErr = esp_wifi_set_channel(sched[i].ch, WIFI_SECOND_CHAN_NONE);
+        pushRecord(&hopRing, 2, sched[i].ch, (int8_t)(hopErr & 0x7f), &noPayload, 0);   // hop marker
+        uint32_t t0 = millis();
+        if (!interleave) {
+            vTaskDelay(pdMS_TO_TICKS(sched[i].ms));
+        } else {
+            wifiLastNetMs = t0;
+            while (capturing) {
+                vTaskDelay(pdMS_TO_TICKS(10));
+                uint32_t now = millis();
+                if (now - t0 >= sched[i].ms) break;
+                if (now - t0 >= 80 && now - wifiLastNetMs >= 40) break;
+            }
+        }
+        // ponytail: bursts toggle at hop boundaries, so on/off can run ~300 ms late
+        if (capProfile == 'D' || capProfile == 'G') {
+            uint32_t now = millis();
+            if (bleOn && now - bleT >= 800) { sc->stop(); bleOn = false; }
+            else if (!bleOn && now - bleT >= 3000 && capturing) { bleT = now; sc->start(0, false, true); bleOn = true; }
+        }
+        i = (i + 1) % n;
+    }
+    if (capProfile == 'D' || capProfile == 'G') sc->stop();   // a burst may have restarted after the drain task stopped it
 #else
     static const uint8_t ch[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
-#endif
     int i = 0;
     while (capturing) {
         esp_wifi_set_channel(ch[i], WIFI_SECOND_CHAN_NONE);
         i = (i + 1) % (int)(sizeof(ch) / sizeof(ch[0]));
         vTaskDelay(pdMS_TO_TICKS(250));   // 250 ms x 11 = ~2.75 s per full sweep
     }
+#endif
     hopTaskHandle = NULL;
     vTaskDelete(NULL);
 }
@@ -257,6 +366,9 @@ static void captureDrainTask(void*) {
         // is. Bounded per pass so the stat/timer checks still run under load.
         drainRing(&wifiRing, 300);
         drainRing(&bleRing, 100);
+#if CONFIG_IDF_TARGET_ESP32C5
+        drainRing(&hopRing, 50);
+#endif
 
         uint32_t now = millis();
         if (now - lastStat >= 1000) { lastStat = now; emitStat(false); }
@@ -270,9 +382,15 @@ static void captureDrainTask(void*) {
             // Flush whatever is still queued before freeing.
             while (wifiRing.tail != wifiRing.head) drainRing(&wifiRing, 512);
             while (bleRing.tail  != bleRing.head)  drainRing(&bleRing, 512);
+#if CONFIG_IDF_TARGET_ESP32C5
+            while (hopRing.tail  != hopRing.head)  drainRing(&hopRing, 512);
+#endif
             emitStat(true);
             ringFree(&wifiRing);
             ringFree(&bleRing);
+#if CONFIG_IDF_TARGET_ESP32C5
+            ringFree(&hopRing);
+#endif
             needDetectorRestart = true;              // loop() resumes the detector
             drainTaskHandle = NULL;
             vTaskDelete(NULL);
@@ -297,6 +415,7 @@ void startCapture(uint32_t durationSecs) {
     stopRequested = false;
 #if CONFIG_IDF_TARGET_ESP32C5
     wifiBad = 0;
+    ringAlloc(&hopRing, 512);   // hop markers; if this fails, markers are just skipped
 #endif
     capEndMs = (durationSecs > 0) ? millis() + durationSecs * 1000UL : 0;
     capturing = true;
@@ -326,6 +445,14 @@ void startCapture(uint32_t durationSecs) {
     sc->setInterval(100);
     sc->setWindow(40);
 #if CONFIG_IDF_TARGET_ESP32C5
+    if (capProfile == 'D' || capProfile == 'G') sc->setWindow(99);   // D/G: BLE in bursts, full window while on
+    if (capProfile == 'H') sc->setWindow(60);                          // H: 60 / 100
+    if (capProfile == 'I') { sc->setInterval(50); sc->setWindow(30); } // I: 30 / 50
+    if (capProfile == 'J') sc->setWindow(90);                          // J: 90 / 100
+    if (capProfile == 'K') { sc->setInterval(50); sc->setWindow(20); } // K: 20 / 50
+    if (capProfile == 'L' || capProfile == 'M' || capProfile == 'N' || capProfile == 'O' || capProfile == 'T') {
+        sc->setInterval(50); sc->setWindow(25);                        // L, M, N, O: 25 / 50
+    }
     sc->start(0, false, true);
 #else
     sc->start(0, nullptr, false);
@@ -334,7 +461,11 @@ void startCapture(uint32_t durationSecs) {
     xTaskCreatePinnedToCore(captureHopTask,   "CapHop",   4096, NULL, 1, &hopTaskHandle,   CAP_CORE);
     xTaskCreatePinnedToCore(captureDrainTask, "CapDrain", 8192, NULL, 2, &drainTaskHandle, CAP_CORE);
 
+#if CONFIG_IDF_TARGET_ESP32C5
+    Serial.printf("{\"cap\":{\"started\":true,\"secs\":%u,\"profile\":\"%c\"}}\n", (unsigned)durationSecs, capProfile);
+#else
     Serial.printf("{\"cap\":{\"started\":true,\"secs\":%u}}\n", (unsigned)durationSecs);
+#endif
     ESP_LOGI(TAG, "Capture started for %u s", (unsigned)durationSecs);
 }
 
