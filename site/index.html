@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SignalSweep — a detector that tells you what it heard</title>
-<meta name="description" content="Headless ESP32-S3 RF detector. Scans BLE and Wi-Fi, beeps a different pattern per category. No cloud, no history, no trail.">
+<meta name="description" content="Headless RF detector for the XIAO ESP32-C5 and ESP32-S3. Scans BLE and Wi-Fi, beeps a different pattern per category. No cloud, no history, no trail.">
 <link rel="icon" href="favicon.svg">
 <style>
   :root{
@@ -66,8 +66,9 @@
 
 <div class="flash">
   <h2>Flash it from this page</h2>
-  <p class="sub">No Python, no PlatformIO, no drivers. Plug a XIAO ESP32-S3 in
-  with a data-capable USB-C cable.</p>
+  <p class="sub">No Python, no PlatformIO, no drivers. Plug a XIAO ESP32-C5 or
+  ESP32-S3 in with a data-capable USB-C cable — the flasher works out which
+  one it is.</p>
   <esp-web-install-button manifest="manifest.json">
     <button slot="activate" class="btn">Connect &amp; flash</button>
     <span slot="unsupported">Your browser cannot do this — use desktop Chrome, Edge or Opera.</span>
@@ -128,10 +129,12 @@
 
 <section>
   <h2>Get the hardware</h2>
-  <p>One Seeed Studio XIAO ESP32-S3, about $15. Add a U.FL antenna, a NeoPixel
+  <p>One Seeed Studio XIAO ESP32-C5 (about $13, hears 2.4 and 5 GHz) or
+  ESP32-S3 (about $15, 2.4 GHz only). Add a U.FL antenna, a NeoPixel
   and a buzzer for the full build — see
   <a href="https://github.com/B0z0dcl0wn/SignalSweep/blob/main/firmware/WIRING.md">WIRING.md</a>.
-  It runs off any USB power: a battery pack, or a car's USB port.</p>
+  It runs off any USB power: a battery pack, or a car's USB port. On the C5,
+  use a dual-band antenna — the one in the box is 2.4 GHz only.</p>
 </section>
 
 <section>
@@ -155,6 +158,6 @@
 </footer>
 
 </div>
-<script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
+<script type="module" src="https://unpkg.com/esp-web-tools@10.4.0/dist/web/install-button.js?module"></script>
 </body>
 </html>

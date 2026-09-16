@@ -79,16 +79,35 @@ jobs:
       - name: Cache PlatformIO
         uses: actions/cache@v4
         with:
-          path: |
-            ~/.platformio
-            firmware/.pio
+          path: ~/.platformio
           key: pio-${{ runner.os }}-${{ hashFiles('firmware/platformio.ini') }}
+
+      - name: Cache PlatformIO (C5 core)
+        uses: actions/cache@v4
+        with:
+          path: ~/.platformio-c5
+          key: pio-c5-${{ runner.os }}-${{ hashFiles('firmware/platformio.ini') }}
 
       - name: Install PlatformIO
         run: pip install --upgrade platformio
 
+      - name: Distribution contract
+        run: python test_distribution.py
+
       - name: Build firmware (tier1)
-        run: pio run -e tier1 -d firmware
+        run: |
+          pio run -e tier1 -d firmware
+          bash site/assemble.sh s3
+
+      # Its own core dir: the C5 framework package shares the S3's package name
+      # and would replace it. This build wipes firmware/.pio/build, which is why
+      # the S3 images were staged first.
+      - name: Build firmware (c5)
+        env:
+          PLATFORMIO_CORE_DIR: /home/runner/.platformio-c5   # = the cache path ~/.platformio-c5
+        run: |
+          pio run -e c5 -d firmware
+          bash site/assemble.sh c5
 
       - name: Build app
         working-directory: app
@@ -188,32 +207,7 @@ jobs:
           echo "apk=dist-apk/SignalSweep-${VERSION}.apk" >> "$GITHUB_OUTPUT"
 
       - name: Assemble site
-        run: |
-          set -euo pipefail
-          mkdir -p _site/firmware
-          cp site/index.html site/manifest.json site/favicon.svg _site/
-          cp -r app/dist _site/app
-
-          B=firmware/.pio/build/tier1
-          cp "$B/bootloader.bin" _site/firmware/bootloader.bin
-          cp "$B/partitions.bin" _site/firmware/partitions.bin
-          cp "$B/firmware.bin"   _site/firmware/signalsweep.bin
-
-          # boot_app0.bin ships with the Arduino framework package, not the build.
-          BOOT_APP0=$(find ~/.platformio/packages -name boot_app0.bin | head -1)
-          test -n "$BOOT_APP0" || { echo "boot_app0.bin not found"; exit 1; }
-          cp "$BOOT_APP0" _site/firmware/boot_app0.bin
-
-          # Fail loudly if the manifest references a file we did not produce.
-          python - <<'PY'
-          import json, pathlib, sys
-          m = json.load(open('site/manifest.json'))
-          missing = [p['path'] for b in m['builds'] for p in b['parts']
-                     if not pathlib.Path('_site', p['path']).is_file()]
-          if missing:
-              sys.exit('manifest references missing files: ' + ', '.join(missing))
-          print('manifest parts all present')
-          PY
+        run: bash site/assemble.sh site
 
       - name: Stamp manifest version from tag
         if: startsWith(github.ref, 'refs/tags/v')
@@ -227,6 +221,14 @@ jobs:
           json.dump(m, open(p, 'w'), indent=2)
           print('manifest version ->', sys.argv[1])
           PY
+
+      # Every run, so a branch run (which publishes nothing) can be inspected.
+      - name: Upload site artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: site
+          path: _site
+          retention-days: 7
 
       # Publish by force-pushing the assembled tree to gh-pages, which is what
       # Pages serves. Deliberately NOT actions/deploy-pages: that requires the

@@ -1,6 +1,6 @@
 {
   "name": "SignalSweep",
-  "version": "0.1.1",
+  "version": "0.3.0",
   "new_install_prompt_erase": true,
   "builds": [
     {
@@ -10,6 +10,15 @@
         { "path": "firmware/partitions.bin", "offset": 32768 },
         { "path": "firmware/boot_app0.bin",  "offset": 57344 },
         { "path": "firmware/signalsweep.bin", "offset": 65536 }
+      ]
+    },
+    {
+      "chipFamily": "ESP32-C5",
+      "parts": [
+        { "path": "firmware/c5-bootloader.bin", "offset": 8192 },
+        { "path": "firmware/c5-partitions.bin", "offset": 32768 },
+        { "path": "firmware/c5-boot_app0.bin",  "offset": 57344 },
+        { "path": "firmware/c5-signalsweep.bin", "offset": 65536 }
       ]
     }
   ]

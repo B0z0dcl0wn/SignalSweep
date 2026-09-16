@@ -1,10 +1,23 @@
-# SignalSweep — Wiring Guide (XIAO ESP32-S3)
+# SignalSweep — Wiring Guide (XIAO ESP32-C5 and ESP32-S3)
 
 The pins below are the contract the firmware drives. They live in
 `firmware/src/hardware_manager.h` — change the wiring only if you change those:
 
 - **NeoPixel data → D1 / GPIO2** (`NEOPIXEL_PIN 2`, `NEOPIXEL_COUNT 8`)
 - **Buzzer signal → D2 / GPIO3** (`BUZZER_PIN 3`)
+
+**XIAO ESP32-C5:** same pads, different GPIOs (from `hardware_manager.h`'s
+`CONFIG_IDF_TARGET_ESP32C5` arm):
+
+| XIAO pad | C5 GPIO | S3 GPIO | Goes to |
+|----------|---------|---------|---------|
+| **D1** | GPIO0 | GPIO2 | NeoPixel **DIN** |
+| **D2** | GPIO25 | GPIO3 | Buzzer **signal (+)** |
+| **BOOT** button | GPIO28 | GPIO0 | hold 5 s = factory reset; tap = 2 min advertising window |
+
+Wire by **pad name** and the same harness fits both boards: everything below
+that says D1/D2 applies to either. On the C5, use a **dual-band** U.FL antenna;
+the stock one is 2.4 GHz only.
 
 Reading the board: Seeed silk-screens the pads **D0–D10**; the firmware names
 the same pads by GPIO number (**D1 = GPIO2**, **D2 = GPIO3**). The pad printed
@@ -19,7 +32,7 @@ category patterns but ignores pitch (no rising/falling tones).
 
 | # | Part | Notes |
 |---|------|-------|
-| 1 | Seeed XIAO ESP32-S3 | The board the firmware targets |
+| 1 | Seeed XIAO ESP32-C5 or ESP32-S3 | The C5 also hears 5 GHz |
 | 1 | Passive buzzer / piezo | 2-pin (or a 3-pin module — see below) |
 | 1 | WS2812/SK6812 8-LED bar (clone) | breaks out **VCC / IN / GND** (some clones have 4 pads — `GND, IN, VCC, GND`; the two GNDs are one net, use either). IN = DIN |
 | — | Jumper wires | Dupont F-F if using headerless pads |
@@ -80,6 +93,8 @@ If you ever run it hard off a weak battery, that's the number to budget.
    - tracker → fast ticking
 
 ## Diagram
+
+The diagram shows S3 GPIO numbers; on a C5 read D1 as GPIO0 and D2 as GPIO25.
 
 ```
                          Seeed XIAO ESP32-S3

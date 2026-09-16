@@ -3,7 +3,7 @@
 The short overview lives in [../README.md](../README.md). This is the long form:
 threat model, serial protocol, build-from-source.
 
-SignalSweep is a headless RF detector: an ESP32-S3 that scans Bluetooth LE and
+SignalSweep is a headless RF detector: a XIAO ESP32-C5 or ESP32-S3 that scans Bluetooth LE and
 Wi-Fi, matches what it hears against a signature list, and **beeps a different
 pattern per category** so it tells you what is near without you looking at
 anything. The phone app is optional — a live scope for what the device is
@@ -16,7 +16,7 @@ matching right now, not a logbook.
 
 This monorepo holds both halves:
 
-- `firmware/` — the ESP32-S3 firmware, built with PlatformIO.
+- `firmware/` — the firmware for both boards, built with PlatformIO.
 - `app/` — the control app: plain hand-written HTML/CSS/JS wrapped in Vite +
   Capacitor for Android. (It is **not** React.)
 
@@ -28,8 +28,9 @@ and no cloud.
 
 ## Quick start
 
-You need one [Seeed Studio XIAO ESP32-S3](https://www.seeedstudio.com/XIAO-ESP32S3-p-5627.html)
-(about $15) and a USB-C cable that carries data.
+You need one Seeed Studio XIAO ESP32-C5 (about $13, 2.4 and 5 GHz) or
+[XIAO ESP32-S3](https://www.seeedstudio.com/XIAO-ESP32S3-p-5627.html) (about
+$15, 2.4 GHz) and a USB-C cable that carries data.
 
 1. **Flash it** — open <https://b0z0dcl0wn.github.io/SignalSweep/> in desktop
    Chrome, Edge or Opera and press **Connect & flash**. No Python, no
@@ -45,12 +46,15 @@ If you have Python and `adb`, `install.py` downloads a published release and
 puts it on your hardware — firmware, Android app, or both:
 
 ```
-pip install esptool pyserial
+pip install -U esptool pyserial
 python install.py                 # firmware + app, latest release
 python install.py --apk-only      # just the Android app
 python install.py --esp-only      # just the firmware
 python install.py --list          # what is attached, changes nothing
 python install.py --erase         # also reset the board to factory defaults
+python install.py --board c5      # force the board id instead of asking the chip
+python install.py --from-dir DIR --esp-only  # install local files, e.g. the CI
+                                   # site artifact's firmware/ folder (no APK there)
 ```
 
 It never guesses what to touch: with more than one board or phone attached it
@@ -174,10 +178,12 @@ explicitly confirm, encrypted behind a PIN.
 
 ## 1. Firmware (`firmware/`)
 
-Runs on a XIAO ESP32-S3. One codebase with one build environment per hardware
-tier: `tier1` ships today (XIAO ESP32-S3 + external U.FL antenna, phone UI, USB
-power), `tier2` and `tier3` are future hardware layers (screen/battery/second
-radio, then GPS/buttons) built from the same source.
+Runs on a XIAO ESP32-S3 or ESP32-C5. The S3 has one build environment per
+hardware tier: `tier1` ships today (XIAO ESP32-S3 + external U.FL antenna,
+phone UI, USB power), `tier2` and `tier3` are future hardware layers
+(screen/battery/second radio, then GPS/buttons) built from the same source.
+The C5 is `env:c5`, on its own toolchain: build it with `python flash.py
+--board c5`, which sets the separate PlatformIO core dir it needs.
 
 ### Prerequisites
 

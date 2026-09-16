@@ -4,6 +4,9 @@ app/dist/
 app/dist-ssr/
 *.local
 
+# Assembled site (CI + local bench builds; site/assemble.sh)
+_site/
+
 # Vite / build caches
 .vite/
 
