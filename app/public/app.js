@@ -72,7 +72,7 @@
         }
         function bandChip(ch) {
             const b = bandOfChannel(ch);
-            return b ? '<span class="radio-badge band">' + b + 'G · ch ' + Number(ch) + '</span>' : '';
+            return b ? '<span class="radio-badge chan">' + b + 'G · ch ' + Number(ch) + '</span>' : '';
         }
 
         function radioBadges(protocol, ap, ch) {
@@ -548,7 +548,7 @@
                 if (bandOfChannel(lead.ch)) delete byBand[bandOfChannel(lead.ch)];
                 const extraBadges = ['2.4', '5'].filter(function (b) { return byBand[b]; })
                         .map(function (b) { return bandChip(byBand[b]); }).join('') +
-                    '<span class="radio-badge radios">' + u.members.length + ' radios</span>';
+                    '<span class="radio-badge nradios">' + u.members.length + ' radios</span>';
                 // The lead is chosen for category, which can leave it without
                 // a name of its own -- 44% of 5 GHz-only transmitters never
                 // send an SSID. Borrow one from any member that has it, and
@@ -3441,7 +3441,7 @@
                 ingestTargets([{ mac: 'CC:00:00:00:00:01', rssi: -50, protocol: 'WiFi', ch: 36 }]);
                 ingestTargets([{ mac: 'CC:00:00:00:00:01', rssi: -51, protocol: 'WiFi' }]);   // push without ch
                 results.chKeptWhenMissing = liveMatches['CC:00:00:00:00:01'].ch === 36 &&
-                    bandChip(36) === '<span class="radio-badge band">5G · ch 36</span>' && bandChip(0) === '';
+                    bandChip(36) === '<span class="radio-badge chan">5G · ch 36</span>' && bandChip(0) === '';
                 delete liveMatches['CC:00:00:00:00:01'];
 
                 // Same-box grouping: near-MAC Wi-Fi siblings join, a gap over
@@ -3566,7 +3566,7 @@
                     const html1 = captured.innerHTML;
                     const pairRowCount = (html1.match(/class="scope-row/g) || []).length;
                     results.groupRendersOnce = units.length === 1 && units[0].members.length === 2 &&
-                        html1.indexOf('<span class="radio-badge radios">2 radios</span>') >= 0 &&
+                        html1.indexOf('<span class="radio-badge nradios">2 radios</span>') >= 0 &&
                         html1.indexOf('data-group="' + groupKey + '"') >= 0 &&
                         pairRowCount === 1;
                     // Header/band counts count units, not radios -- a two-

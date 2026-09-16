@@ -1149,8 +1149,8 @@
             margin-right:6px; border:1px solid currentColor; vertical-align:2px; }
         .radio-badge.ble  { color:#5ac8fa; }
         .radio-badge.wifi { color:#3ddc97; }
-        .radio-badge.band { color:#ffd166; }
-        .radio-badge.radios { color:var(--ss-dim); }
+        .radio-badge.chan { color:#ffd166; }   /* not .band: that class is the band tabs, display:flex */
+        .radio-badge.nradios { color:var(--ss-dim); }   /* not .radios: that class is the radio tab strip, display:grid */
         .group-members { flex-basis:100%; margin-top:0.5rem; border-top:1px solid rgba(140,170,210,0.15); }
         .group-member { padding:0.5rem 0; font-size:0.8rem; border-bottom:1px solid rgba(140,170,210,0.08); }
         /* An unmatched row exists only because the filter is off. Say so, so a
