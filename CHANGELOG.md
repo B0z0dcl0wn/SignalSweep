@@ -10,8 +10,8 @@ All notable changes to SignalSweep are recorded here.
   that hears 5 GHz. Same pads as the S3 harness (LED bar on D1, buzzer on D2),
   BOOT on GPIO28. The S3 tiers are byte-identical: every C5 difference is behind
   `CONFIG_IDF_TARGET_ESP32C5`, gated by a preprocessed-source and image compare.
-- **Radio settings are measured, not borrowed.** Side-by-side captures against an
-  S3 and a known emitter picked: 2.4 GHz 1–11 plus the non-DFS 5 GHz channels at
+- **Radio settings are measured, not borrowed.** Side-by-side captures against a
+  known transmitter picked: 2.4 GHz 1–11 plus the non-DFS 5 GHz channels at
   120 ms (DFS channels cost every other channel listening time); BLE scanning
   25 ms of every 50 (40/100 left three times the silent stretches on a 2-second
   AirTag; bursts left a 118-second blind spot); frames the C5 driver reports as

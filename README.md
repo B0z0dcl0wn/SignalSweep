@@ -1,6 +1,6 @@
 # SignalSweep
 
-A $15 ESP32-S3 that listens for the gear that's watching you. It sweeps
+A $13 ESP32-C5 that listens for the gear that's watching you. It sweeps
 Bluetooth LE and Wi-Fi nonstop, checks everything it hears against a list of
 known surveillance hardware, and **tells you what it found by ear**. Every
 category has its own beep, so it works with no screen at all.
@@ -16,9 +16,6 @@ The phone app is optional. It shows what's here right now, then forgets it.
 |---|---|---|
 | ![Live scope](docs/img/scope.png) | ![Foxhunt](docs/img/foxhunt.png) | ![Drone on the map](docs/img/map-drone.png) |
 | Live matches, strongest first. Cleared when you disconnect. | One target. The beeps speed up as you close in. Walk, don't watch the screen. | Full ASTM F3411 decode: aircraft position and operator position. |
-
-*Bench rig: a second $15 board faking a drone, a Flock camera and an AirTag, so
-there's a known signal to check against.*
 
 ---
 
@@ -72,13 +69,28 @@ everyone's. Go and read it.
 
 ## Getting started
 
-You need a [Seeed Studio XIAO ESP32-S3](https://www.seeedstudio.com/XIAO-ESP32S3-p-5627.html)
-(~$15) and a USB-C cable. That's the whole shopping list.
+### The shopping list
+
+| Board | Hears | Price | How you flash it |
+|---|---|---|---|
+| Seeed Studio XIAO ESP32-C5 | 2.4 **and** 5 GHz | ~$13 | From source: `pio run -e c5` |
+| [Seeed Studio XIAO ESP32-S3](https://www.seeedstudio.com/XIAO-ESP32S3-p-5627.html) | 2.4 GHz | ~$15 | Web flasher, `install.py`, or source |
+
+Plus a USB-C cable. Both boards run the same detector and the same app; the C5
+also sweeps the 5 GHz band, where a growing share of cameras and access points
+live, and it can be told to watch one band or both.
+
+Optional, and worth it: a **passive buzzer** and a **WS2812 LED bar** (it beeps
+and blinks without them only if something else is listening). On the C5, add a
+**dual-band U.FL antenna** — the one in the box is 2.4 GHz only, which throws
+away the reason to buy that board.
 
 **Browser, zero install.** Open
 [b0z0dcl0wn.github.io/SignalSweep](https://b0z0dcl0wn.github.io/SignalSweep/) in
 Chrome or Edge, plug the board in, hit **Connect & flash**. The app lives at
-`/app/` on the same site and talks to the board over Bluetooth.
+`/app/` on the same site and talks to the board over Bluetooth. The flasher and
+`install.py` serve ESP32-S3 images today; for the C5, build from source until
+they learn the second board.
 
 **Script: firmware plus the Android APK.**
 
