@@ -427,7 +427,7 @@
             for (let i = 0; i < keys.length; i++) {
                 const bandRows = liveRows(keys[i]);
                 const el = document.getElementById('n-' + keys[i]);
-                if (el) el.textContent = bandRows.length;
+                if (el) el.textContent = groupSiblings(bandRows).length;
                 const meter = document.getElementById('m-' + keys[i]);
                 const strongest = bandRows.length
                     ? Math.max.apply(null, bandRows.map(function (m) { return Number(m.rssi) || -999; }))
@@ -444,7 +444,7 @@
 
             const rows = liveRows();
             const countEl = document.getElementById('scope-count');
-            if (countEl) countEl.textContent = rows.length;
+            if (countEl) countEl.textContent = groupSiblings(rows).length;
             const dropEl = document.getElementById('scope-drop');
             if (dropEl) {
                 // Only worth showing when a real fraction is being lost; the odd
@@ -468,8 +468,7 @@
                 return;
             }
 
-            let html = '';
-            for (const m of rows) {
+            function rowHtml(m, extraBadges, extraHtml, noActions) {
                 const cat = categoryOf(m.type || m.rule);
                 // Name it by whatever a person would recognise: its own name,
                 // then the network it is announcing, then the rule it tripped,
@@ -485,11 +484,11 @@
                 // A random address with no company ID has no maker to name;
                 // say so rather than leave the blank unexplained.
                 const vendor = vendorOf(m) || (publicMac(m) || m.cid != null ? '' : 'random MAC');
-                html += '<div class="scope-row' + (unmatched ? ' unmatched' : '') +
+                return '<div class="scope-row' + (unmatched ? ' unmatched' : '') +
                         (isHunted ? ' hunted' : '') +
                         '" style="border-left:4px solid ' + cat.color + '">' +
                     '<div class="scope-main">' +
-                        '<div class="scope-title">' + radioBadges(m.protocol, m.ap, m.ch) +
+                        '<div class="scope-title">' + radioBadges(m.protocol, m.ap, m.ch) + (extraBadges || '') +
                             (cat.icon ? cat.icon + ' ' : '') + esc(title) +
                             // A weak hint has no vendor to name -- cat.label is
                             // just the rule text, which already appears below.
@@ -516,8 +515,33 @@
                         '<div class="scope-rssi mono">' + esc(m.rssi) + ' dBm</div>' +
                     '</div>' +
                     detailLine(m, cat) +
-                    actionRow(m, cat) +
+                    (extraHtml || '') +
+                    (noActions ? '' : actionRow(m, cat)) +
                 '</div>';
+            }
+
+            let html = '';
+            for (const u of groupSiblings(rows)) {
+                if (u.members.length === 1) { html += rowHtml(u.members[0]); continue; }
+                const lead = unitLead(u.members);
+                const hunted = !!huntMac && u.members.some(function (m) { return String(m.mac).toUpperCase() === huntMac.toUpperCase(); });
+                const open = hunted || expandedGroups.has(u.key);
+                // One chip per band heard, from that band's strongest radio.
+                const byBand = {};
+                u.members.forEach(function (m) { const b = bandOfChannel(m.ch); if (b && !byBand[b] && m !== lead) byBand[b] = m.ch; });
+                if (bandOfChannel(lead.ch)) delete byBand[bandOfChannel(lead.ch)];
+                const extraBadges = Object.keys(byBand).map(function (b) { return bandChip(byBand[b]); }).join('') +
+                    '<span class="radio-badge radios">' + u.members.length + ' radios</span>';
+                const cat = categoryOf(lead.type || lead.rule);
+                const extraHtml = '<div class="scope-actions"><button class="scope-act" data-act="expand" data-group="' + esc(u.key) + '">' +
+                        (open ? '\u25be Hide radios' : '\u25b8 Show ' + u.members.length + ' radios') + '</button></div>' +
+                    (open ? '<div class="group-members">' + u.members.map(function (m) {
+                        const mc = categoryOf(m.type || m.rule);
+                        return '<div class="group-member">' + bandChip(m.ch) +
+                            ' <span class="mono">' + esc(m.mac) + '</span> \u00b7 <span class="mono">' + esc(m.rssi) + ' dBm</span>' +
+                            actionRow(m, mc) + '</div>';
+                    }).join('') + '</div>' : '');
+                html += rowHtml(lead, extraBadges, extraHtml, true);
             }
             list.innerHTML = html;
         }
@@ -527,6 +551,7 @@
         // device's buzzer becomes an RSSI-driven Geiger clicker for that MAC so
         // you can physically walk it down. Detection never stops meanwhile.
         let huntMac = '';
+        let expandedGroups = new Set();   // group keys the user opened; in memory only
         let foxhuntMode = false;      // filter off: list everything, hunt anything
         // A push already in flight when you tap still carries the old scan_all,
         // and adopting it flipped the button back for a frame. Local intent
@@ -737,6 +762,12 @@
             if (sm) { setSound(sm.getAttribute('data-sound') === '1'); return; }
             const act = ev.target.closest('.scope-act');
             if (!act) return;
+            if (act.getAttribute('data-act') === 'expand') {
+                const g = act.getAttribute('data-group');
+                if (expandedGroups.has(g)) expandedGroups.delete(g); else expandedGroups.add(g);
+                renderScope();
+                return;
+            }
             const mac = act.getAttribute('data-mac');
             if (act.getAttribute('data-act') === 'hunt') huntTarget(mac);
             else if (act.getAttribute('data-act') === 'ring') ringTarget(mac);
@@ -3140,6 +3171,7 @@
             mapFix = null;
             huntMac = '';
             huntTrace = [];
+            expandedGroups = new Set();
             // Per link, not per app session: a bad stretch on the last board
             // must not paint "updates lost" over the next one.
             rxOk = 0; rxDropped = 0;
@@ -3456,6 +3488,22 @@
                                               liveMatches['CC:00:04'].rssi === -52 &&
                                               Object.keys(liveMatches).length === beforeKeys;
                 huntMac = ''; huntTrace = [];
+
+                // Same-box siblings render as one row with a "N radios" chip
+                // and an expand control, not two separate rows.
+                foxhuntMode = true;
+                ingestTargets([
+                    { mac: 'DD:EE:FF:00:11:20', rssi: -45, protocol: 'WiFi', ch: 6 },
+                    { mac: 'DD:EE:FF:00:11:22', rssi: -60, protocol: 'WiFi', ch: 36 }
+                ]);
+                const units = groupSiblings(liveRows('all')).filter(function (u) { return u.key === 'DD:EE:FF:00:11'; });
+                renderScope();
+                const listHtml = (document.getElementById('targets-list') || { innerHTML: '' }).innerHTML;
+                results.groupRendersOnce = units.length === 1 && units[0].members.length === 2 &&
+                    (typeof document === 'undefined' || !document.getElementById('targets-list') ||
+                     (listHtml.indexOf('2 radios') >= 0 && listHtml.indexOf('data-group="DD:EE:FF:00:11"') >= 0));
+                delete liveMatches['DD:EE:FF:00:11:20']; delete liveMatches['DD:EE:FF:00:11:22'];
+                foxhuntMode = false;
 
                 // Ordering is bucketed to 5 dB so multipath jitter cannot swap
                 // two rows under a thumb that is already reaching for one.
