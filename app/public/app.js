@@ -342,7 +342,13 @@
                 list.sort(function (a, b) { return a.last - b.last; });
                 let cur = null, prev = -1000;
                 for (const e of list) {
-                    if (!cur || e.last - prev > SIBLING_SPAN) cur = { key: k, members: [] };
+                    // Two separate groups can land under the same 5-octet
+                    // prefix (e.g. :10/:14 and :19 four apart from each
+                    // other but not from :14) -- suffix the key with the
+                    // group's own lowest last octet so they don't share a
+                    // data-group id and expansion state.
+                    if (!cur || e.last - prev > SIBLING_SPAN)
+                        cur = { key: k + ':' + e.last.toString(16).padStart(2, '0').toUpperCase(), members: [] };
                     groupOf.set(e.m, cur);
                     prev = e.last;
                 }
@@ -357,8 +363,9 @@
             return units;
         }
         // The row that speaks for a group: a real vendor category beats a weak
-        // hint beats no match, then the strongest signal (members are already
-        // strongest-first).
+        // hint beats no match. Ties keep the first member in list order --
+        // that is not always the strongest signal, because hunt pinning can
+        // splice the hunted radio to the front regardless of its RSSI.
         function unitLead(members) {
             const rank = function (m) { const b = bandOf(m); return b === 'none' ? 0 : b === 'weak' ? 1 : 2; };
             let best = members[0];
@@ -542,6 +549,18 @@
                 const extraBadges = ['2.4', '5'].filter(function (b) { return byBand[b]; })
                         .map(function (b) { return bandChip(byBand[b]); }).join('') +
                     '<span class="radio-badge radios">' + u.members.length + ' radios</span>';
+                // The lead is chosen for category, which can leave it without
+                // a name of its own -- 44% of 5 GHz-only transmitters never
+                // send an SSID. Borrow one from any member that has it, and
+                // show the strongest member's signal rather than the lead's
+                // (the lead can be the weaker radio of the pair). data-mac
+                // and the action buttons still come from the real `lead`.
+                const ssidMember = u.members.find(function (m) { return m.ssid; });
+                const strongestRssi = Math.max.apply(null, u.members.map(function (m) { return Number(m.rssi) || -999; }));
+                const leadForRow = Object.assign({}, lead, {
+                    ssid: lead.ssid || (ssidMember ? ssidMember.ssid : ''),
+                    rssi: strongestRssi
+                });
                 // A hunt holds the group open on its own; the toggle button
                 // would do nothing while that's true (open is already forced
                 // true), so don't offer a control that has no effect.
@@ -554,7 +573,7 @@
                             ' <span class="mono">' + esc(m.mac) + '</span> \u00b7 <span class="mono">' + esc(m.rssi) + ' dBm</span>' +
                             actionRow(m, mc) + '</div>';
                     }).join('') + '</div>' : '');
-                html += rowHtml(lead, extraBadges, extraHtml, true, hunted);
+                html += rowHtml(leadForRow, extraBadges, extraHtml, true, hunted);
             }
             list.innerHTML = html;
         }
@@ -3430,6 +3449,12 @@
                 const w = function (mac, rssi, extra) { return Object.assign({ mac: mac, rssi: rssi, protocol: 'WiFi' }, extra || {}); };
                 const g1 = groupSiblings([w('AA:BB:CC:DD:EE:10', -40), w('aa:bb:cc:dd:ee:14', -60), w('AA:BB:CC:DD:EE:19', -70)]);
                 results.siblingSpan = g1.length === 2 && g1[0].members.length === 2 && g1[1].members.length === 1;   // +4 joins, +5 does not
+                // Both groups above share the first-5-octet prefix
+                // 'AA:BB:CC:DD:EE' -- a key of just the prefix would collide
+                // and merge their expansion state. Keying on the group's own
+                // lowest last octet keeps them apart.
+                results.siblingKeysUnique = g1[0].key !== g1[1].key &&
+                    g1[0].key === 'AA:BB:CC:DD:EE:10' && g1[1].key === 'AA:BB:CC:DD:EE:19';
                 const g2 = groupSiblings([w('AA:BB:CC:DD:EE:08', -50), w('AA:BB:CC:DD:EE:00', -40), w('AA:BB:CC:DD:EE:04', -45)]);
                 results.siblingChain = g2.length === 1 && g2[0].members.length === 3 && g2[0].members[0].mac === 'AA:BB:CC:DD:EE:08';
                 const g3 = groupSiblings([w('11:11:11:11:11:01', -40, { ssid: 'Home' }), w('22:22:22:22:22:01', -41, { ssid: 'Home' }),
@@ -3524,11 +3549,17 @@
                     { mac: 'DD:EE:FF:00:11:20', rssi: -45, protocol: 'WiFi', ch: 6, type: 'Flock Safety', confidence: 90 },
                     { mac: 'DD:EE:FF:00:11:22', rssi: -60, protocol: 'WiFi', ch: 36 }
                 ]);
-                const units = groupSiblings(liveRows('all')).filter(function (u) { return u.key === 'DD:EE:FF:00:11'; });
+                const groupKey = 'DD:EE:FF:00:11:20';   // prefix + the group's own lowest last octet
+                const units = groupSiblings(liveRows('all')).filter(function (u) { return u.key === groupKey; });
                 const origGetElementById = document.getElementById;
                 const captured = { innerHTML: '' };
+                const capturedCount = { textContent: '' };
+                const capturedNAll = { textContent: '' };
                 document.getElementById = function (id) {
-                    return id === 'targets-list' ? captured : origGetElementById(id);
+                    if (id === 'targets-list') return captured;
+                    if (id === 'scope-count') return capturedCount;
+                    if (id === 'n-all') return capturedNAll;
+                    return origGetElementById(id);
                 };
                 try {
                     renderScope();
@@ -3536,22 +3567,27 @@
                     const pairRowCount = (html1.match(/class="scope-row/g) || []).length;
                     results.groupRendersOnce = units.length === 1 && units[0].members.length === 2 &&
                         html1.indexOf('<span class="radio-badge radios">2 radios</span>') >= 0 &&
-                        html1.indexOf('data-group="DD:EE:FF:00:11"') >= 0 &&
+                        html1.indexOf('data-group="' + groupKey + '"') >= 0 &&
                         pairRowCount === 1;
+                    // Header/band counts count units, not radios -- a two-
+                    // radio box is one thing on screen, not two, through the
+                    // same 'scope-count'/'n-all' elements renderScope() paints.
+                    results.groupCountsUnits = capturedCount.textContent === 1 && capturedNAll.textContent === 1;
 
                     // Expanding shows both members with their own actions.
-                    expandedGroups.add('DD:EE:FF:00:11');
+                    expandedGroups.add(groupKey);
                     renderScope();
                     const html2 = captured.innerHTML;
                     results.groupExpands = html2.indexOf('group-members') >= 0 &&
                         html2.indexOf('DD:EE:FF:00:11:20') >= 0 &&
                         html2.indexOf('DD:EE:FF:00:11:22') >= 0;
-                    expandedGroups.delete('DD:EE:FF:00:11');
+                    expandedGroups.delete(groupKey);
 
                     // A hunted member that is NOT the group's lead still
                     // pins the outline to the row -- the lead here is the
-                    // stronger, unmatched ':20' (rank ties keep the first
-                    // member), so hunting ':22' exercises the non-lead path.
+                    // Flock-typed, matched ':20' (a real category beats no
+                    // match regardless of signal), so hunting ':22' exercises
+                    // the non-lead path.
                     huntMac = 'DD:EE:FF:00:11:22';
                     renderScope();
                     results.groupHuntedOutline = /class="scope-row[^"]*\bhunted\b/.test(captured.innerHTML);
@@ -3559,6 +3595,33 @@
                     // (which would do nothing) must not be offered.
                     results.groupHuntNoToggle = captured.innerHTML.indexOf('data-act="expand"') === -1;
                     huntMac = '';
+
+                    // The group row's title borrows an SSID from any member
+                    // that has one -- the lead is picked for category, and
+                    // 44% of 5 GHz-only transmitters never send an SSID of
+                    // their own, so a lead with none must not title the row
+                    // by bare MAC when a sibling can name it.
+                    liveMatches = {};
+                    ingestTargets([
+                        { mac: 'DD:EE:FF:00:12:30', rssi: -45, protocol: 'WiFi', ch: 6, type: 'Flock Safety', confidence: 90 },
+                        { mac: 'DD:EE:FF:00:12:32', rssi: -60, protocol: 'WiFi', ch: 36, ssid: 'GuestNet' }
+                    ]);
+                    captured.innerHTML = '';
+                    renderScope();
+                    results.groupSsidFromMember = captured.innerHTML.indexOf('GuestNet') >= 0;
+
+                    // The group row's signal is the strongest member's, not
+                    // the lead's -- the lead can be the weaker radio of the
+                    // pair (chosen for category, not signal).
+                    liveMatches = {};
+                    ingestTargets([
+                        { mac: 'DD:EE:FF:00:13:30', rssi: -70, protocol: 'WiFi', ch: 6, type: 'Flock Safety', confidence: 90 },
+                        { mac: 'DD:EE:FF:00:13:32', rssi: -30, protocol: 'WiFi', ch: 36 }
+                    ]);
+                    captured.innerHTML = '';
+                    renderScope();
+                    results.groupRssiStrongest = captured.innerHTML.indexOf('-30 dBm') >= 0 &&
+                        captured.innerHTML.indexOf('-70 dBm') === -1;
                 } finally {
                     document.getElementById = origGetElementById;
                 }
