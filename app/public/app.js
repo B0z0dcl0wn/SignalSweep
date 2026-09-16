@@ -320,6 +320,52 @@
             return rows;
         }
 
+        // ---- Same-box grouping ---------------------------------------------
+        // A dual-band router or mesh node transmits from near-identical MACs:
+        // same first five octets, last octet a few apart. Field captures (C5,
+        // 2026-09-15) put ~32% of 5 GHz-only transmitters in exactly that
+        // relation to a box already heard on 2.4 GHz. SSID never joins rows:
+        // mesh networks and public hotspots share names across unrelated boxes,
+        // and 44% of 5 GHz-only transmitters never send one.
+        const SIBLING_SPAN = 4;
+        function groupSiblings(rows) {
+            const groupOf = new Map();   // row -> group object
+            const byKey = new Map();
+            for (const m of rows) {
+                const o = m.protocol === 'WiFi' ? String(m.mac).toUpperCase().split(/[:-]/) : null;
+                if (!o || o.length !== 6 || !o.every(function (x) { return /^[0-9A-F]{2}$/.test(x); })) continue;
+                const k = o.slice(0, 5).join(':');
+                if (!byKey.has(k)) byKey.set(k, []);
+                byKey.get(k).push({ m: m, last: parseInt(o[5], 16) });
+            }
+            byKey.forEach(function (list, k) {
+                list.sort(function (a, b) { return a.last - b.last; });
+                let cur = null, prev = -1000;
+                for (const e of list) {
+                    if (!cur || e.last - prev > SIBLING_SPAN) cur = { key: k, members: [] };
+                    groupOf.set(e.m, cur);
+                    prev = e.last;
+                }
+            });
+            const units = [], seen = new Set();
+            for (const m of rows) {
+                const g = groupOf.get(m);
+                if (!g) { units.push({ key: String(m.mac).toUpperCase(), members: [m] }); continue; }
+                g.members.push(m);
+                if (!seen.has(g)) { seen.add(g); units.push(g); }
+            }
+            return units;
+        }
+        // The row that speaks for a group: a real vendor category beats a weak
+        // hint beats no match, then the strongest signal (members are already
+        // strongest-first).
+        function unitLead(members) {
+            const rank = function (m) { const b = bandOf(m); return b === 'none' ? 0 : b === 'weak' ? 1 : 2; };
+            let best = members[0];
+            for (const m of members) if (rank(m) > rank(best)) best = m;
+            return best;
+        }
+
         // One line of extra detail per category. Drones earn the most, because
         // Remote ID is a broadcast standard that hands us real values.
         function detailLine(m, cat) {
@@ -3333,6 +3379,19 @@
                 results.chKeptWhenMissing = liveMatches['CC:00:00:00:00:01'].ch === 36 &&
                     bandChip(36) === '<span class="radio-badge band">5G · ch 36</span>' && bandChip(0) === '';
                 delete liveMatches['CC:00:00:00:00:01'];
+
+                // Same-box grouping: near-MAC Wi-Fi siblings join, a gap over
+                // SIBLING_SPAN splits, SSID never joins, BLE never joins.
+                const w = function (mac, rssi, extra) { return Object.assign({ mac: mac, rssi: rssi, protocol: 'WiFi' }, extra || {}); };
+                const g1 = groupSiblings([w('AA:BB:CC:DD:EE:10', -40), w('aa:bb:cc:dd:ee:14', -60), w('AA:BB:CC:DD:EE:19', -70)]);
+                results.siblingSpan = g1.length === 2 && g1[0].members.length === 2 && g1[1].members.length === 1;   // +4 joins, +5 does not
+                const g2 = groupSiblings([w('AA:BB:CC:DD:EE:08', -50), w('AA:BB:CC:DD:EE:00', -40), w('AA:BB:CC:DD:EE:04', -45)]);
+                results.siblingChain = g2.length === 1 && g2[0].members.length === 3 && g2[0].members[0].mac === 'AA:BB:CC:DD:EE:08';
+                const g3 = groupSiblings([w('11:11:11:11:11:01', -40, { ssid: 'Home' }), w('22:22:22:22:22:01', -41, { ssid: 'Home' }),
+                                          { mac: 'AA:BB:CC:DD:EE:11', rssi: -42, protocol: 'BLE' }, w('AA:BB:CC:DD:EE:12', -43)]);
+                results.siblingNeverSsidOrBle = g3.length === 4;
+                results.unitLeadCategory = unitLead([w('AA:BB:CC:DD:EE:01', -40), w('AA:BB:CC:DD:EE:02', -70, { type: 'Flock Safety' })]).mac === 'AA:BB:CC:DD:EE:02' &&
+                    unitLead([w('AA:BB:CC:DD:EE:01', -40), w('AA:BB:CC:DD:EE:02', -70)]).mac === 'AA:BB:CC:DD:EE:01';
 
                 // Vendor: company ID wins, a public MAC falls back to its OUI,
                 // a randomized address names nobody.
