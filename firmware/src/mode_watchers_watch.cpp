@@ -1193,6 +1193,7 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
                     }
                     if (foundSsid.length() > 0) target.ssid = foundSsid;
                     if (role > target.wifiRole) target.wifiRole = role;
+                    target.wifiCh = packet->rx_ctrl.channel;
                     if (droneDecoded) applyDroneData(target, wifiUas);
                     noteAlertForTarget(target, bestWeight, matchedCategory);
                     found = true;
@@ -1212,6 +1213,7 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
                 newTarget.protocol = "WiFi";
                 newTarget.ssid = foundSsid;
                 newTarget.wifiRole = role;
+                newTarget.wifiCh = packet->rx_ctrl.channel;
                 newTarget.confidence = wifiConfidence;
                 newTarget.tier = tierForConfidence(wifiConfidence);
                 newTarget.lastReportedMs = 0;
@@ -1796,6 +1798,7 @@ String getWatchersTargetsJson() {
             if (t.wifiRole > 0)    obj["ap"]  = t.wifiRole == 2 ? 1 : 0;
             if (t.blePublic)       obj["pub"] = 1;
             if (t.bleCompany >= 0) obj["cid"] = t.bleCompany;
+            if (t.wifiCh > 0)      obj["ch"]  = t.wifiCh;   // ~7 B, Wi-Fi rows only
 
             // A device that matched nothing is only in this list because the
             // filter is off, and the app shows it as an address, a protocol and

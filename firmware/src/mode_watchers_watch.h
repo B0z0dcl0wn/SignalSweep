@@ -55,6 +55,10 @@ struct WatcherTargetInfo {
     bool    blePublic  = false;
     int32_t bleCompany = -1;
 
+    // Last Wi-Fi channel this target was heard on, 0 = unknown / BLE only. The
+    // app turns it into a 2.4G / 5G badge; last heard wins.
+    uint8_t wifiCh     = 0;
+
     // Decoded ASTM F3411 Remote ID, populated only for drones (hasDrone).
     // Everything else leaves this zeroed and it never reaches the wire — the
     // 1 Hz push is the tightest budget on the board, so these fields are
