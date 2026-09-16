@@ -858,7 +858,10 @@ static void watchersWifiChannelHopperTask(void *pvParameters) {
             esp_err_t chErr = esp_wifi_set_channel(parked, WIFI_SECOND_CHAN_NONE);
             if (chErr != ESP_OK && parked > 14 && !warned5GhzRejected) {
                 warned5GhzRejected = true;
-                ESP_LOGW(TAG, "esp_wifi_set_channel rejected 5 GHz channel %d: %s -- band mode may not have applied",
+                // ESP_LOGW is compiled out at CORE_DEBUG_LEVEL=0 (see the
+                // alert print above), so this is a plain print -- otherwise a
+                // rejected 5 GHz channel is silent on a headless board.
+                if (Serial) Serial.printf("[C5] esp_wifi_set_channel rejected 5 GHz channel %d: %s -- band mode may not have applied\n",
                           parked, esp_err_to_name(chErr));
             }
         } else {
@@ -866,7 +869,10 @@ static void watchersWifiChannelHopperTask(void *pvParameters) {
             esp_err_t chErr = esp_wifi_set_channel(ch, WIFI_SECOND_CHAN_NONE);
             if (chErr != ESP_OK && ch > 14 && !warned5GhzRejected) {
                 warned5GhzRejected = true;
-                ESP_LOGW(TAG, "esp_wifi_set_channel rejected 5 GHz channel %d: %s -- band mode may not have applied",
+                // ESP_LOGW is compiled out at CORE_DEBUG_LEVEL=0 (see the
+                // alert print above), so this is a plain print -- otherwise a
+                // rejected 5 GHz channel is silent on a headless board.
+                if (Serial) Serial.printf("[C5] esp_wifi_set_channel rejected 5 GHz channel %d: %s -- band mode may not have applied\n",
                           ch, esp_err_to_name(chErr));
             }
             chIndex = (chIndex + 1) % (int)chCount;
@@ -1602,11 +1608,14 @@ void startWatchersWatch() {
     // keeps reporting band 0 -- and it's headless, so this is the only witness.
     esp_err_t ccErr = esp_wifi_set_country_code(SWEEP_COUNTRY, true);   // gates the legal 5 GHz channels
     if (ccErr != ESP_OK) {
-        ESP_LOGW(TAG, "esp_wifi_set_country_code failed: %s", esp_err_to_name(ccErr));
+        // ESP_LOGW is compiled out at CORE_DEBUG_LEVEL=0 (see the alert
+        // print elsewhere in this file), so this is a plain print -- a
+        // headless board's only witness to a failed 5 GHz enable.
+        if (Serial) Serial.printf("[C5] esp_wifi_set_country_code failed: %s\n", esp_err_to_name(ccErr));
     }
     esp_err_t bmErr = esp_wifi_set_band_mode(WIFI_BAND_MODE_AUTO);      // let set_channel cross bands
     if (bmErr != ESP_OK) {
-        ESP_LOGW(TAG, "esp_wifi_set_band_mode failed: %s", esp_err_to_name(bmErr));
+        if (Serial) Serial.printf("[C5] esp_wifi_set_band_mode failed: %s\n", esp_err_to_name(bmErr));
     }
 #endif
     // Filter in hardware. The callback only ever handles WIFI_PKT_MGMT, so

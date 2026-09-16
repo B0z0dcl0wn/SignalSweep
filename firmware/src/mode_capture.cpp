@@ -308,11 +308,15 @@ void startCapture(uint32_t durationSecs) {
     // line is what tells them why 5 GHz never shows up.
     esp_err_t ccErr = esp_wifi_set_country_code(SWEEP_COUNTRY, true);   // gates legal 5 GHz channels
     if (ccErr != ESP_OK) {
-        ESP_LOGW(TAG, "esp_wifi_set_country_code failed: %s", esp_err_to_name(ccErr));
+        // ESP_LOGW is compiled out at CORE_DEBUG_LEVEL=0 (see the alert
+        // print in mode_watchers_watch.cpp), so this is a plain print --
+        // capture is USB-only with a human watching, and this line is what
+        // tells them why 5 GHz never shows up.
+        if (Serial) Serial.printf("[C5] esp_wifi_set_country_code failed: %s\n", esp_err_to_name(ccErr));
     }
     esp_err_t bmErr = esp_wifi_set_band_mode(WIFI_BAND_MODE_AUTO);
     if (bmErr != ESP_OK) {
-        ESP_LOGW(TAG, "esp_wifi_set_band_mode failed: %s", esp_err_to_name(bmErr));
+        if (Serial) Serial.printf("[C5] esp_wifi_set_band_mode failed: %s\n", esp_err_to_name(bmErr));
     }
 #endif
     wifi_promiscuous_filter_t f = { .filter_mask = WIFI_PROMIS_FILTER_MASK_ALL };
