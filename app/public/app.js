@@ -1023,6 +1023,7 @@
             capturing = true;
             capAcquireWake();   // keep the screen on so the OS can't kill the capture
             sendCommand({ raw: 'CMD:CAP:START:' + capReqSecs });
+            capArmAck(false);
             capFlushTimer = setInterval(capFlush, 1000);
             showToast('Capturing — keep the board still', '◉');
             paintCapture();
@@ -1054,8 +1055,42 @@
             }
         }
 
+        // Start watchdog. A capture once sat at a full countdown with zero
+        // counters and a header-only file: the board never answered, and
+        // nothing on this side ever gave up. Any {"cap"} frame (the board acks
+        // immediately) disarms it; silence gets one resend, then an abort.
+        let capAckTimer = null;
+        function capArmAck(retried) {
+            clearTimeout(capAckTimer);
+            capAckTimer = setTimeout(() => {
+                if (!capturing) return;
+                if (retried) { capAbort("The board didn't start the capture — reconnect and try again", true); return; }
+                sendCommand({ raw: 'CMD:CAP:START:' + capReqSecs });
+                capArmAck(true);
+            }, 5000);
+        }
+
+        // End a capture that did not finish normally. deleteFile: the file holds
+        // only its header, so keeping it would just add an empty survey.
+        async function capAbort(msg, deleteFile) {
+            capturing = false;
+            clearTimeout(capAckTimer); capAckTimer = null;
+            capReleaseWake();
+            if (capFlushTimer) { clearInterval(capFlushTimer); capFlushTimer = null; }
+            if (deleteFile) {
+                capBuf = '';
+                try { await window.CapFilesystem.deleteFile({ path: capFileName, directory: window.CapDirectory.Documents }); } catch (e) {}
+            } else {
+                await capFlush();
+            }
+            showToast(msg, '✕');
+            paintCapture();
+            renderFinds();
+        }
+
         function handleCapStat(cap) {
-            if (cap.error) { capturing = false; showToast('Capture: ' + cap.error, '✕'); paintCapture(); return; }
+            clearTimeout(capAckTimer); capAckTimer = null;
+            if (cap.error) { capAbort('Capture: ' + cap.error, true); return; }
             if ('started' in cap) return;   // ack only
             capStat.wifi = cap.wifi || 0;
             capStat.ble = cap.ble || 0;
@@ -2517,15 +2552,37 @@
             }
         }
 
+        // Re-adopt a link the OS still holds. Android can destroy and recreate
+        // the Activity (low memory, a theme switch) while the process and its
+        // GATT link live on: the page came back "disconnected", the board had
+        // stopped advertising because it was still connected, so the picker
+        // found nothing -- stuck until the link dropped or a force stop.
+        let reconciling = false;
         async function reconcileConnection() {
             if (!(window.Capacitor && window.Capacitor.isNativePlatform() && window.BleClient)) return;
+            if (reconciling || connectionType === 'USB' || connectionType === 'SERIAL') return;
+            // initialize() raises the Nearby-devices prompt on a phone that has
+            // never connected over BLE -- never on launch. A phone that has
+            // connected before has granted it already.
+            let last = null;
+            try { last = localStorage.getItem(LAST_DEVICE_KEY); } catch (e) {}
+            if (!last && connectionType !== 'BLE') return;
+            reconciling = true;
             try {
+                // Without this, the connected-devices query throws "Bluetooth LE not
+                // initialized" on every fresh page, which is how the bug hid.
+                await window.BleClient.initialize({ androidNeverForLocation: true });
                 const connected = await window.BleClient.getConnectedDevices([NUS_SERVICE_UUID]);
                 const device = connected && connected[0];
                 if (device) {
                     if (connectionType !== 'BLE' || !bleDevice) {
+                        // A recreated page gets a fresh plugin with no GATT client
+                        // of its own; connect() first (already-connected is success).
+                        try { await window.BleClient.connect(device.deviceId, () => onDeviceDisconnected()); } catch (e) {}
                         bleDevice = device;
-                        try { await subscribeNative(device.deviceId); } catch (e) { /* already subscribed */ }
+                        await subscribeNative(device.deviceId);
+                        wantConnection = true;
+                        reconnectDelay = 0;
                         updateConnectionUI(true, 'BLE');
                     }
                 } else if (connectionType === 'BLE') {
@@ -2533,6 +2590,8 @@
                 }
             } catch (e) {
                 console.warn('reconcileConnection error:', e);
+            } finally {
+                reconciling = false;
             }
         }
 
@@ -2680,7 +2739,14 @@
                 if (!dev.hasPermission) {
                     // Android's own dialog. A decline resolves granted:false
                     // rather than throwing, so this is a branch, not a catch.
-                    const { granted } = await window.UsbSerial.requestPermission({ deviceId: dev.deviceId });
+                    // The plugin's `granted` is always false on Android 12+: its
+                    // PendingIntent is FLAG_IMMUTABLE, which strips the
+                    // EXTRA_PERMISSION_GRANTED extra it reads. Tapping OK then
+                    // read as "denied" and the connect silently stopped (bench,
+                    // OnePlus API 36: granted:false, hasPermission true right
+                    // after). Ask the USB manager instead.
+                    await window.UsbSerial.requestPermission({ deviceId: dev.deviceId });
+                    const { granted } = await window.UsbSerial.hasPermission({ deviceId: dev.deviceId });
                     if (!granted) {
                         updateConnectionUI(false);
                         showToast('USB permission denied', '✕');
@@ -2706,8 +2772,13 @@
                     showToast('USB device unplugged', '✕');
                     onDeviceDisconnected();
                 }));
+                // The plugin discards its reader on a stream error, so no more
+                // data will ever arrive. Only warning here left the app showing
+                // "connected" to a dead link -- and a capture waiting forever.
                 usbListeners.push(await window.UsbSerial.addListener('error', (ev) => {
                     console.warn('USB stream error:', ev && ev.message);
+                    showToast('USB link lost — reconnect', '✕');
+                    onDeviceDisconnected();
                 }));
 
                 await window.UsbSerial.startReading({ portId });
@@ -2967,6 +3038,9 @@
             // is only ever set on the native BLE path, so a yanked cable does
             // not start a BLE backoff loop.
             if (usbPortId || usbListeners.length) teardownUsb();
+            // capturing used to survive the link, leaving the page stuck on a
+            // countdown no frame would ever move.
+            if (capturing) capAbort('Board disconnected — capture stopped, partial file kept', false);
             clearLiveState();
             updateConnectionUI(false);
             if (wantConnection) scheduleReconnect();
@@ -3029,7 +3103,11 @@
 
             setTimeout(() => {
                 if (window.App) {
-                    window.App.addListener('backButton', () => window.App.exitApp());
+                    // Back backgrounds, it does not finish the Activity. exitApp()
+                    // killed the page but not the process, so the BLE link and
+                    // the USB port outlived the UI that owned them. Disconnect
+                    // is the way to let go of the board.
+                    window.App.addListener('backButton', () => window.App.minimizeApp());
                 }
             }, 1000);
         });

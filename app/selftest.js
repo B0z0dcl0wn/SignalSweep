@@ -288,6 +288,24 @@ if (flockFail.length) {
 }
 console.log('[signalsweep self-test] Flock wildcard-probe signature intact: ok');
 
+// USB connect + capture recovery. The plugin's requestPermission `granted` is
+// always false on Android 12+ (FLAG_IMMUTABLE strips the extra), so trusting it
+// made "OK" read as "denied"; a start the board never acked, a dead stream, or
+// a disconnect mid-capture all left the capture page waiting forever.
+const usbFail = [];
+if (/const \{ granted \} = await window\.UsbSerial\.requestPermission/.test(appSrc)) usbFail.push("trusts requestPermission's granted flag again");
+if (!/UsbSerial\.hasPermission\(/.test(appSrc)) usbFail.push('connect no longer re-checks hasPermission');
+if (!/addListener\('error'[\s\S]{0,400}?onDeviceDisconnected\(\)/.test(appSrc)) usbFail.push('USB stream error no longer disconnects');
+if (!/sendCommand\(\{ raw: 'CMD:CAP:START:' \+ capReqSecs \}\);\s*capArmAck\(false\)/.test(appSrc)) usbFail.push('capture start watchdog not armed');
+if (!/function handleCapStat\(cap\) \{\s*clearTimeout\(capAckTimer\)/.test(appSrc)) usbFail.push('cap frames no longer disarm the watchdog');
+if (!/function onDeviceDisconnected\(\)[\s\S]{0,800}?if \(capturing\) capAbort\(/.test(appSrc)) usbFail.push('disconnect no longer ends a running capture');
+// Back used to exitApp(): the page died, the BLE link and USB port did not, and
+// the reopened app could not re-adopt them (reconcile queried before initialize).
+if (/addListener\('backButton'[^\n]*exitApp/.test(appSrc)) usbFail.push('back button finishes the Activity again (exitApp)');
+if (!/async function reconcileConnection\(\) \{(?:(?!getConnectedDevices)[\s\S])*?BleClient\.initialize\(/.test(appSrc)) usbFail.push('reconcileConnection queries BLE before initialize()');
+if (usbFail.length) { console.log('FAIL: USB connect/capture recovery:', usbFail); process.exit(1); }
+console.log('[signalsweep self-test] USB connect/capture recovery intact: ok');
+
 const results = await global.__signalsweepSelfTest();
 const failed = Object.entries(results).filter(([, v]) => !v).map(([k]) => k);
 console.log('[signalsweep self-test]', results);

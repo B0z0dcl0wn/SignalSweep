@@ -4,6 +4,39 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Fixed — Connecting and capturing recover on their own
+
+- **One tap on OK now connects over USB.** The USB plugin's `requestPermission`
+  always answers `granted:false` on Android 12+: its PendingIntent is
+  `FLAG_IMMUTABLE`, which strips the `EXTRA_PERMISSION_GRANTED` extra it reads.
+  Measured on a OnePlus 7T (API 36): tap OK, get `granted:false`, and
+  `hasPermission` is true a moment later. The app believed the flag, toasted
+  "USB permission denied" and stopped, so every first connect needed a second
+  tap. It now asks the USB manager (`UsbSerial.hasPermission`) instead.
+- **Back no longer strands the connection.** Back called `App.exitApp()`, which
+  finishes the Activity but not the process: the BLE link and the USB port
+  outlived the page. The reopened app showed "disconnected", the board (still
+  connected, so no longer advertising) never appeared in the picker, and only a
+  force stop got you out. Back now calls `App.minimizeApp()`, the same as Home.
+- **A still-open BLE link is re-adopted.** `reconcileConnection()` queried
+  connected devices before `BleClient.initialize()`, so on every fresh page it
+  threw "Bluetooth LE not initialized" and gave up. It now initializes first,
+  connects through the fresh plugin instance (already-connected is success)
+  and resubscribes, so a recreated page comes back connected with no tap.
+  It only does this on a phone that has connected over BLE before, so a first
+  launch never raises the Nearby-devices prompt.
+- **A capture that never starts gives up.** One Site Survey capture sat at a full
+  countdown with zero counters and a header-only file, because nothing on the
+  phone ever stopped waiting. If no `{"cap"}` frame arrives within 5 s of Start,
+  the app resends `CMD:CAP:START` once, then stops, deletes the empty file and
+  says so. Repeated captures could not be made to stall on the bench (three
+  back-to-back from a PC, two from the phone), so this guards the symptom; the
+  original trigger is still unidentified.
+- **A dead USB link is a disconnect.** The plugin discards its reader on a stream
+  error; the app only logged it and kept showing "connected". It now disconnects,
+  and a disconnect mid-capture ends the capture and keeps the partial file
+  instead of leaving the countdown frozen.
+
 ### Added — XIAO ESP32-C5 support (dual-band detector)
 
 - **The detector runs on the XIAO ESP32-C5** (`pio run -e c5`), the first board
