@@ -4,6 +4,27 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Added — XIAO ESP32-C5 support (dual-band detector)
+
+- **The detector runs on the XIAO ESP32-C5** (`pio run -e c5`), the first board
+  that hears 5 GHz. Same pads as the S3 harness (LED bar on D1, buzzer on D2),
+  BOOT on GPIO28. The S3 tiers are byte-identical: every C5 difference is behind
+  `CONFIG_IDF_TARGET_ESP32C5`, gated by a preprocessed-source and image compare.
+- **Radio settings are measured, not borrowed.** Side-by-side captures against an
+  S3 and a known emitter picked: 2.4 GHz 1–11 plus the non-DFS 5 GHz channels at
+  120 ms (DFS channels cost every other channel listening time); BLE scanning
+  25 ms of every 50 (40/100 left three times the silent stretches on a 2-second
+  AirTag; bursts left a 118-second blind spot); frames the C5 driver reports as
+  failed are dropped (they were random bytes posing as thousands of devices).
+- **Wi-Fi band select** (`{"band":0|1|2}`, Settings → Radios on the C5): both,
+  2.4 GHz only or 5 GHz only, persisted on the device. Bench field-testing found
+  the C5 detecting ~18% fewer 2.4 GHz transmitters than an S3 (it spends time on
+  5 GHz) but +35% more distinct devices overall counting both bands and BLE —
+  2.4-only mode is there for when 2.4 GHz is all you care about.
+- **Build trap:** the C5's Arduino 3.x framework package has the same name as the
+  S3's 2.0.17 one. Build the C5 with its own `PLATFORMIO_CORE_DIR`, or the first C5
+  build replaces the S3 framework for every checkout.
+
 ### Added — Themes: one pick sets the bar's colour and the buzzer's pitch
 
 The Alerts sheet has a Theme strip under Lights: **Classic** (the default, and
