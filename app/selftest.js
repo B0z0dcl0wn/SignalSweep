@@ -290,6 +290,8 @@ console.log('[signalsweep self-test] Flock wildcard-probe signature intact: ok')
 
 // Band badges (Task 1): the detector must report the Wi-Fi channel per target.
 if (!/obj\["ch"\]\s*=\s*t\.wifiCh/.test(fw)) { console.log('FAIL: firmware does not emit "ch" (band badges)'); process.exit(1); }
+// Band badges (Task 2): the app must ingest the channel it was just given.
+if (!/\bch:\s*t\.ch\b/.test(appSrc)) { console.log('FAIL: app.js does not ingest "ch"'); process.exit(1); }
 
 // USB connect + capture recovery. The plugin's requestPermission `granted` is
 // always false on Android 12+ (FLAG_IMMUTABLE strips the extra), so trusting it

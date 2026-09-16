@@ -62,11 +62,25 @@
         // literals only — nothing device-supplied, nothing to escape.
         // `ap` is the firmware's link role: 1 = access point (beacons), 0 =
         // client (probe requests), undefined = not known / older firmware.
-        function radioBadges(protocol, ap) {
+        // Band from the firmware's per-target channel ("ch"). Fixed literals
+        // only -- nothing device-supplied reaches the chip text but a number.
+        function bandOfChannel(ch) {
+            const c = Number(ch);
+            if (c >= 1 && c <= 14) return '2.4';
+            if (c >= 36 && c <= 177) return '5';
+            return null;
+        }
+        function bandChip(ch) {
+            const b = bandOfChannel(ch);
+            return b ? '<span class="radio-badge band">' + b + 'G · ch ' + Number(ch) + '</span>' : '';
+        }
+
+        function radioBadges(protocol, ap, ch) {
             const p = String(protocol || '');
             const wifi = ap === 1 ? '📡 AP' : ap === 0 ? '📱 Client' : 'Wi‑Fi';
             return (p.indexOf('BLE')  >= 0 ? '<span class="radio-badge ble">BLE</span>' : '') +
-                   (p.indexOf('WiFi') >= 0 ? '<span class="radio-badge wifi">' + wifi + '</span>' : '');
+                   (p.indexOf('WiFi') >= 0 ? '<span class="radio-badge wifi">' + wifi + '</span>' : '') +
+                   (p.indexOf('WiFi') >= 0 ? bandChip(ch) : '');
         }
 
         // ---- Vendor names -------------------------------------------------
@@ -127,11 +141,15 @@
             const now = Date.now();
             for (const t of targets) {
                 if (!t.mac) continue;
+                const prev = liveMatches[t.mac];
                 liveMatches[t.mac] = {
                     mac: t.mac, name: t.name || '', type: t.type || '',
                     rule: t.matched_rule || '', rssi: t.rssi,
                     protocol: t.protocol || 'BLE', ssid: t.ssid || '',
                     ap: t.ap, pub: !!t.pub, cid: t.cid,
+                    // Last known channel: a push that omits it (older firmware,
+                    // a BLE sighting of a BLE+WiFi device) must not blank the badge.
+                    ch: t.ch != null ? t.ch : (prev ? prev.ch : undefined),
                     confidence: t.confidence || 0,
                     tier: t.tier || '', ts: now,
                     // Decoded ASTM Remote ID, present only on drones. The
@@ -425,7 +443,7 @@
                         (isHunted ? ' hunted' : '') +
                         '" style="border-left:4px solid ' + cat.color + '">' +
                     '<div class="scope-main">' +
-                        '<div class="scope-title">' + radioBadges(m.protocol, m.ap) +
+                        '<div class="scope-title">' + radioBadges(m.protocol, m.ap, m.ch) +
                             (cat.icon ? cat.icon + ' ' : '') + esc(title) +
                             // A weak hint has no vendor to name -- cat.label is
                             // just the rule text, which already appears below.
@@ -3303,6 +3321,18 @@
                     radioBadges('WiFi', 0).indexOf('Client') > 0 &&
                     radioBadges('WiFi').indexOf('AP') === -1 &&
                     radioBadges('WiFi').indexOf('Client') === -1;
+
+                // Band chip from the firmware's per-target channel, and a push
+                // that omits it (older firmware, a BLE sighting) must not blank
+                // a badge the last WiFi push already set.
+                results.bandOfChannel = bandOfChannel(1) === '2.4' && bandOfChannel(14) === '2.4' &&
+                    bandOfChannel(36) === '5' && bandOfChannel(165) === '5' &&
+                    bandOfChannel(0) === null && bandOfChannel(undefined) === null && bandOfChannel(20) === null;
+                ingestTargets([{ mac: 'CC:00:00:00:00:01', rssi: -50, protocol: 'WiFi', ch: 36 }]);
+                ingestTargets([{ mac: 'CC:00:00:00:00:01', rssi: -51, protocol: 'WiFi' }]);   // push without ch
+                results.chKeptWhenMissing = liveMatches['CC:00:00:00:00:01'].ch === 36 &&
+                    bandChip(36) === '<span class="radio-badge band">5G · ch 36</span>' && bandChip(0) === '';
+                delete liveMatches['CC:00:00:00:00:01'];
 
                 // Vendor: company ID wins, a public MAC falls back to its OUI,
                 // a randomized address names nobody.
