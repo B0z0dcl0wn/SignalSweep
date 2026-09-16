@@ -4,6 +4,8 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-09-16 — The C5 hears 5 GHz, and installs like the S3
+
 ### Added — Install the C5 like the S3
 
 - **One Install button, both boards.** The flasher manifest carries an ESP32-C5
