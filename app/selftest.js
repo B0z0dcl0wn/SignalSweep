@@ -288,6 +288,15 @@ if (flockFail.length) {
 }
 console.log('[signalsweep self-test] Flock wildcard-probe signature intact: ok');
 
+// Band badges (Task 1): the detector must report the Wi-Fi channel per target.
+if (!/obj\["ch"\]\s*=\s*t\.wifiCh/.test(fw)) { console.log('FAIL: firmware does not emit "ch" (band badges)'); process.exit(1); }
+// Band badges (Task 2): the app must ingest the channel it was just given.
+if (!/\bch:\s*t\.ch\b/.test(appSrc)) { console.log('FAIL: app.js does not ingest "ch"'); process.exit(1); }
+// Band badges (finding 1): the channel must come from the AP's own DS
+// Parameter Set IE, not just the hopper's tuned rx_ctrl.channel -- 2.4 GHz
+// adjacent-channel leakage makes rx_ctrl.channel alone lie about the band.
+if (!/id == 3 && elen == 1[\s\S]{0,80}dsCh\s*=/.test(fw)) { console.log('FAIL: firmware does not read the DS Parameter Set into dsCh'); process.exit(1); }
+
 // USB connect + capture recovery. The plugin's requestPermission `granted` is
 // always false on Android 12+ (FLAG_IMMUTABLE strips the extra), so trusting it
 // made "OK" read as "denied"; a start the board never acked, a dead stream, or

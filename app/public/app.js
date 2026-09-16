@@ -62,11 +62,25 @@
         // literals only — nothing device-supplied, nothing to escape.
         // `ap` is the firmware's link role: 1 = access point (beacons), 0 =
         // client (probe requests), undefined = not known / older firmware.
-        function radioBadges(protocol, ap) {
+        // Band from the firmware's per-target channel ("ch"). Fixed literals
+        // only -- nothing device-supplied reaches the chip text but a number.
+        function bandOfChannel(ch) {
+            const c = Number(ch);
+            if (c >= 1 && c <= 14) return '2.4';
+            if (c >= 36 && c <= 177) return '5';
+            return null;
+        }
+        function bandChip(ch) {
+            const b = bandOfChannel(ch);
+            return b ? '<span class="radio-badge band">' + b + 'G · ch ' + Number(ch) + '</span>' : '';
+        }
+
+        function radioBadges(protocol, ap, ch) {
             const p = String(protocol || '');
             const wifi = ap === 1 ? '📡 AP' : ap === 0 ? '📱 Client' : 'Wi‑Fi';
             return (p.indexOf('BLE')  >= 0 ? '<span class="radio-badge ble">BLE</span>' : '') +
-                   (p.indexOf('WiFi') >= 0 ? '<span class="radio-badge wifi">' + wifi + '</span>' : '');
+                   (p.indexOf('WiFi') >= 0 ? '<span class="radio-badge wifi">' + wifi + '</span>' : '') +
+                   (p.indexOf('WiFi') >= 0 ? bandChip(ch) : '');
         }
 
         // ---- Vendor names -------------------------------------------------
@@ -127,11 +141,15 @@
             const now = Date.now();
             for (const t of targets) {
                 if (!t.mac) continue;
+                const prev = liveMatches[t.mac];
                 liveMatches[t.mac] = {
                     mac: t.mac, name: t.name || '', type: t.type || '',
                     rule: t.matched_rule || '', rssi: t.rssi,
                     protocol: t.protocol || 'BLE', ssid: t.ssid || '',
                     ap: t.ap, pub: !!t.pub, cid: t.cid,
+                    // Last known channel: a push that omits it (older firmware,
+                    // a BLE sighting of a BLE+WiFi device) must not blank the badge.
+                    ch: t.ch != null ? t.ch : (prev ? prev.ch : undefined),
                     confidence: t.confidence || 0,
                     tier: t.tier || '', ts: now,
                     // Decoded ASTM Remote ID, present only on drones. The
@@ -302,6 +320,59 @@
             return rows;
         }
 
+        // ---- Same-box grouping ---------------------------------------------
+        // A dual-band router or mesh node transmits from near-identical MACs:
+        // same first five octets, last octet a few apart. Field captures (C5,
+        // 2026-09-15) put ~32% of 5 GHz-only transmitters in exactly that
+        // relation to a box already heard on 2.4 GHz. SSID never joins rows:
+        // mesh networks and public hotspots share names across unrelated boxes,
+        // and 44% of 5 GHz-only transmitters never send one.
+        const SIBLING_SPAN = 4;
+        function groupSiblings(rows) {
+            const groupOf = new Map();   // row -> group object
+            const byKey = new Map();
+            for (const m of rows) {
+                const o = m.protocol === 'WiFi' ? String(m.mac).toUpperCase().split(/[:-]/) : null;
+                if (!o || o.length !== 6 || !o.every(function (x) { return /^[0-9A-F]{2}$/.test(x); })) continue;
+                const k = o.slice(0, 5).join(':');
+                if (!byKey.has(k)) byKey.set(k, []);
+                byKey.get(k).push({ m: m, last: parseInt(o[5], 16) });
+            }
+            byKey.forEach(function (list, k) {
+                list.sort(function (a, b) { return a.last - b.last; });
+                let cur = null, prev = -1000;
+                for (const e of list) {
+                    // Two separate groups can land under the same 5-octet
+                    // prefix (e.g. :10/:14 and :19 four apart from each
+                    // other but not from :14) -- suffix the key with the
+                    // group's own lowest last octet so they don't share a
+                    // data-group id and expansion state.
+                    if (!cur || e.last - prev > SIBLING_SPAN)
+                        cur = { key: k + ':' + e.last.toString(16).padStart(2, '0').toUpperCase(), members: [] };
+                    groupOf.set(e.m, cur);
+                    prev = e.last;
+                }
+            });
+            const units = [], seen = new Set();
+            for (const m of rows) {
+                const g = groupOf.get(m);
+                if (!g) { units.push({ key: String(m.mac).toUpperCase(), members: [m] }); continue; }
+                g.members.push(m);
+                if (!seen.has(g)) { seen.add(g); units.push(g); }
+            }
+            return units;
+        }
+        // The row that speaks for a group: a real vendor category beats a weak
+        // hint beats no match. Ties keep the first member in list order --
+        // that is not always the strongest signal, because hunt pinning can
+        // splice the hunted radio to the front regardless of its RSSI.
+        function unitLead(members) {
+            const rank = function (m) { const b = bandOf(m); return b === 'none' ? 0 : b === 'weak' ? 1 : 2; };
+            let best = members[0];
+            for (const m of members) if (rank(m) > rank(best)) best = m;
+            return best;
+        }
+
         // One line of extra detail per category. Drones earn the most, because
         // Remote ID is a broadcast standard that hands us real values.
         function detailLine(m, cat) {
@@ -363,7 +434,7 @@
             for (let i = 0; i < keys.length; i++) {
                 const bandRows = liveRows(keys[i]);
                 const el = document.getElementById('n-' + keys[i]);
-                if (el) el.textContent = bandRows.length;
+                if (el) el.textContent = groupSiblings(bandRows).length;
                 const meter = document.getElementById('m-' + keys[i]);
                 const strongest = bandRows.length
                     ? Math.max.apply(null, bandRows.map(function (m) { return Number(m.rssi) || -999; }))
@@ -380,7 +451,7 @@
 
             const rows = liveRows();
             const countEl = document.getElementById('scope-count');
-            if (countEl) countEl.textContent = rows.length;
+            if (countEl) countEl.textContent = groupSiblings(rows).length;
             const dropEl = document.getElementById('scope-drop');
             if (dropEl) {
                 // Only worth showing when a real fraction is being lost; the odd
@@ -404,8 +475,7 @@
                 return;
             }
 
-            let html = '';
-            for (const m of rows) {
+            function rowHtml(m, extraBadges, extraHtml, noActions, forceHunted) {
                 const cat = categoryOf(m.type || m.rule);
                 // Name it by whatever a person would recognise: its own name,
                 // then the network it is announcing, then the rule it tripped,
@@ -417,15 +487,20 @@
                 const band = bandOf(m);
                 const unmatched = band === 'none';
                 const weak = band === 'weak';
-                const isHunted = !!huntMac && String(m.mac).toUpperCase() === huntMac.toUpperCase();
+                // A group row speaks for its lead member, but the hunted
+                // device inside it may not be the lead -- forceHunted lets
+                // the group loop say "this unit is hunted" even when m itself
+                // isn't the hunted MAC, so the outline still lands on the row
+                // you're actually walking down.
+                const isHunted = !!huntMac && (String(m.mac).toUpperCase() === huntMac.toUpperCase() || !!forceHunted);
                 // A random address with no company ID has no maker to name;
                 // say so rather than leave the blank unexplained.
                 const vendor = vendorOf(m) || (publicMac(m) || m.cid != null ? '' : 'random MAC');
-                html += '<div class="scope-row' + (unmatched ? ' unmatched' : '') +
+                return '<div class="scope-row' + (unmatched ? ' unmatched' : '') +
                         (isHunted ? ' hunted' : '') +
                         '" style="border-left:4px solid ' + cat.color + '">' +
                     '<div class="scope-main">' +
-                        '<div class="scope-title">' + radioBadges(m.protocol, m.ap) +
+                        '<div class="scope-title">' + radioBadges(m.protocol, m.ap, m.ch) + (extraBadges || '') +
                             (cat.icon ? cat.icon + ' ' : '') + esc(title) +
                             // A weak hint has no vendor to name -- cat.label is
                             // just the rule text, which already appears below.
@@ -452,8 +527,53 @@
                         '<div class="scope-rssi mono">' + esc(m.rssi) + ' dBm</div>' +
                     '</div>' +
                     detailLine(m, cat) +
-                    actionRow(m, cat) +
+                    (extraHtml || '') +
+                    (noActions ? '' : actionRow(m, cat)) +
                 '</div>';
+            }
+
+            let html = '';
+            for (const u of groupSiblings(rows)) {
+                if (u.members.length === 1) { html += rowHtml(u.members[0]); continue; }
+                const lead = unitLead(u.members);
+                const hunted = !!huntMac && u.members.some(function (m) { return String(m.mac).toUpperCase() === huntMac.toUpperCase(); });
+                const open = hunted || expandedGroups.has(u.key);
+                // One chip per band heard, from that band's strongest radio.
+                // Fixed 2.4-then-5 order -- Object.keys on a two-entry object
+                // keyed '2.4'/'5' is not guaranteed to agree with which band
+                // was heard first, and a chip order that jitters between
+                // renders is its own small bug.
+                const byBand = {};
+                u.members.forEach(function (m) { const b = bandOfChannel(m.ch); if (b && !byBand[b] && m !== lead) byBand[b] = m.ch; });
+                if (bandOfChannel(lead.ch)) delete byBand[bandOfChannel(lead.ch)];
+                const extraBadges = ['2.4', '5'].filter(function (b) { return byBand[b]; })
+                        .map(function (b) { return bandChip(byBand[b]); }).join('') +
+                    '<span class="radio-badge radios">' + u.members.length + ' radios</span>';
+                // The lead is chosen for category, which can leave it without
+                // a name of its own -- 44% of 5 GHz-only transmitters never
+                // send an SSID. Borrow one from any member that has it, and
+                // show the strongest member's signal rather than the lead's
+                // (the lead can be the weaker radio of the pair). data-mac
+                // and the action buttons still come from the real `lead`.
+                const ssidMember = u.members.find(function (m) { return m.ssid; });
+                const strongestRssi = Math.max.apply(null, u.members.map(function (m) { return Number(m.rssi) || -999; }));
+                const leadForRow = Object.assign({}, lead, {
+                    ssid: lead.ssid || (ssidMember ? ssidMember.ssid : ''),
+                    rssi: strongestRssi
+                });
+                // A hunt holds the group open on its own; the toggle button
+                // would do nothing while that's true (open is already forced
+                // true), so don't offer a control that has no effect.
+                const extraHtml = (hunted ? '' :
+                        '<div class="scope-actions"><button class="scope-act" data-act="expand" data-group="' + esc(u.key) + '">' +
+                        (open ? '\u25be Hide radios' : '\u25b8 Show ' + u.members.length + ' radios') + '</button></div>') +
+                    (open ? '<div class="group-members">' + u.members.map(function (m) {
+                        const mc = categoryOf(m.type || m.rule);
+                        return '<div class="group-member">' + bandChip(m.ch) +
+                            ' <span class="mono">' + esc(m.mac) + '</span> \u00b7 <span class="mono">' + esc(m.rssi) + ' dBm</span>' +
+                            actionRow(m, mc) + '</div>';
+                    }).join('') + '</div>' : '');
+                html += rowHtml(leadForRow, extraBadges, extraHtml, true, hunted);
             }
             list.innerHTML = html;
         }
@@ -463,6 +583,7 @@
         // device's buzzer becomes an RSSI-driven Geiger clicker for that MAC so
         // you can physically walk it down. Detection never stops meanwhile.
         let huntMac = '';
+        let expandedGroups = new Set();   // group keys the user opened; in memory only
         let foxhuntMode = false;      // filter off: list everything, hunt anything
         // A push already in flight when you tap still carries the old scan_all,
         // and adopting it flipped the button back for a frame. Local intent
@@ -673,6 +794,12 @@
             if (sm) { setSound(sm.getAttribute('data-sound') === '1'); return; }
             const act = ev.target.closest('.scope-act');
             if (!act) return;
+            if (act.getAttribute('data-act') === 'expand') {
+                const g = act.getAttribute('data-group');
+                if (expandedGroups.has(g)) expandedGroups.delete(g); else expandedGroups.add(g);
+                renderScope();
+                return;
+            }
             const mac = act.getAttribute('data-mac');
             if (act.getAttribute('data-act') === 'hunt') huntTarget(mac);
             else if (act.getAttribute('data-act') === 'ring') ringTarget(mac);
@@ -3076,6 +3203,7 @@
             mapFix = null;
             huntMac = '';
             huntTrace = [];
+            expandedGroups = new Set();
             // Per link, not per app session: a bad stretch on the last board
             // must not paint "updates lost" over the next one.
             rxOk = 0; rxDropped = 0;
@@ -3304,6 +3432,37 @@
                     radioBadges('WiFi').indexOf('AP') === -1 &&
                     radioBadges('WiFi').indexOf('Client') === -1;
 
+                // Band chip from the firmware's per-target channel, and a push
+                // that omits it (older firmware, a BLE sighting) must not blank
+                // a badge the last WiFi push already set.
+                results.bandOfChannel = bandOfChannel(1) === '2.4' && bandOfChannel(14) === '2.4' &&
+                    bandOfChannel(36) === '5' && bandOfChannel(165) === '5' &&
+                    bandOfChannel(0) === null && bandOfChannel(undefined) === null && bandOfChannel(20) === null;
+                ingestTargets([{ mac: 'CC:00:00:00:00:01', rssi: -50, protocol: 'WiFi', ch: 36 }]);
+                ingestTargets([{ mac: 'CC:00:00:00:00:01', rssi: -51, protocol: 'WiFi' }]);   // push without ch
+                results.chKeptWhenMissing = liveMatches['CC:00:00:00:00:01'].ch === 36 &&
+                    bandChip(36) === '<span class="radio-badge band">5G · ch 36</span>' && bandChip(0) === '';
+                delete liveMatches['CC:00:00:00:00:01'];
+
+                // Same-box grouping: near-MAC Wi-Fi siblings join, a gap over
+                // SIBLING_SPAN splits, SSID never joins, BLE never joins.
+                const w = function (mac, rssi, extra) { return Object.assign({ mac: mac, rssi: rssi, protocol: 'WiFi' }, extra || {}); };
+                const g1 = groupSiblings([w('AA:BB:CC:DD:EE:10', -40), w('aa:bb:cc:dd:ee:14', -60), w('AA:BB:CC:DD:EE:19', -70)]);
+                results.siblingSpan = g1.length === 2 && g1[0].members.length === 2 && g1[1].members.length === 1;   // +4 joins, +5 does not
+                // Both groups above share the first-5-octet prefix
+                // 'AA:BB:CC:DD:EE' -- a key of just the prefix would collide
+                // and merge their expansion state. Keying on the group's own
+                // lowest last octet keeps them apart.
+                results.siblingKeysUnique = g1[0].key !== g1[1].key &&
+                    g1[0].key === 'AA:BB:CC:DD:EE:10' && g1[1].key === 'AA:BB:CC:DD:EE:19';
+                const g2 = groupSiblings([w('AA:BB:CC:DD:EE:08', -50), w('AA:BB:CC:DD:EE:00', -40), w('AA:BB:CC:DD:EE:04', -45)]);
+                results.siblingChain = g2.length === 1 && g2[0].members.length === 3 && g2[0].members[0].mac === 'AA:BB:CC:DD:EE:08';
+                const g3 = groupSiblings([w('11:11:11:11:11:01', -40, { ssid: 'Home' }), w('22:22:22:22:22:01', -41, { ssid: 'Home' }),
+                                          { mac: 'AA:BB:CC:DD:EE:11', rssi: -42, protocol: 'BLE' }, w('AA:BB:CC:DD:EE:12', -43)]);
+                results.siblingNeverSsidOrBle = g3.length === 4;
+                results.unitLeadCategory = unitLead([w('AA:BB:CC:DD:EE:01', -40), w('AA:BB:CC:DD:EE:02', -70, { type: 'Flock Safety' })]).mac === 'AA:BB:CC:DD:EE:02' &&
+                    unitLead([w('AA:BB:CC:DD:EE:01', -40), w('AA:BB:CC:DD:EE:02', -70)]).mac === 'AA:BB:CC:DD:EE:01';
+
                 // Vendor: company ID wins, a public MAC falls back to its OUI,
                 // a randomized address names nobody.
                 const savedOui = ouiNames, savedBt = btNames;
@@ -3367,6 +3526,107 @@
                                               liveMatches['CC:00:04'].rssi === -52 &&
                                               Object.keys(liveMatches).length === beforeKeys;
                 huntMac = ''; huntTrace = [];
+
+                // Same-box siblings render as one row with a "N radios" chip
+                // and an expand control, not two separate rows. Proven
+                // against real captured HTML -- the selftest.js stub makes
+                // document.getElementById always return null, which would
+                // let this assertion pass even if renderScope() were
+                // completely broken, so swap in a capturing stand-in for
+                // 'targets-list' only, for the duration of this block.
+                foxhuntMode = true;
+                // Isolate from every earlier test's leftover liveMatches --
+                // foxhuntMode true means they'd all render too and inflate
+                // the row count this block checks.
+                const savedLiveMatches = liveMatches;
+                liveMatches = {};
+                // :20 carries a real category (rank 2) so it is unambiguously
+                // the lead by unitLead's rule regardless of list order; :22
+                // matches nothing (rank 0), which is what lets the hunted-
+                // non-lead case below be constructed on purpose rather than
+                // by the accident of hunt-pinning reordering the group.
+                ingestTargets([
+                    { mac: 'DD:EE:FF:00:11:20', rssi: -45, protocol: 'WiFi', ch: 6, type: 'Flock Safety', confidence: 90 },
+                    { mac: 'DD:EE:FF:00:11:22', rssi: -60, protocol: 'WiFi', ch: 36 }
+                ]);
+                const groupKey = 'DD:EE:FF:00:11:20';   // prefix + the group's own lowest last octet
+                const units = groupSiblings(liveRows('all')).filter(function (u) { return u.key === groupKey; });
+                const origGetElementById = document.getElementById;
+                const captured = { innerHTML: '' };
+                const capturedCount = { textContent: '' };
+                const capturedNAll = { textContent: '' };
+                document.getElementById = function (id) {
+                    if (id === 'targets-list') return captured;
+                    if (id === 'scope-count') return capturedCount;
+                    if (id === 'n-all') return capturedNAll;
+                    return origGetElementById(id);
+                };
+                try {
+                    renderScope();
+                    const html1 = captured.innerHTML;
+                    const pairRowCount = (html1.match(/class="scope-row/g) || []).length;
+                    results.groupRendersOnce = units.length === 1 && units[0].members.length === 2 &&
+                        html1.indexOf('<span class="radio-badge radios">2 radios</span>') >= 0 &&
+                        html1.indexOf('data-group="' + groupKey + '"') >= 0 &&
+                        pairRowCount === 1;
+                    // Header/band counts count units, not radios -- a two-
+                    // radio box is one thing on screen, not two, through the
+                    // same 'scope-count'/'n-all' elements renderScope() paints.
+                    results.groupCountsUnits = capturedCount.textContent === 1 && capturedNAll.textContent === 1;
+
+                    // Expanding shows both members with their own actions.
+                    expandedGroups.add(groupKey);
+                    renderScope();
+                    const html2 = captured.innerHTML;
+                    results.groupExpands = html2.indexOf('group-members') >= 0 &&
+                        html2.indexOf('DD:EE:FF:00:11:20') >= 0 &&
+                        html2.indexOf('DD:EE:FF:00:11:22') >= 0;
+                    expandedGroups.delete(groupKey);
+
+                    // A hunted member that is NOT the group's lead still
+                    // pins the outline to the row -- the lead here is the
+                    // Flock-typed, matched ':20' (a real category beats no
+                    // match regardless of signal), so hunting ':22' exercises
+                    // the non-lead path.
+                    huntMac = 'DD:EE:FF:00:11:22';
+                    renderScope();
+                    results.groupHuntedOutline = /class="scope-row[^"]*\bhunted\b/.test(captured.innerHTML);
+                    // While a hunt holds the group open, the expand toggle
+                    // (which would do nothing) must not be offered.
+                    results.groupHuntNoToggle = captured.innerHTML.indexOf('data-act="expand"') === -1;
+                    huntMac = '';
+
+                    // The group row's title borrows an SSID from any member
+                    // that has one -- the lead is picked for category, and
+                    // 44% of 5 GHz-only transmitters never send an SSID of
+                    // their own, so a lead with none must not title the row
+                    // by bare MAC when a sibling can name it.
+                    liveMatches = {};
+                    ingestTargets([
+                        { mac: 'DD:EE:FF:00:12:30', rssi: -45, protocol: 'WiFi', ch: 6, type: 'Flock Safety', confidence: 90 },
+                        { mac: 'DD:EE:FF:00:12:32', rssi: -60, protocol: 'WiFi', ch: 36, ssid: 'GuestNet' }
+                    ]);
+                    captured.innerHTML = '';
+                    renderScope();
+                    results.groupSsidFromMember = captured.innerHTML.indexOf('GuestNet') >= 0;
+
+                    // The group row's signal is the strongest member's, not
+                    // the lead's -- the lead can be the weaker radio of the
+                    // pair (chosen for category, not signal).
+                    liveMatches = {};
+                    ingestTargets([
+                        { mac: 'DD:EE:FF:00:13:30', rssi: -70, protocol: 'WiFi', ch: 6, type: 'Flock Safety', confidence: 90 },
+                        { mac: 'DD:EE:FF:00:13:32', rssi: -30, protocol: 'WiFi', ch: 36 }
+                    ]);
+                    captured.innerHTML = '';
+                    renderScope();
+                    results.groupRssiStrongest = captured.innerHTML.indexOf('-30 dBm') >= 0 &&
+                        captured.innerHTML.indexOf('-70 dBm') === -1;
+                } finally {
+                    document.getElementById = origGetElementById;
+                }
+                liveMatches = savedLiveMatches;
+                foxhuntMode = false;
 
                 // Ordering is bucketed to 5 dB so multipath jitter cannot swap
                 // two rows under a thumb that is already reaching for one.

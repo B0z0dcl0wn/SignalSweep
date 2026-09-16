@@ -4,6 +4,18 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Added — Band badges, and one row per box
+
+- **Every Wi-Fi row says where it was heard:** `2.4G · ch 6` or `5G · ch 36`.
+  The board reports the last channel per target (`"ch"`, Wi-Fi rows only, a few
+  bytes each), so the XIAO ESP32-C5's 5 GHz coverage is readable at a glance.
+- **A dual-band box is one row.** Wi-Fi transmitters whose MACs share the first
+  five octets with last octets within 4 fold into one row that shows every band
+  it was heard on and how many radios; tap to see each radio with its own Hunt.
+  On C5 field captures about a third of 5 GHz-only transmitters were the second
+  radio of a box already heard on 2.4 GHz. Rows are never joined on network
+  name: mesh networks and hotspots share SSIDs across unrelated hardware.
+
 ### Changed — Install tidy-ups
 
 - `install.py` speaks esptool 5's `chip-id` / `write-flash` (the old spellings still

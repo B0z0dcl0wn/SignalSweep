@@ -896,7 +896,7 @@ static void watchersWifiChannelHopperTask(void *pvParameters) {
 // NAN action-frame path, which carries no SSID, no vendor IE and no OUI worth
 // scoring — the decode itself is the whole identification.
 static void upsertDroneTarget(const String& mac, int rssi, const char* proto,
-                              const ODID_UAS_Data& d) {
+                              const ODID_UAS_Data& d, uint8_t ch = 0) {
     if (watchersMutex == NULL) return;
     if (xSemaphoreTake(watchersMutex, pdMS_TO_TICKS(10)) != pdTRUE) return;
     uint32_t now = millis();
@@ -910,6 +910,7 @@ static void upsertDroneTarget(const String& mac, int rssi, const char* proto,
             t.tier = tierForConfidence(t.confidence);
             t.type = "Drone";
             t.matchedRule = "Remote ID Drone";
+            if (ch > 0) t.wifiCh = ch;
             applyDroneData(t, d);
             noteAlertForTarget(t, W_DRONE, "Drone");
             found = true;
@@ -929,6 +930,7 @@ static void upsertDroneTarget(const String& mac, int rssi, const char* proto,
         t.confidence = W_DRONE;
         t.tier = tierForConfidence(W_DRONE);
         t.lastReportedMs = 0;
+        if (ch > 0) t.wifiCh = ch;
         applyDroneData(t, d);
         trackedTargets.push_back(t);
         ESP_LOGI(TAG, "[DRONE - %s] MAC: %s, UAS: %s, RSSI: %d",
@@ -978,7 +980,7 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
                 snprintf(nanMacBuf, sizeof(nanMacBuf), "%02X:%02X:%02X:%02X:%02X:%02X",
                          (uint8_t)nanMacRaw[0], (uint8_t)nanMacRaw[1], (uint8_t)nanMacRaw[2],
                          (uint8_t)nanMacRaw[3], (uint8_t)nanMacRaw[4], (uint8_t)nanMacRaw[5]);
-                upsertDroneTarget(String(nanMacBuf), rssi, "WiFi", wifiUas);
+                upsertDroneTarget(String(nanMacBuf), rssi, "WiFi", wifiUas, packet->rx_ctrl.channel);
             }
             return;
         }
@@ -994,6 +996,13 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
         String matchedCategory = "";
         bool droneDecoded = false;
         String foundSsid = "";
+        // The AP's own channel, from the DS Parameter Set IE (id 3, 1-byte
+        // payload) if the frame carries one. 0 = absent (e.g. a probe request,
+        // which names no channel of its own). rx_ctrl.channel is the hopper's
+        // tuned channel, not the transmitter's -- 2.4 GHz adjacent-channel
+        // leakage means an AP on 6 is routinely heard while tuned to 4-8, which
+        // made the band/channel chip lie. Prefer dsCh when present.
+        int dsCh = 0;
         // Gate for the wildcard-probe signature below. True only when the OUI
         // matched a rule whose category is Flock: a Cradlepoint or Sierra router
         // sending a wildcard probe is not a camera, and scoring it as one would
@@ -1071,6 +1080,14 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
                 // payload 50:6f:9a:16:03:01:03. Independent of the weak
                 // prefix-only check below (which keeps its own !ieHit guard), so
                 // the two never double-count.
+                // DS Parameter Set: the transmitter's own channel. Present on
+                // beacons/probe responses (and some probe requests); a client's
+                // probe request typically has none, so it keeps rx_ctrl.channel
+                // below (band is still right, "heard while tuned to" this chan).
+                if (id == 3 && elen == 1) {
+                    dsCh = body[b+2];
+                }
+
                 if (id == 221 && elen == 7 &&
                     body[b+2] == 0x50 && body[b+3] == 0x6F && body[b+4] == 0x9A &&
                     body[b+5] == 0x16 && body[b+6] == 0x03 &&
@@ -1193,6 +1210,7 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
                     }
                     if (foundSsid.length() > 0) target.ssid = foundSsid;
                     if (role > target.wifiRole) target.wifiRole = role;
+                    target.wifiCh = dsCh > 0 ? dsCh : packet->rx_ctrl.channel;
                     if (droneDecoded) applyDroneData(target, wifiUas);
                     noteAlertForTarget(target, bestWeight, matchedCategory);
                     found = true;
@@ -1212,6 +1230,7 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
                 newTarget.protocol = "WiFi";
                 newTarget.ssid = foundSsid;
                 newTarget.wifiRole = role;
+                newTarget.wifiCh = dsCh > 0 ? dsCh : packet->rx_ctrl.channel;
                 newTarget.confidence = wifiConfidence;
                 newTarget.tier = tierForConfidence(wifiConfidence);
                 newTarget.lastReportedMs = 0;
@@ -1796,6 +1815,7 @@ String getWatchersTargetsJson() {
             if (t.wifiRole > 0)    obj["ap"]  = t.wifiRole == 2 ? 1 : 0;
             if (t.blePublic)       obj["pub"] = 1;
             if (t.bleCompany >= 0) obj["cid"] = t.bleCompany;
+            if (t.wifiCh > 0)      obj["ch"]  = t.wifiCh;   // ~7-9 B, Wi-Fi rows only
 
             // A device that matched nothing is only in this list because the
             // filter is off, and the app shows it as an address, a protocol and
