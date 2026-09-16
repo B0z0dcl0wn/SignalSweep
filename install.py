@@ -201,11 +201,18 @@ def chip_name_from_output(text):
     return m.group(1) if m else None
 
 
+def esptool_command(name):
+    """esptool 5 renamed chip_id/write_flash to chip-id/write-flash and warns on
+    every use of the old spelling; esptool 4 only knows the old one."""
+    import esptool
+    return name.replace("_", "-") if int(esptool.__version__.split(".")[0]) >= 5 else name
+
+
 def run_chip_id(port):
     """Ask the chip what it is and return esptool's raw output. Both boards
     share Espressif's USB id, so the port alone cannot tell an S3 from a C5 --
     and the wrong image bricks it."""
-    r = subprocess.run([sys.executable, "-m", "esptool", "--port", port, "chip_id"],
+    r = subprocess.run([sys.executable, "-m", "esptool", "--port", port, esptool_command("chip_id")],
                        capture_output=True, text=True, stdin=subprocess.DEVNULL)
     return (r.stdout or "") + (r.stderr or "")
 
@@ -231,7 +238,7 @@ def installed_signature(adb, serial):
 
 def flash_firmware(port, board, files, erase):
     cmd = [sys.executable, "-m", "esptool", "--chip", BOARDS[board]["chip"], "--port", port,
-           "--baud", "921600", "write_flash", "-z"]
+           "--baud", "921600", esptool_command("write_flash"), "-z"]
     if erase:
         # A write_flash sub-option, so it must come AFTER the subcommand.
         # Placed before it, esptool exits with "No such option: --erase-all"
@@ -343,9 +350,11 @@ def main():
         src = Path(args.from_dir)
         if not src.is_dir():
             die(f"--from-dir {src} is not a folder")
-        m = src / "manifest.json"
-        version = json.loads(m.read_text())["version"] if m.is_file() else "local"
-        title, where = f"local build {version}", str(src.resolve())
+        # The site artifact keeps manifest.json one level above firmware/.
+        m = next((p for p in (src / "manifest.json", src.parent / "manifest.json") if p.is_file()), None)
+        version = json.loads(m.read_text())["version"] if m else "(local)"
+        title = f"local build {version}"
+        where = str(src.resolve())
         local = {p.name: p for p in src.rglob("*") if p.is_file()}
         apk_local = next((p for n, p in local.items() if n.lower().endswith(".apk")), None)
         if do_apk and not apk_local:

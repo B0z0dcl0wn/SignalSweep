@@ -4,6 +4,15 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Changed — Install tidy-ups
+
+- `install.py` speaks esptool 5's `chip-id` / `write-flash` (the old spellings still
+  work on esptool 4), so installs no longer print a deprecation warning.
+- `install.py --from-dir _site/firmware` reads the version from the site's
+  `manifest.json` one level up instead of titling the run "local build local".
+- `site/assemble.sh` finds `boot_app0.bin` with `find -print -quit`: a
+  `| head -1` under `pipefail` could fail a clean build on SIGPIPE.
+
 ## [0.3.0] — 2026-09-16 — The C5 hears 5 GHz, and installs like the S3
 
 ### Added — Install the C5 like the S3

@@ -3,10 +3,10 @@
 The short overview lives in [../README.md](../README.md). This is the long form:
 threat model, serial protocol, build-from-source.
 
-SignalSweep is a headless RF detector: a XIAO ESP32-C5 or ESP32-S3 that scans Bluetooth LE and
-Wi-Fi, matches what it hears against a signature list, and **beeps a different
-pattern per category** so it tells you what is near without you looking at
-anything. The phone app is optional — a live scope for what the device is
+SignalSweep is a headless RF detector: a XIAO ESP32-C5 or ESP32-S3 that scans
+Bluetooth LE and Wi-Fi, matches what it hears against a signature list, and
+**beeps a different pattern per category** so it tells you what is near without
+you looking at anything. The phone app is optional — a live scope for what the device is
 matching right now, not a logbook.
 
 - 📷 **ALPR / camera** — two long beeps

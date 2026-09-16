@@ -19,7 +19,11 @@ stage() {  # stage <env> <prefix> <core dir>
   cp "$B/partitions.bin" "$OUT/$2partitions.bin"
   cp "$B/firmware.bin"   "$OUT/$2signalsweep.bin"
   # boot_app0.bin ships with the Arduino framework package, not the build.
-  local BA=$(find "$3/packages" -path '*framework-arduinoespressif32*' -name boot_app0.bin | head -1)
+  # -print -quit, not "| head -1": under pipefail head's early exit can SIGPIPE
+  # find and fail a clean run. The core dir holds one framework version (the
+  # platform is pinned and CI caches have no restore-keys), so first is the one.
+  local BA
+  BA=$(find "$3/packages" -path '*framework-arduinoespressif32*' -name boot_app0.bin -print -quit)
   test -n "$BA" || { echo "boot_app0.bin not found under $3"; exit 1; }
   cp "$BA" "$OUT/$2boot_app0.bin"
   echo "staged $1 -> $OUT/$2*"
