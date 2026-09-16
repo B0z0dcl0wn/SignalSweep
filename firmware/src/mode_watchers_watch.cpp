@@ -819,6 +819,9 @@ static void watchersWifiChannelHopperTask(void *pvParameters) {
     uint8_t channels[20];
     size_t chCount = 0;
     uint8_t hopBand = 0xFF;
+    // Per detector run, not per boot: a detector restart (e.g. after a Site
+    // Survey capture) warns again if 5 GHz is still rejected.
+    bool warned5GhzRejected = false;
 #else
     // Hop all US 2.4 GHz channels so a Flock node beaconing off 1/6/11 isn't
     // missed. (ESP32-S3 is 2.4 GHz only.)
@@ -853,7 +856,6 @@ static void watchersWifiChannelHopperTask(void *pvParameters) {
         // lock onto one target.
         int parked = huntChannel;
 #if CONFIG_IDF_TARGET_ESP32C5
-        static bool warned5GhzRejected = false;
         if (huntMac.length() > 0 && parked >= 1 && parked <= 177) {   // 5 GHz targets park too
             esp_err_t chErr = esp_wifi_set_channel(parked, WIFI_SECOND_CHAN_NONE);
             if (chErr != ESP_OK && parked > 14 && !warned5GhzRejected) {

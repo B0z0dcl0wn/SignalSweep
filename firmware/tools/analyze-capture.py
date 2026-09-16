@@ -174,9 +174,17 @@ def summarize(recs, oui):
         print('  WiFi channels seen: ' + ', '.join('%d(%d)' % (c, n) for c, n in sorted(chans.items())))
 
     def band(rs):
-        return len(rs), len({bytes(r['payload'][10:16]) for r in rs})
+        # Transmitters from management and data frames only. Control frames
+        # (ACK/CTS) carry no addr2, reserved type 3 and multicast addr2 are
+        # never a real sender, and a torn record's bytes become fake MACs.
+        macs = set()
+        for r in rs:
+            p = r['payload']
+            if len(p) >= 24 and (p[0] >> 2) & 3 in (0, 2) and not p[10] & 1:
+                macs.add(bytes(p[10:16]))
+        return len(rs), len(macs)
     print('  2.4 GHz: %d frames / %d MACs    5 GHz: %d frames / %d MACs' % (
-        band([r for r in wifi if r['ch'] <= 14]) + band([r for r in wifi if r['ch'] > 14])))
+        band([r for r in wifi if 1 <= r['ch'] <= 14]) + band([r for r in wifi if 36 <= r['ch'] <= 177])))
 
     rid = remote_id_hits(recs)
     print('\n' + '=' * 70)

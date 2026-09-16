@@ -891,6 +891,11 @@
                 // Reply to CMD:SIGS. Carries neither `targets` nor `cfg`.
                 if (Array.isArray(data.signatures)) setSigUi(data.signatures);
             } catch (e) {
+                // Only a line that looks like JSON is a lost update. Opening the
+                // cable resets the board, and its boot banner ("ESP-ROM:...",
+                // "rst:0x15 ...") used to count as dropped telemetry: the badge
+                // read "29% of updates lost" right after a clean connect.
+                if (dataStr.indexOf('"') === -1) return;
                 rxDropped++;
                 console.warn('Data parse error (dropped ' + rxDropped + ' of ' +
                              (rxDropped + rxOk) + '):', e);
@@ -3071,6 +3076,9 @@
             mapFix = null;
             huntMac = '';
             huntTrace = [];
+            // Per link, not per app session: a bad stretch on the last board
+            // must not paint "updates lost" over the next one.
+            rxOk = 0; rxDropped = 0;
             if (liveLayer) liveLayer.clearLayers();
             if (meLayer) meLayer.clearLayers();
             renderScope();
