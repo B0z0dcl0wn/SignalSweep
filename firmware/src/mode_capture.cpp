@@ -303,8 +303,17 @@ void startCapture(uint32_t durationSecs) {
     WiFi.mode(WIFI_STA);
     WiFi.disconnect();
 #if CONFIG_IDF_TARGET_ESP32C5
-    esp_wifi_set_country_code(SWEEP_COUNTRY, true);   // gates legal 5 GHz channels
-    esp_wifi_set_band_mode(WIFI_BAND_MODE_AUTO);
+    // A failed enable here silently degrades capture to 2.4 GHz-only with no
+    // other witness -- this runs USB-only with a human watching, but the log
+    // line is what tells them why 5 GHz never shows up.
+    esp_err_t ccErr = esp_wifi_set_country_code(SWEEP_COUNTRY, true);   // gates legal 5 GHz channels
+    if (ccErr != ESP_OK) {
+        ESP_LOGW(TAG, "esp_wifi_set_country_code failed: %s", esp_err_to_name(ccErr));
+    }
+    esp_err_t bmErr = esp_wifi_set_band_mode(WIFI_BAND_MODE_AUTO);
+    if (bmErr != ESP_OK) {
+        ESP_LOGW(TAG, "esp_wifi_set_band_mode failed: %s", esp_err_to_name(bmErr));
+    }
 #endif
     wifi_promiscuous_filter_t f = { .filter_mask = WIFI_PROMIS_FILTER_MASK_ALL };
     esp_wifi_set_promiscuous_filter(&f);

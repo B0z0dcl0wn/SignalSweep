@@ -17,10 +17,17 @@ All notable changes to SignalSweep are recorded here.
   AirTag; bursts left a 118-second blind spot); frames the C5 driver reports as
   failed are dropped (they were random bytes posing as thousands of devices).
 - **Wi-Fi band select** (`{"band":0|1|2}`, Settings → Radios on the C5): both,
-  2.4 GHz only or 5 GHz only, persisted on the device. Bench field-testing found
-  the C5 detecting ~18% fewer 2.4 GHz transmitters than an S3 (it spends time on
-  5 GHz) but +35% more distinct devices overall counting both bands and BLE —
-  2.4-only mode is there for when 2.4 GHz is all you care about.
+  2.4 GHz only or 5 GHz only, persisted on the device. The comparison numbers come
+  from paired 10-minute field drives with the *capture* build (C5 and S3 recording
+  side by side, torn records dropped): the C5 heard ~82% as many 2.4 GHz
+  transmitters as the S3 — it spends time on 5 GHz — while finding ~35% more
+  distinct transmitters overall across both bands and BLE. About a third of the
+  5 GHz-only transmitters are the second radio of a device already seen on 2.4 GHz,
+  so in physical devices the gain is nearer a quarter. The detector build's own
+  field evidence is one 10-minute band-1 drive: zero frames above channel 14 in
+  15,292 records, which is what proves the switch actually takes effect. A
+  both-bands drive on the detector build has not been run yet. 2.4-only mode is
+  there for when 2.4 GHz is all you care about.
 - **Build trap:** the C5's Arduino 3.x framework package has the same name as the
   S3's 2.0.17 one. Build the C5 with its own `PLATFORMIO_CORE_DIR`, or the first C5
   build replaces the S3 framework for every checkout.

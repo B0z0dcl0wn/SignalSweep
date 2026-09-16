@@ -120,11 +120,14 @@ console.log('[signalsweep self-test] app reads every CMD:CFG field: ok');
     if (!/rx_state\s*!=\s*0/.test(c5)) fail.push('C5 promiscuous callback does not drop rx_state != 0');
     if (!/setInterval\(50\)/.test(c5) || !/setWindow\(25\)/.test(c5)) fail.push('C5 BLE scan is not 50/25');
     if (!/c5BuildHop\(/.test(c5)) fail.push('C5 hopper does not use c5BuildHop()');
-    if (!/parked\s*<=\s*177/.test(c5)) fail.push('C5 hunt parking cannot reach 5 GHz channels');
+    if (!/parked\s*<=\s*177\b/.test(c5)) fail.push('C5 hunt parking cannot reach 5 GHz channels');
+    if (!/pdMS_TO_TICKS\(C5_HOP_DWELL_MS\)/.test(c5)) fail.push('C5 hopper does not use C5_HOP_DWELL_MS');
+    if (!/esp_wifi_set_country_code\(SWEEP_COUNTRY/.test(c5)) fail.push('C5 does not set the country code (5 GHz gate)');
+    if (!/esp_wifi_set_band_mode\(WIFI_BAND_MODE_AUTO\)/.test(c5)) fail.push('C5 does not enable dual-band mode');
     if (!/pScan->setWindow\(50\)/.test(wsrc)) fail.push('S3 BLE window 50/100 changed');
     if (hop && !/\{\s*36,\s*40,\s*44,\s*48,\s*149,\s*153,\s*157,\s*161,\s*165\s*\}/.test(hop))
         fail.push('c5_radio.h 5 GHz list is not the measured non-DFS set');
-    if (hop && !/C5_HOP_DWELL_MS\s*=\s*120/.test(hop)) fail.push('C5 dwell is not the measured 120 ms');
+    if (hop && !/C5_HOP_DWELL_MS\s*=\s*120\s*;/.test(hop)) fail.push('C5 dwell is not the measured 120 ms');
     if (fail.length) { console.log('FAIL: C5 radio settings:', fail); process.exit(1); }
 }
 console.log('[signalsweep self-test] C5 radio settings guarded: ok');
@@ -144,6 +147,8 @@ console.log('[signalsweep self-test] C5 radio settings guarded: ok');
     if (/<input[^>]*data-band=/.test(htmlSrc)) fail.push('a band control is an <input>');
     if (!appSrc.includes("closest('#band-modes .radio-tab')")) fail.push('band buttons are not wired in the click listener');
     if (!/typeof data\.band === 'number'/.test(appSrc)) fail.push('syncDeviceState ignores the pushed band');
+    if (!/setBandUi\(cfg\.band\)/.test(appSrc)) fail.push('applyConfigToSettings ignores cfg.band');
+    if (!/setBandUi\(null\)/.test(appSrc)) fail.push('band is not cleared on disconnect');
     if (fail.length) { console.log('FAIL: band select:', fail); process.exit(1); }
 }
 console.log('[signalsweep self-test] band select contract: ok');

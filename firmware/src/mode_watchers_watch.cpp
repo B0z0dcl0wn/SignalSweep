@@ -853,19 +853,32 @@ static void watchersWifiChannelHopperTask(void *pvParameters) {
         // lock onto one target.
         int parked = huntChannel;
 #if CONFIG_IDF_TARGET_ESP32C5
+        static bool warned5GhzRejected = false;
         if (huntMac.length() > 0 && parked >= 1 && parked <= 177) {   // 5 GHz targets park too
+            esp_err_t chErr = esp_wifi_set_channel(parked, WIFI_SECOND_CHAN_NONE);
+            if (chErr != ESP_OK && parked > 14 && !warned5GhzRejected) {
+                warned5GhzRejected = true;
+                ESP_LOGW(TAG, "esp_wifi_set_channel rejected 5 GHz channel %d: %s -- band mode may not have applied",
+                          parked, esp_err_to_name(chErr));
+            }
+        } else {
+            uint8_t ch = channels[chIndex];
+            esp_err_t chErr = esp_wifi_set_channel(ch, WIFI_SECOND_CHAN_NONE);
+            if (chErr != ESP_OK && ch > 14 && !warned5GhzRejected) {
+                warned5GhzRejected = true;
+                ESP_LOGW(TAG, "esp_wifi_set_channel rejected 5 GHz channel %d: %s -- band mode may not have applied",
+                          ch, esp_err_to_name(chErr));
+            }
+            chIndex = (chIndex + 1) % (int)chCount;
+        }
 #else
         if (huntMac.length() > 0 && parked >= 1 && parked <= 14) {
-#endif
             esp_wifi_set_channel(parked, WIFI_SECOND_CHAN_NONE);
         } else {
             esp_wifi_set_channel(channels[chIndex], WIFI_SECOND_CHAN_NONE);
-#if CONFIG_IDF_TARGET_ESP32C5
-            chIndex = (chIndex + 1) % (int)chCount;
-#else
             chIndex = (chIndex + 1) % (int)(sizeof(channels) / sizeof(channels[0]));
-#endif
         }
+#endif
     }
     watchersWifiHopTaskHandle = NULL;
     vTaskDelete(NULL);
@@ -1585,8 +1598,16 @@ void startWatchersWatch() {
     WiFi.mode(WIFI_STA);
     WiFi.disconnect();
 #if CONFIG_IDF_TARGET_ESP32C5
-    esp_wifi_set_country_code(SWEEP_COUNTRY, true);   // gates the legal 5 GHz channels
-    esp_wifi_set_band_mode(WIFI_BAND_MODE_AUTO);      // let set_channel cross bands
+    // A failed enable here silently degrades the board to 2.4 GHz-only while it
+    // keeps reporting band 0 -- and it's headless, so this is the only witness.
+    esp_err_t ccErr = esp_wifi_set_country_code(SWEEP_COUNTRY, true);   // gates the legal 5 GHz channels
+    if (ccErr != ESP_OK) {
+        ESP_LOGW(TAG, "esp_wifi_set_country_code failed: %s", esp_err_to_name(ccErr));
+    }
+    esp_err_t bmErr = esp_wifi_set_band_mode(WIFI_BAND_MODE_AUTO);      // let set_channel cross bands
+    if (bmErr != ESP_OK) {
+        ESP_LOGW(TAG, "esp_wifi_set_band_mode failed: %s", esp_err_to_name(bmErr));
+    }
 #endif
     // Filter in hardware. The callback only ever handles WIFI_PKT_MGMT, so
     // without this every data/ctrl frame in the air reaches the ISR just to be
