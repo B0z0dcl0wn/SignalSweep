@@ -1688,7 +1688,7 @@
             } else {
                 el.innerHTML = '<p class="set-note">No Flock signature in this capture. Strongest device: ' +
                     (a.suspect ? esc(a.suspect.mac) + ' at ' + a.suspect.rssi + ' dBm' : 'none') +
-                    '. If you were next to a camera and see nothing, it is likely on 5 GHz or cellular, which this hardware cannot hear. You can still log the device.</p>';
+                    '. If you were next to a camera and see nothing, it may be on cellular, which no SignalSweep board hears, or on 5 GHz, which only the XIAO ESP32-C5 hears. You can still log the device.</p>';
             }
         }
 
@@ -2681,7 +2681,12 @@
         function scheduleUsbDrain() {
             if (usbDrainScheduled) return;
             usbDrainScheduled = true;
-            requestAnimationFrame(drainUsbQueue);
+            // rAF never fires on a hidden page: with the screen off on a cable
+            // the queue grew unread (340 chunks in a short doze on the bench)
+            // and then decoded all at once on wake. Hidden pages get a timer,
+            // which the WebView throttles, so batches stay bounded.
+            if (document.hidden) setTimeout(drainUsbQueue, 50);
+            else requestAnimationFrame(drainUsbQueue);
         }
         function drainUsbQueue() {
             usbDrainScheduled = false;
@@ -2793,6 +2798,10 @@
         }
 
         async function teardownUsb() {
+            // Chunks still queued belong to the port being closed. Draining them
+            // after the disconnect painted a stale push over the cleared strip
+            // (Alerts since boot kept its number on a disconnected screen).
+            usbRawQueue = [];
             for (const sub of usbListeners) { try { await sub.remove(); } catch (e) {} }
             usbListeners = [];
             if (usbPortId && window.UsbSerial) {

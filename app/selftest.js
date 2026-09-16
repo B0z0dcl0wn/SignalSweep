@@ -303,6 +303,8 @@ if (!/function onDeviceDisconnected\(\)[\s\S]{0,800}?if \(capturing\) capAbort\(
 // the reopened app could not re-adopt them (reconcile queried before initialize).
 if (/addListener\('backButton'[^\n]*exitApp/.test(appSrc)) usbFail.push('back button finishes the Activity again (exitApp)');
 if (!/async function reconcileConnection\(\) \{(?:(?!getConnectedDevices)[\s\S])*?BleClient\.initialize\(/.test(appSrc)) usbFail.push('reconcileConnection queries BLE before initialize()');
+if (!/async function teardownUsb\(\) \{[\s\S]{0,400}?usbRawQueue = \[\];/.test(appSrc)) usbFail.push('teardownUsb no longer drops queued chunks (stale push repaints a disconnected strip)');
+if (!/if \(document\.hidden\) setTimeout\(drainUsbQueue/.test(appSrc)) usbFail.push('USB drain relies on rAF alone (never runs with the screen off)');
 if (usbFail.length) { console.log('FAIL: USB connect/capture recovery:', usbFail); process.exit(1); }
 console.log('[signalsweep self-test] USB connect/capture recovery intact: ok');
 

@@ -36,6 +36,17 @@ All notable changes to SignalSweep are recorded here.
   error; the app only logged it and kept showing "connected". It now disconnects,
   and a disconnect mid-capture ends the capture and keeps the partial file
   instead of leaving the countdown frozen.
+- **The USB drain keeps up with the screen off.** It ran on
+  `requestAnimationFrame`, which never fires on a hidden page, so a phone on the
+  cable in a pocket queued every chunk unread (340 in a short doze on the bench)
+  and then decoded the lot in one frame on wake, the same main-thread flood that
+  once crashed a capture. A hidden page now drains on a timer; the queue held at
+  5–6 chunks through 40 s of screen-off while pushes kept landing.
+- **A disconnected strip stays cleared.** Chunks still queued from the closed port
+  drained after the disconnect and repainted "Alerts since boot" with the old
+  board's count. Closing the port now drops them.
+- **The Site Survey no longer says 5 GHz is unhearable.** A miss is "cellular,
+  which no SignalSweep board hears, or 5 GHz, which only the XIAO ESP32-C5 hears".
 
 ### Added — XIAO ESP32-C5 support (dual-band detector)
 
@@ -576,7 +587,8 @@ different key is explained in plain language instead of an adb error code.
 
 There was no `.gitattributes`, `core.autocrlf=true` on Windows, and git
 normalised CRLF->LF *inside* the binaries on commit. All 26 were stored with
-the signature `89 50 4E 47 0A 1A 0A` -- missing the `` that PNG puts there
+the signature `89 50 4E 47 0A 1A 0A` -- missing the `
+` that PNG puts there
 precisely so this is detectable -- and every other `0D0A` in the image data
 stripped too. Not reversible.
 
