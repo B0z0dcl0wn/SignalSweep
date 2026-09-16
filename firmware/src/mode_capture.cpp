@@ -44,6 +44,7 @@
 #include "mbedtls/base64.h"
 #include "mode_capture.h"
 #include "mode_watchers_watch.h"
+#include "c5_radio.h"
 
 static const char* TAG = "Capture";
 
@@ -119,13 +120,42 @@ static inline void pushRecord(CapRing* r, uint8_t radio, uint8_t ch, int8_t rssi
     r->head = next;
 }
 
+#if CONFIG_IDF_TARGET_ESP32C5
+// The C5 driver hands promiscuous mode frames that failed reception (rx_state
+// != 0). The S3 never delivered them. Captured on the bench they were random
+// bytes: every type/subtype including reserved type 3, and ~3300 "unique"
+// transmitters at home where the S3 saw 37. Drop them, and count them so the
+// stat line shows how much noise was filtered.
+static volatile uint32_t wifiBad = 0;
+#endif
+
 static void captureWifiCb(void* buf, wifi_promiscuous_pkt_type_t type) {
     if (!capturing) return;
     wifi_promiscuous_pkt_t* pkt = (wifi_promiscuous_pkt_t*)buf;
+#if CONFIG_IDF_TARGET_ESP32C5
+    if (pkt->rx_ctrl.rx_state != 0) { wifiBad++; return; }
+#endif
     pushRecord(&wifiRing, 0, pkt->rx_ctrl.channel, (int8_t)pkt->rx_ctrl.rssi,
                pkt->payload, pkt->rx_ctrl.sig_len);
 }
 
+#if CONFIG_IDF_TARGET_ESP32C5
+// env:c5 builds against NimBLE-Arduino 2.x, whose scan callback API changed.
+class CaptureScanCallbacks : public NimBLEScanCallbacks {
+    void onResult(const NimBLEAdvertisedDevice* dev) override {
+        if (!capturing) return;
+        uint8_t tmp[7 + 62];
+        const NimBLEAddress& addr = dev->getAddress();
+        const uint8_t* an = addr.getVal();      // 6 bytes, little-endian
+        for (int i = 0; i < 6; i++) tmp[i] = an[5 - i];   // store big-endian MAC
+        tmp[6] = addr.getType();
+        const std::vector<uint8_t>& pd = dev->getPayload();   // reference, no copy
+        int copy = (int)pd.size(); if (copy > (int)sizeof(tmp) - 7) copy = sizeof(tmp) - 7;
+        for (int i = 0; i < copy; i++) tmp[7 + i] = pd[i];
+        pushRecord(&bleRing, 1, 0, (int8_t)dev->getRSSI(), tmp, 7 + copy);
+    }
+};
+#else
 class CaptureScanCallbacks : public NimBLEAdvertisedDeviceCallbacks {
     void onResult(NimBLEAdvertisedDevice* dev) override {
         if (!capturing) return;
@@ -141,6 +171,7 @@ class CaptureScanCallbacks : public NimBLEAdvertisedDeviceCallbacks {
         pushRecord(&bleRing, 1, 0, (int8_t)dev->getRSSI(), tmp, 7 + copy);
     }
 };
+#endif
 static CaptureScanCallbacks captureScanCallbacks;
 
 static void emitSlot(const CapSlot* s) {
@@ -177,15 +208,35 @@ static void emitStat(bool done) {
     uint32_t now = millis();
     uint32_t remain = (capEndMs > now) ? (capEndMs - now) / 1000 : 0;
     char buf[160];
+#if CONFIG_IDF_TARGET_ESP32C5
+    snprintf(buf, sizeof(buf),
+             "{\"cap\":{\"wifi\":%u,\"ble\":%u,\"drops\":%u,\"bad\":%u,\"remain\":%u,\"done\":%s}}",
+             (unsigned)wifiRing.seq, (unsigned)bleRing.seq,
+             (unsigned)(wifiRing.drops + bleRing.drops), (unsigned)wifiBad,
+             (unsigned)remain, done ? "true" : "false");
+#else
     snprintf(buf, sizeof(buf),
              "{\"cap\":{\"wifi\":%u,\"ble\":%u,\"drops\":%u,\"remain\":%u,\"done\":%s}}",
              (unsigned)wifiRing.seq, (unsigned)bleRing.seq,
              (unsigned)(wifiRing.drops + bleRing.drops),
              (unsigned)remain, done ? "true" : "false");
+#endif
     Serial.println(buf);
 }
 
 static void captureHopTask(void*) {
+#if CONFIG_IDF_TARGET_ESP32C5
+    // Same schedule as the detector (c5_radio.h) for the band it is set to, so a
+    // Site Survey capture hears what the detector hears.
+    uint8_t ch[20];
+    size_t n = c5BuildHop(getBand(), ch, sizeof(ch));
+    size_t i = 0;
+    while (capturing) {
+        esp_wifi_set_channel(ch[i], WIFI_SECOND_CHAN_NONE);
+        i = (i + 1) % n;
+        vTaskDelay(pdMS_TO_TICKS(C5_HOP_DWELL_MS));
+    }
+#else
     static const uint8_t ch[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
     int i = 0;
     while (capturing) {
@@ -193,6 +244,7 @@ static void captureHopTask(void*) {
         i = (i + 1) % (int)(sizeof(ch) / sizeof(ch[0]));
         vTaskDelay(pdMS_TO_TICKS(250));   // 250 ms x 11 = ~2.75 s per full sweep
     }
+#endif
     hopTaskHandle = NULL;
     vTaskDelete(NULL);
 }
@@ -242,19 +294,48 @@ void startCapture(uint32_t durationSecs) {
     }
 
     stopRequested = false;
+#if CONFIG_IDF_TARGET_ESP32C5
+    wifiBad = 0;
+#endif
     capEndMs = (durationSecs > 0) ? millis() + durationSecs * 1000UL : 0;
     capturing = true;
 
     WiFi.mode(WIFI_STA);
     WiFi.disconnect();
+#if CONFIG_IDF_TARGET_ESP32C5
+    // A failed enable here silently degrades capture to 2.4 GHz-only with no
+    // other witness -- this runs USB-only with a human watching, but the log
+    // line is what tells them why 5 GHz never shows up.
+    esp_err_t ccErr = esp_wifi_set_country_code(SWEEP_COUNTRY, true);   // gates legal 5 GHz channels
+    if (ccErr != ESP_OK) {
+        // ESP_LOGW is compiled out at CORE_DEBUG_LEVEL=0 (see the alert
+        // print in mode_watchers_watch.cpp), so this is a plain print --
+        // capture is USB-only with a human watching, and this line is what
+        // tells them why 5 GHz never shows up.
+        if (Serial) Serial.printf("[C5] esp_wifi_set_country_code failed: %s\n", esp_err_to_name(ccErr));
+    }
+    esp_err_t bmErr = esp_wifi_set_band_mode(WIFI_BAND_MODE_AUTO);
+    if (bmErr != ESP_OK) {
+        if (Serial) Serial.printf("[C5] esp_wifi_set_band_mode failed: %s\n", esp_err_to_name(bmErr));
+    }
+#endif
     wifi_promiscuous_filter_t f = { .filter_mask = WIFI_PROMIS_FILTER_MASK_ALL };
     esp_wifi_set_promiscuous_filter(&f);
     esp_wifi_set_promiscuous(true);
     esp_wifi_set_promiscuous_rx_cb(&captureWifiCb);
 
     NimBLEScan* sc = NimBLEDevice::getScan();
+#if CONFIG_IDF_TARGET_ESP32C5
+    sc->setScanCallbacks(&captureScanCallbacks, true);
+#else
     sc->setAdvertisedDeviceCallbacks(&captureScanCallbacks, true);
+#endif
     sc->setActiveScan(true);
+#if CONFIG_IDF_TARGET_ESP32C5
+    sc->setInterval(50);   // the detector's measured C5 BLE timing (c5_radio.h rationale)
+    sc->setWindow(25);
+    sc->start(0, false, true);
+#else
     // The S3 time-slices ONE radio between BLE and WiFi, so the BLE scan window
     // is stolen straight from WiFi promiscuous. A near-100% window starved WiFi
     // to zero frames on the bench. WiFi is the priority target here, so give BLE
@@ -262,9 +343,19 @@ void startCapture(uint32_t durationSecs) {
     sc->setInterval(100);
     sc->setWindow(40);
     sc->start(0, nullptr, false);
+#endif
 
+#if CONFIG_IDF_TARGET_ESP32C5
+    // Single core: xTaskCreatePinnedToCore(..., 1) asserts at boot. Same value as
+    // hardware_manager.h's SWEEP_TASK_CORE -- not included here, since pulling
+    // that header into this file adds hardware_manager.h/mode_manager.h tokens to
+    // the S3 preprocessed output that the S3 gate rejects.
+    xTaskCreatePinnedToCore(captureHopTask,   "CapHop",   4096, NULL, 1, &hopTaskHandle,   tskNO_AFFINITY);
+    xTaskCreatePinnedToCore(captureDrainTask, "CapDrain", 8192, NULL, 2, &drainTaskHandle, tskNO_AFFINITY);
+#else
     xTaskCreatePinnedToCore(captureHopTask,   "CapHop",   4096, NULL, 1, &hopTaskHandle,   1);
     xTaskCreatePinnedToCore(captureDrainTask, "CapDrain", 8192, NULL, 2, &drainTaskHandle, 1);
+#endif
 
     Serial.printf("{\"cap\":{\"started\":true,\"secs\":%u}}\n", (unsigned)durationSecs);
     ESP_LOGI(TAG, "Capture started for %u s", (unsigned)durationSecs);

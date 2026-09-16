@@ -20,10 +20,20 @@
 #include "hardware_manager.h"
 #include "capabilities.h"
 #include "mode_manager.h"
+#include "c5_radio.h"
 extern "C" {
 #include "opendroneid.h"
 #include "odid_wifi.h"
 }
+
+#if CONFIG_IDF_TARGET_ESP32C5
+// NimBLE-Arduino 2.x hands scan results out as const; 1.x (the S3) does not.
+// A macro rather than a typedef so the S3's preprocessed source stays
+// token-identical (the S3 byte-identical gate).
+#define SWEEP_ADV const NimBLEAdvertisedDevice
+#else
+#define SWEEP_ADV NimBLEAdvertisedDevice
+#endif
 
 static const char *TAG = "WatchersWatch";
 static const char *SIG_FILE_PATH = "/data/signatures.json";
@@ -108,6 +118,12 @@ static bool huntAudible = false;
 static volatile int huntWifiRssi = 0;
 static volatile uint32_t huntWifiRssiMs = 0;
 static volatile int huntChannel = 0;
+#if CONFIG_IDF_TARGET_ESP32C5
+// Which Wi-Fi band(s) the hopper covers (SweepBand). Written by setBand() on the
+// command path, read by the hop task each dwell -- a byte, so volatile suffices.
+static volatile uint8_t sweepBand = BAND_BOTH;
+uint8_t getBand() { return sweepBand; }
+#endif
 // Set by the promiscuous callback on any Remote ID frame; the hopper reads and
 // clears it to grant that channel one extra dwell.
 static volatile bool odidHeard = false;
@@ -424,7 +440,7 @@ static void noteAlertForTarget(WatcherTargetInfo& t, int bestWeight, const Strin
  * confidence weight (0 = no match). A rule ANDs its non-empty conditions; the
  * returned weight is the sum of the matched conditions' weights (capped 100).
  */
-static int matchDeviceAgainstRule(NimBLEAdvertisedDevice* dev, const WatcherSignature& sig, String& outMatchedRule, String& outCategory) {
+static int matchDeviceAgainstRule(SWEEP_ADV* dev, const WatcherSignature& sig, String& outMatchedRule, String& outCategory) {
     int weight = 0;
 
     // 1. Check OUI (MAC Prefix)
@@ -576,9 +592,15 @@ static void applyDroneData(WatcherTargetInfo& t, const ODID_UAS_Data& d) {
 
 // Decode ASTM Remote ID out of a BLE advert (UUID 0xFFFA in AD type 0x16,
 // Service Data - 16-bit UUID). Returns true and fills `out` on a useful decode.
-static bool bleDecodeRemoteId(NimBLEAdvertisedDevice* dev, ODID_UAS_Data& out) {
+static bool bleDecodeRemoteId(SWEEP_ADV* dev, ODID_UAS_Data& out) {
+#if CONFIG_IDF_TARGET_ESP32C5
+    const std::vector<uint8_t>& raw = dev->getPayload();   // NimBLE 2.x: a reference, no copy
+    const uint8_t* payload = raw.data();
+    size_t len = raw.size();
+#else
     uint8_t* payload = dev->getPayload();
     size_t len = dev->getPayloadLength();
+#endif
     if (!payload || len < 4) return false;
     size_t offset = 0;
     while (offset + 1 < len) {
@@ -612,7 +634,7 @@ static bool bleDecodeRemoteId(NimBLEAdvertisedDevice* dev, ODID_UAS_Data& out) {
 // or other Find My tracker). Apple manufacturer data (company 0x004C) with
 // message type 0x12. Deliberately NOT a bare 0x004C match — that is every
 // iPhone/AirPod in range.
-static bool bleIsAirtag(NimBLEAdvertisedDevice* dev) {
+static bool bleIsAirtag(SWEEP_ADV* dev) {
     if (!dev->haveManufacturerData()) return false;
     std::string mfg = dev->getManufacturerData();
     if (mfg.length() < 3) return false;
@@ -623,7 +645,7 @@ static bool bleIsAirtag(NimBLEAdvertisedDevice* dev) {
 // Bluetooth SIG company ID from the manufacturer data, or -1 if this advert
 // carries none. The app names the vendor from it -- the one vendor hint that
 // survives a randomized address, which is most of BLE.
-static int32_t bleCompanyId(NimBLEAdvertisedDevice* dev) {
+static int32_t bleCompanyId(SWEEP_ADV* dev) {
     if (!dev->haveManufacturerData()) return -1;
     std::string mfg = dev->getManufacturerData();
     if (mfg.length() < 2) return -1;
@@ -633,8 +655,13 @@ static int32_t bleCompanyId(NimBLEAdvertisedDevice* dev) {
 /**
  * @brief NimBLE Scan Callbacks for Watcher's Watch
  */
+#if CONFIG_IDF_TARGET_ESP32C5
+class WatchersScanCallbacks : public NimBLEScanCallbacks {
+    void onResult(const NimBLEAdvertisedDevice* advertisedDevice) override {
+#else
 class WatchersScanCallbacks : public NimBLEAdvertisedDeviceCallbacks {
     void onResult(NimBLEAdvertisedDevice* advertisedDevice) override {
+#endif
         if (!watchersRunning) return;
 
         if (watchersMutex == NULL) return;
@@ -786,13 +813,30 @@ static TaskHandle_t watchersWifiHopTaskHandle = NULL;
 
 static void watchersWifiChannelHopperTask(void *pvParameters) {
     (void)pvParameters;
+#if CONFIG_IDF_TARGET_ESP32C5
+    // Dual-band: the measured schedule for the selected band (c5_radio.h),
+    // rebuilt whenever the band setting changes.
+    uint8_t channels[20];
+    size_t chCount = 0;
+    uint8_t hopBand = 0xFF;
+#else
     // Hop all US 2.4 GHz channels so a Flock node beaconing off 1/6/11 isn't
     // missed. (ESP32-S3 is 2.4 GHz only.)
     const uint8_t channels[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
+#endif
     int chIndex = 0;
     bool extended = false;
     while (watchersRunning) {
+#if CONFIG_IDF_TARGET_ESP32C5
+        vTaskDelay(pdMS_TO_TICKS(C5_HOP_DWELL_MS));
+        if (hopBand != sweepBand) {
+            hopBand = sweepBand;
+            chCount = c5BuildHop(hopBand, channels, sizeof(channels));
+            chIndex = 0;
+        }
+#else
         vTaskDelay(pdMS_TO_TICKS(150));
+#endif
         if (!watchersRunning) break;
         // A drone beacons on one fixed channel, so a channel that just carried
         // Remote ID earns one extra dwell before moving on -- never two in a
@@ -808,12 +852,39 @@ static void watchersWifiChannelHopperTask(void *pvParameters) {
         // else pauses for the duration, which is the deal you accept when you
         // lock onto one target.
         int parked = huntChannel;
+#if CONFIG_IDF_TARGET_ESP32C5
+        static bool warned5GhzRejected = false;
+        if (huntMac.length() > 0 && parked >= 1 && parked <= 177) {   // 5 GHz targets park too
+            esp_err_t chErr = esp_wifi_set_channel(parked, WIFI_SECOND_CHAN_NONE);
+            if (chErr != ESP_OK && parked > 14 && !warned5GhzRejected) {
+                warned5GhzRejected = true;
+                // ESP_LOGW is compiled out at CORE_DEBUG_LEVEL=0 (see the
+                // alert print above), so this is a plain print -- otherwise a
+                // rejected 5 GHz channel is silent on a headless board.
+                if (Serial) Serial.printf("[C5] esp_wifi_set_channel rejected 5 GHz channel %d: %s -- band mode may not have applied\n",
+                          parked, esp_err_to_name(chErr));
+            }
+        } else {
+            uint8_t ch = channels[chIndex];
+            esp_err_t chErr = esp_wifi_set_channel(ch, WIFI_SECOND_CHAN_NONE);
+            if (chErr != ESP_OK && ch > 14 && !warned5GhzRejected) {
+                warned5GhzRejected = true;
+                // ESP_LOGW is compiled out at CORE_DEBUG_LEVEL=0 (see the
+                // alert print above), so this is a plain print -- otherwise a
+                // rejected 5 GHz channel is silent on a headless board.
+                if (Serial) Serial.printf("[C5] esp_wifi_set_channel rejected 5 GHz channel %d: %s -- band mode may not have applied\n",
+                          ch, esp_err_to_name(chErr));
+            }
+            chIndex = (chIndex + 1) % (int)chCount;
+        }
+#else
         if (huntMac.length() > 0 && parked >= 1 && parked <= 14) {
             esp_wifi_set_channel(parked, WIFI_SECOND_CHAN_NONE);
         } else {
             esp_wifi_set_channel(channels[chIndex], WIFI_SECOND_CHAN_NONE);
             chIndex = (chIndex + 1) % (int)(sizeof(channels) / sizeof(channels[0]));
         }
+#endif
     }
     watchersWifiHopTaskHandle = NULL;
     vTaskDelete(NULL);
@@ -870,6 +941,12 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
     if (type != WIFI_PKT_MGMT) return;
     
     wifi_promiscuous_pkt_t *packet = (wifi_promiscuous_pkt_t *)buf;
+#if CONFIG_IDF_TARGET_ESP32C5
+    // The C5 driver passes frames that failed reception; the S3's never did.
+    // They are random bytes (every type/subtype incl. reserved type 3, thousands of
+    // fake transmitters on the bench) and would feed the IE walk and OUI rules junk.
+    if (packet->rx_ctrl.rx_state != 0) return;
+#endif
     uint8_t *payload = packet->payload;
     int length = packet->rx_ctrl.sig_len;
     int rssi = packet->rx_ctrl.rssi;
@@ -1166,6 +1243,9 @@ static void persistState() {
     else                      prefs.remove("hunt");
     prefs.putBool("scanall", scanAll);
     prefs.putUChar("beepmask", beepMask);
+#if CONFIG_IDF_TARGET_ESP32C5
+    prefs.putUChar("band", sweepBand);
+#endif
     prefs.end();
 }
 
@@ -1175,6 +1255,10 @@ void restoreWatchersState() {
     String mac = prefs.getString("hunt", "");
     bool all = prefs.getBool("scanall", false);
     uint8_t mask = prefs.getUChar("beepmask", BEEP_MASK_ALL);
+#if CONFIG_IDF_TARGET_ESP32C5
+    uint8_t band = prefs.getUChar("band", BAND_BOTH);
+    sweepBand = (band <= BAND_5) ? band : BAND_BOTH;
+#endif
     prefs.end();
 
     beepMask = mask & BEEP_MASK_ALL;
@@ -1201,6 +1285,16 @@ void setBeepMask(uint8_t mask) {
 uint8_t getBeepMask() {
     return beepMask;
 }
+
+#if CONFIG_IDF_TARGET_ESP32C5
+void setBand(uint8_t band) {
+    // Does not unpark the hopper: a hunt already parked on a channel keeps it
+    // until the hunt ends, regardless of the band selected here.
+    sweepBand = (band <= BAND_5) ? band : BAND_BOTH;
+    persistState();
+    ESP_LOGI(TAG, "Wi-Fi band %u (0 both, 1 2.4 GHz, 2 5 GHz)", (unsigned)sweepBand);
+}
+#endif
 
 void setScanAll(bool enabled) {
     scanAll = enabled;
@@ -1268,7 +1362,11 @@ static void performRing(const String& mac) {
         // to have no Immediate Alert service — or has wandered out of range —
         // takes the full timeout. Measured on the bench: a ring at the default
         // stalled the push loop long enough to look like a crash.
+#if CONFIG_IDF_TARGET_ESP32C5
+        client->setConnectTimeout(5000);   // NimBLE 2.x takes milliseconds; 5 would be 5 ms
+#else
         client->setConnectTimeout(5);
+#endif
         NimBLEAddress addr(std::string(mac.c_str()), BLE_ADDR_RANDOM);
         if (client->connect(addr, false)) {
             NimBLERemoteService* svc = client->getService(NimBLEUUID((uint16_t)0x1802));
@@ -1478,17 +1576,48 @@ void startWatchersWatch() {
     ESP_LOGI(TAG, "Starting NimBLE scanner for Watcher's Watch...");
 
     NimBLEScan* pScan = NimBLEDevice::getScan();
+#if CONFIG_IDF_TARGET_ESP32C5
+    pScan->setScanCallbacks(&watchersScanCallbacks, true);
+#else
     pScan->setAdvertisedDeviceCallbacks(&watchersScanCallbacks, true);
+#endif
     pScan->setActiveScan(true);
+#if CONFIG_IDF_TARGET_ESP32C5
+    // Bench-measured on the C5 (experiment rounds 3-4): 25 ms slices every 50 ms
+    // hear a 2 s AirTag as evenly as the S3 does at 50/100; 40/100 left 3x the
+    // silent stretches, 60%+ duty starved Wi-Fi.
+    pScan->setInterval(50);
+    pScan->setWindow(25);
+#else
     pScan->setInterval(100);
     pScan->setWindow(50);
+#endif
 
     
+#if CONFIG_IDF_TARGET_ESP32C5
+    pScan->start(0, false, true);
+#else
     pScan->start(0, nullptr, false);
+#endif
     
     // Start WiFi Promiscuous
     WiFi.mode(WIFI_STA);
     WiFi.disconnect();
+#if CONFIG_IDF_TARGET_ESP32C5
+    // A failed enable here silently degrades the board to 2.4 GHz-only while it
+    // keeps reporting band 0 -- and it's headless, so this is the only witness.
+    esp_err_t ccErr = esp_wifi_set_country_code(SWEEP_COUNTRY, true);   // gates the legal 5 GHz channels
+    if (ccErr != ESP_OK) {
+        // ESP_LOGW is compiled out at CORE_DEBUG_LEVEL=0 (see the alert
+        // print elsewhere in this file), so this is a plain print -- a
+        // headless board's only witness to a failed 5 GHz enable.
+        if (Serial) Serial.printf("[C5] esp_wifi_set_country_code failed: %s\n", esp_err_to_name(ccErr));
+    }
+    esp_err_t bmErr = esp_wifi_set_band_mode(WIFI_BAND_MODE_AUTO);      // let set_channel cross bands
+    if (bmErr != ESP_OK) {
+        if (Serial) Serial.printf("[C5] esp_wifi_set_band_mode failed: %s\n", esp_err_to_name(bmErr));
+    }
+#endif
     // Filter in hardware. The callback only ever handles WIFI_PKT_MGMT, so
     // without this every data/ctrl frame in the air reaches the ISR just to be
     // dropped by the software check.
@@ -1505,7 +1634,7 @@ void startWatchersWatch() {
             NULL,
             1,
             &watchersWifiHopTaskHandle,
-            1
+            SWEEP_TASK_CORE
         );
     }
 
@@ -1520,7 +1649,7 @@ void startWatchersWatch() {
             NULL,
             1,
             &watchersTaskHandle,
-            1
+            SWEEP_TASK_CORE
         );
     }
 }
@@ -1589,6 +1718,9 @@ String getWatchersTargetsJson() {
     doc["buzzer"] = isBuzzerEnabled();
     doc["led"] = getLedMode();
     doc["theme"] = getTheme();
+#if CONFIG_IDF_TARGET_ESP32C5
+    doc["band"] = getBand();   // C5 only, ~9 B; the device is the authority
+#endif
     doc["alerts"] = getAlertCount();
 
     if (watchersMutex != NULL && xSemaphoreTake(watchersMutex, pdMS_TO_TICKS(200)) == pdTRUE) {

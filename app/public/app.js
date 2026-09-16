@@ -667,6 +667,8 @@
             if (lm) { setLed(Number(lm.getAttribute('data-led'))); return; }
             const tc = ev.target.closest('#theme-modes .theme-chip');
             if (tc) { setTheme(Number(tc.getAttribute('data-theme'))); return; }
+            const bm = ev.target.closest('#band-modes .radio-tab');
+            if (bm) { setBand(Number(bm.getAttribute('data-band'))); return; }
             const sm = ev.target.closest('#sound-modes .radio-tab');
             if (sm) { setSound(sm.getAttribute('data-sound') === '1'); return; }
             const act = ev.target.closest('.scope-act');
@@ -1940,6 +1942,7 @@
             setBuzzerUi(cfg.buzzer);
             setLedUi(cfg.led);
             setThemeUi(cfg.theme);
+            setBandUi(cfg.band);
             devName = (typeof cfg.ble_name === 'string' && cfg.ble_name) || 'SignalSweep';
             if (typeof cfg.uptime === 'number') bootAt = Date.now() - cfg.uptime * 1000;
             renderStatusStrip();
@@ -2170,6 +2173,7 @@
             if (typeof data.buzzer === 'boolean') setBuzzerUi(data.buzzer);
             if (typeof data.led === 'number') setLedUi(data.led);
             if (typeof data.theme === 'number') setThemeUi(data.theme);
+            if (typeof data.band === 'number') setBandUi(data.band);
             const devAll = !!data.scan_all;
             if (devAll !== foxhuntMode && Date.now() > filterPendingUntil) {
                 foxhuntMode = devAll;
@@ -2292,6 +2296,29 @@
             const el = document.querySelector('#theme-modes .theme-chip[data-theme="' + n + '"]');
             if (el) el.classList.add('pending');
             sendCommand({ theme: n });
+        }
+
+        // Wi-Fi bands (XIAO C5 only): 0 both, 1 2.4 GHz, 2 5 GHz -- firmware SweepBand
+        // order (selftest pins it). The row stays hidden for a board that never
+        // reports a band (the S3 has one), and like the LED mode it paints only from
+        // device frames; a tap just asks and marks the button pending.
+        let bandId = null;
+        function setBandUi(n) {
+            bandId = (typeof n === 'number') ? n : null;
+            const row = document.getElementById('band-row');
+            if (row) row.hidden = bandId === null;
+            document.querySelectorAll('#band-modes .radio-tab').forEach(function (el) {
+                const on = bandId !== null && Number(el.getAttribute('data-band')) === bandId;
+                el.setAttribute('aria-pressed', on ? 'true' : 'false');
+                el.classList.remove('pending');
+            });
+        }
+        function setBand(n) {
+            if (bandId === null) { showToast('Waiting for the device', '…'); return; }
+            if (n === bandId) return;
+            const el = document.querySelector('#band-modes .radio-tab[data-band="' + n + '"]');
+            if (el) el.classList.add('pending');
+            sendCommand({ band: n });
         }
 
         // The rules the device is actually carrying. Until they arrive the box
@@ -2429,6 +2456,7 @@
                 setBuzzerUi(null);
                 setLedUi(null);
                 setThemeUi(null);
+                setBandUi(null);
                 // Same reason: the category mask is per-board too, and it used
                 // to survive a disconnect as five checkboxes still showing the
                 // last device's settings.

@@ -559,7 +559,7 @@ void hardwareInit() {
         NULL,
         2,
         &hwTaskHandle,
-        1
+        SWEEP_TASK_CORE
     );
 }
 
