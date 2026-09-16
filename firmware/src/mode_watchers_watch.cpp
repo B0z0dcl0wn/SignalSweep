@@ -996,6 +996,13 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
         String matchedCategory = "";
         bool droneDecoded = false;
         String foundSsid = "";
+        // The AP's own channel, from the DS Parameter Set IE (id 3, 1-byte
+        // payload) if the frame carries one. 0 = absent (e.g. a probe request,
+        // which names no channel of its own). rx_ctrl.channel is the hopper's
+        // tuned channel, not the transmitter's -- 2.4 GHz adjacent-channel
+        // leakage means an AP on 6 is routinely heard while tuned to 4-8, which
+        // made the band/channel chip lie. Prefer dsCh when present.
+        int dsCh = 0;
         // Gate for the wildcard-probe signature below. True only when the OUI
         // matched a rule whose category is Flock: a Cradlepoint or Sierra router
         // sending a wildcard probe is not a camera, and scoring it as one would
@@ -1073,6 +1080,14 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
                 // payload 50:6f:9a:16:03:01:03. Independent of the weak
                 // prefix-only check below (which keeps its own !ieHit guard), so
                 // the two never double-count.
+                // DS Parameter Set: the transmitter's own channel. Present on
+                // beacons/probe responses (and some probe requests); a client's
+                // probe request typically has none, so it keeps rx_ctrl.channel
+                // below (band is still right, "heard while tuned to" this chan).
+                if (id == 3 && elen == 1) {
+                    dsCh = body[b+2];
+                }
+
                 if (id == 221 && elen == 7 &&
                     body[b+2] == 0x50 && body[b+3] == 0x6F && body[b+4] == 0x9A &&
                     body[b+5] == 0x16 && body[b+6] == 0x03 &&
@@ -1195,7 +1210,7 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
                     }
                     if (foundSsid.length() > 0) target.ssid = foundSsid;
                     if (role > target.wifiRole) target.wifiRole = role;
-                    target.wifiCh = packet->rx_ctrl.channel;
+                    target.wifiCh = dsCh > 0 ? dsCh : packet->rx_ctrl.channel;
                     if (droneDecoded) applyDroneData(target, wifiUas);
                     noteAlertForTarget(target, bestWeight, matchedCategory);
                     found = true;
@@ -1215,7 +1230,7 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
                 newTarget.protocol = "WiFi";
                 newTarget.ssid = foundSsid;
                 newTarget.wifiRole = role;
-                newTarget.wifiCh = packet->rx_ctrl.channel;
+                newTarget.wifiCh = dsCh > 0 ? dsCh : packet->rx_ctrl.channel;
                 newTarget.confidence = wifiConfidence;
                 newTarget.tier = tierForConfidence(wifiConfidence);
                 newTarget.lastReportedMs = 0;
