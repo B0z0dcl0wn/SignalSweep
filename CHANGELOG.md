@@ -12,6 +12,17 @@ All notable changes to SignalSweep are recorded here.
   `manifest.json` one level up instead of titling the run "local build local".
 - `site/assemble.sh` finds `boot_app0.bin` with `find -print -quit`: a
   `| head -1` under `pipefail` could fail a clean build on SIGPIPE.
+- **"Updates lost" means lost telemetry again.** Opening the cable resets the
+  board, and its boot banner counted as dropped pushes, so the badge read "29% of
+  updates lost" after a clean connect. Only a line that looks like JSON counts
+  now, and the counters reset with each link.
+- The app links its favicon; every cold start used to 404 on `favicon.ico`.
+- The C5's "5 GHz channel rejected" warning fires once per detector run instead
+  of once per boot, so it speaks up again after a Site Survey capture.
+- `analyze-capture.py` counts per-band MACs from management and data frames only,
+  skipping multicast senders and out-of-range channels. With 5% of payloads torn
+  it reported 52/23 MACs; it now reports 43/14, matching the clean capture.
+- `install.py`'s missing-APK error names the folder you gave it.
 
 ## [0.3.0] — 2026-09-16 — The C5 hears 5 GHz, and installs like the S3
 

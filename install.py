@@ -358,7 +358,7 @@ def main():
         local = {p.name: p for p in src.rglob("*") if p.is_file()}
         apk_local = next((p for n, p in local.items() if n.lower().endswith(".apk")), None)
         if do_apk and not apk_local:
-            die(f"{src}: the CI site artifact carries no APK; add --esp-only")
+            die(f"no .apk in {src}. The CI site artifact never carries one; add --esp-only")
     else:
         rel = fetch_release(args.tag)
         version = rel["tag_name"].lstrip("v")
