@@ -46,14 +46,15 @@ If you have Python and `adb`, `install.py` downloads a published release and
 puts it on your hardware — firmware, Android app, or both:
 
 ```
-pip install esptool pyserial
+pip install -U esptool pyserial
 python install.py                 # firmware + app, latest release
 python install.py --apk-only      # just the Android app
 python install.py --esp-only      # just the firmware
 python install.py --list          # what is attached, changes nothing
 python install.py --erase         # also reset the board to factory defaults
 python install.py --board c5      # force the board id instead of asking the chip
-python install.py --from-dir DIR  # install local files (e.g. a CI artifact), unverified
+python install.py --from-dir DIR --esp-only  # install local files, e.g. the CI
+                                   # site artifact's firmware/ folder (no APK there)
 ```
 
 It never guesses what to touch: with more than one board or phone attached it

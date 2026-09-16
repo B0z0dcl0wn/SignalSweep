@@ -41,6 +41,9 @@ def main():
         assert offsets["signalsweep.bin"] == partition_offset("app0"), f"{board} app"
         prefix = "" if board == "s3" else "c5-"
         assert all(n.startswith(prefix) for n, _ in manifest_parts), f"{board} asset names"
+        if board == "s3":
+            assert not any(n.startswith("c5-") for n, _ in manifest_parts), \
+                "s3 asset names must not carry the c5- prefix"
 
     html = (ROOT / "site/index.html").read_text(encoding="utf-8")
     assert re.search(r"esp-web-tools@\d+\.\d+\.\d+/", html), "flasher script is not pinned to an exact version"

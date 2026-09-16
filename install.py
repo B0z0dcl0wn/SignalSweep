@@ -15,7 +15,8 @@ PlatformIO.
   python install.py --erase            # also wipe saved settings (see below)
   python install.py --list             # show what is attached, change nothing
   python install.py --board c5         # skip chip detection, flash a C5 image
-  python install.py --from-dir DIR     # install from local files (e.g. a CI artifact)
+  python install.py --from-dir DIR --esp-only  # local files, e.g. the CI site
+                                        # artifact's firmware/ folder (no APK there)
 
 Requires: esptool (pip install esptool) for the firmware, adb on PATH for the
 app. Only the one you actually use is checked.
@@ -192,12 +193,21 @@ def board_from_chip_output(text):
     return m.group(1).lower() if m else None
 
 
-def detect_board(port):
-    """Ask the chip what it is. Both boards share Espressif's USB id, so the
-    port alone cannot tell an S3 from a C5 -- and the wrong image bricks it."""
+def chip_name_from_output(text):
+    """Any ESP32 chip name esptool recognises, even one SignalSweep doesn't ship
+    for -- so a supported-but-wrong chip (e.g. an ESP32-C3) gets a real answer
+    instead of being lumped in with "could not read the chip at all"."""
+    m = re.search(r"(?:Chip type:|Chip is)\s*(ESP32-?\w*)", text)
+    return m.group(1) if m else None
+
+
+def run_chip_id(port):
+    """Ask the chip what it is and return esptool's raw output. Both boards
+    share Espressif's USB id, so the port alone cannot tell an S3 from a C5 --
+    and the wrong image bricks it."""
     r = subprocess.run([sys.executable, "-m", "esptool", "--port", port, "chip_id"],
                        capture_output=True, text=True, stdin=subprocess.DEVNULL)
-    return board_from_chip_output((r.stdout or "") + (r.stderr or ""))
+    return (r.stdout or "") + (r.stderr or "")
 
 
 # --------------------------------------------------------------------------
@@ -290,6 +300,10 @@ def main():
     # ---- pick targets before downloading anything -------------------------
     port = dev = board = None
     if do_esp:
+        try:
+            import esptool  # noqa: F401
+        except ImportError:
+            die("esptool is needed to flash: pip install esptool")
         if args.port:
             port = args.port
         else:
@@ -297,12 +311,16 @@ def main():
                        lambda x: f"{x.device:<8} {x.description}")
             port = p.device
         say(f"[install] asking the board on {port} what it is...")
-        detected = detect_board(port)
+        chip_text = run_chip_id(port)
+        detected = board_from_chip_output(chip_text)
         if args.board and detected and args.board != detected:
             die(f"--board {args.board}, but the board on {port} reports {BOARDS[detected]['label']}. "
                 "Refusing to flash the wrong image.")
         board = args.board or detected
         if not board:
+            chip_name = chip_name_from_output(chip_text)
+            if chip_name:
+                die(f"the board on {port} reports {chip_name}, which SignalSweep does not support.")
             die(f"could not read the chip on {port}. Hold BOOT while plugging it in, "
                 "or pass --board s3|c5 if you are sure.")
     if do_apk:
@@ -331,7 +349,7 @@ def main():
         local = {p.name: p for p in src.rglob("*") if p.is_file()}
         apk_local = next((p for n, p in local.items() if n.lower().endswith(".apk")), None)
         if do_apk and not apk_local:
-            die(f"no .apk in {src}; use --esp-only")
+            die(f"{src}: the CI site artifact carries no APK; add --esp-only")
     else:
         rel = fetch_release(args.tag)
         version = rel["tag_name"].lstrip("v")
@@ -346,8 +364,13 @@ def main():
         have = local if args.from_dir else assets
         missing = [n for n in names if n not in have]
         if missing:
-            die(f"{title} has no {BOARDS[board]['label']} firmware (missing {', '.join(missing)}). "
-                "Releases before v0.3.0 ship the ESP32-S3 only.")
+            msg = f"{title} has no {BOARDS[board]['label']} firmware (missing {', '.join(missing)})."
+            if args.from_dir:
+                msg += f" {src} has no such files -- point --from-dir at the CI site " \
+                       "artifact's firmware/ folder."
+            elif board == "c5":
+                msg += " Releases before v0.3.0 ship the ESP32-S3 only."
+            die(msg)
 
     # ---- say exactly what is about to happen ------------------------------
     say("")
@@ -372,8 +395,13 @@ def main():
     say("")
 
     if not args.yes:
-        want = (dev["serial"] if do_apk else port)
-        got = input(f"  Type '{want}' to confirm, anything else to abort: ").strip()
+        if do_apk:
+            want = dev["serial"]
+            prompt = f"  Type '{want}' to confirm, anything else to abort: "
+        else:
+            want = port
+            prompt = f"  Type '{want}' to flash {BOARDS[board]['label']}, anything else to abort: "
+        got = input(prompt).strip()
         if got != want:
             say("  aborted, nothing changed")
             return 1

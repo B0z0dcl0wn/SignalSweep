@@ -94,7 +94,7 @@ out which board is plugged in and flashes the matching image.
 **Script: firmware plus the Android APK.**
 
 ```bash
-pip install esptool pyserial
+pip install -U esptool pyserial
 python install.py
 ```
 
