@@ -73,7 +73,7 @@ everyone's. Go and read it.
 
 | Board | Hears | Price | How you flash it |
 |---|---|---|---|
-| Seeed Studio XIAO ESP32-C5 | 2.4 **and** 5 GHz | ~$13 | From source: `pio run -e c5` |
+| Seeed Studio XIAO ESP32-C5 | 2.4 **and** 5 GHz | ~$13 | Web flasher, `install.py`, or source |
 | [Seeed Studio XIAO ESP32-S3](https://www.seeedstudio.com/XIAO-ESP32S3-p-5627.html) | 2.4 GHz | ~$15 | Web flasher, `install.py`, or source |
 
 Plus a USB-C cable. Both boards run the same detector and the same app; the C5
@@ -88,9 +88,8 @@ away the reason to buy that board.
 **Browser, zero install.** Open
 [b0z0dcl0wn.github.io/SignalSweep](https://b0z0dcl0wn.github.io/SignalSweep/) in
 Chrome or Edge, plug the board in, hit **Connect & flash**. The app lives at
-`/app/` on the same site and talks to the board over Bluetooth. The flasher and
-`install.py` serve ESP32-S3 images today; for the C5, build from source until
-they learn the second board.
+`/app/` on the same site and talks to the board over Bluetooth. The flasher works
+out which board is plugged in and flashes the matching image.
 
 **Script: firmware plus the Android APK.**
 
@@ -101,7 +100,8 @@ python install.py
 
 Flashes the board and sideloads the APK over `adb`. It lists what's plugged in
 and makes you type the target's name back before it writes a byte.
-`install.py --help` has `--apk-only`, `--esp-only` and `--erase`.
+`install.py --help` has `--apk-only`, `--esp-only` and `--erase`. It asks the
+chip which board it is; `--board c5` forces it.
 
 ## Hardware and controls
 

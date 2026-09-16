@@ -4,6 +4,22 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Added — Install the C5 like the S3
+
+- **One Install button, both boards.** The flasher manifest carries an ESP32-C5
+  build beside the S3 one and ESP Web Tools picks by the chip it finds. The C5
+  bootloader sits at `0x2000`, not `0`; `test_distribution.py` pins every offset
+  to `partitions.csv` so the two can never drift.
+- **`install.py` asks the chip.** Both boards share Espressif's USB id, so the
+  port cannot tell them apart and the wrong image bricks the board. esptool reads
+  the chip; `--board s3|c5` overrides and a mismatch aborts. `--from-dir` installs
+  a local build or CI artifact. Releases before v0.3.0 have no C5 files, and the
+  installer says so before touching hardware.
+- **CI builds the C5 from the tagged commit**, in its own PlatformIO core dir (the
+  two frameworks share a package name), with the Seeed platform pinned to the
+  bench-proven commit and ESP Web Tools pinned to 10.4.0.
+- `flash.py --board c5` sets the core dir and the UTF-8 output encoding for you.
+
 ### Fixed — Connecting and capturing recover on their own
 
 - **One tap on OK now connects over USB.** The USB plugin's `requestPermission`
