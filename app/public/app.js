@@ -468,7 +468,7 @@
                 return;
             }
 
-            function rowHtml(m, extraBadges, extraHtml, noActions) {
+            function rowHtml(m, extraBadges, extraHtml, noActions, forceHunted) {
                 const cat = categoryOf(m.type || m.rule);
                 // Name it by whatever a person would recognise: its own name,
                 // then the network it is announcing, then the rule it tripped,
@@ -480,7 +480,12 @@
                 const band = bandOf(m);
                 const unmatched = band === 'none';
                 const weak = band === 'weak';
-                const isHunted = !!huntMac && String(m.mac).toUpperCase() === huntMac.toUpperCase();
+                // A group row speaks for its lead member, but the hunted
+                // device inside it may not be the lead -- forceHunted lets
+                // the group loop say "this unit is hunted" even when m itself
+                // isn't the hunted MAC, so the outline still lands on the row
+                // you're actually walking down.
+                const isHunted = !!huntMac && (String(m.mac).toUpperCase() === huntMac.toUpperCase() || !!forceHunted);
                 // A random address with no company ID has no maker to name;
                 // say so rather than leave the blank unexplained.
                 const vendor = vendorOf(m) || (publicMac(m) || m.cid != null ? '' : 'random MAC');
@@ -527,21 +532,29 @@
                 const hunted = !!huntMac && u.members.some(function (m) { return String(m.mac).toUpperCase() === huntMac.toUpperCase(); });
                 const open = hunted || expandedGroups.has(u.key);
                 // One chip per band heard, from that band's strongest radio.
+                // Fixed 2.4-then-5 order -- Object.keys on a two-entry object
+                // keyed '2.4'/'5' is not guaranteed to agree with which band
+                // was heard first, and a chip order that jitters between
+                // renders is its own small bug.
                 const byBand = {};
                 u.members.forEach(function (m) { const b = bandOfChannel(m.ch); if (b && !byBand[b] && m !== lead) byBand[b] = m.ch; });
                 if (bandOfChannel(lead.ch)) delete byBand[bandOfChannel(lead.ch)];
-                const extraBadges = Object.keys(byBand).map(function (b) { return bandChip(byBand[b]); }).join('') +
+                const extraBadges = ['2.4', '5'].filter(function (b) { return byBand[b]; })
+                        .map(function (b) { return bandChip(byBand[b]); }).join('') +
                     '<span class="radio-badge radios">' + u.members.length + ' radios</span>';
-                const cat = categoryOf(lead.type || lead.rule);
-                const extraHtml = '<div class="scope-actions"><button class="scope-act" data-act="expand" data-group="' + esc(u.key) + '">' +
-                        (open ? '\u25be Hide radios' : '\u25b8 Show ' + u.members.length + ' radios') + '</button></div>' +
+                // A hunt holds the group open on its own; the toggle button
+                // would do nothing while that's true (open is already forced
+                // true), so don't offer a control that has no effect.
+                const extraHtml = (hunted ? '' :
+                        '<div class="scope-actions"><button class="scope-act" data-act="expand" data-group="' + esc(u.key) + '">' +
+                        (open ? '\u25be Hide radios' : '\u25b8 Show ' + u.members.length + ' radios') + '</button></div>') +
                     (open ? '<div class="group-members">' + u.members.map(function (m) {
                         const mc = categoryOf(m.type || m.rule);
                         return '<div class="group-member">' + bandChip(m.ch) +
                             ' <span class="mono">' + esc(m.mac) + '</span> \u00b7 <span class="mono">' + esc(m.rssi) + ' dBm</span>' +
                             actionRow(m, mc) + '</div>';
                     }).join('') + '</div>' : '');
-                html += rowHtml(lead, extraBadges, extraHtml, true);
+                html += rowHtml(lead, extraBadges, extraHtml, true, hunted);
             }
             list.innerHTML = html;
         }
@@ -3490,19 +3503,66 @@
                 huntMac = ''; huntTrace = [];
 
                 // Same-box siblings render as one row with a "N radios" chip
-                // and an expand control, not two separate rows.
+                // and an expand control, not two separate rows. Proven
+                // against real captured HTML -- the selftest.js stub makes
+                // document.getElementById always return null, which would
+                // let this assertion pass even if renderScope() were
+                // completely broken, so swap in a capturing stand-in for
+                // 'targets-list' only, for the duration of this block.
                 foxhuntMode = true;
+                // Isolate from every earlier test's leftover liveMatches --
+                // foxhuntMode true means they'd all render too and inflate
+                // the row count this block checks.
+                const savedLiveMatches = liveMatches;
+                liveMatches = {};
+                // :20 carries a real category (rank 2) so it is unambiguously
+                // the lead by unitLead's rule regardless of list order; :22
+                // matches nothing (rank 0), which is what lets the hunted-
+                // non-lead case below be constructed on purpose rather than
+                // by the accident of hunt-pinning reordering the group.
                 ingestTargets([
-                    { mac: 'DD:EE:FF:00:11:20', rssi: -45, protocol: 'WiFi', ch: 6 },
+                    { mac: 'DD:EE:FF:00:11:20', rssi: -45, protocol: 'WiFi', ch: 6, type: 'Flock Safety', confidence: 90 },
                     { mac: 'DD:EE:FF:00:11:22', rssi: -60, protocol: 'WiFi', ch: 36 }
                 ]);
                 const units = groupSiblings(liveRows('all')).filter(function (u) { return u.key === 'DD:EE:FF:00:11'; });
-                renderScope();
-                const listHtml = (document.getElementById('targets-list') || { innerHTML: '' }).innerHTML;
-                results.groupRendersOnce = units.length === 1 && units[0].members.length === 2 &&
-                    (typeof document === 'undefined' || !document.getElementById('targets-list') ||
-                     (listHtml.indexOf('2 radios') >= 0 && listHtml.indexOf('data-group="DD:EE:FF:00:11"') >= 0));
-                delete liveMatches['DD:EE:FF:00:11:20']; delete liveMatches['DD:EE:FF:00:11:22'];
+                const origGetElementById = document.getElementById;
+                const captured = { innerHTML: '' };
+                document.getElementById = function (id) {
+                    return id === 'targets-list' ? captured : origGetElementById(id);
+                };
+                try {
+                    renderScope();
+                    const html1 = captured.innerHTML;
+                    const pairRowCount = (html1.match(/class="scope-row/g) || []).length;
+                    results.groupRendersOnce = units.length === 1 && units[0].members.length === 2 &&
+                        html1.indexOf('<span class="radio-badge radios">2 radios</span>') >= 0 &&
+                        html1.indexOf('data-group="DD:EE:FF:00:11"') >= 0 &&
+                        pairRowCount === 1;
+
+                    // Expanding shows both members with their own actions.
+                    expandedGroups.add('DD:EE:FF:00:11');
+                    renderScope();
+                    const html2 = captured.innerHTML;
+                    results.groupExpands = html2.indexOf('group-members') >= 0 &&
+                        html2.indexOf('DD:EE:FF:00:11:20') >= 0 &&
+                        html2.indexOf('DD:EE:FF:00:11:22') >= 0;
+                    expandedGroups.delete('DD:EE:FF:00:11');
+
+                    // A hunted member that is NOT the group's lead still
+                    // pins the outline to the row -- the lead here is the
+                    // stronger, unmatched ':20' (rank ties keep the first
+                    // member), so hunting ':22' exercises the non-lead path.
+                    huntMac = 'DD:EE:FF:00:11:22';
+                    renderScope();
+                    results.groupHuntedOutline = /class="scope-row[^"]*\bhunted\b/.test(captured.innerHTML);
+                    // While a hunt holds the group open, the expand toggle
+                    // (which would do nothing) must not be offered.
+                    results.groupHuntNoToggle = captured.innerHTML.indexOf('data-act="expand"') === -1;
+                    huntMac = '';
+                } finally {
+                    document.getElementById = origGetElementById;
+                }
+                liveMatches = savedLiveMatches;
                 foxhuntMode = false;
 
                 // Ordering is bucketed to 5 dB so multipath jitter cannot swap
