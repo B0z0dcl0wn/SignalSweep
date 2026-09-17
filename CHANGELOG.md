@@ -23,6 +23,13 @@ All notable changes to SignalSweep are recorded here.
   On C5 field captures about a third of 5 GHz-only transmitters were the second
   radio of a box already heard on 2.4 GHz. Rows are never joined on network
   name: mesh networks and hotspots share SSIDs across unrelated hardware.
+- **A router's extra networks fold in too.** Guest, IoT and hotspot SSIDs on one
+  radio use MACs whose last five octets match and whose first octet differs with
+  the locally-administered bit set; they join the row when their channels agree.
+  On six C5 field drives that rule found 941 groups, all with at most one
+  non-local MAC, and 3 channel mismatches (refused). Both rules together took
+  6886 transmitters down to 3665 rows; next to one router on the bench, 33 radios
+  became 12 rows.
 
 ### Changed — Install tidy-ups
 
