@@ -1425,6 +1425,9 @@ static void watchersPeriodicTask(void *pvParameters) {
                 snprintf(buf, sizeof(buf), "{\"hunt\":\"%s\",\"hunt_rssi\":%d}",
                          huntMac.c_str(), huntLastRssi);
                 sendBleSerial(buf);   // returns early when nobody is subscribed
+                // Same mirror as the 1 Hz push: without it a cable host only
+                // saw hunt RSSI once a second. ~40 B, 3/s, only while hunting.
+                if (Serial) Serial.println(buf);
             }
             continue;
         }
