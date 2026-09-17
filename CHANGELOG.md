@@ -4,6 +4,22 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Changed — Ring shows up only where it can work
+
+- **Ring is offered only on devices that advertise Immediate Alert (`0x1802`)
+  or Link Loss (`0x1803`).** Ring writes the standard Alert Level
+  characteristic, which only Find Me / Proximity keyfobs have. AirTags need the
+  owner's key to play a sound, Tiles speak their own protocol and phones ignore
+  it, so the button that sat on every Bluetooth row almost never did anything.
+  The detector remembers the flag per device and sends `"ring":1` on those rows
+  only. A tag that has the service but does not advertise it gets no button.
+- **Ring connects with the address type it heard.** It always connected as a
+  random address, so every keyfob with a public address failed before the
+  write was attempted.
+- **The toast reports what happened.** The board answers
+  `{"ring":"<mac>","ok":true|false}` after the attempt, and the app says
+  "Ring landed" or "Ring failed" instead of an unconditional "Ring sent".
+
 ## [0.4.0] — 2026-09-16 — Every Wi-Fi row says where, and a router is one row
 
 ### Fixed — Hunting over the cable

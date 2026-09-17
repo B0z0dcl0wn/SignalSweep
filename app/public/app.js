@@ -146,7 +146,7 @@
                     mac: t.mac, name: t.name || '', type: t.type || '',
                     rule: t.matched_rule || '', rssi: t.rssi,
                     protocol: t.protocol || 'BLE', ssid: t.ssid || '',
-                    ap: t.ap, pub: !!t.pub, cid: t.cid,
+                    ap: t.ap, pub: !!t.pub, cid: t.cid, ring: !!t.ring,
                     // Last known channel: a push that omits it (older firmware,
                     // a BLE sighting of a BLE+WiFi device) must not blank the badge.
                     ch: t.ch != null ? t.ch : (prev ? prev.ch : undefined),
@@ -423,15 +423,17 @@
             // interesting that is on no list, then go and physically find it.
             if (cat.key !== 'tracker' && !foxhuntMode) return '';
             const hunting = !!huntMac && huntMac.toUpperCase() === String(m.mac).toUpperCase();
-            // Ring is a GATT write to a Bluetooth characteristic. On a device
-            // only ever heard over Wi-Fi there is nothing to connect to, so the
-            // button would be a guaranteed failure dressed up as an option.
-            const hasBle = String(m.protocol || '').indexOf('BLE') >= 0;
+            // Ring writes the standard Immediate Alert characteristic, which
+            // only Find Me / Proximity keyfobs have. AirTags, Tiles and phones
+            // ignore it, so the button appears only where the firmware heard
+            // 0x1802/0x1803 advertised -- a button that almost never works is
+            // a lie, not an option.
+            const canRing = !!m.ring;
             return '<div class="scope-actions">' +
                 '<button class="scope-act' + (hunting ? ' hunting' : '') +
                     '" data-act="hunt" data-mac="' + esc(m.mac) + '">' +
                     (hunting ? '\u25c9 Hunting \u2014 stop' : '\u25ce Hunt') + '</button>' +
-                (hasBle
+                (canRing
                     ? '<button class="scope-act" data-act="ring" data-mac="' + esc(m.mac) + '">\ud83d\udd14 Ring</button>'
                     : '') +
             '</div>';
@@ -786,7 +788,7 @@
 
         function ringTarget(mac) {
             sendCommand({ ring: String(mac) });
-            showToast('Ring sent \u2014 listen for it', '\ud83d\udd14');
+            showToast('Ringing\u2026', '\ud83d\udd14');
         }
 
         // Delegated, because a MAC is device-supplied text and must never be
@@ -1001,6 +1003,13 @@
                 rxOk++;
                 // Capture progress / completion frame ({"cap":{...}}).
                 if (data.cap) { handleCapStat(data.cap); return; }
+                // Ring result: the firmware reports whether the write landed.
+                if (typeof data.ring === 'string' && 'ok' in data) {
+                    showToast(data.ok ? 'Ring landed — listen for it'
+                                      : 'Ring failed — out of range or not ringable',
+                              data.ok ? '🔔' : '⚠');
+                    return;
+                }
                 // The 4 Hz hunt frame: one target, one number, and deliberately
                 // NOT a renderScope() -- rebuilding the list four times a second
                 // would put the rows back to moving under your thumb, which is
@@ -3534,12 +3543,16 @@
                     themeNote(2, 3) === '' &&
                     themeNote(null, 1) === '';
 
-                // Ring is a Bluetooth write: never offer it on a Wi-Fi-only row.
+                // Ring only where the firmware heard Immediate Alert / Link Loss
+                // advertised: never on Wi-Fi, never on an AirTag.
                 const wifiOnly = actionRow(liveMatches['CC:00:03'], categoryOf(''));
-                const bleRow = actionRow(liveMatches['CC:00:04'], categoryOf('Tracker'));
+                const airtag = actionRow(liveMatches['CC:00:04'], categoryOf('Tracker'));
+                const fob = actionRow({ mac: 'CC:00:09', protocol: 'BLE', ring: true }, categoryOf('Tracker'));
                 results.noRingOnWifi = wifiOnly.indexOf('data-act="ring"') === -1 &&
                                        wifiOnly.indexOf('data-act="hunt"') > 0;
-                results.ringOnBle = bleRow.indexOf('data-act="ring"') > 0;
+                results.noRingOnAirtag = airtag.indexOf('data-act="ring"') === -1 &&
+                                         airtag.indexOf('data-act="hunt"') > 0;
+                results.ringOnFob = fob.indexOf('data-act="ring"') > 0;
 
                 // The hunted row is pinned to the top of the list even when it
                 // is the weakest thing on screen -- the instrument is up there

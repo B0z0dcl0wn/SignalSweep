@@ -54,6 +54,9 @@ struct WatcherTargetInfo {
     uint8_t wifiRole   = 0;
     bool    blePublic  = false;
     int32_t bleCompany = -1;
+    // Advertises Immediate Alert (0x1802) or Link Loss (0x1803): the Find Me /
+    // Proximity keyfobs Ring can actually reach. Sticky, like AP.
+    bool    bleRing    = false;
 
     // Last Wi-Fi channel this target was heard on, 0 = unknown / BLE only. The
     // app turns it into a 2.4G / 5G badge; last heard wins.
