@@ -4,6 +4,8 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-09-16 — Every Wi-Fi row says where, and a router is one row
+
 ### Fixed — Hunting over the cable
 
 - **The hunt meter updates as fast on USB as on Bluetooth.** The 3-per-second

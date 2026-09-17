@@ -15,7 +15,7 @@ The phone app is optional. It shows what's here right now, then forgets it.
 | `live` | `hunt <mac>` | `map` |
 |---|---|---|
 | ![Live scope](docs/img/scope.png) | ![Foxhunt](docs/img/foxhunt.png) | ![Drone on the map](docs/img/map-drone.png) |
-| Live matches, strongest first. Cleared when you disconnect. | One target. The beeps speed up as you close in. Walk, don't watch the screen. | Full ASTM F3411 decode: aircraft position and operator position. |
+| Live matches, strongest first. Every Wi-Fi row shows its band and channel, and a router's radios fold into one row. Cleared when you disconnect. | One target. The beeps speed up as you close in. Walk, don't watch the screen. | Full ASTM F3411 decode: aircraft position and operator position. |
 
 ---
 
