@@ -673,6 +673,9 @@ class WatchersScanCallbacks : public NimBLEAdvertisedDeviceCallbacks {
         String devName = advertisedDevice->haveName() ? String(advertisedDevice->getName().c_str()) : "";
         bool pubAddr = advertisedDevice->getAddress().getType() == BLE_ADDR_PUBLIC;
         int32_t company = bleCompanyId(advertisedDevice);
+        // ponytail: advertised UUIDs only; a tag that hides 0x1802 in GATT gets no Ring button.
+        bool ringable = advertisedDevice->isAdvertisingService(NimBLEUUID((uint16_t)0x1802)) ||
+                        advertisedDevice->isAdvertisingService(NimBLEUUID((uint16_t)0x1803));
 
         // Hunting: every advert from the target refreshes the click rate. Done
         // before the mutex so a busy detector never delays the feedback you are
@@ -755,6 +758,7 @@ class WatchersScanCallbacks : public NimBLEAdvertisedDeviceCallbacks {
                         // A scan response often has no manufacturer data; don't
                         // let it erase the company the advert already gave.
                         if (company >= 0) target.bleCompany = company;
+                        if (ringable) target.bleRing = true;
                         // Don't let a later non-matching advert wipe a category
                         // an earlier rule match established.
                         if (matchedCategory.length() > 0) {
@@ -781,6 +785,7 @@ class WatchersScanCallbacks : public NimBLEAdvertisedDeviceCallbacks {
                     newTarget.protocol = "BLE";
                     newTarget.blePublic = pubAddr;
                     newTarget.bleCompany = company;
+                    newTarget.bleRing = ringable;
                     newTarget.confidence = confidence;
                     newTarget.tier = tierForConfidence(confidence);
                     newTarget.lastReportedMs = 0;
@@ -1388,7 +1393,14 @@ static void performRing(const String& mac) {
 #else
         client->setConnectTimeout(5);
 #endif
-        NimBLEAddress addr(std::string(mac.c_str()), BLE_ADDR_RANDOM);
+        // Connect with the address type we heard. Hardcoding random made every
+        // public-address keyfob fail before the write was even attempted.
+        bool pub = false;
+        if (watchersMutex != NULL && xSemaphoreTake(watchersMutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+            for (auto& t : trackedTargets) if (t.mac.equalsIgnoreCase(mac)) { pub = t.blePublic; break; }
+            xSemaphoreGive(watchersMutex);
+        }
+        NimBLEAddress addr(std::string(mac.c_str()), pub ? BLE_ADDR_PUBLIC : BLE_ADDR_RANDOM);
         if (client->connect(addr, false)) {
             NimBLERemoteService* svc = client->getService(NimBLEUUID((uint16_t)0x1802));
             if (svc) {
@@ -1405,6 +1417,8 @@ static void performRing(const String& mac) {
     ESP_LOGI(TAG, "Ring %s: %s", mac.c_str(), ok ? "sent" : "failed");
 
     pauseBle(false);
+    // Tell the phone whether the write landed, so its toast is not a guess.
+    sendBleSerial("{\"ring\":\"" + mac + "\",\"ok\":" + (ok ? "true" : "false") + "}");
 }
 
 static void watchersPeriodicTask(void *pvParameters) {
@@ -1818,6 +1832,7 @@ String getWatchersTargetsJson() {
             if (t.wifiRole > 0)    obj["ap"]  = t.wifiRole == 2 ? 1 : 0;
             if (t.blePublic)       obj["pub"] = 1;
             if (t.bleCompany >= 0) obj["cid"] = t.bleCompany;
+            if (t.bleRing)         obj["ring"] = 1;   // the app offers Ring only here
             if (t.wifiCh > 0)      obj["ch"]  = t.wifiCh;   // ~7-9 B, Wi-Fi rows only
 
             // A device that matched nothing is only in this list because the
