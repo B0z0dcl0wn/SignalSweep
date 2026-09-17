@@ -328,37 +328,58 @@
         // mesh networks and public hotspots share names across unrelated boxes,
         // and 44% of 5 GHz-only transmitters never send one.
         const SIBLING_SPAN = 4;
+        // Two ways a pair of Wi-Fi rows is one box, chained through a group:
+        //  * near-MAC radios: first 5 octets equal, last octet within SIBLING_SPAN
+        //    (a dual-band box's 2.4 and 5 GHz radios);
+        //  * virtual networks: last 5 octets equal, first octet differs, at least
+        //    one with the locally-administered bit (0x02), same channel when both
+        //    are known (guest / IoT / hotspot SSIDs on one radio). On six C5 field
+        //    drives this rule found 941 groups; every one had at most one
+        //    non-local MAC, 791 shared a channel and 3 did not -- those 3 pairs
+        //    are exactly what the channel check refuses. Both rules together
+        //    took the list from 6886 transmitters to 3665 rows.
         function groupSiblings(rows) {
-            const groupOf = new Map();   // row -> group object
-            const byKey = new Map();
+            const parent = new Map();   // row -> row (union-find)
+            const find = function (x) { while (parent.get(x) !== x) { parent.set(x, parent.get(parent.get(x))); x = parent.get(x); } return x; };
+            const union = function (x, y) { parent.set(find(x), find(y)); };
+            const byHead = new Map(), byTail = new Map(), hex = new Map();
             for (const m of rows) {
                 const o = m.protocol === 'WiFi' ? String(m.mac).toUpperCase().split(/[:-]/) : null;
                 if (!o || o.length !== 6 || !o.every(function (x) { return /^[0-9A-F]{2}$/.test(x); })) continue;
-                const k = o.slice(0, 5).join(':');
-                if (!byKey.has(k)) byKey.set(k, []);
-                byKey.get(k).push({ m: m, last: parseInt(o[5], 16) });
+                parent.set(m, m);
+                hex.set(m, o.join(':'));
+                const e = { m: m, first: parseInt(o[0], 16), last: parseInt(o[5], 16) };
+                const h = o.slice(0, 5).join(':'), t = o.slice(1).join(':');
+                if (!byHead.has(h)) byHead.set(h, []);
+                if (!byTail.has(t)) byTail.set(t, []);
+                byHead.get(h).push(e);
+                byTail.get(t).push(e);
             }
-            byKey.forEach(function (list, k) {
+            byHead.forEach(function (list) {
                 list.sort(function (a, b) { return a.last - b.last; });
-                let cur = null, prev = -1000;
-                for (const e of list) {
-                    // Two separate groups can land under the same 5-octet
-                    // prefix (e.g. :10/:14 and :19 four apart from each
-                    // other but not from :14) -- suffix the key with the
-                    // group's own lowest last octet so they don't share a
-                    // data-group id and expansion state.
-                    if (!cur || e.last - prev > SIBLING_SPAN)
-                        cur = { key: k + ':' + e.last.toString(16).padStart(2, '0').toUpperCase(), members: [] };
-                    groupOf.set(e.m, cur);
-                    prev = e.last;
+                for (let i = 1; i < list.length; i++)
+                    if (list[i].last - list[i - 1].last <= SIBLING_SPAN) union(list[i].m, list[i - 1].m);
+            });
+            byTail.forEach(function (list) {
+                for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length; j++) {
+                    const a = list[i], b = list[j];
+                    if (a.first === b.first || !((a.first | b.first) & 0x02)) continue;
+                    const ca = Number(a.m.ch), cb = Number(b.m.ch);
+                    if (ca > 0 && cb > 0 && ca !== cb) continue;
+                    union(a.m, b.m);
                 }
             });
-            const units = [], seen = new Set();
+            const groupOf = new Map();   // root row -> group
+            const units = [];
             for (const m of rows) {
-                const g = groupOf.get(m);
-                if (!g) { units.push({ key: String(m.mac).toUpperCase(), members: [m] }); continue; }
+                if (!parent.has(m)) { units.push({ key: String(m.mac).toUpperCase(), members: [m] }); continue; }
+                const r = find(m);
+                let g = groupOf.get(r);
+                if (!g) { g = { key: hex.get(m), members: [] }; groupOf.set(r, g); units.push(g); }
                 g.members.push(m);
-                if (!seen.has(g)) { seen.add(g); units.push(g); }
+                // Key on the group's lowest MAC: stable while its members stay,
+                // and two groups can never share one (a MAC is in one group).
+                if (hex.get(m) < g.key) g.key = hex.get(m);
             }
             return units;
         }
@@ -501,7 +522,7 @@
                         '" style="border-left:4px solid ' + cat.color + '">' +
                     '<div class="scope-main">' +
                         '<div class="scope-title">' + radioBadges(m.protocol, m.ap, m.ch) + (extraBadges || '') +
-                            (cat.icon ? cat.icon + ' ' : '') + esc(title) +
+                            (cat.icon ? cat.icon + ' ' : '') + '<span class="scope-name">' + esc(title) + '</span>' +
                             // A weak hint has no vendor to name -- cat.label is
                             // just the rule text, which already appears below.
                             (unmatched || weak ? '' :
@@ -3460,6 +3481,16 @@
                 const g3 = groupSiblings([w('11:11:11:11:11:01', -40, { ssid: 'Home' }), w('22:22:22:22:22:01', -41, { ssid: 'Home' }),
                                           { mac: 'AA:BB:CC:DD:EE:11', rssi: -42, protocol: 'BLE' }, w('AA:BB:CC:DD:EE:12', -43)]);
                 results.siblingNeverSsidOrBle = g3.length === 4;
+                // Virtual networks on one router: last 5 octets equal, first
+                // octet differs with the locally-administered bit set, same
+                // channel when both are known (field drives, 2026-09-16).
+                const g4 = groupSiblings([w('60:22:32:EE:AC:17', -60, { ch: 161 }), w('66:22:32:EE:AC:17', -61, { ch: 161 }),
+                                          w('6A:22:32:EE:AC:17', -62, { ch: 161 }), w('6E:22:32:EE:AC:17', -63)]);
+                results.virtualBssidJoins = g4.length === 1 && g4[0].members.length === 4 && g4[0].key === '60:22:32:EE:AC:17';
+                results.virtualBssidChannelMismatch = groupSiblings([w('60:22:32:EE:AC:17', -60, { ch: 161 }), w('66:22:32:EE:AC:17', -61, { ch: 157 })]).length === 2;
+                results.virtualBssidNeedsLocalBit = groupSiblings([w('04:22:32:EE:AC:17', -60, { ch: 6 }), w('08:22:32:EE:AC:17', -61, { ch: 6 })]).length === 2;
+                const g5 = groupSiblings([w('84:BB:69:CC:78:42', -50, { ch: 157 }), w('8A:BB:69:CC:78:42', -52, { ch: 157 }), w('84:BB:69:CC:78:41', -55, { ch: 1 })]);
+                results.siblingRulesChain = g5.length === 1 && g5[0].members.length === 3 && g5[0].key === '84:BB:69:CC:78:41';
                 results.unitLeadCategory = unitLead([w('AA:BB:CC:DD:EE:01', -40), w('AA:BB:CC:DD:EE:02', -70, { type: 'Flock Safety' })]).mac === 'AA:BB:CC:DD:EE:02' &&
                     unitLead([w('AA:BB:CC:DD:EE:01', -40), w('AA:BB:CC:DD:EE:02', -70)]).mac === 'AA:BB:CC:DD:EE:01';
 
