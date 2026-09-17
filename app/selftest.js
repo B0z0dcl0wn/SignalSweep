@@ -289,6 +289,9 @@ if (flockFail.length) {
 console.log('[signalsweep self-test] Flock wildcard-probe signature intact: ok');
 
 // Band badges (Task 1): the detector must report the Wi-Fi channel per target.
+// The 4 Hz hunt frame must reach a cable host too, not only BLE: over USB the
+// meter otherwise updates at the 1 Hz push rate.
+if (!/"hunt_rssi\\":%d\}"[\s\S]{0,400}?sendBleSerial\(buf\);[\s\S]{0,300}?Serial\.println\(buf\)/.test(fw)) { console.log('FAIL: hunt frame is not mirrored to USB'); process.exit(1); }
 if (!/obj\["ch"\]\s*=\s*t\.wifiCh/.test(fw)) { console.log('FAIL: firmware does not emit "ch" (band badges)'); process.exit(1); }
 // Band badges (Task 2): the app must ingest the channel it was just given.
 if (!/\bch:\s*t\.ch\b/.test(appSrc)) { console.log('FAIL: app.js does not ingest "ch"'); process.exit(1); }

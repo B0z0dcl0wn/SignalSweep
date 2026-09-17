@@ -4,6 +4,14 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Fixed — Hunting over the cable
+
+- **The hunt meter updates as fast on USB as on Bluetooth.** The 3-per-second
+  hunt frame went out over Bluetooth only, so a phone or laptop on the cable
+  saw the target's signal once a second. It is now mirrored to USB like the
+  1 Hz push. Measured on the bench: 0 hunt frames over USB before, 2.1/s on the
+  ESP32-S3 and 1.3/s on the C5 after.
+
 ### Added — Band badges, and one row per box
 
 - **Every Wi-Fi row says where it was heard:** `2.4G · ch 6` or `5G · ch 36`.
