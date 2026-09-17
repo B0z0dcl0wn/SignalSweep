@@ -332,7 +332,7 @@
           <li><b>3.3 V data</b> into a 5 V-powered clone bar usually works; if LED 1 flickers, add the series resistor or power the bar from <b>3V3</b> instead.</li>
           <li><b>Wrong end</b> (wiring DOUT) lights nothing — flip to DIN.</li>
           <li><b>Active buzzer</b> = one fixed pitch: you'll hear each pattern's rhythm but not its tones. Passive is the intended part.</li>
-          <li><b>Won't boot with the buzzer on?</b> GPIO25 is likely a C5 strapping pin (read at power-up), and a magnetic buzzer to GND holds it low. Untested on the bench. If it happens, feed the buzzer through a small NPN transistor or a 100 Ω+ series resistor, or use a piezo disc.</li>
+          <li><b>Boots fine with the buzzer on D2.</b> GPIO25 is sampled at power-up, but a passive buzzer straight to GND does not stop the XIAO C5 booting (bench-checked 2026-09-16 with the LED bar and buzzer wired as shown). If a different buzzer ever does, feed it through a small NPN transistor or a 100 Ω+ series resistor.</li>
         </ul>
       </div>
     </div>
