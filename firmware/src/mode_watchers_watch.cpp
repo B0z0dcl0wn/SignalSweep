@@ -1626,6 +1626,10 @@ void startWatchersWatch() {
     // silent stretches, 60%+ duty starved Wi-Fi.
     pScan->setInterval(50);
     pScan->setWindow(25);
+    // NimBLE 2.x keeps every result by default (0xFF), and a continuous scan
+    // never completes to clear them: each rotating random MAC leaked internal
+    // heap, ~4 KB/h in a 5 h soak. 0 = callbacks only; scan responses still merge.
+    pScan->setMaxResults(0);
 #else
     pScan->setInterval(100);
     pScan->setWindow(50);

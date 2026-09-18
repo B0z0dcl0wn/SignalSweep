@@ -4,6 +4,27 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Fixed — The C5 no longer leaks heap while it scans
+
+- **`setMaxResults(0)` on the C5 scan.** NimBLE 2.x keeps every scan result by
+  default (`0xFF`), and the results are only cleared when a scan *completes* —
+  the detector's scan never does, because it runs continuously. Every rotating
+  random MAC therefore added an entry that was never freed. Measured over a
+  5 h 20 min soak logging `heap_caps_get_free_size(MALLOC_CAP_INTERNAL)` once a
+  minute: internal heap fell 96.0 KB → 71.0 KB, still falling in a straight
+  line, while the tracked-target count stayed 57–88 throughout — so it was not
+  target churn. With the fix, 94.1 KB free at 18 min with 65 targets, against
+  91.2 KB for the old build at the same point. `0` means callbacks only; a
+  scannable device is still held until its scan response arrives, so the names
+  the signature rules match on are unaffected.
+- **The measurement only works on `MALLOC_CAP_INTERNAL`.** `esp_get_free_heap_size()`
+  includes 8 MB of PSRAM and hid the leak completely — an earlier 16-minute run
+  read the wrong number and concluded nothing.
+- **Still open: an unexplained reboot.** The C5 has restarted on its own twice
+  (`esp_reset_reason()` = 4, a panic) with ~85–89 KB free, so it is not
+  exhaustion. Longer soaks logging the full serial output are needed to catch
+  the backtrace.
+
 ### Changed — Ring shows up only where it can work
 
 - **Ring is offered only on devices that advertise Immediate Alert (`0x1802`)
