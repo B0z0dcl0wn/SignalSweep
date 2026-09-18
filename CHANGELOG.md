@@ -4,6 +4,22 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Fixed — The screen stays on for the whole cable connection
+
+- **The wake lock now covers the entire USB/serial connection, not just a
+  capture.** It is taken when the cable connects (the same place the `CMD:HOST`
+  keepalive starts) and released on disconnect; a capture ending no longer drops
+  it while the cable is still in. With the screen off the USB stream stalls and
+  the live list goes stale, capture or not.
+- **The lock is re-requested after the screen has been off.** Android releases a
+  screen wake lock when the page hides, without telling the page, and the old
+  code still held that dead object — so `!capWakeLock` blocked every re-request
+  and, after one screen-off, the phone timed out mid-capture. The page now forgets
+  the lock on hide. Measured on the OnePlus 7T (60 s screen timeout): a 180 s
+  capture left untouched stayed awake throughout, 7157 records, zero sequence
+  gaps; a 90 s capture with the screen forced off from 20 s to 50 s kept a flat
+  380–465 records per 10 s with zero gaps, and re-took the lock on wake.
+
 ### Fixed — Neither board leaks heap while it scans
 
 - **The S3 had the same leak, and worse: `setMaxResults(0)` now applies to both

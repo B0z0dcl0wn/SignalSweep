@@ -1083,15 +1083,22 @@
         // backgrounds the WebView and the capture dies with nothing saved. A
         // screen wake lock keeps the page foreground for the duration. The lock
         // is auto-released when the page hides, so re-acquire when it returns.
+        // The cable holds it too, for the whole connection (cableWake, set by
+        // setHostKeepalive): with the screen off the USB stream stalls and the
+        // live list goes stale, capture or not.
+        let cableWake = false;
         async function capAcquireWake() {
             try { if (navigator.wakeLock && !capWakeLock) capWakeLock = await navigator.wakeLock.request('screen'); }
             catch (e) {}
         }
         function capReleaseWake() {
+            if (cableWake) return;   // a capture ending must not drop the cable's hold
             try { if (capWakeLock) { capWakeLock.release(); capWakeLock = null; } } catch (e) {}
         }
         document.addEventListener('visibilitychange', () => {
-            if (capturing && document.visibilityState === 'visible') capAcquireWake();
+            // The OS drops the lock on hide without telling us; forget it so we re-request.
+            if (document.visibilityState !== 'visible') { capWakeLock = null; return; }
+            if (capturing || cableWake) capAcquireWake();
         });
 
         function capNativeFs() {
@@ -3060,6 +3067,8 @@
         let hostTimer = null;
         function setHostKeepalive(on) {
             if (hostTimer) { clearInterval(hostTimer); hostTimer = null; }
+            cableWake = on;
+            if (on) capAcquireWake(); else capReleaseWake();
             if (!on) return;
             sendCommand({ raw: 'CMD:HOST' });
             hostTimer = setInterval(function () { sendCommand({ raw: 'CMD:HOST' }); }, HOST_KEEPALIVE_MS);
