@@ -1626,14 +1626,18 @@ void startWatchersWatch() {
     // silent stretches, 60%+ duty starved Wi-Fi.
     pScan->setInterval(50);
     pScan->setWindow(25);
-    // NimBLE 2.x keeps every result by default (0xFF), and a continuous scan
-    // never completes to clear them: each rotating random MAC leaked internal
-    // heap, ~4 KB/h in a 5 h soak. 0 = callbacks only; scan responses still merge.
-    pScan->setMaxResults(0);
 #else
     pScan->setInterval(100);
     pScan->setWindow(50);
 #endif
+    // BOTH boards: NimBLE keeps every scan result by default (0xFF) and only
+    // clears them when a scan *completes*, which this one never does — it runs
+    // continuously. Every rotating random MAC was an entry that was never freed.
+    // Soaked: C5 -4.6 KB/h over 5 h, S3 -6.25 KB/h over 17.6 h (187.6 -> 78.1 KB)
+    // with the tracked-target count flat at 41-44, so it is not target churn.
+    // 0 = callbacks only; a scannable device is still held for its scan response,
+    // so name matching is unaffected. 1.4 and 2.x behave the same here.
+    pScan->setMaxResults(0);
 
     
 #if CONFIG_IDF_TARGET_ESP32C5

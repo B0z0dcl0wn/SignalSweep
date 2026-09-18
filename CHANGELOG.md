@@ -4,8 +4,19 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
-### Fixed — The C5 no longer leaks heap while it scans
+### Fixed — Neither board leaks heap while it scans
 
+- **The S3 had the same leak, and worse: `setMaxResults(0)` now applies to both
+  boards.** The fix first landed inside the `CONFIG_IDF_TARGET_ESP32C5` branch,
+  which meant the S3 never got it — and NimBLE 1.4 has the identical `0xFF`
+  default and the same clear-on-completion behaviour. A 17 h 35 min S3 soak:
+  internal heap 187.6 KB → 78.1 KB, **-6.25 KB/h**, dead straight, with the
+  tracked-target count flat at 41–44 throughout. At that rate an S3 wired into a
+  vehicle exhausts its internal heap in about 29 hours. It never crashed during
+  the run, which is the point: a leak this steady fails silently and late.
+  With the fix on the C5, the same harness measured **+0.02 KB/h over 11 h 46**
+  — flat. Only the shared scan setup is common, so the C5's bench-measured
+  interval/window stay inside the `#if`.
 - **`setMaxResults(0)` on the C5 scan.** NimBLE 2.x keeps every scan result by
   default (`0xFF`), and the results are only cleared when a scan *completes* —
   the detector's scan never does, because it runs continuously. Every rotating
