@@ -12,6 +12,18 @@ All notable changes to SignalSweep are recorded here.
   straight on to the device picker. Deny opens the system Bluetooth settings
   page and stops, rather than scanning a radio that is off. Verified on the
   OnePlus with Bluetooth disabled over `adb`: both branches behave as described.
+- **Location switched off no longer reads as a slow GPS lock.** `getFix()` used
+  to show "Locating…" then "No fix", which sends you outside to wait for a fix
+  that can never arrive. It now checks the system switch first, shows
+  "Location is off" in the status strip, and opens the location settings page.
+- **A refused Nearby devices permission points you at the fix.** After one
+  refusal Android stops asking, so every Connect ended in a raw
+  "Permission denied." toast. The app now says which permission it needs and
+  opens its own App info page, where it can be allowed again.
+- **Closing the device picker is not an error.** It used to raise a red
+  "Native BLE Connect Failed: requestDevice cancelled." toast; it now just
+  closes. All three verified on the OnePlus (location off via `adb`, the
+  permission revoked and marked don't-ask-again with `pm set-permission-flags`).
 
 ### Fixed — The tracker category means something again
 

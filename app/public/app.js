@@ -1409,6 +1409,7 @@
             switch (gpsState.state) {
                 case 'locating': return { dot: 'warn', text: 'Locating\u2026' };
                 case 'denied':   return { dot: 'bad',  text: 'Permission denied' };
+                case 'sysoff':   return { dot: 'bad',  text: 'Location is off' };
                 case 'failed':   return { dot: 'bad',  text: 'No fix' };
                 case 'fix': {
                     const a = Math.round(gpsState.acc);
@@ -1493,8 +1494,23 @@
                     reject(err);
                 };
                 if (window.Geolocation && window.Geolocation.getCurrentPosition) {
-                    window.Geolocation.getCurrentPosition({ enableHighAccuracy: true, timeout: 15000 })
-                        .then(done).catch(failed);
+                    // Location switched off system-wide used to read as a cold
+                    // lock: "Locating..." then "No fix", which sends you outside
+                    // to wait for a fix that can never come. Say so and open the
+                    // switch instead.
+                    const native = window.Capacitor && window.Capacitor.isNativePlatform() && window.BleClient;
+                    (native ? window.BleClient.isLocationEnabled() : Promise.resolve(true))
+                        .catch(() => true)
+                        .then((on) => {
+                            if (on) {
+                                return window.Geolocation.getCurrentPosition({ enableHighAccuracy: true, timeout: 15000 })
+                                    .then(done, failed);
+                            }
+                            setGpsState('sysoff');
+                            showToast('Location is off. Turn it on, then try again.', '⚠');
+                            window.BleClient.openLocationSettings().catch(() => {});
+                            reject(new Error('Location is off'));
+                        });
                 } else if (navigator.geolocation) {
                     navigator.geolocation.getCurrentPosition(done, failed, { enableHighAccuracy: true, timeout: 15000 });
                 } else {
@@ -2729,8 +2745,24 @@
                 updateConnectionUI(true, 'BLE');
             } catch (err) {
                 console.error('Native BLE Connect Failed:', err);
+                const msg = String((err && err.message) || err);
+                // Closing the picker is a choice, not a failure: undo the
+                // "connecting" dot without the "Device disconnected" toast.
+                if (/cancelled/i.test(msg)) {
+                    pulseDot.className = 'pulse-dot';
+                    connStatusText.textContent = 'DISCONNECTED';
+                    return;
+                }
                 updateConnectionUI(false);
-                showToast(`Native BLE Connect Failed: ${err.message || err}`, '✕');
+                // After one refusal Android stops asking for Nearby devices, so
+                // every Connect failed with a raw "Permission denied." The only
+                // way back is the app's own settings page.
+                if (/permission/i.test(msg)) {
+                    showToast('SignalSweep needs the Nearby devices permission. Allow it, then tap Connect.', '⚠');
+                    try { await window.BleClient.openAppSettings(); } catch (e) {}
+                    return;
+                }
+                showToast(`Native BLE Connect Failed: ${msg}`, '✕');
             }
         }
 
