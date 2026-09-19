@@ -634,12 +634,90 @@ static bool bleDecodeRemoteId(SWEEP_ADV* dev, ODID_UAS_Data& out) {
 // or other Find My tracker). Apple manufacturer data (company 0x004C) with
 // message type 0x12. Deliberately NOT a bare 0x004C match — that is every
 // iPhone/AirPod in range.
+// The message LENGTH is the discriminator, and it is load-bearing. Apple sends
+// type 0x12 in two shapes: a 2-byte status ping (`4c 00 12 02 00 02`) that every
+// iPhone, iPad and Mac emits constantly, and the 25-byte offline-finding payload
+// that carries the rotating public key — i.e. an item that is findable while
+// SEPARATED from its owner. Measured across 18 bench/field captures: 1095
+// distinct MACs sent the short form, 64 sent the long one. Matching on the type
+// byte alone called all 1155 of them trackers, which is how a rural convenience
+// store reported 22 AirTags (they were the customers' phones). A category that
+// fires on every phone in the room is worse than no category at all.
+//
+// Tradeoff, accepted: an AirTag still beside its owner advertises the short form
+// and is not flagged — but that is the case where the owner is standing next to
+// you anyway. A planted tracker is separated by definition, so it sends 0x19.
 static bool bleIsAirtag(SWEEP_ADV* dev) {
     if (!dev->haveManufacturerData()) return false;
     std::string mfg = dev->getManufacturerData();
-    if (mfg.length() < 3) return false;
+    if (mfg.length() < 4) return false;
     uint16_t company = static_cast<uint8_t>(mfg[0]) | (static_cast<uint8_t>(mfg[1]) << 8);
-    return company == 0x004C && static_cast<uint8_t>(mfg[2]) == 0x12;
+    return company == 0x004C && static_cast<uint8_t>(mfg[2]) == 0x12
+                             && static_cast<uint8_t>(mfg[3]) == 0x19;
+}
+
+// What an Apple device is DOING, from the Continuity message type — or nullptr
+// when this is not Apple manufacturer data. Not a category and not a detection:
+// it adds no confidence, so these rows stay out of the filtered list and never
+// beep. It exists so that the filter-off view says "Apple: iPhone/iPad/Mac (in
+// use)" instead of an anonymous random MAC, which is what made the tracker
+// category look like it was firing on everything.
+//
+// Types are Apple's published-by-observation Continuity set; the ones here are
+// every type seen across 18 bench/field captures, counted by distinct MAC:
+// 0x10 Nearby Info (685), 0x16 (196), 0x02 iBeacon (126), 0x09 AirPlay (110),
+// 0x0C Handoff (45), 0x03 AirPrint (16), 0x13 (11), 0x0F Nearby Action (7).
+//
+// Nearby Info (0x10) carries one more byte worth decoding: high nibble status
+// flags, low nibble an activity code. Field meanings are documented by the
+// furiousMAC Continuity project (GPL-2.0 — facts used, no code taken; see
+// CREDITS.md). Cross-checked against our own captures, where the packed byte
+// lands on 0x31 (reporting disabled, 156 frames), 0x32 (idle, 116), 0x37
+// (active, 136) and 0x3B (recent interaction, 149) — i.e. the table still
+// describes 2026 devices. Deliberately NOT decoded: lid open/closed. macOS
+// simply stops advertising when the lid shuts, which is indistinguishable from
+// powered off, asleep or out of range, so reporting it would be a guess.
+static String appleRole(SWEEP_ADV* dev) {
+    if (!dev->haveManufacturerData()) return String();
+    std::string mfg = dev->getManufacturerData();
+    if (mfg.length() < 3) return String();
+    uint16_t company = static_cast<uint8_t>(mfg[0]) | (static_cast<uint8_t>(mfg[1]) << 8);
+    if (company != 0x004C) return String();
+    switch (static_cast<uint8_t>(mfg[2])) {
+        case 0x10: {
+            if (mfg.length() < 5) return "Apple: iPhone/iPad/Mac";
+            switch (static_cast<uint8_t>(mfg[4]) & 0x0F) {
+                case 0x01: return "Apple: iPhone/iPad/Mac (reporting off)";
+                case 0x03: return "Apple: iPhone/iPad/Mac (idle)";
+                case 0x05: return "Apple: iPhone/iPad/Mac (audio, screen locked)";
+                case 0x07: return "Apple: iPhone/iPad/Mac (active, screen on)";
+                case 0x09: return "Apple: iPhone/iPad/Mac (video playing)";
+                case 0x0A: return "Apple: Watch (on wrist, unlocked)";
+                case 0x0B: return "Apple: iPhone/iPad/Mac (just used)";
+                case 0x0D: return "Apple: iPhone (driving)";
+                case 0x0E: return "Apple: iPhone (on a call)";
+                default:   return "Apple: iPhone/iPad/Mac";
+            }
+        }
+        case 0x12: return "Apple: Find My (with owner)";  // short form; the 0x19 form is the tracker
+        case 0x02: return "Apple: iBeacon app";
+        case 0x03: return "Apple: AirPrint (printer)";
+        case 0x05: return "Apple: AirDrop";
+        case 0x06: return "Apple: HomeKit accessory";
+        case 0x07: return "Apple: AirPods pairing";       // Proximity Pairing, confirmed 0x07
+        case 0x08: return "Apple: Hey Siri";
+        case 0x09: return "Apple: AirPlay target (TV/HomePod/Mac)";  // confirmed 0x09
+        case 0x0A: return "Apple: AirPlay source";
+        case 0x0B: return "Apple: Watch (Magic Switch)";
+        case 0x0C: return "Apple: Handoff";
+        case 0x0D: return "Apple: tethering target";
+        case 0x0E: return "Apple: tethering source (hotspot)";
+        case 0x0F: return "Apple: Nearby Action";
+        // 0x01, 0x13 and 0x16 are live in our captures (120, 11 and 196 distinct
+        // MACs) but are not in any published table, so they stay unnamed rather
+        // than guessed at.
+        default:   return "Apple device";
+    }
 }
 
 // Bluetooth SIG company ID from the manufacturer data, or -1 if this advert
@@ -726,6 +804,12 @@ class WatchersScanCallbacks : public NimBLEAdvertisedDeviceCallbacks {
                     matchedRule = "Apple Find My Tracker";
                     matchedCategory = "Tracker";
                 }
+            } else if (matchedRule.length() == 0) {
+                // Label only. No confidence, no category, so it cannot beep, is
+                // not listed while the filter is on, and counts under Everything
+                // alone. A real signature rule always wins the name.
+                String role = appleRole(advertisedDevice);
+                if (role.length() > 0) matchedRule = role;
             }
 
             if (confidence > 100) confidence = 100;

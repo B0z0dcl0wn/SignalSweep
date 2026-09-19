@@ -4,6 +4,45 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Fixed — The tracker category means something again
+
+- **A Find My hit now requires the 25-byte payload.** Apple sends message type
+  `0x12` in two shapes: a 2-byte status ping that *every* iPhone, iPad and Mac
+  emits constantly, and the 25-byte offline-finding payload carrying the
+  rotating public key — i.e. an item findable while **separated from its
+  owner**. Matching on the type byte alone called both a tracker. Measured
+  across 18 bench and field captures: **1095 distinct MACs sent the short form,
+  64 sent the long one**, so a rural convenience store reported 22 AirTags that
+  were the customers' phones. A category that fires on every phone in the room
+  is worse than no category at all. Accepted tradeoff: an AirTag sitting beside
+  its owner advertises the short form and is not flagged — but that is the case
+  where the owner is standing next to you anyway. A planted tracker is
+  separated by definition.
+
+### Added — Apple devices say what they are
+
+- **Continuity message types are decoded into a plain-language label**:
+  "Apple: AirPlay target (TV/HomePod/Mac)", "Apple: AirPrint (printer)",
+  "Apple: Handoff", "Apple: Watch (Magic Switch)", "Apple: tethering source
+  (hotspot)". Nearby Info (`0x10`) goes further and reports the activity nibble:
+  active with the screen on, idle, just used, video playing, audio while
+  locked, on a call, driving.
+- **It is a label, not a detection.** No confidence, no category — so these rows
+  never beep, never appear while the filter is on, and never count toward
+  Surveillance. Any real signature rule wins the name. The point is that the
+  filter-off view stops being a wall of anonymous random MACs.
+- **Unknown stays unknown.** Message types `0x01`, `0x13` and `0x16` are live in
+  our captures (120, 11 and 196 distinct MACs) but appear in no published table,
+  so they read "Apple device" rather than a guess. Likewise the Nearby Info
+  activity codes outside the documented set.
+- **Lid open/closed is deliberately NOT reported.** macOS stops advertising
+  Nearby messages when the lid shuts, which is indistinguishable from powered
+  off, asleep or out of range — presence is not a state field, and a badge built
+  on it would be a guess.
+- Field meanings come from the furiousMAC Continuity project (GPL-2.0, so no
+  code was taken — see `CREDITS.md`) and every value was cross-checked against
+  our own captures.
+
 ### Fixed — The screen stays on for the whole cable connection
 
 - **The wake lock now covers the entire USB/serial connection, not just a
