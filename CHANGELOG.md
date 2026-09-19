@@ -4,6 +4,15 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Fixed — Connect tells you when Bluetooth is off
+
+- **Tapping Connect on Android with Bluetooth off used to open an empty picker**
+  with no hint why: the scan simply found nothing. The app now checks the radio
+  first and raises Android's own "turn on Bluetooth" dialog; Allow goes
+  straight on to the device picker. Deny opens the system Bluetooth settings
+  page and stops, rather than scanning a radio that is off. Verified on the
+  OnePlus with Bluetooth disabled over `adb`: both branches behave as described.
+
 ### Fixed — The tracker category means something again
 
 - **A Find My hit now requires the 25-byte payload.** Apple sends message type

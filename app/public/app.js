@@ -2693,6 +2693,19 @@
             connStatusText.textContent = 'CONNECTING NATIVE BLE...';
             try {
                 await window.BleClient.initialize({ androidNeverForLocation: true });
+                // With the radio off the picker just scans nothing and shows an
+                // empty list, with no hint why. Ask Android to turn it on (its
+                // own one-tap dialog); if that is refused or unavailable, open
+                // the Bluetooth settings page and stop here.
+                if (!(await window.BleClient.isEnabled())) {
+                    try { await window.BleClient.requestEnable(); } catch (e) { /* declined */ }
+                    if (!(await window.BleClient.isEnabled())) {
+                        showToast('Bluetooth is off. Turn it on, then tap Connect.', '⚠');
+                        try { await window.BleClient.openBluetoothSettings(); } catch (e) {}
+                        updateConnectionUI(false);
+                        return;
+                    }
+                }
                 // Always show the picker. This used to adopt whatever
                 // getConnectedDevices() returned first, which meant Android's
                 // still-alive GATT link to the last board silently won and the
