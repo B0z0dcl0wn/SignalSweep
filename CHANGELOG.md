@@ -19,6 +19,26 @@ All notable changes to SignalSweep are recorded here.
   where the owner is standing next to you anyway. A planted tracker is
   separated by definition.
 
+### Added — Trackers beyond Apple
+
+- **Tile, Samsung SmartTag and Google Find My Device are detected too.** Apple
+  was the only finding network the detector knew, so a stalker using a Tile was
+  invisible to a device whose whole purpose is finding planted trackers. These
+  three need no length trick like Apple's: no phone advertises them, so the
+  service is the detection — Tile `0xFEED`, Samsung `0xFD5A` (registered in
+  offline finding) and `0xFD59` (still in setup).
+- **Google FMDN announces its own unwanted-tracking mode.** `0xFEAA` service
+  data with frame byte `0x40` is a finding beacon; **`0x41` means the tracker
+  has entered unwanted-tracking-protection mode** — it is signalling that it may
+  be following someone. Eddystone shares `0xFEAA` with frame types
+  `0x00`/`0x10`/`0x20`/`0x30`, so the frame byte is what separates a finding
+  beacon from a shop beacon; those are not flagged.
+- **Measured against our own captures:** the Tile arm fires on the bench Tile
+  keychain (61 adverts across six captures on three days, up to -40 dBm) plus
+  two more Tiles in the field, and one real FMDN tag appeared at -89 dBm with
+  frame `0x40`. **The Samsung arm is spec-only** — no SmartTag has ever crossed
+  a capture, and the code says so rather than implying it is proven.
+
 ### Added — Apple devices say what they are
 
 - **Continuity message types are decoded into a plain-language label**:

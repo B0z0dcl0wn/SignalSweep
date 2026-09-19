@@ -667,6 +667,43 @@ static bool bleIsAirtag(SWEEP_ADV* dev) {
 // every type seen across 18 bench/field captures, counted by distinct MAC:
 // 0x10 Nearby Info (685), 0x16 (196), 0x02 iBeacon (126), 0x09 AirPlay (110),
 // 0x0C Handoff (45), 0x03 AirPrint (16), 0x13 (11), 0x0F Nearby Action (7).
+// Which crowd-sourced finding network this advert belongs to, or "" for none.
+// Apple is handled separately (bleIsAirtag) because only Apple shares one
+// message type between trackers and ordinary phones. These three do not: a
+// phone never advertises them, so the service UUID alone is the detection.
+//
+//   Tile       0xFEED — the only thing that sends it is a Tile. Verified: 3
+//                       distinct Tiles across our own captures.
+//   Samsung    0xFD5A registered (enrolled in offline finding, i.e. findable by
+//                       any Galaxy nearby) / 0xFD59 unregistered, still in setup.
+//   Google FMDN 0xFEAA service data, frame byte 0x40 normal / 0x41 "unwanted
+//                       tracking protection" — the tracker itself signalling it
+//                       may be following someone. Eddystone shares 0xFEAA with
+//                       frame types 0x00/0x10/0x20/0x30, so the frame byte is
+//                       what separates a finding beacon from a shop beacon.
+//
+// Spec sources: Google Find Hub / FMDN accessory spec; Samsung offline-finding
+// analysis (arXiv 2210.14702). Checked against our own captures: the Tile arm
+// fires on the bench Tile keychain (`d5:95:0b:0a:22:e1`, 61 adverts across six
+// captures on three days, up to -40 dBm) plus two Tiles in the field, and one
+// real FMDN tag turned up at -89 dBm with frame byte 0x40. **Samsung is the one
+// arm no capture has exercised** — it is written from the spec and unproven.
+static String bleTrackerNetwork(SWEEP_ADV* dev) {
+    if (dev->getServiceDataCount() == 0) return String();
+
+    std::string fmdn = dev->getServiceData(NimBLEUUID((uint16_t)0xFEAA));
+    if (fmdn.length() >= 1) {
+        uint8_t frame = static_cast<uint8_t>(fmdn[0]);
+        if (frame == 0x41) return "Google Find My Tracker (unwanted-tracking mode)";
+        if (frame == 0x40) return "Google Find My Tracker";
+        return String();   // an ordinary Eddystone beacon, not a tracker
+    }
+    if (dev->getServiceData(NimBLEUUID((uint16_t)0xFEED)).length() > 0) return "Tile Tracker";
+    if (dev->getServiceData(NimBLEUUID((uint16_t)0xFD5A)).length() > 0) return "Samsung SmartTag";
+    if (dev->getServiceData(NimBLEUUID((uint16_t)0xFD59)).length() > 0) return "Samsung SmartTag (setup)";
+    return String();
+}
+
 //
 // Nearby Info (0x10) carries one more byte worth decoding: high nibble status
 // flags, low nibble an activity code. Field meanings are documented by the
@@ -788,6 +825,7 @@ class WatchersScanCallbacks : public NimBLEAdvertisedDeviceCallbacks {
 
             // Protocol detectors (not signature rules): presence alone is a
             // strong, unambiguous match, so they set the category directly.
+            String trackerNet = bleTrackerNetwork(advertisedDevice);
             bool droneDecoded = false;
             if (bleDecodeRemoteId(advertisedDevice, bleUas)) {
                 droneDecoded = odidUseful(bleUas);
@@ -802,6 +840,13 @@ class WatchersScanCallbacks : public NimBLEAdvertisedDeviceCallbacks {
                 if (W_TRACKER > bestWeight) {
                     bestWeight = W_TRACKER;
                     matchedRule = "Apple Find My Tracker";
+                    matchedCategory = "Tracker";
+                }
+            } else if (trackerNet.length() > 0) {
+                confidence += W_TRACKER;
+                if (W_TRACKER > bestWeight) {
+                    bestWeight = W_TRACKER;
+                    matchedRule = trackerNet;
                     matchedCategory = "Tracker";
                 }
             } else if (matchedRule.length() == 0) {
