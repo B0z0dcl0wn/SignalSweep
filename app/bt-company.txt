@@ -1,0 +1,4030 @@
+0	Ericsson
+1	Nokia Mobile Phones
+2	Intel
+3	IBM
+4	Toshiba
+5	3Com
+6	Microsoft
+7	Lucent
+8	Motorola
+9	Infineon Technologies
+10	Qualcomm Technologies Intern
+11	Silicon Wave
+12	Digianswer A/S
+13	Texas Instruments
+14	Parthus Technologies
+15	Broadcom
+16	Mitel Semiconductor
+17	Widcomm
+18	Zeevo
+19	Atmel
+20	Mitsubishi Electric
+21	RTX A/S
+22	KC Technology
+23	Newlogic
+24	Transilica
+25	Rohde & Schwarz &
+26	TTPCom
+27	Signia Technologies
+28	Conexant Systems
+29	Qualcomm
+30	Inventel
+31	AVM Berlin
+32	BandSpeed
+33	Mansella
+34	NEC
+35	WavePlus Technology
+36	Alcatel
+37	NXP
+38	C Technologies
+39	Open Interface
+40	R F Micro Devices
+41	Hitachi
+42	Symbol Technologies
+43	Tenovis
+44	Macronix International
+45	GCT Semiconductor
+46	Norwood Systems
+47	MewTel Technology
+48	ST Microelectronics
+49	Synopsys
+50	Red-M
+51	Commil
+52	Computer Access Technology
+54	Renesas Electronics
+55	Mobilian
+56	Syntronix
+57	Integrated System Solution
+58	Panasonic Holdings
+59	Gennum
+60	BlackBerry
+61	IPextreme
+62	Systems and Chips
+63	Bluetooth SIG
+64	Seiko Epson
+65	Integrated Silicon Solution 
+66	CONWISE Technology
+67	PARROT AUTOMOTIVE SAS
+68	Socket Mobile
+69	Atheros Communications
+70	MediaTek
+71	Bluegiga
+72	Marvell Technology Group
+73	3DSP
+74	Accel Semiconductor
+75	AUMOVIO Systems
+76	Apple
+77	Staccato Communications
+78	Avago Technologies
+79	APT
+80	SiRF Technology
+81	Tzero Technologies
+82	J&M
+83	Free2move
+84	3DiJoy
+85	Plantronics
+86	Sony Ericsson Mobile Communi
+87	Harman International Industr
+88	Vizio
+89	Nordic Semiconductor ASA
+90	EM Microelectronic-Marin
+91	Ralink Technology
+92	Belkin International
+93	Realtek Semiconductor
+94	Stonestreet One
+95	Wicentric
+96	RivieraWavesS
+97	RDA Microelectronics
+98	Gibson Guitars
+99	MiCommand
+100	Band XI International
+101	HP
+103	GN Hearing
+104	General Motors
+105	A&D Engineering
+106	LTM
+107	Polar Electro
+108	Beautiful Enterprise
+110	Summit Data Communications
+111	Sound ID
+112	Monster
+113	connectBlue
+114	ShangHai Super Smart Electro
+115	Group Sense
+116	Zomm
+117	Samsung Electronics
+118	Creative Technology
+119	Laird Connectivity
+120	Nike
+121	lesswire
+122	MStar Semiconductor
+123	Hanlynn Technologies
+125	Seers Technology
+127	Autonet Mobile
+128	DeLorme Publishing
+129	WuXi Vimicro
+130	DSEA A/S
+131	TimeKeeping Systems
+132	Ludus Helsinki
+133	BlueRadios
+134	Equinux
+135	Garmin International
+137	GN Hearing A/S
+138	Jawbone
+139	Topcon Positioning Systems
+140	Gimbal
+141	Zscan Software
+142	Quintic
+143	Telit Wireless Solutions
+144	Funai Electric
+145	Advanced PANMOBIL systems &
+146	ThinkOptics
+147	Universal Electronics
+148	Airoha Technology
+149	NEC Lighting
+150	ODM Technology
+151	ConnecteDevice
+152	zero1.tv
+153	i.Tech Dynamic Global Distri
+154	Alpwise
+155	Jiangsu Toppower Automotive 
+156	Colorfy
+157	Geoforce
+158	Bose
+159	Suunto
+160	Kensington Computer Products
+161	SR-Medizinelektronik
+162	Vertu
+163	Meta Watch
+164	LINAK A/S
+165	OTL Dynamics
+166	Panda Ocean
+167	Visteon
+168	ARP Devices
+169	MARELLI EUROPE S.P.A
+170	CAEN RFID
+171	Ingenieur-Systemgruppe Zahn
+172	Green Throttle Games
+173	Peter Systemtechnik
+174	Omegawave
+175	Cinetix
+176	Passif Semiconductor
+177	Saris Cycling Group
+178	Bekey A/S
+179	Clarinox Technologies
+180	BDE Technology
+181	Swirl Networks
+182	Meso international
+183	TreLab
+184	Qualcomm Innovation Center
+185	Johnson Controls
+186	Starkey Hearing Technologies
+187	S-Power Electronics
+188	Ace Sensor
+189	Aplix
+190	AAMP of America
+191	Stalmart Technology
+192	AMICCOM Electronics
+193	Shenzhen Excelsecu Data Tech
+194	Geneq
+195	adidas
+196	LG Electronics
+197	Onset Computer
+198	Selfly
+199	Quuppa
+200	GeLo
+201	Evluma
+202	MC10
+203	Binauric SE
+204	Beats Electronics
+205	Microchip Technology
+206	Eve Systems
+207	ARCHOS
+208	Dexcom
+209	Polar Electro Europe
+210	Renesas Design Netherlands
+211	Taixingbang Technology
+213	Austco Communication Systems
+214	Timex Group USA
+215	Qualcomm Technologies
+216	Qualcomm Connected Experienc
+217	Voyetra Turtle Beach
+218	txtr
+219	Snuza
+220	Procter & Gamble
+221	Hosiden
+222	Muzik
+223	Misfit Wearables
+224	Google
+225	Danlers
+226	Semilink
+227	inMusic Brands
+228	L.S. Research
+229	Eden Software Consultants
+231	KS Technologies
+232	ACTS Technologies
+233	Vtrack Systems
+234	Nielsen-Kellerman
+235	Server Technology
+236	BioResearch Associates
+237	Jolly Logic
+238	Above Average Outcomes
+239	Bitsplitters
+240	PayPal
+241	Witron Technology
+242	Morse Project
+243	Kent Displays
+244	Nautilus
+245	Smartifier
+247	VSN Technologies
+248	AceUni
+250	Crystal Alarm
+251	KOUKAAM a.s
+252	Delphi
+253	ValenceTech
+254	Stanley Black and Decker
+255	Typo Products
+256	TomTom International
+257	Fugoo
+258	Keiser
+259	Bang & Olufsen A/S
+260	PLUS Location Systems
+261	Ubiquitous Computing Technol
+262	Innovative Yachtter Solution
+263	Demant A/S
+264	Chicony Electronics
+265	Atus
+266	Codegate
+267	ERi
+268	Transducers Direct
+269	DENSO TEN
+270	Audi
+271	HiSilicon Technologies
+272	Nippon Seiki
+273	Steelseries ApS
+274	Visybl
+275	Openbrain Technologies
+277	e.solutions
+278	10AK Technologies
+279	Wimoto Technologies
+280	Radius Networks
+282	Qualcomm Labs
+283	Hewlett Packard Enterprise
+284	Baidu
+285	Arendi
+286	Skoda Auto a.s
+287	Volkswagen
+288	Porsche
+289	Sino Wealth Electronic
+290	AirTurn
+291	Kinsa
+292	HID Global
+293	SEAT es
+294	Promethean
+295	Salutica Allied Solutions
+296	GPSI Group
+297	Nimble Devices
+298	Changzhou Yongse Infotech
+299	SportIQ
+300	TEMEC Instruments
+301	Sony
+302	ASSA ABLOY
+303	Clarion
+304	Warehouse Innovations
+305	Cypress Semiconductor
+306	MADS
+307	Blue Maestro
+308	Resolution Products
+309	Aireware
+310	Silvair
+311	Prestigio Plaza
+312	NTEO
+313	Focus Systems
+314	Tencent Holdings
+315	Allegion
+316	Murata Manufacturing
+317	WirelessWERX
+318	Nod
+320	Alpine Electronics
+321	FedEx Services
+322	Grape Systems
+323	Bkon Connect
+324	Lintech
+325	Novatel Wireless
+326	Ciright
+327	Mighty Cast
+328	Ambimat Electronics
+329	Perytons
+330	Tivoli Audio
+331	Master Lock
+332	Mesh-Net
+333	HUIZHOU DESAY SV AUTOMOTIVE
+334	Tangerine
+335	B&W Group
+336	Pioneer
+337	OnBeep
+338	Vernier Software & Technolog
+339	ROL Ergo
+340	Pebble Technology
+341	NETATMO
+342	Accumulate
+343	Anhui Huami Information Tech
+344	Inmite s.r.o
+345	ChefSteps
+346	micas
+347	Biomedical Research
+348	Pitius Tec S.L
+349	Estimote
+350	Unikey Technologies
+351	Timer Cap
+352	AwoX
+353	yikes
+354	MADSGlobalNZ
+355	PCH International
+356	Qingdao Yeelink Information 
+357	Milwaukee Electric Tools
+358	MISHIK
+359	Ascensia Diabetes Care US
+360	Spicebox
+361	emberlight
+362	Copeland Cold Chain LP
+363	Qblinks
+364	MYSPHERA
+365	LifeScan
+366	Volantic
+367	Podo Labs
+368	Roche Diabetes Care
+369	Amazon.com Services
+370	Connovate Technology Private
+371	Kocomojo
+372	Everykey
+373	Dynamic Controls
+374	SentriLock
+375	I-SYST
+376	CASIO COMPUTER
+377	LAPIS Semiconductor
+378	Telemonitor
+379	taskit
+380	Mercedes-Benz Group
+381	BatAndCat
+382	BluDotz
+383	XTel Wireless ApS
+384	Gigaset Technologies
+385	Gecko Health Innovations
+387	Walt Disney
+388	Nectar
+391	Seraphim Sense
+392	Unico RBC
+393	Physical Enterprises
+394	Able Trend Technology
+395	Konica Minolta
+396	Wilo SE
+397	Extron Design Services
+398	Google
+400	Intelletto Technologies
+401	FDK
+402	Cloudleaf
+403	Maveric Automation
+404	Acoustic Stream
+405	Zuli
+406	Paxton Access
+407	WiSilica
+408	VENGIT Korlatolt Felelossegu
+409	SALTO SYSTEMS S.L
+410	TRON Forum
+411	CUBETECH s.r.o
+412	Cokiya
+413	CVS Health
+414	Ceruus
+415	Strainstall
+416	Channel Enterprises
+417	FIAMM
+418	GIGALANE
+420	MSA Innovation
+421	Icon Health and Fitness
+422	Wille Engineering
+423	ENERGOUS
+424	Taobao
+425	Canon
+426	Geophysical Technology
+427	Meta Platforms
+428	Trividia Health
+429	FlightSafety International
+431	Sunrise Micro Devices
+432	Star Micronics
+433	Netizens Sp. z o.o
+434	Nymi
+435	Nytec
+436	Trineo Sp. z o.o
+437	Nest Labs
+438	LM Technologies
+439	General Electric
+440	i+D3 S.L
+441	HANA Micron
+442	SPIA Cycling
+443	Cochlear Bone Anchored Solut
+444	SenionLab
+445	Syszone
+446	Pulsate Mobile
+447	Hongkong OnMicro Electronics
+449	BRADATECH
+450	Transenergooil
+452	DME Microelectronics
+453	Bitcraze
+454	HASWARE
+455	Abiogenix
+456	Poly-Control ApS
+457	Avi-on
+458	Laerdal Medical AS
+459	Fetch My Pet
+460	Sam Labs
+461	Chengdu Synwing Technology
+462	HOUWA SYSTEM DESIGN, k.k
+463	BSH
+464	Primus Inter Pares
+465	August Home
+466	Gill Electronics
+467	Sky Wave Design
+468	Newlab S.r.l
+469	ELAD
+470	G-wearables
+472	Code
+473	Savant Systems
+474	Logitech International
+475	Innblue Consulting
+477	Koninklijke Philips N.V
+478	Minelab Electronics
+479	Bison Group
+480	WS Audiology Denmark A/S
+481	Jolla
+483	Caterpillar
+484	Freedom Innovations
+485	Dynamic Devices
+486	Technology Solutions
+490	Advanced Application Design
+492	Spreadtrum Communications Sh
+494	Valeo Service
+495	Fullpower Technologies
+496	KloudNation
+497	Zebra Technologies
+498	Itron
+499	The University of Tokyo
+500	UTC Fire and Security
+501	Cool Webthings
+502	DJO Global
+503	Gelliner
+504	Anyka Microelectronics Techn
+505	Medtronic
+506	Gozio
+507	Form Lifting
+508	Wahoo Fitness
+509	Kontakt Micro-Location Sp. z
+510	Radio Systems
+511	Freescale Semiconductor
+512	Verifone Systems Taiwan Bran
+513	AR Timing
+514	Rigado
+515	Kemppi
+518	Otter Products
+519	STEMP
+520	LumiGeek
+521	InvisionHeart
+522	Macnica
+523	Jaguar Land Rover
+524	CoroWare Technologies
+526	Omron Healthcare
+527	Comodule
+528	ikeGPS
+529	Telink Semiconductor
+530	Interplan
+531	Wyler
+532	IK Multimedia Production
+533	Lukoton Experience
+534	MTI
+535	Tech4home, Lda
+537	DOTT
+538	Blue Speck Labs
+539	Cisco Systems
+540	Mobicomm
+541	Edamic
+542	Goodnet
+543	Luster Leaf Products
+544	Manus Machina
+545	Mobiquity Networks
+546	Praxis Dynamics
+547	Philip Morris Products
+548	Comarch
+549	Nestlé Nespresso
+550	Merlinia A/S
+551	LifeBEAM Technologies
+552	Twocanoes Labs
+553	Muoverti
+554	Stamer Musikanlagen
+555	Tesla
+556	Pharynks
+557	Lupine
+558	Siemens
+560	Foster Electric
+561	ETA
+562	x-Senso Solutions Kft
+564	FengFan Technology
+565	Qrio
+566	Pitpatpet
+567	MSHeli s.r.l
+568	Trakm8
+569	JIN
+570	Alatech Tehnology
+571	Beijing CarePulse Electronic
+573	ViCentra
+574	Raven Industries
+575	WaveWare Technologies
+576	Argenox Technologies
+577	Bragi
+579	Masimo
+580	Iotera
+581	Endress+Hauser
+582	ACKme Networks
+583	FiftyThree
+584	Parker Hannifin
+586	Uwatec
+587	Orlan
+588	Blue Clover Devices
+589	M-Way Solutions
+590	Microtronics Engineering
+591	Schneider Schreibgeräte
+592	Sapphire Circuits
+593	Lumo Bodytech
+594	Restar
+595	Xicato
+596	Playbrush
+597	Dai Nippon Printing
+598	G24 Power
+599	AdBabble Local Commerce
+600	Devialet
+601	ALTYOR
+602	University of Applied Scienc
+603	Five Interactive dba Zendo
+604	NetEase（Hangzhou）Network
+605	Lexmark International
+606	Fluke
+607	Yardarm Technologies
+609	SECVRE
+610	Glacial Ridge Technologies
+612	DDS
+613	SMK
+614	Schawbel Technologies
+615	XMI Systems
+616	Cerevo
+617	Torrox &
+618	Gemalto
+619	DEKA Research & Development
+620	Domster Tadeusz Szydlowski
+621	Technogym SPA
+622	FLEURBAEY BVBA
+623	Aptcode Solutions
+624	LSI ADL Technology
+625	Animas
+626	Alps Alpine
+627	OCEASOFT
+628	Motsai Research
+629	Geotab
+630	E.G.O. Elektro-Geraetebau
+631	bewhere
+632	Johnson Outdoors
+633	steute Schaltgerate &
+634	Ekomini
+635	DEFA AS
+636	Aseptika
+637	HUAWEI Technologies
+638	HabitAware
+639	ruwido austria
+640	ITEC
+641	StoneL
+642	Sonova
+643	Maven Machines
+644	Synapse Electronics
+645	WOWTech Canada
+646	RF Code
+647	Wally Ventures S.L
+649	SK Telecom
+650	Jetro AS
+651	Code Gears
+652	NANOLINK APS
+654	RF Digital
+655	Church & Dwight
+656	Multibit
+657	CliniCloud
+659	Blue Bite
+660	ELIAS
+661	Sivantos
+662	Petzl
+663	storm power
+664	EISST
+665	Inexess Technology Simma
+666	Currant
+667	C2 Development
+668	Blue Sky Scientific
+669	ALOTTAZS LABS
+670	Kupson spol. s r.o
+671	Areus Engineering
+672	Impossible Camera
+674	Sera4
+675	Itude
+676	Pacific Lock
+677	Tendyron
+678	Robert Bosch
+679	Illuxtron international
+680	miSport
+681	Chargelib
+682	Doppler Lab
+683	BBPOS
+685	Rx Networks
+686	WeatherFlow
+687	Technicolor USA
+688	Bestechnic
+689	Raden
+690	Oura Health
+691	CLABER S.P.A
+692	Hyginex
+693	HANSHIN ELECTRIC RAILWAY
+694	Schneider Electric
+695	Oort Technologies
+696	Chrono Therapeutics
+697	Rinnai
+698	Swissprime Technologies
+699	YOKOWO
+700	Genevac
+701	Chemtronics
+702	Seguro Technology Sp. z o.o
+704	Dash Robotics
+705	LINE
+706	Guillemot
+707	Techtronic Power Tools Techn
+708	Wilson Sporting Goods
+709	Lenovo
+710	Ayatan Sensors
+711	Electronics Tomorrow
+712	OneSpan
+713	PayRange
+714	ABOV Semiconductor
+715	AINA-Wireless
+717	BMA ergonomics
+718	Teva Branded Pharmaceutical 
+719	Anima
+720	3M
+721	Empatica
+722	Afero
+723	Powercast
+724	Secuyou ApS
+725	OMRON
+726	Send Solutions
+727	NIPPON SYSTEMWARE
+728	Neosfar
+729	Fliegl Agrartechnik
+730	Gilvader
+731	Digi International
+732	DeWalch Technologies
+733	Flint Rehabilitation Devices
+734	Samsung SDS
+735	Blur Product Development
+736	University of Michigan
+737	Victron Energy
+738	NTT docomo
+739	Carmanah Technologies
+740	Bytestorm
+741	Espressif Systems
+742	Unwire
+743	Connected Yard
+744	American Music Environments
+745	Sensogram Technologies
+746	Fujitsu
+747	Ardic Technology
+749	HTC
+750	Citizen Holdings
+751	SMART-INNOVATION
+752	Blackrat Software
+753	The Idea Cave
+754	GoPro
+755	AuthAir
+756	Vensi
+757	Indagem Tech
+758	Intemo Technologies
+760	Runteq
+761	IMAGINATION TECHNOLOGIES
+763	Clarius Mobile Health
+764	Shanghai Frequen Microelectr
+766	Lierda Science & Technology 
+767	Silicon Laboratories
+768	World Moto
+769	Giatec Scientific
+770	Loop Devices
+771	IACA electronique
+772	Oura Health
+773	Swipp ApS
+774	Life Laboratory
+775	FUJI INDUSTRIAL
+776	Surefire
+777	Dolby Labs
+778	Ellisys
+779	Magnitude Lighting Converter
+780	Hilti
+781	Devdata S.r.l
+783	Shortcut Labs
+784	SGL Italia S.r.l
+785	PEEQ DATA
+786	Ducere Technologies Pvt
+787	DiveNav
+788	RIIG AI Sp. z o.o
+789	Thermo Fisher Scientific
+790	Measurematics Pvt
+791	CHUO Electronics
+792	Aspenta International
+793	Eugster Frismag
+794	Wurth Elektronik eiSos &
+795	HQ
+796	Lab Sensor Solutions
+797	Enterlab ApS
+798	Eyefi
+799	MetaSystem S.p.A
+800	SONO ELECTRONICS
+803	Rotor Bike Components
+804	Astro
+806	Healthwear TechnologiesLtd
+807	Essex Electronics
+808	Grundfos A/S
+809	Eargo
+810	Electronic Design Lab
+811	ESYLUX
+812	NIPPON SMT
+813	BM innovations
+814	indoormap
+815	OttoQ
+816	North Pole Engineering
+817	3flares Technologies
+819	Mul-T-Lock
+820	Airthings ASA
+821	Enlighted
+822	GISTIC
+823	AJP2 Holdings
+824	COBI
+825	Blue Sky Scientific
+826	Appception
+827	Courtney Thorne
+829	TPV Technology
+830	Monitra
+831	Automation Components
+833	Etesian Technologies
+834	GERTEC BRASIL LTDA
+835	Drekker Development
+836	Whirl
+837	Locus Positioning
+838	Acuity Brands Lighting
+839	Prevent Biometrics
+841	VersaMe
+843	Libratone A/S
+844	HM Electronics
+845	TASER International
+847	Heartland Payment Systems
+848	Bitstrata Systems
+849	Pieps
+850	iRidingTechnology
+851	Alpha Audiotronics
+852	TOPPAN
+853	Sigma Designs
+854	Spectrum Brands
+855	Polymap Wireless
+856	MagniWare
+857	Novotec Medical
+858	Phillips-Medisize A/S
+859	Matrix
+860	Eaton
+861	KYS
+862	Naya Health
+863	Acromag
+864	Insulet
+865	Wellinks
+866	ON Semiconductor
+867	FREELAP
+868	Favero Electronics
+869	BioMech Sensor
+870	BOLTT Sports technologies Pr
+872	Metormote
+873	littleBits
+874	SetPoint Medical
+875	BRControls Products
+876	Zipcar
+877	AirBolt
+878	MOTIVE TECHNOLOGIES
+879	Motiv
+880	Wazombi Labs OÜ
+882	Nixie Labs
+883	AppNearMe
+884	Holman Industries
+885	Expain AS
+886	Electronic Temperature Instr
+887	Plejd
+888	Propeller Health
+889	Shenzhen iMCO Electronic Tec
+890	Algoria
+891	Apption Labs
+892	Cronologics
+893	MICRODIA
+894	lulabytes S.L
+895	Société des Produits Nestlé
+896	"MEGA-F service"
+897	Sharp
+898	Precision Outcomes
+899	Kronos
+901	Embedded Electronic Solution
+902	Aterica
+903	BluStor PMC
+904	Kapsch TrafficCom
+905	ActiveBlu
+906	Kohler Mira
+907	Noke
+908	Appion
+909	Resmed
+910	Crownstone
+911	Xiaomi
+912	INFOTECH s.r.o
+913	Thingsquare
+914	T&D
+915	LAVAZZA S.p.A
+917	SDATAWAY
+918	BLOKS
+919	LEGO System A/S
+920	Thetatronics
+921	Nikon
+922	NeST
+923	South Silicon Valley Microel
+924	ALE International
+925	CareView Communications
+926	SchoolBoard
+927	Molex
+928	IVT Wireless
+929	Alpine Labs
+930	Candura Instruments
+931	SmartMovt Technology
+932	Token Zero
+933	ACE CAD Enterprise
+934	Medela
+935	AeroScout
+936	Esrille
+938	Exon Sp. z o.o
+939	Meizu Technology
+941	XiQ
+942	Allswell
+943	Comm-N-Sense DBA Verigo
+944	VIBRADORM
+945	Otodata Wireless Network
+946	Propagation Systems
+947	Midwest Instruments & Contro
+948	Alpha Nodus
+949	petPOMM
+950	Mattel
+951	Airbly
+952	A-Safe
+953	FREDERIQUE CONSTANT
+954	Maxscend Microelectronics
+955	Abbott
+956	ASB Bank
+957	amadas
+958	Applied Science
+959	iLumi Solutions
+960	Arch Systems
+961	Ember Technologies
+962	Snapchat
+963	Casambi Technologies
+964	Pico Technology
+965	Abbott Medical
+966	Intricon
+967	Structural Health Systems
+968	Avvel International
+969	Gallagher Group
+970	In2things Automation Pvt
+971	SYSDEV
+972	Vonkil Technologies
+973	Wynd Technologies
+974	CONTRINEX
+975	MIRA
+976	Watteam
+977	Density
+978	IOT Pot India Private
+979	Sigma Connectivity
+980	PEG PEREGO SPA
+981	Wyzelink Systems
+982	Yota Devices
+983	FINSECUR
+984	Zen-Me Labs
+985	3IWare
+986	EnOcean
+987	Instabeat
+988	Nima Labs
+989	Andreas Stihl &
+990	Nathan Rhoades
+991	Grob Technologies
+992	Actions Technology
+993	SPD Development
+994	Sensoan
+995	Qualcomm Life
+996	Chip-ing
+997	ffly4u
+998	IoT Instruments
+999	TRUE Fitness Technology
+1001	SHENZHEN LEMONJOY TECHNOLOGY
+1002	Hello
+1003	Ozo Edu
+1004	Jigowatts
+1005	BASIC MICRO.COM
+1006	CUBE TECHNOLOGIES
+1008	CLINK
+1009	Hestan Smart Cooking
+1010	WindowMaster A/S
+1012	PAL Technologies
+1013	WHERE
+1014	Iton Technology
+1015	Owl Labs
+1016	Rockford
+1017	Becon Technologies
+1018	Vyassoft Technologies
+1019	Nox Medical
+1020	Kimberly-Clark
+1021	Trimble
+1022	Littelfuse
+1023	Withings
+1024	i-developer IT Beratung UG
+1025	Relations
+1026	Sears Holdings
+1027	Gantner Electronic
+1028	Authomate
+1029	Vertex International
+1031	Swiss Audio
+1032	ToGetHome
+1034	ZF OPENMATICS s.r.o
+1035	Jana Care
+1037	NorthStar Battery
+1038	SKF
+1039	-AX Technology
+1040	Fender Musical Instruments
+1041	Luidia
+1042	SEFAM
+1043	Wireless Cables
+1046	SODA
+1047	Fatigue Science
+1049	Novalogy
+1050	Friday Labs
+1051	OrthoAccel Technologies
+1052	WaterGuru
+1053	Benning Elektrotechnik und E
+1054	Dell Computer
+1055	Kopin
+1056	TecBakery
+1057	Backbone Labs
+1058	DELSEY
+1059	Chargifi
+1060	Trainesense
+1061	Unify Software and Solutions
+1062	Husqvarna
+1063	Focus fleet and fuel managem
+1064	SmallLoop
+1065	Prolon
+1066	BD Medical
+1067	iMicroMed
+1068	Ticto N.V
+1069	Meshtech AS
+1070	MemCachier
+1071	Danfoss A/S
+1072	SnapStyk
+1073	Alticor
+1074	Silk Labs
+1075	Pillsy
+1076	Hatch Baby
+1077	Blocks Wearables
+1078	Drayson Technologies
+1079	eBest IOT
+1080	Helvar
+1081	Radiance Technologies
+1082	Nuheara
+1083	Appside
+1085	Coiler
+1086	Thermomedics
+1087	Tentacle Sync
+1088	Valencell
+1090	SECOM
+1091	Tucker International
+1092	Metanate
+1093	Kobian Canada
+1094	NETGEAR
+1095	Fabtronics Australia
+1096	Grand Centrix
+1097	1UP USA.com
+1098	SHIMANO
+1099	Nain
+1100	LifeStyle Lock
+1101	VEGA Grieshaber
+1102	Xtrava
+1103	TTS Tooltechnic Systems &
+1104	Teenage Engineering
+1105	Tunstall Nordic
+1106	Svep Design Center
+1107	Qorvo Utrecht
+1108	Sphinx Electronics &
+1110	Nemik Consulting
+1111	RF INNOVATION
+1112	Mini Solution
+1114	2048450 Ontario
+1116	Delta T
+1117	Boston Scientific
+1118	Nuviz
+1119	Real Time Automation
+1120	Kolibree
+1121	vhf elektronik
+1122	Bonsai Systems
+1123	Fathom Systems
+1124	Bellman & Symfon Group
+1125	International Forte Group
+1127	Codenex
+1128	Kynesim
+1129	Palago
+1130	INSIGMA
+1131	PMD Solutions
+1132	Qingdao Realtime Technology
+1133	BEGA Gantenbrink-Leuchten
+1134	Pambor
+1135	Develco Products A/S
+1136	iDesign s.r.l
+1137	TiVo
+1138	Control-J
+1139	Steelcase
+1140	iApartment
+1141	Icom
+1143	Blue Spark Technologies
+1144	FarSite Communications
+1145	mywerk system
+1146	Sinosun Technology
+1147	MIYOSHI ELECTRONICS
+1149	Occly
+1150	OurHub Dev IvS
+1151	Pro-Mark
+1153	Quintrax
+1154	POS Tuning Udo Vosshenrich &
+1156	Revol Technologies
+1157	SKIDATA
+1158	DEV TECNOLOGIA INDUSTRIA, CO
+1159	Centrica Connected Home
+1160	Automotive Data Solutions
+1161	Igarashi Engineering
+1162	Taelek
+1164	Vectronix
+1165	S-Labs Sp. z o.o
+1166	Companion Medical
+1167	BlueKitchen
+1168	Matting
+1169	SOREX - Wireless Solutions
+1170	ADC Technology
+1171	Lynxemi
+1172	SENNHEISER electronic &
+1174	Polymorphic Labs
+1175	Cochlear
+1176	METER Group USA
+1177	Ruuvi Innovations
+1178	Situne AS
+1179	nVisti
+1180	DyOcean
+1181	Uhlmann & Zacher
+1182	AND!XOR
+1183	Popper Pay
+1186	ovrEngineered
+1187	GT-tronics HK
+1188	Herbert Waldmann &
+1189	Guangzhou FiiO Electronics T
+1190	Vinetech
+1191	Dallas Logic
+1192	BioTex
+1194	LINKIO SAS
+1195	Harbortronics
+1196	Undagrid
+1197	Shure
+1198	ERM Electronic Systems
+1199	BIOROWER Handelsagentur
+1201	Kartographers Technologies P
+1202	The Shadow on the Moon
+1203	mobike
+1204	Inuheat Group
+1205	Swiftronix
+1206	Diagnoptics Technologies
+1207	Analog Devices
+1208	Soraa
+1209	CSR Building Products
+1210	Crestron Electronics
+1211	Neatebox
+1212	Draegerwerk & KGaA
+1213	AlbynMedical
+1214	Averos FZCO
+1215	VIT Initiative
+1216	Statsports International
+1217	Sospitas, s.r.o
+1218	Dmet Products
+1219	Mantracourt Electronics
+1220	TeAM Hutchins
+1221	Seibert Williams Glass
+1222	Insta
+1223	Svantek Sp. z o.o
+1224	Shanghai Flyco Electrical Ap
+1225	Thornwave Labs
+1226	Steiner-Optik
+1227	Novo Nordisk A/S
+1229	Safetech Products
+1230	GOOOLED S.R.L
+1231	DOM Sicherheitstechnik &
+1232	Olympus
+1233	KTS
+1234	Anloq Technologies
+1235	Queercon
+1236	TASKA PROSTHETICS
+1237	Gooee
+1238	LUGLOC
+1239	Blincam
+1240	FUJIFILM
+1241	RM Acquisition
+1242	Franceschi Marina snc
+1243	Engineered Audio
+1244	IOTTIVE PRIVATE
+1245	4MOD Technology
+1246	Lutron Electronics
+1247	Emerson Electric
+1248	Guardtec
+1249	REACTEC
+1251	Under Armour
+1252	Woodenshark
+1253	Avack
+1254	Smart Solution Technology
+1256	STABILO International
+1257	Busch Jaeger Elektro
+1258	Pacific Bioscience Laborator
+1259	Bird Home Automation
+1260	Motorola Solutions
+1262	Auxivia
+1263	DaisyWorks
+1264	Kosi
+1265	Theben
+1266	InDreamer Techsol Private
+1267	Cerevast Medical
+1268	ZanCompute
+1269	Pirelli Tyre S.P.A
+1270	McLear
+1271	Shenzhen Goodix Technology
+1272	Convergence Systems
+1273	Interactio
+1274	Androtec
+1275	Benchmark Drives &
+1276	SwingLync L. L. C
+1277	Tapkey
+1278	Woosim Systems
+1279	Microsemi
+1280	Wiliot
+1281	Polaris IND
+1282	Specifi-Kali
+1283	Locoroll
+1284	PHYPLUS
+1285	InPlay
+1286	Hager
+1288	Axes System sp. z o. o
+1289	Garage Smart
+1290	Shake-on
+1291	Vibrissa
+1292	OSRAM
+1293	TRSystems
+1294	Yichip Microelectronics
+1295	Foundation Engineering
+1296	UNI-ELECTRONICS
+1297	Brookfield Equinox
+1298	Soprod
+1299	9974091 Canada
+1300	FIBRO
+1301	RB Controls
+1302	Footmarks
+1303	Amtronic Sverige
+1304	MAMORIO
+1305	Tyto Life
+1306	Leica Camera
+1308	EDPS
+1309	OFF Line
+1310	Detect Blue
+1311	Setec
+1312	Target
+1313	IAI
+1314	NS Tech
+1315	MTG
+1316	Hangzhou iMagic Technology
+1317	HONGKONG NANO IC TECHNOLOGIE
+1318	Honeywell International
+1319	Albrecht JUNG
+1320	Lunera Lighting
+1321	Lumen UAB
+1322	Keynes Controls
+1323	Novartis
+1324	Geosatis
+1325	EXFO
+1326	LEDVANCE
+1327	Center ID
+1328	Adolene
+1329	D&M Holdings
+1330	CRESCO Wireless
+1331	Nura Operations
+1332	Frontiergadget
+1333	Smart Component Technologies
+1334	ZTR Control Systems
+1335	MetaLogics
+1336	Medela
+1337	OPPLE Lighting
+1338	Savitech
+1339	prodigy
+1340	Screenovate Technologies
+1341	TESA
+1342	CLIM8
+1343	Silergy
+1344	SilverPlus
+1345	Sharknet
+1346	Mist Systems
+1347	MIWA LOCK
+1348	OrthoSensor
+1350	Apexar Technologies
+1351	LOGICDATA Electronic & Softw
+1352	Knick Elektronische Messgera
+1353	Smart Technologies and Inves
+1354	Linough
+1355	Advanced Electronic Designs
+1356	Carefree Scott Fetzer
+1357	Sensome
+1358	FORTRONIK storitve d.o.o
+1359	Sinnoz
+1361	Sylero
+1362	Avempace SARL
+1363	Nintendo
+1364	National Instruments
+1365	KROHNE Messtechnik
+1366	Otodynamics
+1367	Arwin Technology
+1368	benegear
+1369	Newcon Optik
+1370	CANDY HOUSE
+1371	FRANKLIN TECHNOLOGY
+1372	Lely
+1373	Valve
+1374	Hekatron Vertriebs
+1375	PROTECHS. DI GIRARDI ANDREA 
+1376	Sarita CareTech APS
+1377	Finder S.p.A
+1378	Thalmic Labs
+1379	Steinel
+1380	Beghelli Spa
+1382	CORE TRANSPORT TECHNOLOGIES 
+1383	Xiamen Everesports Goods
+1384	Bodyport
+1386	Flipnavi
+1387	Rion
+1388	Long Range Systems
+1389	Redmond Industrial Group
+1390	VIZPIN
+1391	BikeFinder AS
+1392	Consumer Sleep Solutions
+1393	PSIKICK
+1394	AntTail.com
+1395	Lighting Science Group
+1396	AFFORDABLE ELECTRONICS
+1397	Integral Memroy
+1398	Globalstar
+1399	True Wearables
+1400	Wellington Drive Technologie
+1402	OMNI Remotes
+1403	Duracell U.S. Operations
+1404	Toor Technologies
+1405	Instinct Performance
+1406	Beco
+1407	Scuf Gaming International
+1409	LYS TECHNOLOGIES
+1410	Breakwall Analytics
+1411	Code Blue Communications
+1412	Gira Giersiepen &
+1413	Hearing Lab Technology
+1414	LEGRAND
+1415	Derichs
+1416	ALT-TEKNIK
+1417	Star Technologies
+1418	START TODAY
+1419	Maxim Integrated Products
+1420	Fracarro Radioindustrie
+1421	Jungheinrich Aktiengesellsch
+1422	Meta Platforms Technologies
+1423	HENDON SEMICONDUCTORS
+1424	Pur3
+1425	Viasat Group S.p.A
+1426	IZITHERM
+1427	Spaulding Clinical Research
+1428	Kohler
+1429	Inor Process
+1430	My Smart Blinds
+1431	RadioPulse
+1432	rapitag
+1433	Lazlo326
+1434	Teledyne Lecroy
+1435	Dataflow Systems
+1436	Macrogiga Electronics
+1437	Tandem Diabetes Care
+1438	Polycom
+1439	Fisher & Paykel Healthcare
+1440	Dream Devices Technologies
+1441	Shanghai Xiaoyi Technology
+1442	ADHERIUM
+1443	Axiomware Systems
+1444	O. E. M. Controls
+1445	Kiiroo
+1446	Telecon Mobile
+1447	Sonos
+1448	Tom Allebrandi Consulting
+1449	Monidor
+1450	Tramex
+1451	Nofence AS
+1452	GoerTek Dynaudio
+1453	INIA
+1454	CARMATE MFG
+1455	OV LOOP
+1456	NewTec
+1457	Medallion Instrumentation Sy
+1458	CAREL INDUSTRIES S.P.A
+1459	Parabit Systems
+1460	White Horse Scientific
+1461	verisilicon
+1462	Elecs Industry
+1463	Beijing Pinecone Electronics
+1464	Ambystoma Labs
+1465	Suzhou Pairlink Network Tech
+1466	igloohome
+1467	Oxford Metrics
+1468	Leviton Mfg
+1469	ULC Robotics
+1471	Real-World-Systems
+1472	Nalu Medical
+1473	P.I.Engineering
+1474	Grote Industries
+1475	Runtime
+1476	Codecoup sp. z o.o. sp. k
+1477	SELVE &
+1479	Lippert Components
+1480	SOMFY SAS
+1481	TBS Electronics
+1482	MHL Custom
+1483	LucentWear
+1484	WATTS ELECTRONICS
+1485	RJ Brands
+1486	V-ZUG
+1487	Biowatch
+1488	Anova Applied Electronics
+1489	Lindab
+1490	frogblue TECHNOLOGY
+1491	Acurable
+1492	LAMPLIGHT
+1493	TEGAM
+1494	Zhuhai Jieli technology
+1495	modum.io
+1496	Farm Jenny
+1497	Toyo Electronics
+1498	Applied Neural Research
+1499	Avid Identification Systems
+1500	Petronics
+1501	essentim
+1502	QT Medical
+1503	VIRTUALCLINIC.DIRECT
+1504	Viper Design
+1505	Human
+1506	stAPPtronics
+1507	Elemental Machines
+1508	Taiyo Yuden
+1509	INEO ENERGY& SYSTEMS
+1510	Motion Instruments
+1511	PressurePro
+1512	COWBOY
+1513	iconmobile
+1514	ACS-Control-System
+1515	Bayerische Motoren Werke
+1516	Gycom Svenska
+1517	Fuji Xerox
+1519	SIKOM AS
+1520	beken
+1521	The Linux Foundation
+1522	Try and E
+1523	SeeScan
+1524	Clearity
+1525	GS TAG
+1526	DPTechnics
+1527	TRACMO
+1528	Anki
+1529	Hagleitner Hygiene Internati
+1530	Konami Sports Life
+1531	Arblet
+1532	Masbando
+1533	Innoseis
+1534	Niko nv
+1535	Wellnomics
+1536	iRobot
+1537	Schrader Electronics
+1538	Geberit International
+1539	Fourth Evolution
+1541	FMW electronic Futterer u. M
+1542	John Deere
+1543	Rookery Technology
+1544	KeySafe-Cloud
+1545	BUCHI Labortechnik
+1546	IQAir
+1547	Triax Technologies
+1548	Vuzix
+1549	TDK
+1550	Blueair
+1551	Signify Netherlands
+1552	ADH GUARDIAN USA
+1553	Beurer
+1554	Playfinity AS
+1555	Hans Dinslage
+1556	OnAsset Intelligence
+1557	INTER ACTION
+1558	OS42 UG
+1560	Audio-Technica
+1561	Six Guys Labs, s.r.o
+1562	R.W. Beckett
+1563	silex technology
+1564	Univations
+1565	SENS Innovation ApS
+1566	Diamond Kinetics
+1567	Phrame
+1568	Forciot
+1569	Noordung d.o.o
+1570	Beam Labs
+1572	Biovotion
+1573	Square Panda
+1574	Amplifico
+1575	WEG
+1576	Ensto
+1577	PHONEPE PVT
+1579	MinebeaMitsumi
+1580	ASPion
+1581	Vossloh-Schwabe Deutschland
+1582	Procept
+1583	ONKYO
+1584	Asthrea D.O.O
+1585	Fortiori Design
+1586	Hugo Muller &
+1587	Wangi Lai PLT
+1588	Fanstel
+1589	Crookwood
+1590	ELECTRONICA INTEGRAL DE SONI
+1591	GiP Innovation Tools
+1592	LX SOLUTIONS
+1593	Shenzhen Minew Technologies
+1594	Prolojik
+1595	Kromek Group
+1596	Contec Medical Systems
+1597	Xradio Technology
+1598	The Indoor Lab
+1599	LDL TECHNOLOGY
+1600	Dish Network
+1601	Revenue Collection Systems F
+1602	Bluetrum Technology
+1603	makita
+1604	Apogee Instruments
+1605	BM3
+1606	SGV Group Holding &
+1607	MED-EL
+1608	Ultune Technologies
+1609	Ryeex Technology
+1610	Open Research Institute
+1611	Scale-Tec
+1612	Zumtobel Group
+1613	iLOQ
+1614	KRUXWorks Technologies Priva
+1615	Digital Matter
+1616	Coravin
+1617	Stasis Labs
+1618	ITZ Innovations- und Technol
+1619	Meggitt
+1620	Ledlenser &
+1621	Renishaw
+1622	ZhuHai AdvanPro Technology
+1623	Meshtronix
+1624	Payex Norge AS
+1625	UnSeen Technologies
+1626	Marshall Group
+1627	Sesam Solutions
+1628	PixArt Imaging
+1629	Panduit
+1630	Alo
+1631	Ricoh
+1632	RTC Industries
+1633	Mode Lighting
+1634	Particle Industries
+1635	Advanced Telemetry Systems
+1636	RHA TECHNOLOGIES
+1637	Pure International
+1638	WTO Werkzeug-Einrichtungen
+1640	Bleb Technology
+1641	Livanova USA
+1642	Brady Worldwide
+1643	DewertOkin
+1644	Ztove ApS
+1645	Venso EcoSolutions
+1646	Eurotronik Kranj d.o.o
+1647	Hug Technology
+1648	Gema Switzerland
+1649	Buzz Products
+1650	Kopi
+1651	Innova Ideas
+1652	BeSpoon
+1654	Expai Solutions Private
+1655	Innovation First
+1656	SABIK Offshore
+1657	4iiii Innovations
+1658	The Energy Conservatory
+1659	I.FARM
+1660	Tile
+1661	Form Athletica
+1663	NETGRID S.N.C. DI BISSOLI MA
+1664	Mannkind
+1665	Trade FIDES a.s
+1666	Photron
+1667	Eltako
+1668	Dermalapps
+1669	Greenwald Industries
+1670	inQs
+1671	Cherry
+1672	Amsted Digital Solutions
+1673	Tacx
+1674	Raytac
+1675	Jiangsu Teranovo Tech
+1678	Razer
+1679	JRM Group
+1680	Eccrine Systems
+1681	Curie Point
+1682	Georg Fischer
+1683	Hach - Danaher
+1684	T&A Laboratories
+1685	Koki Holdings
+1686	Gunakar Private
+1687	Stemco Products
+1688	Wood IT Security
+1689	RandomLab SAS
+1690	Adero
+1691	Dragonchip
+1692	Noomi
+1694	Delta Electronics
+1695	FlowMotion Technologies AS
+1696	OBIQ Location Technology
+1697	Cardo Systems
+1698	Globalworx
+1699	Nymbus
+1700	LIMNO
+1701	TEKZITEL
+1702	Roambee
+1703	Chipsea Technologies
+1704	GD Midea Air-Conditioning Eq
+1705	Soundmax Electronics
+1706	Produal
+1707	HMS Industrial Networks
+1708	Ingchips Technology
+1709	InnovaSea Systems
+1710	SenseQ
+1711	Shoof Technologies
+1712	BRK Brands
+1713	SimpliSafe
+1714	Tussock Innovation 2013
+1716	Sencilion
+1717	Wabilogic
+1718	Sociometric Solutions
+1719	iCOGNIZE
+1720	ShadeCraft
+1721	Beflex
+1722	Beaconzone
+1723	Leaftronix Analogic Solution
+1724	TWS
+1725	ABB
+1726	HitSeed
+1728	CAME S.p.A
+1729	Alarm.com Holdings
+1730	Measurlogic
+1731	King I Electronics
+1732	Dream Labs
+1733	Urban Compass
+1734	Simm Tronic
+1736	Storz & Bickel &
+1737	MYLAPS
+1738	Shenzhen Zhongguang Infotech
+1739	Dyeware
+1740	Dongguan SmartAction Technol
+1741	DIG
+1742	FIOR & GENTZ
+1744	Etekcity
+1745	Meyer Sound Laboratories
+1746	CeoTronics
+1749	Sensirion
+1750	JCT Healthcare
+1751	FUBA Automotive Electronics
+1752	AW
+1753	Shanghai Mountain View Silic
+1754	Zliide Technologies ApS
+1755	Automatic Labs
+1756	Industrial Network Controls
+1757	Intellithings
+1758	Navcast
+1759	HLI Solutions
+1760	Avaya
+1761	Milestone AV Technologies
+1762	Alango Technologies
+1763	Spinlock
+1764	Aluna
+1765	OPTEX
+1766	NIHON DENGYO KOUSAKU
+1767	VELUX A/S
+1768	Almendo Technologies
+1769	Zmartfun Electronics
+1770	SafeLine Sweden
+1771	Houston Radar
+1773	J Neades
+1775	ALCARE
+1776	Chargy Technologies, SL
+1777	Shibutani
+1778	Trapper Data
+1779	Alfred International
+1780	Touché Technology
+1781	Vigil Technologies
+1782	Vitulo Plus
+1783	WILKA Schliesstechnik
+1784	BodyPlus Technology
+1785	happybrush
+1786	Enequi
+1787	Sartorius
+1788	Tom Communication Industrial
+1789	ESS Embedded System Solution
+1790	Mahr
+1791	Redpine Signals
+1792	TraqFreq
+1793	PAFERS TECH
+1794	Akciju sabiedriba "SAF TEHNI
+1795	Beijing Jingdong Century Tra
+1796	JBX Designs
+1797	Electrolux
+1798	Wernher von Braun Center for
+1799	Essity Hygiene and Health Ak
+1800	Be Interactive
+1801	Carewear
+1803	Element Products
+1804	Beijing Winner Microelectron
+1805	SmartSnugg
+1806	FiveCo Sarl
+1807	California Things
+1808	Audiodo
+1809	ABAX AS
+1810	Bull Group
+1811	Respiri
+1812	MindPeace Safety
+1813	MBARC LABS
+1814	Altonics
+1816	IDIBAIX enginneering
+1817	COREIOT
+1818	REVSMART WEARABLE HK
+1819	Precor
+1820	F5 Sports
+1821	exoTIC Systems
+1822	DONGGUAN HELE ELECTRONICS
+1823	Dongguan Liesheng Electronic
+1824	Oculeve
+1825	Clover Network
+1826	Xiamen Eholder Electronics
+1827	Ford Motor
+1828	Guangzhou SuperSound Informa
+1829	Tedee Sp. z o.o
+1830	PHC
+1832	Eli Lilly and
+1833	SwaraLink Technologies
+1834	JMR embedded systems
+1835	Bitkey
+1836	GWA Hygiene
+1837	Safera
+1838	Open Platform Systems
+1839	OnePlus Electronics
+1840	Wildlife Acoustics
+1841	ABLIC
+1842	Dairy Tech
+1843	Iguanavation
+1844	DiUS Computing
+1845	UpRight Technologies
+1846	Luna XIO
+1847	Navitek
+1848	Glass Security
+1849	Jiangsu Qinheng
+1850	Chandler Systems
+1851	Fantini Cosmi s.p.a
+1853	Beijing Hao Heng Tian Tech
+1854	Bluepack S.R.L
+1855	Beijing Unisoc Technologies
+1857	MAC
+1858	DML
+1859	Sanofi
+1860	SOCOMEC
+1861	WIZNOVA
+1862	Seitec Elektronik
+1863	OR Technologies
+1864	GuangZhou KuGou Computer Tec
+1865	DIAODIAO Technology
+1866	Illusory Studios
+1867	Sarvavid Software Solutions 
+1869	Amtech Systems
+1870	EAGLE DETECTION
+1871	MEDIATECH S.R.L
+1872	Hamilton Professional Servic
+1873	Changsha JEMO IC Design
+1874	Elatec
+1875	JLG Industries
+1876	Michael Parkin
+1877	Brother Industries
+1878	Lumens For Less
+1879	ELA Innovation
+1880	umanSense
+1881	Shanghai InGeek Cyber Securi
+1882	HARMAN
+1883	Smart Sensor Devices
+1884	Antitronics
+1885	RHOMBUS SYSTEMS
+1886	Katerra
+1887	Remote Solution
+1888	Vimar SpA
+1889	Mantis Tech
+1890	TerOpta
+1891	PIKOLIN S.L
+1892	WWZN Information Technology
+1893	Voxx International
+1894	ART AND PROGRAM
+1895	NITTO DENKO ASIA TECHNICAL C
+1896	Peloton Interactive
+1897	Force Impact Technologies
+1898	Dmac Mobile Developments
+1899	Engineered Medical Technolog
+1900	Noodle Technology
+1901	Graesslin
+1902	WuQi technologies
+1903	Successful Endeavours
+1904	InnoCon Medical ApS
+1905	Corvex Connected Safety
+1906	Thirdwayv
+1908	C-MAX Asia
+1909	4eBusiness
+1910	Cyber Transport Control
+1911	Cue
+1912	KOAMTAC
+1913	Loopshore
+1914	Niruha Systems Private
+1916	radius
+1917	Sensority, s.r.o
+1918	Sparkage
+1919	Glenview Software
+1920	Finch Technologies
+1921	Qingping Technology
+1922	DeviceDrive AS
+1923	ESEMBER LIABILITY
+1924	audifon &
+1925	O2 Micro
+1928	BubblyNet
+1929	PCB Piezotronics
+1930	The Wildflower Foundation
+1931	Optikam Tech
+1932	MINIBREW HOLDING
+1933	Cybex
+1934	FUJIMIC NIIGATA
+1935	Hanna Instruments
+1936	KOMPAN A/S
+1937	Scosche Industries
+1938	Cricut
+1939	AEV spol. s r.o
+1940	The Coca-Cola
+1941	GASTEC
+1942	StarLeaf
+1943	Water-i.d
+1944	HoloKit
+1945	PlantChoir
+1946	GuangDong Oppo Mobile Teleco
+1947	CST ELECTRONICS
+1948	Sky UK
+1949	Digibale
+1950	Smartloxx
+1951	Pune Scientific LLP
+1952	Regent Beleuchtungskorper
+1954	Roku
+1956	Xiamen Mage Information Tech
+1957	RAB Lighting
+1958	Musen Connect
+1959	Zume
+1960	conbee
+1961	Bruel & Kjaer Sound & Vibrat
+1962	The Kroger
+1963	Granite River Solutions
+1964	LoupeDeck
+1965	New H3C Technologies
+1966	Aurea Solucoes Tecnologicas 
+1967	Hong Kong Bouffalo Lab
+1968	GV Concepts
+1969	Thomas Dynamics
+1970	Moeco IOT
+1971	2N TELEKOMUNIKACE a.s
+1972	Hormann Antriebstechnik
+1973	CRONO CHIP, S.L
+1974	Soundbrenner
+1975	ETABLISSEMENTS GEORGES RENAU
+1976	iSwip
+1978	Battery-Biz
+1979	EPIC S.R.L
+1981	Genedrive Diagnostics
+1982	Axentia Technologies
+1983	REGULA
+1984	Biral
+1986	Radinn
+1987	CIMTechniques
+1988	Johnson Health Tech NA
+1989	June Life
+1990	Bluenetics
+1991	iaconicDesign
+1992	WRLDS Creations
+1993	Skullcandy
+1995	West Pharmaceutical Services
+1996	Barnacle Systems
+1997	Smart Wave Technologies Cana
+1998	Shanghai Top-Chip Microelect
+1999	NeoSensory
+2000	Hangzhou Tuya Information Te
+2001	Shanghai Panchip Microelectr
+2002	React Accessibility
+2003	LIVNEX
+2004	Kano Computing
+2005	hoots classic
+2006	ecobee
+2007	Nanjing Qinheng Microelectro
+2008	SOLUTIONS AMBRA
+2009	Micro-Design
+2010	STARLITE
+2011	Remedee Labs
+2012	ThingOS &
+2013	Linear Circuits
+2014	Unlimited Engineering SL
+2015	Snap-on
+2016	Edifier International
+2018	Alfred Kaercher SE &
+2019	Airoha Technology
+2020	Geeksme S.L
+2021	Minut
+2022	Waybeyond
+2023	Komfort IQ
+2024	Packetcraft
+2025	Häfele &
+2026	ShapeLog
+2027	NOVABASE S.R.L
+2028	Frecce
+2029	Joule IQ
+2030	KidzTek
+2031	Aktiebolaget Sandvik Coroman
+2032	e-moola.com
+2033	Zimi Innovations
+2034	SERENE GROUP
+2035	DIGISINE ENERGYTECH
+2036	MEDIRLAB Orvosbiologiai Fejl
+2037	Byton North America
+2038	Shenzhen TonliScience and Te
+2039	Cesar Systems
+2040	quip NYC
+2042	Klipsch Group
+2043	Access
+2044	Renault
+2045	JSK
+2046	BIROTA
+2047	maxon motor
+2048	Optek
+2049	CRONUS ELECTRONICS
+2050	NantSound
+2051	Domintell
+2052	Andon Health
+2053	Urbanminded
+2054	TYRI Sweden
+2055	ECD Electronic Components Dr
+2056	SISTEMAS KERN, SOCIEDAD ANÓM
+2057	Trulli Audio
+2058	Altaneos
+2059	Nanoleaf Canada
+2060	Ingy
+2061	Azbil
+2062	TATTCOM
+2063	Paradox Engineering
+2064	LECO
+2065	Becker Antriebe
+2066	Mstream Technologies
+2067	Flextronics International US
+2068	Ossur hf
+2069	SKC
+2070	SPICA SYSTEMS
+2071	Wangs Alliance
+2072	tatwah
+2073	Hunter Douglas
+2074	Shenzhen Conex
+2075	DIM3
+2076	Bobrick Washroom Equipment
+2077	Potrykus Holdings and Develo
+2078	iNFORM Technology
+2079	eSenseLab
+2080	Brilliant Home Technology
+2081	INOVA Geophysical
+2082	adafruit industries
+2084	8Power
+2085	CME
+2086	Hyundai Motor
+2087	Kickmaker
+2088	Shanghai Suisheng Informatio
+2089	HEXAGON METROLOGY DIVISION R
+2090	Mitutoyo
+2091	shenzhen fitcare electronics
+2092	INGICS TECHNOLOGY
+2093	INCUS PERFORMANCE
+2094	ABB S.p.A
+2095	Blippit
+2097	Foxble
+2098	Intermotive
+2099	Conneqtech
+2100	RIKEN KEIKI
+2101	Canopy Growth
+2102	Bitwards
+2103	vivo Mobile Communication
+2104	Etymotic Research
+2105	A puissance 3
+2106	BPW Bergische Achsen Kommand
+2107	Piaggio Fast Forward
+2108	BeerTech
+2109	Tokenize
+2110	Zorachka
+2111	D-Link
+2112	Down Range Systems
+2113	General Luminaire
+2114	Tangshan HongJia electronic 
+2115	FRAGRANCE DELIVERY TECHNOLOG
+2116	Pepperl + Fuchs
+2117	Dometic
+2118	USound
+2119	DNANUDGE
+2120	JUJU JOINTS CANADA
+2121	Dopple Technologies
+2122	ARCOM
+2123	Biotechware
+2124	ORSO
+2125	SafePort
+2126	Carol Cole
+2127	Embedded Fitness
+2128	Yealink Network Technology
+2129	Subeca
+2130	Cognosos
+2131	Pektron Group
+2132	Tap Sound System
+2133	Helios Sports
+2134	Canopy Growth
+2135	Parsyl
+2136	SOUNDBOKS
+2137	BlueUp
+2138	DAKATECH
+2139	Nisshinbo Micro Devices
+2140	ACOS
+2141	Guilin Zhishen Information T
+2142	Krog Systems
+2144	Alflex Products
+2145	SmartSensor Labs
+2146	SmartDrive
+2147	Yo-tronics Technology
+2148	Rafaelmicro
+2149	Emergency Lighting Products
+2150	LAONZ
+2151	Western Digital Techologies
+2152	WIOsense &
+2153	EVVA Sicherheitstechnologie
+2154	Odic
+2155	Pacific Track
+2156	Revvo Technologies
+2157	Biometrika d.o.o
+2158	Vorwerk Elektrowerke &
+2159	Trackunit A/S
+2160	Wyze Labs
+2161	Dension Elektronikai Kft
+2162	11 Health & Technologies
+2163	Innophase
+2164	Treegreen
+2165	Berner International
+2166	SmartResQ ApS
+2167	Valtech
+2168	The Chamberlain Group
+2169	MIZUNO
+2170	ZRF
+2171	BYSTAMP
+2172	Crosscan
+2173	Konftel
+2174	1bar.net
+2175	Phillips Connect Technologie
+2176	imagiLabs
+2177	Optalert
+2178	PSYONIC
+2179	Wintersteiger
+2180	Controlid Industria, Comerci
+2182	Movella Technologies
+2183	Hydro-Gear Partnership
+2184	EnPointe Fencing
+2185	XANTHIO
+2186	sclak s.r.l
+2187	Tricorder Arraay Technologie
+2188	GB Solution
+2189	Soliton Systems K.K
+2191	Tait International
+2192	NICHIEI INTEC
+2193	SmartWireless &
+2194	Ingenieurbuero Birnfeld UG
+2195	Maytronics
+2196	EPIFIT
+2197	Gimer medical
+2198	Nokian Renkaat Oyj
+2199	Current Lighting Solutions
+2201	SFS unimarket
+2202	Private "Teltonika"
+2203	Saucon Technologies
+2204	Embedded Devices
+2205	J-J.A.D.E. Enterprise
+2206	i-SENS
+2207	Witschi Electronic
+2208	Aclara Technologies
+2209	EXEO TECH
+2210	Epic Systems
+2211	Hoffmann SE
+2212	Realme Chongqing Mobile Tele
+2214	Intelligenceworks
+2215	TGR 1.618
+2216	Shanghai Kfcube
+2217	Fraunhofer IIS
+2218	SZ DJI TECHNOLOGY
+2219	Coburn Technology
+2220	Topre
+2221	Kayamatics
+2222	Moticon ReGo
+2223	Polidea Sp. z o.o
+2224	Trivedi Advanced Technologie
+2225	CORE|vision
+2226	PF SCHWEISSTECHNOLOGIE
+2227	IONIQ Skincare &
+2228	Sengled
+2230	Boehringer Ingelheim Vetmedi
+2231	ABB
+2232	Check Technology Solutions
+2233	U-Shin
+2234	HYPER ICE
+2235	Tokai-rika
+2236	Prevayl
+2237	bf1systems
+2238	ubisys technologies
+2239	SIRC
+2240	Accent Advanced Systems SLU
+2241	Rayden.Earth
+2242	Lindinvent
+2243	CHIPOLO d.o.o
+2245	J. Wagner
+2247	Monadnock Systems
+2248	Liteboxer Technologies
+2249	Noventa
+2250	Nubia Technology
+2251	JT INNOVATIONS
+2252	TGM TECHNOLOGY
+2253	ifly
+2254	ZIMI
+2255	betternotstealmybike UG
+2256	ESTOM Infotech Kft
+2257	Sensovium
+2258	Virscient
+2259	Novel Bits
+2260	ADATA Technology
+2261	KEYes
+2263	Inovonics
+2264	WARES
+2265	Pointr Labs
+2266	Miridia Technology
+2267	Tertium Technology
+2268	SHENZHEN AUKEY E BUSINESS
+2269	code-Q
+2270	TE Connectivity
+2271	IRIS OHYAMA
+2272	Philia Technology
+2273	KOZO KEIKAKU ENGINEERING
+2274	Shenzhen Simo Technology
+2275	Republic Wireless
+2276	Rashidov
+2277	Crowd Connected
+2278	Eneso Tecnologia de Adaptaci
+2279	Barrot Technology
+2280	Naonext
+2281	Taiwan Intelligent Home
+2282	COWBELL ENGINEERING
+2283	Beijing Big Moment Technolog
+2284	Denso
+2285	IMI Hydronic Engineering Int
+2286	Askey Computer
+2287	Cumulus Digital Systems
+2288	Joovv
+2289	The L.S. Starrett
+2290	Microoled
+2291	PSP - Pauli Services & Produ
+2292	Kodimo Technologies
+2293	Tymtix Technologies Private
+2294	Dermal Photonics
+2295	MTD Products & Affiliates
+2296	instagrid
+2297	Spacelabs Medical
+2299	Darkglass Electronics
+2300	Hill-Rom
+2301	BioIntelliSense
+2302	Ketronixs Sdn Bhd
+2303	Plastimold Products
+2304	Beijing Zizai Technology
+2305	Lucimed
+2306	TSC Auto-ID Technology
+2307	DATAMARS
+2308	SUNCORPORATION
+2309	Yandex Services
+2310	Scope Logistical Solutions
+2311	User Hello
+2312	Pinpoint Innovations
+2313	70mai
+2314	Zhuhai Hoksi Technology
+2315	EMBR labs
+2316	Radiawave Technologies
+2318	OPTIMUSIOT TECH LLP
+2319	VC
+2320	ASR Microelectronics
+2321	Douglas Lighting Controls
+2322	Nerbio Medical Software Plat
+2323	Braveheart Wireless
+2324	INEO-SENSE
+2325	Honda Motor
+2326	Ambient Sensors
+2327	ASR MicroelectronicsCo
+2329	NO SMD
+2330	Albertronic
+2331	Luminostics
+2332	Oblamatik
+2333	Innokind
+2334	Melbot Studios, Sociedad Lim
+2335	Myzee Technology
+2337	KAHA
+2338	Shanghai MXCHIP Information 
+2339	JSB TECH
+2341	Yukai Engineering
+2342	Gooligum Technologies
+2343	ROOQ
+2344	AiRISTA
+2345	Qingdao Haier Technology
+2346	Sappl Verwaltungs- und Betri
+2347	TekHome
+2348	PCI Private
+2349	Leggett & Platt
+2350	PS
+2351	C.O.B.O. SpA
+2352	James Walker RotaBolt
+2353	BREATHINGS
+2355	SRAM
+2356	KiteSpring
+2357	Reconnect
+2358	Elekon
+2359	RealThingks
+2360	Henway Technologies
+2361	ASTEM
+2362	LinkedSemi Microelectronics
+2363	ENSESO
+2364	Xenoma
+2365	Adolf Wuerth &
+2366	Catalyft Labs
+2367	JEPICO
+2368	Hero Workout
+2369	Rivian Automotive
+2370	TRANSSION HOLDINGS
+2372	Agitron d.o.o
+2373	Globe
+2374	AMC International Alfa Metal
+2375	First Light Technologies
+2376	Wearable Link
+2377	Metronom Health Europe
+2378	Zwift
+2379	Kindeva Drug Delivery L.P
+2380	GimmiSys
+2381	tkLABS
+2382	PassiveBolt
+2383	Liability "Mikrotikls"
+2384	Capetech
+2385	PPRS
+2386	Apptricity
+2387	LogiLube
+2388	Julbo
+2389	Breville Group
+2390	Kerlink
+2391	Ohsung Electronics
+2392	ZTE
+2393	HerdDogg
+2395	Lismore Instruments
+2396	LogiLube
+2397	Electronic Theatre Controls
+2398	BioEchoNet
+2399	NUANCE HEARING
+2400	Sena Technologies
+2401	Linkura
+2402	GL Solutions K.K
+2403	Moonbird
+2404	Countrymate Technology
+2405	Asahi Kasei
+2406	PointGuard
+2407	Neo Materials and Consulting
+2408	Actev Motors
+2409	Woan Technology
+2410	dricos
+2411	Guide ID
+2413	Gunwerks
+2414	Band Industries
+2416	IBA Dosimetry
+2417	GA
+2419	Popit
+2420	ABEYE
+2421	BlueIOT Technology
+2422	Fauna Audio
+2423	TOYOTA motor
+2424	ZifferEins &
+2425	BIOTRONIK SE &
+2426	CORE
+2427	CTEK Sweden
+2428	Thorley Industries
+2429	CLB
+2430	SonicSensory
+2431	ISEMAR S.R.L
+2432	DEKRA TESTING AND CERTIFICAT
+2433	Bernard Krone Holding SE &
+2434	ELPRO-BUCHS
+2435	Feedback Sports
+2436	TeraTron
+2438	Cello Hill
+2439	TSE BRAKES
+2440	BHM-Tech Produktionsgesellsc
+2441	WIKA Alexander Wiegand SE &
+2442	Biovigil
+2443	Mequonic Engineering, S.L
+2444	bGrid
+2446	ADVEEZ
+2447	Aktiebolaget Regin
+2448	Anton Paar
+2449	Telenor ASA
+2450	Big Kaiser Precision Tooling
+2451	Absolute Audio Labs
+2452	VT42
+2453	Bronkhorst High-Tech
+2454	C. & E. Fein
+2455	NextMind
+2456	Pixie Dust Technologies
+2457	eTactica ehf
+2458	New Audio
+2459	Sendum Wireless
+2460	deister electronic
+2461	YKK AP
+2462	Step One
+2463	Koya Medical
+2464	Proof Diagnostics
+2465	VOS Systems
+2466	ENGAGENOW DATA SCIENCES PRIV
+2467	ARDUINO
+2468	KUMHO ELECTRICS
+2469	Security Enhancement Systems
+2470	BEIJING ELECTRIC VEHICLE
+2471	Paybuddy ApS
+2472	KHN Solutions
+2473	Nippon Ceramic
+2474	PHOTODYNAMIC
+2475	DashLogic
+2476	Ambiq
+2477	Narhwall
+2478	Pozyx NV
+2479	ifLink Open Community
+2480	Deublin
+2481	BLINQY
+2482	DYPHI
+2483	BlueX Microelectronics
+2484	PentaLock Aps
+2485	AUTEC Gesellschaft fuer Auto
+2486	Pegasus Technologies
+2487	Bout Labs
+2488	PlayerData
+2489	SAVOY ELECTRONIC LIGHTING
+2490	Elimo Engineering
+2491	SkyStream
+2492	Aerosens
+2493	Centre Suisse d'Electronique
+2494	Vessel
+2495	Span.IO
+2496	AnotherBrain
+2497	Rosewill
+2498	Universal Audio
+2499	JAPAN TOBACCO
+2500	UVISIO
+2501	HungYi Microelectronics
+2502	Honor Device
+2503	Combustion
+2504	XUNTONG
+2505	CrowdGlow
+2506	Mobitrace
+2507	Hx Engineering
+2508	Senso4s d.o.o
+2510	Julius Blum
+2511	BlueStreak IoT
+2512	Chess Wise
+2513	ABLEPAY TECHNOLOGIES AS
+2514	Temperature Sensitive Soluti
+2516	ORBIS
+2517	GEAR RADIO ELECTRONICS
+2518	EAR TEKNIK ISITME VE ODIOMET
+2519	Coyotta
+2520	Synergy Tecnologia em Sistem
+2521	VivoSensMedical
+2522	Nagravision
+2523	Bionic Avionics
+2525	Innoware Development
+2526	JLD Technology Solutions
+2527	Magnus Technology Sdn Bhd
+2529	Tag-N-Trac
+2531	Friday Home Aps
+2532	CPS AS
+2533	Mobilogix
+2534	Masonite
+2535	Kabushikigaisha HANERON
+2536	Melange Systems Pvt
+2537	LumenRadio
+2538	Athlos
+2539	KEAN ELECTRONICS
+2540	Yukon advanced optics worldw
+2541	Sibel
+2542	OJMAR
+2543	Steinel Solutions
+2544	WatchGas
+2545	OM Digital Solutions
+2546	Audeara
+2547	Beijing Zero Zero Infinity T
+2548	Spectrum Technologies
+2549	OKI Electric Industry
+2550	Mobile Action Technology
+2551	SENSATEC
+2552	R.O. S.R.L
+2553	Hangzhou Yaguan Technology
+2554	Listen Technologies
+2555	TOITU
+2556	Confidex
+2558	Lichtvision Engineering
+2559	AIRSTAR
+2560	Ampler Bikes OU
+2561	Cleveron AS
+2562	Ayxon-Dynamics
+2563	donutrobotics
+2564	Flosonics Medical
+2565	Southwire
+2566	Shanghai wuqi microelectroni
+2567	Reflow
+2568	Oras
+2570	Volan Technology
+2572	Shanghai Yidian Intelligent 
+2573	Blue Peacock
+2574	Roland
+2575	LIXIL
+2576	SUBARU
+2577	Sensolus
+2578	Dyson Technology
+2579	Tec4med LifeScience
+2580	CROXEL
+2581	Syng
+2583	Plume Design
+2584	Cambridge Animal Technologie
+2585	Maxell
+2586	Link Labs
+2587	Embrava
+2588	INPEAK sp. z o.o
+2589	API-K
+2590	CombiQ
+2591	DeVilbiss Healthcare
+2592	Jiangxi Innotech Technology
+2593	Apollogic Sp. z o.o
+2594	DAIICHIKOSHO
+2595	BIXOLON
+2596	Atmosic Technologies
+2597	Eran Financial Services
+2598	Louis Vuitton
+2600	NanoFlex Power
+2601	Worthcloud Technology
+2602	Yamaha
+2603	PaceBait IVS
+2604	Shenzhen H&T Intelligent Con
+2605	Shenzhen Feasycom Technology
+2607	Instamic
+2608	Air-Weigh
+2609	Nevro
+2610	Pinnacle Technology
+2611	WMF
+2612	Luxer
+2613	safectory
+2614	NGK SPARK PLUG
+2615	2587702 Ontario
+2616	Bouffalo Lab
+2617	BLUETICKETING
+2619	Galileo Technology
+2620	Siteco
+2621	DELABIE
+2623	Shenzhen Yopeak Optoelectron
+2625	OPEX
+2626	Motionalysis
+2627	Busch Systems International
+2628	Novidan
+2629	3SI Security Systems
+2630	Beijing HC-Infinite Technolo
+2631	The Wand
+2632	JRC Mobility
+2634	Map Large
+2635	MistyWest Energy and Transpo
+2636	SiFli Technologies
+2637	Lockn Technologies Private
+2638	Toytec
+2639	VANMOOF Global Holding
+2640	Nextscape
+2641	CSIRO
+2642	Follow Sense Europe
+2643	KKM
+2644	SQL Technologies
+2645	Inugo Systems
+2646	ambie
+2647	Meizhou Guo Wei Electronics
+2648	Indigo Diabetes
+2649	TourBuilt
+2650	Sontheim Industrie Elektroni
+2651	LEGIC Identsystems
+2652	Innovative Design Labs
+2653	MG Energy Systems
+2655	stryker
+2656	DATANG SEMICONDUCTOR TECHNOL
+2657	Smart Parks
+2658	MOKO TECHNOLOGY
+2660	Geopal system A/S
+2661	Lytx
+2663	Beijing SuperHexa Century Te
+2664	Focus Ingenieria
+2665	HAPPIEST BABY
+2666	Scribble Design
+2667	Olympic Ophthalmics
+2668	Pokkels
+2670	Pac Sane
+2671	Warner Bros
+2672	Ooma
+2673	Senquip
+2674	Jumo &
+2675	Innohome
+2676	MICROSON
+2677	Delta Cycle
+2678	Synaptics
+2679	AXTRO
+2680	Shenzhen Sunricher Technolog
+2681	Webasto SE
+2682	Emlid
+2683	UniqAir
+2684	WAFERLOCK
+2685	Freedman Electronics
+2686	KEBA Handover Automation
+2687	Intuity Medical
+2688	Cleer
+2689	Universal Biosensors
+2690	Corsair
+2691	Rivata
+2692	Greennote
+2693	Snowball Technology
+2694	ALIZENT International
+2695	Shanghai Smart System Techno
+2696	PSA Peugeot Citroen
+2697	VusionGroup
+2698	HAINBUCH SPANNENDE TECHNIK
+2699	SANlight
+2700	DelpSys, s.r.o
+2701	JCM TECHNOLOGIES
+2702	Perfect
+2703	TOTO
+2704	Shenzhen Grandsun Electronic
+2705	Monarch International
+2706	Carestream Dental
+2707	GiPStech S.r.l
+2708	OOBIK
+2709	Pamex
+2712	Foil
+2713	Shanghai high-flying electro
+2714	TEMKIN ASSOCIATES
+2715	Eello
+2716	Xi'an Fengyu Information Tec
+2717	Canon Finetech Nisca
+2719	ista International
+2720	Loy Tec electronics
+2721	LINCOGN TECHNOLOGY
+2722	Care Bloom
+2723	DIC
+2724	FAZEPRO
+2725	Shenzhen Uascent Technology
+2726	Realityworks
+2727	Urbanista
+2728	Zencontrol
+2729	Spintly
+2730	Computime International
+2731	Anhui Listenai
+2732	OSM HK
+2733	Adevo Consulting
+2734	PS Engineering
+2735	AIAIAI ApS
+2736	Visiontronic s.r.o
+2737	InVue Security Products
+2738	TouchTronics
+2739	INNER RANGE
+2740	Ellenby Technologies
+2741	Elstat Electronics
+2742	Xenter
+2743	LogTag North America
+2744	Sens.ai
+2745	STL
+2746	Open Bionics
+2747	R-DAS, s.r.o
+2748	KCCS Mobile Engineering
+2749	Inventas AS
+2750	Robkoo Information & Technol
+2751	PAUL HARTMANN
+2752	Omni-ID USA
+2753	Shenzhen Jingxun Technology
+2754	RealMega Microelectronics te
+2755	Kenzen
+2756	CODIUM
+2757	Flexoptix
+2758	Barnes Group
+2759	Chengdu Aich Technology
+2760	Keepin
+2761	Swedlock
+2762	Shenzhen CoolKit Technology
+2763	ise Individuelle Software un
+2764	Nuvoton
+2765	Visuallex Sport Internationa
+2766	KOBATA GAUGE MFG
+2767	CACI Technologies
+2768	Nordic Strong ApS
+2770	Lautsprecher Teufel
+2771	SSV Software Systems
+2772	Zhuhai Pantum Electronisc
+2773	Streamit
+2774	nymea
+2775	AL-KO Geraete
+2776	Franz Kaldewei&
+2778	Codefabrik
+2779	Reelables
+2780	Duravit
+2781	Boss Audio
+2782	Vocera Communications
+2783	Douglas Dynamics L.L.C
+2787	GlobalMed
+2788	DALI Alliance
+2789	unu
+2790	Hexology
+2791	Sunplus Technology
+2792	LEVEL, s.r.o
+2793	FLIR Systems
+2794	Borda Technology
+2795	Square
+2796	FUTEK ADVANCED SENSOR TECHNO
+2797	Saxonar
+2798	Velentium
+2799	GLP German Light Products
+2800	Leupold & Stevens
+2801	CRADERS
+2803	701x
+2804	Radioworks Microelectronics
+2805	Unitech Electronic
+2806	AMETEK
+2807	Irdeto
+2808	First Design System
+2809	Unisto
+2810	Chengdu Ambit Technology
+2811	SMT ELEKTRONIK
+2812	Cerebrum Sensor Technologies
+2813	Weber Sensors
+2814	Earda Technologies
+2815	FUSEAWARE
+2816	Flaircomm Microelectronics
+2817	RESIDEO TECHNOLOGIES
+2818	IORA Technology Development 
+2819	Precision Triathlon Systems
+2821	Marquardt
+2822	FAZUA
+2823	Workaround
+2824	Shenzhen Qianfenyi Intellige
+2826	Belun Technology
+2827	Sanistaal A/S
+2828	BluPeak
+2829	SANYO DENKO
+2830	Minebea Access Solutions
+2831	B.E.A
+2832	Alfa Laval Corporate
+2833	ThermoWorks
+2834	ToughBuilt Industries
+2835	IOTOOLS
+2836	Olumee
+2837	NAOS JAPAN K.K
+2838	Guard RFID Solutions
+2839	SIG SAUER
+2840	DECATHLON SE
+2841	WBS PROJECT H
+2842	Roca Sanitario
+2844	Nanoleq
+2845	Accelerated Systems
+2846	PB
+2847	Beijing ESWIN Computing Tech
+2848	TKH Security
+2850	Hygiene IQ
+2851	iRhythm Technologies
+2852	BeiJing ZiJie TiaoDong KeJi
+2853	NIBROTECH
+2854	Baracoda Daily Healthtech
+2855	Lumi United Technology
+2857	Tech-Venom Entertainment Pri
+2859	MAINBOT
+2860	ILLUMAGEAR
+2861	REDARC ELECTRONICS
+2862	MOCA System
+2863	Duke Manufacturing
+2864	ART SPA
+2865	Silver Wolf Vehicles
+2866	Hala Systems
+2867	ARMATURA
+2868	CONZUMEX INDUSTRIES PRIVATE
+2869	BH SENS
+2870	SINTEF
+2871	Omnivoltaic Energy Solutions
+2872	WISYCOM S.R.L
+2873	Red 100 Lighting
+2874	Impact Biosystems
+2875	AIC semiconductor
+2876	Dodge Industrial
+2877	REALTIMEID AS
+2878	ISEO Serrature S.p.a
+2879	MindRhythm
+2880	Havells India
+2881	Sentrax
+2882	TSI
+2883	INCITAT ENVIRONNEMENT
+2884	nFore Technology
+2885	Electronic Sensors
+2887	Gentex
+2888	NIO USA
+2889	SkyHawke Technologies
+2890	Nomono AS
+2891	EMS Integrators
+2892	BiosBob.Biz
+2893	Adam Hall
+2894	ICP Systems
+2895	Breezi.io
+2896	Mesh Systems
+2897	FUN FACTORY
+2898	ZIIP
+2899	SHENZHEN KAADAS INTELLIGENT 
+2900	Emotion Fitness &
+2901	H G M Automotive Electronics
+2902	BORA - Vertriebs &
+2903	CONVERTRONIX TECHNOLOGIES AN
+2904	TOKAI-DENSHI
+2907	Shenzhen ImagineVision Techn
+2909	Fujian Newland Auto-ID Tech
+2910	CELLCONTROL
+2911	Rivieh
+2912	RATOC Systems
+2913	Sentek
+2914	NOVEA ENERGIES
+2915	Innolux
+2916	NingBo klite Electric Manufa
+2917	The Apache Software Foundati
+2918	MITSUBISHI ELECTRIC AUTOMATI
+2920	Quha
+2921	Addaday
+2922	Dymo
+2923	Samsara Networks
+2924	Sensitech
+2925	SOLUM
+2926	React Mobile
+2928	JDRF Electromag Engineering
+2929	lilbit ODM AS
+2930	Geeknet
+2931	HARADA INDUSTRY
+2932	BQN
+2933	Triple W Japan
+2934	MAX-
+2935	Aixlink
+2936	FIELD DESIGN
+2937	Sankyo Air Tech
+2938	Shenzhen KTC Technology
+2939	Hardcoder
+2940	Scangrip A/S
+2941	FoundersLane
+2942	Offcode
+2943	ICU tech
+2944	AXELIFE
+2945	SCM Group
+2946	Mammut Sports Group
+2947	Taiga Motors
+2948	Presidio Medical
+2949	VIMANA TECH
+2950	Trek Bicycle
+2951	Ampetronic
+2952	Muguang Intelligent Lighting
+2953	Rotronic
+2954	Seiko Instruments
+2955	American Technology Componen
+2956	MOTREX
+2957	Pertech Industries
+2958	Gentle Energy
+2959	Senscomm Semiconductor
+2961	Alfen ICU
+2963	Hangzhou BroadLink Technolog
+2964	Dreem SAS
+2966	Telecom Design
+2967	SILVER TREE LABS
+2968	Gymstory
+2969	The Goodyear Tire & Rubber
+2970	Beijing Wisepool Infinite In
+2972	Komatsu
+2973	Sensoria Holdings
+2974	Audio Partnership
+2975	Group Lotus
+2976	Data Sciences International
+2977	Bunn-O-Matic
+2978	TireCheck
+2979	Sonova Consumer Hearing
+2980	Vervent Audio Group
+2981	SONICOS ENTERPRISES
+2982	Nissan Motor
+2983	hearX Group
+2984	GLOWFORGE
+2985	Allterco Robotics
+2986	Infinitegra
+2987	Grandex International
+2988	Machfu
+2989	Roambotics
+2990	Soma Labs
+2991	NITTO KOGYO
+2992	Ecolab
+2993	Beijing ranxin intelligence 
+2994	Fjorden Electra AS
+2995	Flender
+2996	New Cosmos USA
+2997	Xirgo Technologies
+2998	Build With Robots
+2999	IONA Tech
+3000	INNOVAG
+3001	SaluStim Group
+3002	Huso
+3003	SWISSINNO SOLUTIONS
+3004	T2REALITY SOLUTIONS PRIVATE
+3006	SAAB Aktiebolag
+3007	HIMSA II K/S
+3008	READY FOR SKY LLP
+3009	Miele & Cie
+3010	EntWick
+3011	MCOT
+3012	TECHTICS ENGINEERING
+3013	Aperia Technologies
+3014	TCL COMMUNICATION EQUIPMENT
+3015	Signtle
+3016	OTF Distribution
+3017	Neuvatek
+3018	Perimeter Technologies
+3019	Divesoft s.r.o
+3020	Sylvac
+3021	Amiko
+3022	Neurosity
+3023	LL Tec Group
+3024	Durag
+3025	Hubei Yuan Times Technology
+3026	IDEC
+3027	Procon Analytics
+3028	ndd Medizintechnik
+3029	Super B Lithium Power
+3030	Shenzhen Injoinic Technology
+3032	PURA SCENTS
+3034	Aardex
+3035	CHAR-BROIL
+3036	TWINKLY
+3037	Coroflo
+3038	Yale
+3039	WINKEY ENTERPRISE
+3040	Koizumi Lighting Technology
+3042	OTC engineering
+3043	Comtel Systems
+3044	Deepfield Connect
+3045	ZWILLING J.A. Henckels Aktie
+3046	Puratap
+3047	Fresnel Technologies
+3048	Sensormate
+3049	Shindengen Electric Manufact
+3050	Twenty Five Seven, prodaja i
+3051	Luna Health
+3053	CORAL-TAIYI
+3054	LINKSYS USA
+3055	Safetytest
+3056	KIDO SPORTS
+3057	Site IQ
+3058	Angel Medical Systems
+3059	PONE BIOMETRICS AS
+3061	T5 tek
+3062	greenTEG
+3063	Wacker Neuson SE
+3064	Innovacionnye Resheniya
+3066	CleanBands Systems
+3067	Dodam Enersys
+3068	T+A elektroakustik &
+3069	Esmé Solutions
+3070	Media-Cartec
+3071	Ratio Electric
+3072	MQA
+3073	NEOWRK SISTEMAS INTELIGENTES
+3074	Loomanet
+3075	Puff
+3076	Happy Health
+3077	Montage Connect
+3078	LED Smart
+3079	CONSTRUKTS
+3080	liability "Red"
+3081	Senic
+3082	Automated Pet Care Products
+3083	aconno
+3084	Mendeltron
+3085	Mereltron
+3086	ALEX DENKO
+3087	AETERLINK
+3088	Cosmed s.r.l
+3089	Gordon Murray Design
+3090	IoSA
+3091	Scandinavian Health
+3092	Fasetto
+3093	Geva Sol
+3094	TYKEE
+3095	SomnoMed
+3096	CORROHM
+3097	Arlo Technologies
+3098	Catapult Group International
+3099	Rockchip Electronics
+3100	GEMU
+3101	OFF Line Japan
+3102	EC sense
+3103	LVI
+3104	COMELIT GROUP S.P.A
+3105	Foshan Viomi Electrical Tech
+3106	Glamo
+3107	KEYTEC
+3108	SMARTD TECHNOLOGIES
+3109	JURA Elektroapparate
+3110	Performance Electronics
+3111	Pal Electronics
+3112	Embecta
+3113	DENSO AIRCOOL
+3114	Caresix
+3115	GigaDevice Semiconductor
+3116	Zeku Technology
+3117	OTF Product Sourcing
+3118	Easee AS
+3119	BEEHERO
+3120	McIntosh Group
+3121	KINDOO LLP
+3122	Xian Yisuobao Electronic Tec
+3123	Exeger Operations
+3124	BYD
+3125	Thermokon-Sensortechnik
+3127	SignalQuest
+3128	Noritz
+3129	TIGER
+3131	ORB Innovations
+3132	Classified Cycling
+3133	Wrmth
+3134	BELLDESIGN
+3135	Stinger Equipment
+3136	HORIBA
+3137	Control Solutions
+3138	Heath Consultants
+3139	Berlinger &
+3140	ONCELABS
+3141	Brose Verwaltung SE, Bamberg
+3143	Epsilon Electronics,lnc
+3144	VALEO MANAGEMENT SERVICES
+3145	twopounds
+3146	atSpiro ApS
+3147	ADTRAN
+3148	Orpyx Medical Technologies
+3149	Seekwave Technology
+3150	Tactile Engineering
+3151	SharkNinja Operating
+3152	Imostar Technologies
+3153	INNOVA S.R.L
+3154	ESCEA
+3155	Taco
+3156	HiViz Lighting
+3157	Zintouch
+3158	Rheem Sales
+3159	UNEEG medical A/S
+3160	Hykso
+3161	CYBERDYNE
+3162	Lockswitch Sdn Bhd
+3163	Alban Giacomo S.P.A
+3164	MGM WIRELESSS HOLDINGS
+3165	StepUp Solutions ApS
+3166	BlueID
+3167	Wuxi Linkpower Microelectron
+3168	KEBA Energy Automation
+3169	NNOXX
+3170	Phiaton
+3171	phg Peter Hengstler +
+3172	dormakaba Holding
+3173	WAKO
+3175	TRACKTING S.R.L
+3176	Emerja
+3178	CONSORCIO TRUST CONTROL - NE
+3179	GILSON SAS
+3180	SNIFF LOGIC
+3181	Fidure
+3182	Sensa
+3183	Parakey
+3184	SCARAB SOLUTIONS
+3185	BitGreen Technolabz Private
+3186	StreetCar ORV
+3187	Truma Gerätetechnik &
+3188	yupiteru
+3189	Embedded Engineering Solutio
+3191	TEAC
+3192	CHARGTRON IOT PRIVATE
+3193	Zhuhai Smartlink Technology
+3194	Triductor Technology
+3195	PT SADAMAYA GRAHA TEKNOLOGI
+3196	Mopeka Products
+3197	3ALogics
+3199	Rochester Sensors
+3200	CARDIOID - TECHNOLOGIES, LDA
+3201	Carrier
+3202	NACON
+3203	Watchdog Systems
+3204	MAXON INDUSTRIES
+3205	Amlogic
+3206	Qingdao Eastsoft Communicati
+3207	Weltek Technologies
+3208	Nextivity
+3209	AGZZX OPTOELECTRONICS TECHNO
+3210	A.GLOBAL
+3211	Heavys
+3212	T-Mobile USA
+3213	tonies
+3214	Technocon Engineering
+3215	Radar Automobile SalesCo
+3216	WESCO
+3217	Yashu Systems
+3218	Kesseböhmer Ergonomietechnik
+3219	Movesense
+3220	Baxter Healthcare
+3221	Gemstone Lights Canada
+3222	H+B Hightech
+3223	Deako
+3225	Vire Health
+3226	ALF
+3227	NTT sonority
+3228	Sunstone-RTLS Ipari Szolgalt
+3229	Ribbiot
+3231	Dragonfly Energy
+3232	BIGBEN
+3233	YAMAHA MOTOR
+3234	XSENSE
+3235	MAQUET
+3236	MITSUBISHI ELECTRIC LIGHTING
+3237	Princess Cruise Lines
+3238	Megger
+3239	Verve InfoTec
+3240	Sonas
+3241	Mievo Technologies Private
+3242	Shenzhen Poseidon Network Te
+3243	HERUTU ELECTRONICS
+3244	Shenzhen Shokz
+3245	Shenzhen Openhearing Tech
+3246	Evident
+3247	NEURINNOV
+3248	SwipeSense
+3249	RF Creations
+3250	SHINKAWA Sensor Technology
+3251	janova
+3252	Eberspaecher Climate Control
+3253	Racketry, d. o. o
+3254	THE EELECTRIC MACARON
+3255	Cucumber Lighting Controls
+3257	seca &
+3258	Ameso Tech Private
+3259	Emlid Tech Kft
+3261	Pricer
+3263	Forward Thinking Systems
+3264	Garnet Instruments
+3265	CLEIO
+3266	Anker Innovations
+3267	HMD Global
+3268	ABUS August Bremicker Soehne
+3269	Open Road Solutions
+3270	Serial Technology
+3271	SB C&S
+3272	TrikThom
+3273	Innocent Technology
+3274	Cyclops Marine
+3275	NOTHING TECHNOLOGY
+3276	Kord Defence
+3277	YanFeng Visteon Automotive E
+3278	SENOSPACE
+3279	Shenzhen CESI Information Te
+3280	MooreSilicon Semiconductor T
+3281	Imagine Marketing
+3282	EQOM SSC
+3283	TechSwipe
+3284	Reoqoo IoT Technology
+3285	Numa Products
+3286	HHO Digital Technology
+3287	Maztech Industries
+3288	SIA Mesh Group
+3289	Minami acoustics
+3290	Wolf Steel
+3291	Circus World Displays
+3292	Ypsomed
+3293	Alif Semiconductor
+3295	SHENZHEN CHENYUN ELECTRONICS
+3296	VODALOGIC
+3297	Regal Beloit America
+3298	CORVENT MEDICAL
+3299	Taiwan Fuhsing
+3300	Off-Highway Powertrain Servi
+3301	Amina Distribution AS
+3302	mwConnect
+3303	TAG HEUER
+3304	Dongguan Yougo Electronics
+3305	PEAG dba JLab Audio
+3306	HAYWARD INDUSTRIES
+3307	Shenzhen Tingting Technology
+3308	Pacific Coast Fishery Servic
+3309	CV. NURI TEKNIK
+3310	MadgeTech
+3311	POGS
+3312	THOTAKA TEKHNOLOGIES INDIA P
+3313	Midmark
+3315	Radio Sound
+3316	SOLUX
+3317	BOS Balance of Storage Syste
+3318	OJ Electronics A/S
+3319	TVS Motor
+3320	core sensing
+3321	Tamblue
+3322	Protect Animals With Satelli
+3323	Tyromotion
+3324	ElectronX design
+3326	Thule Group
+3329	KEEPEN
+3330	Rocky Mountain ATV/MC Jake W
+3331	MakuSafe
+3332	Bartec Auto Id
+3333	Energy Technology and Contro
+3334	doubleO
+3335	Datalogic S.r.l
+3336	Datalogic USA
+3337	Leica Geosystems
+3338	CATEYE
+3339	Research Products
+3340	Planmeca
+3341	C.Ed. Schulte Zylinderschlos
+3342	PetVoice
+3343	Timebirds Australia
+3344	JVC KENWOOD
+3346	Spartek Systems
+3347	MERRY ELECTRONICS
+3348	Merry Electronics
+3349	Spark
+3350	Nations Technologies
+3351	Akix S.r.l
+3352	Bioliberty
+3353	C.G. Air Systemes
+3354	Maturix ApS
+3355	RACHIO
+3356	LIMBOID
+3357	Electronics4All
+3358	FESTINA LOTUS
+3359	Synkopi
+3360	SCIENTERRA
+3361	Cennox Group
+3362	Cedarware
+3363	GREE Electric Appliances of 
+3364	Japan Display
+3365	System Elite Holdings Group
+3366	Burkert Werke &
+3367	velocitux
+3368	FUJITSU COMPONENT
+3369	MIYAKAWA ELECTRIC WORKS
+3370	PhysioLogic Devices
+3371	Sensoryx
+3372	SIL System Integration Labor
+3373	Cooler Pro
+3374	Advanced Electronic Applicat
+3375	Delta Development Team
+3376	Laxmi Therapeutic Devices
+3377	SYNCHRON
+3378	Badger Meter
+3379	Micropower Group
+3380	ZILLIOT TECHNOLOGIES PRIVATE
+3381	Universidad Politecnica de M
+3382	XIHAO INTELLIGENGT TECHNOLOG
+3383	Zerene
+3384	CycLock
+3386	Frost Solutions
+3387	Lone Star Marine
+3388	SIRONA Dental Systems
+3389	bHaptics
+3390	LUMINOAH
+3391	Vogels Products
+3392	SignalFire Telemetry
+3393	CPAC Systems
+3394	TEKTRO TECHNOLOGY
+3395	Gosuncn Technology Group
+3396	Ex Makhina
+3397	Odeon
+3398	Thales Simulation & Training
+3399	Shenzhen DOKE Electronic
+3400	Vemcon
+3401	Refrigerated Transport Elect
+3402	Rockpile Solutions
+3403	Soundwave Hearing
+3405	Optec
+3406	NIKAT SOLUTIONS PRIVATE
+3407	Movano
+3408	NINGBO FOTILE KITCHENWARE
+3409	Genetus
+3410	DIVAN TRADING
+3411	Luxottica Group S.p.A
+3412	ISEKI FRANCES
+3413	NO CLIMB PRODUCTS
+3414	Wellang
+3415	Nanjing Xinxiangyuan Microel
+3416	ifm electronic
+3417	HYUPSUNG MACHINERY ELECTRIC
+3418	Gunnebo Aktiebolag
+3419	Axis Communications
+3421	Stogger
+3422	Pella
+3423	SiChuan Homme Intelligent Te
+3424	Smart Products Connection
+3425	F.I.P. FORMATURA INIEZIONE P
+3426	MEBSTER s.r.o
+3427	SKF France
+3428	Southco
+3429	Molnlycke Health Care
+3430	Hendrickson USA , L.L.C
+3431	BLACK BOX NETWORK SERVICES I
+3432	Status Audio
+3433	AIR AROMA INTERNATIONAL
+3434	Helge Kaiser
+3435	Crane Payment Innovations
+3437	DYNAMOX S/A
+3438	Look Cycle International
+3439	Closed Joint Stock NVP BOLID
+3440	Kindhome
+3441	Kiteras
+3442	Earfun Technology
+3443	iota Biosciences
+3444	ANUME s.r.o
+3445	Indistinguishable From Magic
+3446	i-focus
+3447	DualNetworks
+3448	MITACHI
+3449	VIVIWARE JAPAN
+3450	Xiamen Intretech
+3451	MindMaze
+3452	BeiJing SmartChip Microelect
+3453	Taiko Audio
+3454	Daihatsu Motor
+3455	Konova
+3456	Gravaa
+3457	Beyerdynamic &
+3458	VELCO
+3459	ATLANTIC SOCIETE FRANCAISE D
+3460	Testo SE & KGaA
+3461	SEW-EURODRIVE &
+3462	ROCKWELL AUTOMATION
+3463	Quectel Wireless Solutions
+3465	Nanohex
+3466	Simply Embedded
+3467	Software Development
+3468	Ultimea Technology
+3469	RF Electronics
+3470	Optivolt Labs
+3471	Canon Electronics
+3472	LAAS ApS
+3473	Beamex
+3474	TACHIKAWA
+3475	HagerEnergy
+3477	Hunter Industries
+3478	NEOKOHM SISTEMAS ELETRONICOS
+3479	Zhejiang Huanfu Technology
+3480	E.F. Johnson
+3481	Caire
+3482	Yeasound Hearing Technology
+3483	Boxyz
+3484	Skytech Creations
+3485	Cear
+3486	Impulse Wellness
+3487	MML US
+3488	SICK
+3489	Fen Systems
+3490	KIWI.KI
+3491	Airgraft
+3492	HP Tuners
+3493	PIXELA
+3494	Generac
+3495	Novoferm tormatic
+3496	Airwallet ApS
+3497	Inventronics
+3498	Shenzhen EBELONG Technology
+3499	Efento
+3500	ITALTRACTOR ITM S.P.A
+3502	TITUM AUDIO
+3503	Hexagon Aura Reality
+3504	Invisalert Solutions
+3505	TELE System Communications
+3506	Whirlpool
+3507	SHENZHEN REFLYING ELECTRONIC
+3508	Franklin Control Systems
+3509	Djup
+3510	SAFEGUARD EQUIPMENT
+3511	Morningstar
+3512	Shenzhen Chuangyuan Digital 
+3513	CompanyDeep
+3514	Veo Technologies ApS
+3515	Nexis Link Technology
+3516	Felion Technologies
+3517	MAATEL
+3518	HELLA & KGaA
+3519	HWM-Water
+3520	Shenzhen Jahport Electronic 
+3521	NACHI-FUJIKOSHI
+3522	Cirrus Research
+3523	GEARBAC TECHNOLOGIES
+3524	Hangzhou NationalChip Scienc
+3525	DHL
+3526	Levita
+3527	MORNINGSTAR FX
+3528	ETO GRUPPE TECHNOLOGIES
+3529	farmunited
+3530	Aptener Mechatronics Private
+3531	GEOPH
+3532	Trotec
+3533	Astra LED
+3534	NOVAFON - Electromedical dev
+3535	KUBU SMART
+3536	ESNAH
+3537	OrangeMicro
+3538	Fresh n Rebel
+3539	Global Satellite Engineering
+3540	KOQOON &
+3541	BEEPINGS
+3542	MODULAR MEDICAL
+3543	Xiant Technologies
+3545	SCHELL &
+3546	Minebea Intec
+3547	KAGA FEI
+3548	AUTHOR-ALARM, razvoj in prod
+3549	Tozoa
+3550	SHENZHEN DNS INDUSTRIES
+3551	Shenzhen Lunci Technology
+3552	KNOG
+3553	Outshiny India Private
+3554	TAMADIC
+3555	Shenzhen MODSEMI
+3556	EMBEINT
+3557	Ehong Technology
+3558	DEXATEK Technology
+3559	Dendro Technologies
+3560	Vivint
+3561	General Laser
+3562	Kathrein Solutions
+3563	Fitz
+3564	ATEGENOS PHARMACEUTICALS
+3565	Flextronic
+3566	Safety Swim
+3567	SING SUN TECHNOLOGY
+3568	Woncan
+3569	iFLYTEK Technology
+3570	Weber-Stephen Products
+3571	hDrop Technologies
+3572	REEKON TOOLS
+3573	Delta Faucet
+3574	Mutrack
+3575	Hangzhou Zhaotong Microelect
+3576	Chengdu CSCT Microelectronic
+3577	Belusun Technology
+3578	Shenzhen Matches IoT Technol
+3579	Beidou Intelligent Connected
+3580	SOJI ELECTRONICS JOINT STOCK
+3581	BH Technologies
+3582	Haptech
+3583	WaveRF
+3584	SHENZHEN SOUNDSOUL INFORMATI
+3585	Wuhu Mengbo Technology
+3586	PROSYS DEV
+3587	Shenzhen eMeet technology
+3588	Doro
+3589	SUREPULSE MEDICAL
+3590	iodyne
+3591	Pinpoint
+3592	Heinrich Kopp
+3593	Evolutive Systems SL
+3595	Sounding Audio Industrial
+3596	Yuanfeng Technology
+3597	FrontAct
+3599	SenseWorks Tecnologia Ltda
+3600	Eko Health
+3601	Wanzl & KGaA
+3602	CLEVER LOGGER TECHNOLOGIES
+3603	ASYSTOM
+3604	Heilongjiang Tianyouwei Elec
+3605	Eastern Partner
+3606	Xiamen RUI YI Da Electronic 
+3607	Ad Hoc Electronics
+3608	Hangzhou Microimage Software
+3609	Hive-Zox International
+3610	Sensovo
+3611	Time Location Systems AS
+3612	SHENZHEN DIGITECH
+3613	Capte
+3614	9512-5837 QUEBEC
+3615	Blecon
+3616	CFLAB TEKNOLOJI TICARET SIRK
+3617	FOGO
+3618	HITO
+3619	MS kajak7 UG
+3620	Avedis Zildjian
+3621	Hangzhou Hikvision Digital T
+3622	LIHJOEN SPEED METER
+3623	NextSense
+3624	PatchRx
+3625	Flipper Devices
+3626	Huizhou Foryou General Elect
+3627	JE electronic a/s
+3628	9313-7263 Quebec
+3629	ECARX Tech
+3630	NIHON KOHDEN
+3631	ONWI
+3632	Primax Electronics
+3633	AlphaTheta
+3634	PACIFIC INDUSTRIAL
+3635	Crescent NV
+3636	Vermis, software solutions
+3637	SNAPPWISH
+3638	Cousins and Sears
+3639	CESYS Gesellschaft für angew
+3640	SLOC
+3641	IRES Infrarot Energie System
+3642	OFIVE
+3643	Swift IOT Tech
+3644	Viselabs
+3645	Walmart
+3646	VANBOX
+3647	Wiser Devices
+3648	WKD Labs
+3649	Asustek Computer
+3650	Z-ONE Technology
+3651	InnoVision Medical Technolog
+3652	QUANTATEC
+3653	Filo
+3654	SOUNDUCT
+3655	Hosiden Besson
+3656	KARLUNA MUHENDISLIK SANAYI V
+3657	Deone Communication & Techno
+3658	Nitto Denko
+3659	PUDSEY DIAMOND ENGINEERING
+3660	Luxshare Precision Industry
+3661	Brooksee
+3662	QSC
+3663	eBet Gaming Sytems
+3664	Zhejiang Desman Intelligent 
+3665	Dyaco International
+3666	Aquana
+3667	MINIRIG
+3668	After Technologies AS
+3669	New Cosmos Electric
+3670	INEPRO Metering
+3671	Altina
+3672	Urban Armor Gear
+3673	Loewe Technology
+3674	OmniWave Microelectronics Sh
+3675	Wuhu Hongjing Electronic
+3676	Rocoto
+3677	L.T.H. Electronics
+3678	SHAPER TOOLS
+3679	Ruptela
+3680	Ant Group
+3681	Queclink Wireless Solutions
+3682	GOKI
+3683	LAST LOCK
+3684	HuiTong intelligence
+3685	Daikin Industries
+3686	Shenzhen Baseus Technology
+3687	NEXT DEVICES LTDA
+3689	Megatronix Technology
+3690	Hyena
+3691	Shenzhen Goodocom Informatio
+3692	RIGH
+3695	OpConnect
+3696	Powerstick.com
+3697	ENABLEWEAR
+3699	Adventures of the Persistent
+3700	Rocky Radios
+3701	Le Touch Electronics
+3702	Guangdong Nanguang Photo&Vid
+3703	MOBILE TECH
+3704	HONG KONG COMMUNICATIONS
+3705	Neptune First OU
+3706	Vivago
+3707	Circular
+3708	final
+3709	Jiangsu XinTongda Electric T
+3710	Archon Controls
+3711	SZR-Dev UG
+3712	IQNEXXT Solutions
+3713	Guangdong Hengqin Xingtong T
+3714	CHEVALIER TECH
+3715	SPRiNTUS
+3716	Tymphany HK
+3717	TigerLight
+3718	Mercury Marine, a division o
+3719	OpenTech Alliance
+3720	Skewered Fencing
+3721	Brudden
+3722	Tele-Radio i Lysekil
+3723	Allgon
+3724	Gopod Group Holding
+3725	Celebrities Management Priva
+3726	Nobest
+3727	Avetos Design
+3728	RainMaker Solutions
+3729	Identita
+3730	Glutz
+3731	MIV ELECTRONICS
+3732	Tactrix
+3733	Viaanix
+3734	Skeed
+3735	kokoromil
+3736	Chromatic
+3737	Medibound
+3738	Scanbro OU
+3739	Panasonic Automotive Systems
+3740	Andrews & Arnold
+3741	Audinor ApS
+3742	Travelxp India Private
+3743	Owlet Baby Care
+3744	ENLESS WIRELESS
+3745	Culligan International
+3746	QIKCONNEX
+3747	OLIS ELECTRONICS
+3748	BiTECH Automotive
+3750	AMG Lab
+3751	BrickXter
+3752	Dongguan Trangjan Industrial
+3753	Makichie
+3755	STEYR Sport
+3756	Dynetrex Solutions
+3757	OPTRON
+3758	BHClears Microelectronics
+3759	Unfolded Circle ApS
+3760	FactorySense
+3761	WearNex
+3762	PRADCO Outdoor Brands
+3763	Zucchetti Axess
+3764	BLUEFIN DATA
+3765	Preseed Japan
+3766	Server Products
+3767	Embedded Solutions
+3770	THERMY
+3771	Asahi Denso
+3772	GP Acoustics International
+3773	Tongfang Health Technology
+3774	Deity Acoustic Technology
+3775	Schulte-Schlagbaum
+3776	WEST inx
+3777	Crossdoor
+3778	High Entropy
+3779	Herschel Infrared
+3780	PACIFIC MARINE BATTERIES
+3781	Alibaba
+3782	AuthGate
+3783	Canyon Bicycles
+3784	Codie
+3785	NeuroPace
+3786	NexRev
+3787	Zhong Shan City Richsound El
+3788	Shenzhen NEOECO Technology
+3789	Nature
+3790	Guangzhou Honor Microelectro
+3791	GGEC America
+3792	Gibson
+3793	VINYL MATT MEDIA
+3794	SHENZHEN BESTWAY ELECTRONICS
+3795	Lichens Innovation
+3796	Goerdyna Group
+3797	Relish Technologies
+3798	Quintessential Design
+3799	CS INSTRUMENTS &
+3800	DORAN MFG
+3801	Overhead Door
+3802	Kodira
+3803	ShenZhen BoYiChuangXin
+3804	Shenzhen Zoqin Technology
+3805	Ceridwen
+3806	Sony Honda Mobility
+3807	Dynaudio A/S
+3808	MAERSK CONTAINER INDUSTRY A/
+3809	MA MICRO
+3810	shenzhen hongever technology
+3811	TAMRON
+3812	CAPTEMP, LDA
+3813	Ambient Life
+3814	NOCTRIX HEALTH
+3815	RICKARD AIR DIFFUSION
+3816	SG Armaturen AS
+3817	PIXEL TI IND. E COM PROD ELE
+3818	Core Devices
+3819	Fujita Electric Works
+3820	Willow Laboratories
+3821	BBC Bircher
+3822	ELLEA INGEGNERIA UNIPERSONAL
+3823	Q42 Internet
+3824	Seaward Electronic
+3825	Wuxi Does IOT
+3827	Monil AS
+3829	LS ELECTRIC
+3830	Shenzhen Cyber Innovation Te
+3831	Trackonomy Systems
+3832	IoT Solutions Malta
+3833	Aseptico
+3834	Sensear
+3835	BLUEPROVIDERZ
+3836	Jano Life
+3837	PRIMES
+3838	Teledyne Instruments
+3839	Healthcare Technology
+3840	TRACERCO
+3841	HAPPLABS SOFTWARE PRIVATE
+3842	GE HEALTHCARE TECHNOLOGIES
+3843	Olibra
+3844	Lumen Labs
+3845	SHENZHEN GWSTAI TECHNOLOGY
+3846	SHENZHEN POWEROAK NEWENER
+3847	Tech OVN Private
+3848	Lezyne USA
+3849	ANC CHINA
+3850	LION GROUP
+3851	Brightway Innovation Intelli
+3852	Hitachi Industrial Equipment
+3853	Maennl Elektronik
+3854	IDEATRONIK Liability
+3855	caive
+3856	ShenZhen Doctors of Intellig
+3857	Deep and Steep
+3858	Endur ID
+3859	Freshape
+3860	PreEvnt
+3861	Oval
+3862	ADHD Friendly
+3863	RORENTECH
+3864	iKeyless
+3865	Shenzhen SuperSound Technolo
+3866	FLO SCIENCES
+3867	PalatiumCare
+3868	Edge Semiconductors
+3869	ZIMMERMANN PV-Steel Group &
+3870	Yolni
+3871	Ninebot Tech
+3872	Beijing Spring Creation Tech
+3873	Rokk
+3874	ONESPACE TECHNOLOGIES
+3875	Yuquan Semiconductor
+3876	Easy Measure
+3877	Sichuan Changhong Neonet Tec
+3878	Centromere Holding
+3879	Global Link Distribution
+3880	Amp Fit Israel
+3881	Trezor s.r.o
+3882	KELLER Druckmesstechnik
+3883	ElitEngineering
+3884	Vision Group
+3885	ClipsClips
+3886	BRITZ INTERNATIONAL
+3887	ThingCo
+3888	Opal Camera
+3889	TECHNOLOGIES FOR FREERIDE s.
+3890	FLINTEC UK
+3891	TETNET
+3892	NINGBO SHARKWARD ELECTRONICS
+3893	Audeze
+3894	NODER Joint Stock
+3895	Schueco International
+3896	GILL INSTRUMENTS
+3897	Seitron Spa
+3898	Southern Audio Services
+3899	SANWA NEWTEC
+3900	Mobile Technology Solutions
+3901	Vitio Medical S.L
+3902	Salyx Medical
+3903	Landig + Lava &
+3904	Health Data Insight C.I.C
+3905	BONX
+3906	LINKEDCHIP TECHNOLOGY
+3907	12mm Health Technology
+3908	MAVERICK ENERGY SOLUTIONS IN
+3909	Tactica Defense
+3910	Huizhou Meicanxin Electronic
+3911	Lodestar Technology
+3913	IYO
+3914	Mitsubishi Motors
+3915	desamisCo
+3916	JL WORLD
+3917	Qulinda
+3918	Ningbo Dooya Mechanic & Elec
+3919	G-Vision
+3920	Lantern Innovations
+3921	ebm-papst Mulfingen & KGaA &
+3922	Shenzhen Yunke Intelligent
+3923	Fledt & Meiton Marin
+3924	ContiTech Deutschland
+3925	Sensoteq
+3926	Astute Access Group
+3927	Silverlake Technologies
+3928	Shenzhen Guo-link Technology
+3929	Silicon Vandals
+3930	Vibe Energy
+3931	shanghai fudan electronics g
+3932	Micro Technology Services
+3933	Leapcraft ApS
+3934	WUXI WEIDA INTELLIGENT ELECT
+3935	ROBSON
+3937	HyolimXE
+3938	Kehwin Technologies
+3939	WATTER
+3940	SafeNow
+3941	CZV
+3942	BIGREDBEE
+3943	White Eagle Sonic Technologi
+3944	Navico
+3945	Ancoe Industry
+3946	Roam Devices
+3947	Skywalk
+3948	Biogents
+3949	MODRETRO
+3950	iSi Wearable Safety
+3951	onanoff
+3952	TECHFLITTER SOLUTIONS PRIVAT
+3953	PIRITIZ
+3954	FLORLINK
+3955	Keycafe
+3956	Sperry Labs
+3957	Senseonics
+3958	simatec
+3959	CROSS BRAIN
+3960	Also
+3961	Walter Mueller for Industria
+3962	SHENZHEN GUANG QI GUO CHUANG
+3963	SKYROAM
+3964	Polk Audio
+3965	eQ-3
+3966	shenzhen Holyiot Technology
+3967	Badass eBikes
+3968	Hydro Electronic Devices
+3969	IN Phase International
+3970	Amon
+3971	Calpeda S.p.A
+3972	KT Micro
+3973	Hangzhou Sciener Smart Techn
+3974	Lakecrest
+3975	Anacove
+3976	Kohler Ventures
+3977	STOREIO TECHNOLOGIES
+3978	Innogando S.L
+3979	A.Y. McDonald Mfg
+3980	ROYAL PARTS
+3981	JUREN
+3982	Biceek
+3983	SIGNUM INTELLIGENCE
+3984	MOBI7 TECNOLOGIA EM MOBILIDA
+3985	Valostra Digital Ventures LL
+3986	Ethos Group
+3987	Aktiebolaget Ebeco
+3988	IDX
+3989	Dongguang Huasoo Automation 
+3990	SEIKOIST
+3991	SPX Aids to Navigation
+3992	Fitnexa
+3993	DEZINE GROUP
+3994	Eiritsu Electronics Industry
+3995	Hanshow Technology
+3996	WePower Technologies
+3997	IRTrans
+3998	Hibino
+3999	Seiko Future Creation
+4000	DP IOT
+4001	PALRED RETAIL PRIVATE
+4002	BIA NEUROSCIENCE
+4003	B.E.G. Brueck Electronic
+4004	Nice Spa
+4005	Avanos Medical
+4006	Ugreen Group
+4007	spheretek japan
+4008	Senti Technologies Private
+4009	Ranch Systems
+4010	Suzhou Fanxi Technology
+4011	Geo Radar AI Private
+4012	Flitsmeister
+4013	The AI Toy
+4014	Capacite
+4015	Terasite Technologies
+4016	General Resistance
+4017	Avivomed
+4018	PLAUD
+4019	Hooked Society
+4020	StoneDevices
+4021	Hangzhou Nano IC Technologie
+4022	TQ-Systems
+4023	Hapn Holdings
+4024	SITERWELL ELECTRONICS
+4025	Shenzhen Mutual Technology
+4026	Cosonic Intelligent Technolo
+4027	Rollease Acmeda
+4028	ATANS TECHNOLOGY
+4029	Locus Robotics
+4030	TaigaIoT
+4031	Tridentify
+4032	Littlebird Connected Care
+4033	Air Automotive tracking
+4034	ISSPRO
+4035	Shenzhen Jimi loT
+4036	FulScience Automotive Electr
+4037	Hypershell
+4038	ASD Lighting
+4039	Pharox
+4040	Eforthink Technology
+4041	Zirbel Bike
+4042	Legato Audio
+4043	Biocorp Production
+4044	Neurotherapeutics
+4045	Wimate Technology Solutions 
+4046	NOJA Power
+4047	Nestlab AS
+4048	Stark Future SL
+4049	Auranova
+4050	Domteknika
+4051	YDIIT
+4052	QRITAGYA LLP
+4053	Telemacy
+4054	LIOTYS
+4055	Hondata
+4056	SIVA Inotec
+4057	REMDEVICE S.R.L
+4058	NIVELCO PROCESS CONTROL
+4060	Beijing Hongsi Electronic Te
+4154	FOSS Analytical A/S
+4157	Blahaj
+4158	Nextorage
+4159	infyni
+4160	Raspberry Pi
+4161	Shenzhen Huasheng Jiaye Tech
+4162	Namara Water Technologies
+4163	Shanghai Holychip Electronic
+4164	Rotarex
+4165	VOTRONIC Elektronik-Systeme
+4166	EXELIO S.R.L
+4167	Yamaha Motor eBike Systems
+4168	Ferrari s.p.a
+4169	Anhui Ubico Advanced Manufac
+4170	Mueller-BBM Rail Technologie
+4171	Yoto
+4172	LAUMAS Elettronica S.r.l
+4173	BUND MEDIA
+4174	LSC Control Systems
+4175	Safety Lighting Research
+4176	Hangzhou Sneuro Medical
+4177	UnlimitedIRL
+4178	CHOZEN International
+4179	Sensorworx
+4180	Romcor
+4181	NewNet
+4182	CLM-Solutions
+4183	RSA Security
+4184	GravitySpace Technology
+4185	Shenzhen Shuye Technology
+4186	ArjoHuntleigh
+4187	Fairbanks Scales
+4188	YANMAR HOLDINGS
+4189	Williams Sound
+4190	Zuuka
+4191	Chip-pump Microelectronics
+4192	TOMOE VALVE
+4193	VCS Vision Control Solutions
+4194	Framason Audio
+4195	Field Line Automation
+4196	Shearwater Research
+4197	HIGH HIT ENTERPRISE
+4198	Algiz AS
+4199	Shenzhen FHX Precision Hardw
+4200	Hotron
+4201	Remoticom
+4202	OSKEY
+4203	GORDON MURRAY GROUP
+4204	Global Electronics
+4205	Rokstar Holdings
+4206	STRYDE
+4207	Prosaris Solutions
+4208	TLV
+4209	IZYBAT
+4210	ALTESSA SOLUTIONS
+4211	Hong Kong Future lntelligent
+4212	CenTrak
+4213	TM-TECHNOLOGIES, JSC
+4214	ALPHADIF
+4215	Shenzhen Muyu Technology
+4216	augment AI
+4217	Digimax Innovative Products
+4218	CodaHD
+4219	E.J. Brooks
+4220	Martin.Care
+4221	IMPACT-BZ
+4222	Belford investment holdings
+4223	Anton Paar ConsumerTec
+4224	Knit Sound
+4225	Australis Scientific
+4226	AIR PRODUCTS AND CHEMICALS
+4227	SYSTEM LOCO
+4228	24x8
+4229	FUTURE INTELLIGENCE TECHNOLO
+4230	M3SH TECHNOLOGY
+4231	Matisse Interactif
+4232	Sesame AI
+4233	DEER MANAGEMENT SYSTEMS
+4234	Grayhill
+4235	PERUN TECH SP. Z O.O
+4236	Tiny Displays
+4237	DEWINE Labs
+4238	Industrial Computing
+4239	SkyCell
+4240	NAGANO KEIKI
+4241	COSEL ELEKTRONIK OTOMASYON S
+4242	BXB DIGITAL
+4243	Mindspire
+4244	Personal Products
+4245	CardiaMetrics
+4246	Aktv8
+4247	Knox Associates
+4248	smart-TEC &
+4249	Selco
+4250	MONNIT
+4251	Tensoli
+4252	KIBLE
+4253	terumo
+4254	SHIBAURA ELECTRONICS
+4255	Shenzhen Hali-Power Industri
+4256	inContAlert
+4257	flexlog
+4258	Audio Research
+4259	BQT Solutions
+4260	RAPIDISE TECHNOLOGY PRIVATE
+4261	Cebreo Medical A/S
+4262	Lightnovo ApS
+4263	Pedigree Technologies
+4264	Zhejiang Wanyou Intelligent 
+4265	Mallow
+4266	Sigenergy Technology
+4267	ObjectSpectrum
+4268	ATsens
+4269	CoreHW Semiconductor
+4270	Raycon
+4271	Hangzhou SDIC Microelectroni
+4272	VSC Synapse
+4273	Senops Tracker
+4274	Shenzhen Xunzong Zhilian Tec
+4275	HOSEOTELNET
+4276	Solabs Technology
+4277	SpartanLync Technologies
+4278	SHENZHEN CHINA MICRO SEMICON
+4279	Fosilicon
+4280	Palarum
+4281	CYNC Labs
+4282	Noble HiFi
+4283	VERGESENSE
+4284	Harley-Davidson Motor
+4285	Variowell Development
+4286	UNIVERSAL REMOTE CONTROL
+4287	All Inspire Health
+4288	Minda
+4289	Shenzhen ECO-NEWLEAF
+4290	SainStore Technology
+4291	TECH FASS s.r.o
+4292	OPICA
+4293	Cardinal Scale Mfg
+4294	Piscisea Tech
+4295	CHIYODA TECHNOL
+4296	mylife Diabetes Care
+4297	Tractian Technologies
+4298	FairPhone
+4299	The90
+4300	Linde
+4301	Kumho Tire
+4302	Inito Health
+4303	Tempur World
+4304	Band24
+4305	Acer
+4306	Hehku
+4307	AGCO
+4308	Victor Hasselblad
+4309	IntelliDesign
+4310	UltronSMART
+4311	Arashi Vision
+4312	Westfalen Aktiengesellschaft
+4313	Liebherr-Hausgeraete
+4314	SKAIChips
+4315	SZ Avinox Innovation
+4316	Spectra Precision
+4317	Triumph Designs
+4318	Gastron
+4319	Hawkeye Surgical Lighting
+4320	Arnold & Richter Cine Techni
+4321	Neurable
+4322	CAREHAWK
+4323	Vybe Audio
+4324	Smart Technologies ULC
+4325	Durin
+4326	KWANG YANG MOTOR
+4327	Placenet Internet of Places 
+4328	Liontron &
+4329	Hankook Tire & Technology
+4330	Guangdong Youhong Medical Te
+4331	Fontaine Fifth Wheel
+4332	ZELP
+4333	BRITA SE
+4334	Shanghai XYLink
+4335	Keto-Check
+4336	RFID N PRINT
+4337	Ralston Instruments
+4338	CHIGEE TECHNOLOGY
+4339	EURODIMA & CoKG
+4340	SUPERARK
+4341	Shenzhen DeepX Technology
+4342	Pressure Systems Internation
+4343	HEX INNOVATE
+4344	IONLINE INTERNET SERVICE PRO
+4345	Even Realities
+4346	QPlay
+4347	Hydratune Australia
+4348	CITECH
+4349	Neurabody
+4350	Daisen Electronic Industrial
+4351	Sonus Faber spa
+4352	miThings
+4353	Nearfaces UG
+4354	Temple Private
+4355	BRISANT SECURE
+4356	Daiichi Elektronik Sanayi ve
+4357	Cirrus Design
+4358	Flicfit
+4359	Optrel
+4360	BEMER Int
+4361	Hamodaz
+4362	OnRace Motorsports
+4363	SIGMA
+4364	rescuetrack
+4365	ARETA AI
+4366	Gigawit Electronics
+4367	Nylint
+4368	Hamaton
+4369	RAPSODO
+4370	JustTec
+4371	ONXMAPS
+4372	Metabowerke
+4373	Thermia Aktiebolag
+4374	ALLRA
+4375	Tive
+4376	Villeroy & Boch
+4377	TSUKURUBAI LIABILITY
+4378	BOKE Drivers
+4379	DIGITANIMAL S.L
+4380	Techavtomatica
+4381	Commodore International
+4382	DS TAGS Group
+4383	iAppliance
