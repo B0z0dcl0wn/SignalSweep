@@ -24,6 +24,12 @@ All notable changes to SignalSweep are recorded here.
   "Native BLE Connect Failed: requestDevice cancelled." toast; it now just
   closes. All three verified on the OnePlus (location off via `adb`, the
   permission revoked and marked don't-ask-again with `pm set-permission-flags`).
+- **The Connect sheet says why a board can be missing from the picker.** A
+  board in receive-only does not advertise, and one still connected to another
+  phone has stopped advertising, so both are simply absent from the list, and
+  the Android picker cannot say whether it found anything at all. A standing
+  line under the Bluetooth button points at the BOOT tap (2 minutes visible)
+  and the other-phone case, so it is there when you need it and never nags.
 
 ### Fixed — The tracker category means something again
 
