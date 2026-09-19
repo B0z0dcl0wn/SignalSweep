@@ -2702,6 +2702,32 @@
             );
         }
 
+        // Plugin and browser errors are written for developers ("Connection
+        // failed with GATT_ERROR.", "IO_ERROR"). Each known one becomes what to
+        // do next; anything unknown keeps its raw text so it can still be
+        // reported. `what` names the step for that fallback.
+        const FRIENDLY_ERRORS = [
+            [/timeout|Connection failed|GATT|Service discovery/i,
+                "The board didn't answer. Move closer and try again; if it keeps failing, unplug the board for a few seconds."],
+            [/Not connected|disconnected|DEVICE_DISCONNECTED|NO_DEVICE/i,
+                "Can't reach the board. Check it has power and is close by, then tap Connect."],
+            [/not initialized/i, "Bluetooth wasn't ready yet. Tap Connect again."],
+            [/BLE is not (available|supported)|Bluetooth is not supported/i,
+                "This phone doesn't support Bluetooth LE. Use the USB cable instead."],
+            [/PERMISSION_DENIED|NEEDS_PERMISSION/,
+                'USB access was refused. Unplug the cable, plug it back in and tap OK when Android asks.'],
+            [/IO_ERROR|PORT_NOT_OPEN|INVALID_STATE/,
+                'The cable link failed. Unplug the board, plug it back in and tap Connect.'],
+            [/already open|Failed to open/i,
+                'The port is busy. Close anything else using it (a serial monitor, another tab), then try again.'],
+        ];
+        function friendlyError(what, err) {
+            const raw = String((err && (err.code || err.message)) || err);
+            const full = raw + ' ' + String((err && err.message) || '');
+            const hit = FRIENDLY_ERRORS.find(([re]) => re.test(full));
+            return hit ? hit[1] : `${what} failed: ${raw}`;
+        }
+
         async function connectNativeBluetooth() {
             const pulseDot = document.getElementById('pulseDot');
             const connStatusText = document.getElementById('connStatusText');
@@ -2762,7 +2788,7 @@
                     try { await window.BleClient.openAppSettings(); } catch (e) {}
                     return;
                 }
-                showToast(`Native BLE Connect Failed: ${msg}`, '✕');
+                showToast(friendlyError('Bluetooth connect', err), '✕');
             }
         }
 
@@ -2851,7 +2877,7 @@
                 console.error('Web Bluetooth connection failed:', err);
                 updateConnectionUI(false);
                 if (err.name !== 'NotFoundError') {
-                    showToast(`BLE Connect Failed: ${err.message || err}`, '✕');
+                    showToast(friendlyError('Bluetooth connect', err), '✕');
                 }
             }
         }
@@ -2968,7 +2994,7 @@
                     const { granted } = await window.UsbSerial.hasPermission({ deviceId: dev.deviceId });
                     if (!granted) {
                         updateConnectionUI(false);
-                        showToast('USB permission denied', '✕');
+                        showToast('USB access was refused. Unplug the cable, plug it back in and tap OK when Android asks.', '✕');
                         return;
                     }
                 }
@@ -3007,7 +3033,7 @@
                 console.error('USB connect failed:', err);
                 usbPortId = null;
                 updateConnectionUI(false);
-                showToast(`USB Connect Failed: ${(err && (err.code || err.message)) || err}`, '✕');
+                showToast(friendlyError('USB connect', err), '✕');
             }
         }
 
@@ -3063,7 +3089,7 @@
                 console.error('WebSerial connection failed:', err);
                 updateConnectionUI(false);
                 if (err.name !== 'NotFoundError') {
-                    showToast(`Serial Connect Failed: ${err.message || err}`, '✕');
+                    showToast(friendlyError('Serial connect', err), '✕');
                 }
             }
         }
@@ -3144,7 +3170,7 @@
                     return true;
                 } catch (err) {
                     console.error('BLE write error:', err);
-                    showToast(`BLE Transmit Error: ${err.message}`, '✕');
+                    showToast(friendlyError('Sending to the board', err), '✕');
                     return false;
                 }
             } else if (connectionType === 'USB' && usbPortId) {
@@ -3156,14 +3182,14 @@
                     return true;
                 } catch (err) {
                     console.error('USB write error:', err);
-                    showToast(`USB Transmit Error: ${(err && (err.code || err.message)) || err}`, '\u2715');
+                    showToast(friendlyError('Sending to the board', err), '\u2715');
                     return false;
                 }
             } else if (connectionType === 'SERIAL' && serialWriter) {
                 try { await serialWriter.write(jsonStr); return true; }
                 catch (err) {
                     console.error('Serial write error:', err);
-                    showToast(`Serial Transmit Error: ${err.message}`, '✕');
+                    showToast(friendlyError('Sending to the board', err), '✕');
                     return false;
                 }
             } else {
@@ -3379,6 +3405,12 @@
                 results.droneDetail = detailLine(drone, categoryOf('Drone')).indexOf('X7') > 0;
                 // A device-chosen name must never reach the DOM as markup.
                 results.escapesName = esc('<img src=x onerror=1>').indexOf('<') === -1;
+                // Known plugin errors say what to do; unknown ones keep their text.
+                results.friendlyErrors =
+                    /didn't answer/.test(friendlyError('x', new Error('Connection failed with GATT_ERROR.'))) &&
+                    /reach the board/.test(friendlyError('x', new Error('Not connected to device.'))) &&
+                    /cable link/.test(friendlyError('x', { code: 'IO_ERROR', message: 'Broken pipe' })) &&
+                    friendlyError('USB connect', new Error('weird')) === 'USB connect failed: weird';
                 // Location badge states. "Off" and "no fix" mean opposite
                 // things -- one is resting, one is a problem -- and a vague fix
                 // has to be called out rather than shown as a good one.

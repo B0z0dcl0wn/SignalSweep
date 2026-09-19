@@ -30,6 +30,16 @@ All notable changes to SignalSweep are recorded here.
   the Android picker cannot say whether it found anything at all. A standing
   line under the Bluetooth button points at the BOOT tap (2 minutes visible)
   and the other-phone case, so it is there when you need it and never nags.
+- **Connect and send errors say what to do, not what the plugin said.**
+  "Native BLE Connect Failed: Connection failed with GATT_ERROR." and
+  "USB Connect Failed: IO_ERROR" were developer text. `friendlyError()` maps
+  the known plugin and browser errors (BLE timeouts and GATT failures, a lost
+  link, USB permission and I/O errors, a busy serial port) to a next step, and
+  keeps the raw text for anything it does not recognise so an odd failure can
+  still be reported. Verified on the OnePlus by parking the S3 in its ROM
+  bootloader (`esptool --after no-reset`) between the picker listing it and
+  the tap: "Can't reach the board. Check it has power and is close by, then
+  tap Connect." The in-app self-test pins the mapping (`friendlyErrors`).
 
 ### Fixed — The tracker category means something again
 
