@@ -53,6 +53,24 @@ patterns, which is the shape the signature rules here took.
 the open. This detector finds cameras; DeFlock is where knowing about them
 turns into something useful. Verify with your own eyes before you submit.
 
+## Apple Continuity / Find My
+
+**[furiousMAC/continuity](https://github.com/furiousMAC/continuity)** — the
+reverse-engineered wire format for Apple's Continuity BLE protocol, and the
+companion paper *Handoff All Your Privacy* (Martin, Alpuche, Bodeman, Brown,
+Fenske, Foppe, Mayberry, Rye, Sipes, Teplov).
+
+Their documentation is why a row can say "Apple: iPhone/iPad/Mac (active,
+screen on)" instead of an anonymous random MAC: the message-type bytes, the
+Nearby Info status/activity nibbles and the data flags are all theirs. It is
+also why our tracker category means something — Find My sends a 2-byte status
+ping from *every* Apple device and a 25-byte payload only from something
+separated from its owner, and until we read their work we matched both.
+
+Their dissector is GPL-2.0-only, which is not compatible with this project's
+GPL-3.0-or-later, so **no code was taken**. We implemented our own decoder from
+the documented field meanings and verified every value against our own captures.
+
 ## Drone Remote ID
 
 **[opendroneid-core-c](https://github.com/opendroneid/opendroneid-core-c)** —

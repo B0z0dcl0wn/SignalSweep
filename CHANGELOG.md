@@ -4,6 +4,65 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Fixed — The tracker category means something again
+
+- **A Find My hit now requires the 25-byte payload.** Apple sends message type
+  `0x12` in two shapes: a 2-byte status ping that *every* iPhone, iPad and Mac
+  emits constantly, and the 25-byte offline-finding payload carrying the
+  rotating public key — i.e. an item findable while **separated from its
+  owner**. Matching on the type byte alone called both a tracker. Measured
+  across 18 bench and field captures: **1095 distinct MACs sent the short form,
+  64 sent the long one**, so a rural convenience store reported 22 AirTags that
+  were the customers' phones. A category that fires on every phone in the room
+  is worse than no category at all. Accepted tradeoff: an AirTag sitting beside
+  its owner advertises the short form and is not flagged — but that is the case
+  where the owner is standing next to you anyway. A planted tracker is
+  separated by definition.
+
+### Added — Trackers beyond Apple
+
+- **Tile, Samsung SmartTag and Google Find My Device are detected too.** Apple
+  was the only finding network the detector knew, so a stalker using a Tile was
+  invisible to a device whose whole purpose is finding planted trackers. These
+  three need no length trick like Apple's: no phone advertises them, so the
+  service is the detection — Tile `0xFEED`, Samsung `0xFD5A` (registered in
+  offline finding) and `0xFD59` (still in setup).
+- **Google FMDN announces its own unwanted-tracking mode.** `0xFEAA` service
+  data with frame byte `0x40` is a finding beacon; **`0x41` means the tracker
+  has entered unwanted-tracking-protection mode** — it is signalling that it may
+  be following someone. Eddystone shares `0xFEAA` with frame types
+  `0x00`/`0x10`/`0x20`/`0x30`, so the frame byte is what separates a finding
+  beacon from a shop beacon; those are not flagged.
+- **Measured against our own captures:** the Tile arm fires on the bench Tile
+  keychain (61 adverts across six captures on three days, up to -40 dBm) plus
+  two more Tiles in the field, and one real FMDN tag appeared at -89 dBm with
+  frame `0x40`. **The Samsung arm is spec-only** — no SmartTag has ever crossed
+  a capture, and the code says so rather than implying it is proven.
+
+### Added — Apple devices say what they are
+
+- **Continuity message types are decoded into a plain-language label**:
+  "Apple: AirPlay target (TV/HomePod/Mac)", "Apple: AirPrint (printer)",
+  "Apple: Handoff", "Apple: Watch (Magic Switch)", "Apple: tethering source
+  (hotspot)". Nearby Info (`0x10`) goes further and reports the activity nibble:
+  active with the screen on, idle, just used, video playing, audio while
+  locked, on a call, driving.
+- **It is a label, not a detection.** No confidence, no category — so these rows
+  never beep, never appear while the filter is on, and never count toward
+  Surveillance. Any real signature rule wins the name. The point is that the
+  filter-off view stops being a wall of anonymous random MACs.
+- **Unknown stays unknown.** Message types `0x01`, `0x13` and `0x16` are live in
+  our captures (120, 11 and 196 distinct MACs) but appear in no published table,
+  so they read "Apple device" rather than a guess. Likewise the Nearby Info
+  activity codes outside the documented set.
+- **Lid open/closed is deliberately NOT reported.** macOS stops advertising
+  Nearby messages when the lid shuts, which is indistinguishable from powered
+  off, asleep or out of range — presence is not a state field, and a badge built
+  on it would be a guess.
+- Field meanings come from the furiousMAC Continuity project (GPL-2.0, so no
+  code was taken — see `CREDITS.md`) and every value was cross-checked against
+  our own captures.
+
 ### Fixed — The screen stays on for the whole cable connection
 
 - **The wake lock now covers the entire USB/serial connection, not just a
