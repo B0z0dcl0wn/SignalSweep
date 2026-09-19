@@ -75,6 +75,22 @@ All notable changes to SignalSweep are recorded here.
   two more Tiles in the field, and one real FMDN tag appeared at -89 dBm with
   frame `0x40`. **The Samsung arm is spec-only** — no SmartTag has ever crossed
   a capture, and the code says so rather than implying it is proven.
+- **What a Tile looks like, from 149 captures** (checked against lesleyxyz's
+  node-tile protocol research). Every Tile advertises the `0xFEED` service
+  UUID plus `0xFEED` service data: `02 00` and 8 bytes that change. The bench
+  Tile, set up on an account and now separated from its owner, sent 2231
+  adverts over three days on **one static address** at about one every 4 s.
+  Field Tiles showed a new address every time. node-tile says a Tile that was
+  never activated advertises `0xFEEC` instead; none of the 149 captures
+  contains `0xFEEC`, so there is nothing to test that on yet, and the detector
+  still alerts on any `0xFEED`. Skullcandy headsets with Tile built in (Crusher
+  Evo, company ID `0x07C9`) advertise `0xFEED` too, and they list as Tile
+  Tracker, which is correct: they can be found on the Tile network.
+- **A Tile cannot be rung.** Ring needs an authkey that only the owner's Tile
+  account hands out (a cloud login, then an HMAC-authenticated channel over the
+  `9d410018`/`9d410019` characteristics). A tracker planted on you is on
+  someone else's account, and SignalSweep will not log in to any cloud
+  service, so there is no Ring button for Tiles and none is planned.
 
 ### Added — Apple devices say what they are
 

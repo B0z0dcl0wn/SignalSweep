@@ -53,6 +53,13 @@ patterns, which is the shape the signature rules here took.
 the open. This detector finds cameras; DeFlock is where knowing about them
 turns into something useful. Verify with your own eyes before you submit.
 
+## Tile
+
+**[lesleyxyz/node-tile](https://github.com/lesleyxyz/node-tile)**: reverse-engineered
+research into the Tile BLE protocol. It is where we learned that a Tile that was
+never activated advertises `0xFEEC`, and that ringing a Tile needs the owner's
+account authkey. We used the facts only; none of its code is in this tree.
+
 ## Apple Continuity / Find My
 
 **[furiousMAC/continuity](https://github.com/furiousMAC/continuity)** — the
