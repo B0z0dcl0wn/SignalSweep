@@ -12,6 +12,34 @@ All notable changes to SignalSweep are recorded here.
   straight on to the device picker. Deny opens the system Bluetooth settings
   page and stops, rather than scanning a radio that is off. Verified on the
   OnePlus with Bluetooth disabled over `adb`: both branches behave as described.
+- **Location switched off no longer reads as a slow GPS lock.** `getFix()` used
+  to show "Locating…" then "No fix", which sends you outside to wait for a fix
+  that can never arrive. It now checks the system switch first, shows
+  "Location is off" in the status strip, and opens the location settings page.
+- **A refused Nearby devices permission points you at the fix.** After one
+  refusal Android stops asking, so every Connect ended in a raw
+  "Permission denied." toast. The app now says which permission it needs and
+  opens its own App info page, where it can be allowed again.
+- **Closing the device picker is not an error.** It used to raise a red
+  "Native BLE Connect Failed: requestDevice cancelled." toast; it now just
+  closes. All three verified on the OnePlus (location off via `adb`, the
+  permission revoked and marked don't-ask-again with `pm set-permission-flags`).
+- **The Connect sheet says why a board can be missing from the picker.** A
+  board in receive-only does not advertise, and one still connected to another
+  phone has stopped advertising, so both are simply absent from the list, and
+  the Android picker cannot say whether it found anything at all. A standing
+  line under the Bluetooth button points at the BOOT tap (2 minutes visible)
+  and the other-phone case, so it is there when you need it and never nags.
+- **Connect and send errors say what to do, not what the plugin said.**
+  "Native BLE Connect Failed: Connection failed with GATT_ERROR." and
+  "USB Connect Failed: IO_ERROR" were developer text. `friendlyError()` maps
+  the known plugin and browser errors (BLE timeouts and GATT failures, a lost
+  link, USB permission and I/O errors, a busy serial port) to a next step, and
+  keeps the raw text for anything it does not recognise so an odd failure can
+  still be reported. Verified on the OnePlus by parking the S3 in its ROM
+  bootloader (`esptool --after no-reset`) between the picker listing it and
+  the tap: "Can't reach the board. Check it has power and is close by, then
+  tap Connect." The in-app self-test pins the mapping (`friendlyErrors`).
 
 ### Fixed — The tracker category means something again
 
