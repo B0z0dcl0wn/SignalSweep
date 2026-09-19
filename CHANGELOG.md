@@ -89,9 +89,13 @@ All notable changes to SignalSweep are recorded here.
   tracked-target count flat at 41–44 throughout. At that rate an S3 wired into a
   vehicle exhausts its internal heap in about 29 hours. It never crashed during
   the run, which is the point: a leak this steady fails silently and late.
-  With the fix on the C5, the same harness measured **+0.02 KB/h over 11 h 46**
-  — flat. Only the shared scan setup is common, so the C5's bench-measured
-  interval/window stay inside the `#if`.
+  With the fix, a 10 h 35 min soak of both boards measured **+0.04 KB/h on the
+  C5** (flat) and **-0.78 KB/h on the S3** — an 8x improvement, zero restarts on
+  either board. The S3's remaining drift is small and steady (191.2 → 182.9 KB
+  while the target count *fell* 34 → 29), which is roughly nine days to
+  exhaustion rather than 29 hours; the rest is a known, tracked follow-up rather
+  than a mystery. Only the shared scan setup is common, so the C5's
+  bench-measured interval/window stay inside the `#if`.
 - **`setMaxResults(0)` on the C5 scan.** NimBLE 2.x keeps every scan result by
   default (`0xFF`), and the results are only cleared when a scan *completes* —
   the detector's scan never does, because it runs continuously. Every rotating
