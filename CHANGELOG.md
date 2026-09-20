@@ -4,6 +4,41 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Added — Answer the pin prompt for a whole category
+
+- The prompt was Yes or No, one device at a time. The moment you know you do
+  not care about a whole category *is* that prompt, and making it a dead end
+  sent you to Settings to say what you had already decided. A third answer —
+  **"No — and stop asking about trackers"** — names the category and silences
+  it there.
+- `pinMute` composes with `pinLens` rather than replacing it: the band tab
+  picks *one* category to ask about, this subtracts categories from Everything.
+  Muting drops every queued device of that kind too, or you tap through the
+  backlog you just refused. The button's noun comes from a fixed per-key table,
+  never `cat.label` — `other` labels itself with whatever vendor string tripped
+  it ("Hacking gear"), and a button reading "stop asking about Hacking gear"
+  would quietly mute every unrecognised category with it.
+- The test sits *before* `handledMacs`, so un-muting brings devices back rather
+  than skipping them for the rest of the session, and **Settings › Recording
+  lists what is muted with a tap to undo** — a one-tap field decision has to be
+  visible somewhere, or it is a prompt that mysteriously stopped working weeks
+  later. The mute silences the prompt only: the category is still detected,
+  still listed, still beeped.
+
+### Fixed — Settings › Signatures showed nothing, and its one button threw
+
+- The page was a sentence and an "Edit signature rules" button opening a raw
+  JSON textarea. The button still called `getElementById('settings-modal')`,
+  which stopped existing when Settings became a tab, so tapping it threw.
+- It now lists the rules read off the board — name, category, and which field
+  actually matches — fetched when the page opens, which is what "on demand"
+  means for a reply too large to send on connect.
+- **It also lists the protocol detectors first.** Drone Remote ID, Apple Find
+  My, Tile, Pwnagotchi and the Flock wildcard probe are compiled in and match
+  no rule at all, so a page showing only `signatures.json` implied the board
+  cannot see a drone or an AirTag. That list is prose describing firmware
+  behaviour: if the detectors change, it has to change with them.
+
 ### Changed — Three tabs, one Record button: the app's navigation rebuilt
 
 - **Features had outgrown the navigation.** The main screen stacked six
