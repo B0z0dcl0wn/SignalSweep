@@ -245,7 +245,9 @@
         // Settings is an index of short screens. One extra tap to reach a
         // control, deliberately: these are set before you go out, and a single
         // eight-section scroll meant hunting for the one row you wanted.
+        let currentSetting = null;
         function showSetting(key) {
+            currentSetting = key || null;
             const idx = document.getElementById('set-index');
             const back = document.getElementById('set-back');
             const title = document.getElementById('set-title');
@@ -3251,9 +3253,25 @@
                 e.target.classList.remove('active');
             }
         });
+        // Back, in the order a person means it: dismiss what is on top, then
+        // leave the sub-page, then leave the tab, and only then the app. It
+        // used to minimize from anywhere, so backing out of Settings > Recording
+        // put you on the home screen. Returns false when there is nothing left
+        // to go back to, which is the only case the caller may background on.
+        function handleBack() {
+            // The consent prompt owns a queue: hiding the card without shifting
+            // it would strand every device behind it.
+            const consent = document.getElementById('consent-modal');
+            if (consent && consent.classList.contains('active')) { consentDismiss(); return true; }
+            const open = document.querySelector('.modal-overlay.active');
+            if (open) { open.classList.remove('active'); return true; }
+            if (currentSetting) { showSetting(null); return true; }
+            if (currentTab !== 'sweep') { showTab('sweep'); return true; }
+            return false;
+        }
         document.addEventListener('keydown', (e) => {
             if (e.key !== 'Escape') return;
-            document.querySelectorAll('.modal-overlay.active').forEach(m => m.classList.remove('active'));
+            handleBack();
         });
 
         function openConnModal()  { document.getElementById('connModal').classList.add('active'); }
@@ -3960,11 +3978,15 @@
 
             setTimeout(() => {
                 if (window.App) {
-                    // Back backgrounds, it does not finish the Activity. exitApp()
-                    // killed the page but not the process, so the BLE link and
-                    // the USB port outlived the UI that owned them. Disconnect
-                    // is the way to let go of the board.
-                    window.App.addListener('backButton', () => window.App.minimizeApp());
+                    // Back walks the UI out first (see handleBack) and only
+                    // backgrounds once there is nowhere left to go. It still
+                    // never exitApp()s: that killed the page but not the
+                    // process, so the BLE link and the USB port outlived the UI
+                    // that owned them. Disconnect is the way to let go of the
+                    // board.
+                    window.App.addListener('backButton', () => {
+                        if (!handleBack()) window.App.minimizeApp();
+                    });
                 }
             }, 1000);
         });

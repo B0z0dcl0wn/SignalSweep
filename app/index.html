@@ -965,9 +965,16 @@
             color:var(--text-muted); }
         /* The sub-page's own heading repeats the title in the top bar. */
         .set-page > .set-label:first-child { display:none; }
-        .set-back { background:none; border:0; cursor:pointer; font:inherit;
-            font-size:0.85rem; font-weight:600; color:var(--accent-cyan,#22d3ee);
-            padding:8px 4px; min-height:44px; }
+        /* Same shape and colour as the header's Connect button: this is a
+           control, not a caption, and it is the path back. */
+        .set-back { display:inline-flex; align-items:center; gap:4px; flex:none;
+            min-height:44px; padding:0 16px; border-radius:22px; cursor:pointer;
+            font:inherit; font-size:0.82rem; font-weight:700;
+            border:1px solid var(--accent-cyan); background:rgba(0,242,254,0.1);
+            color:var(--accent-cyan); }
+        /* Back first, then the page name, so it reads as a breadcrumb rather
+           than two things pushed to opposite ends. */
+        #tab-settings .finder-topbar { justify-content:flex-start; gap:12px; }
         .set-note { font-size:0.78rem; color:var(--text-muted); line-height:1.5; }
         .set-row { display:flex; justify-content:space-between; align-items:center; gap:10px;
             padding:0.7rem 0.85rem; background:rgba(255,255,255,0.05);
@@ -1485,9 +1492,13 @@
         </main>
 
         <main id="tab-settings" class="tab">
+            <!-- Back sits BEFORE the title and looks like the Connect button,
+                 because a small right-aligned text link did not read as the
+                 way out -- and on Android the hardware Back now does the same
+                 thing (handleBack), so the two agree. -->
             <div class="finder-topbar">
-                <h2 id="set-title">Settings</h2>
                 <button class="set-back" id="set-back" onclick="showSetting(null)" hidden>&lsaquo; Settings</button>
+                <h2 id="set-title">Settings</h2>
             </div>
             <div class="set-body">
                 <nav class="set-index" id="set-index">
