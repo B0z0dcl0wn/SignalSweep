@@ -218,6 +218,7 @@
             document.querySelectorAll('#tabbar button').forEach(b => {
                 b.setAttribute('aria-selected', b.dataset.tab === name ? 'true' : 'false');
             });
+            if (name !== 'settings') showSetting(null);
             window.scrollTo(0, 0);
             // Survey's two lists are built on demand; Sweep repaints itself on
             // the next push, and the map needs its size recomputed after being
@@ -234,8 +235,30 @@
 
         document.addEventListener('click', (e) => {
             const t = e.target.closest('#tabbar button');
-            if (t) showTab(t.dataset.tab);
+            if (t) { showTab(t.dataset.tab); return; }
+            const si = e.target.closest('#set-index .set-idx');
+            if (si) showSetting(si.dataset.set);
         });
+
+        // Settings is an index of short screens. One extra tap to reach a
+        // control, deliberately: these are set before you go out, and a single
+        // eight-section scroll meant hunting for the one row you wanted.
+        function showSetting(key) {
+            const idx = document.getElementById('set-index');
+            const back = document.getElementById('set-back');
+            const title = document.getElementById('set-title');
+            if (!idx) return;
+            idx.hidden = !!key;
+            let label = 'Settings';
+            document.querySelectorAll('.set-page').forEach(p => {
+                const on = !!key && p.id === 'setp-' + key;
+                p.hidden = !on;
+                if (on) label = p.dataset.title || label;
+            });
+            if (back) back.hidden = !key;
+            if (title) title.textContent = label;
+            window.scrollTo(0, 0);
+        }
 
         // Transient link state ("connecting", "reconnecting") painted into the
         // header's own connection line. It used to go to a hidden status badge,
@@ -305,11 +328,21 @@
             if (radio === 'BLE') return 'BLE';
             return wifiRole === 'any' ? 'WiFi' : wifiRole;
         }
+        // AP and Client are only shown once Wi-Fi is the chosen radio: five
+        // chips at rest was too many to read, and the split is meaningless
+        // under All or BLE. They appear IN the same row rather than a second
+        // one -- the old sub-row appeared and vanished with the Wi-Fi tab and
+        // moved every result below it by a row mid-scan. The row's height
+        // never changes; only how the columns divide.
         function paintRadioChips() {
             const sel = radioChipKey();
+            const sub = radio === 'WiFi';
+            const row = document.getElementById('radios');
+            if (row) row.classList.toggle('five', sub);
             document.querySelectorAll('#radios .radio-tab').forEach(function (el) {
-                el.setAttribute('aria-selected',
-                    el.getAttribute('data-radio') === sel ? 'true' : 'false');
+                const k = el.getAttribute('data-radio');
+                if (k === 'ap' || k === 'client') el.hidden = !sub;
+                el.setAttribute('aria-selected', k === sel ? 'true' : 'false');
             });
         }
         function setRadioChip(key) {
@@ -3803,6 +3836,7 @@
             paintLogSession();
 
             checkApiSupport();
+            paintRadioChips();
             renderScope();
             setTimeout(async () => {
                 await reconcileConnection();

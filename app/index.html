@@ -928,6 +928,26 @@
         .set-sum { text-transform:none; letter-spacing:0; font-weight:600;
             color:var(--ss-dim); margin-left:0.4rem; }
         .set-sum.on { color:var(--accent-emerald,#34d399); }
+        /* Settings is an index of short screens, not one long scroll: each
+           screen fits without hunting, and the bottom bar still escapes from
+           any of them. Costs one tap to reach a control -- accepted, because
+           these are set before you go out, not in the field. */
+        .set-index { display:flex; flex-direction:column; gap:8px; }
+        .set-idx { display:flex; align-items:center; gap:12px; width:100%;
+            padding:0.85rem 0.9rem; border-radius:12px; cursor:pointer; text-align:left;
+            background:rgba(255,255,255,0.04); border:1px solid var(--card-border);
+            color:var(--text-main,#e6edf6); font:inherit; min-height:60px; }
+        .set-idx-i { flex:none; font-size:1.1rem; width:1.6rem; text-align:center; }
+        .set-idx-t { flex:1; min-width:0; font-size:0.95rem; font-weight:600; }
+        .set-idx-t em { display:block; font-style:normal; font-weight:400;
+            font-size:0.75rem; color:var(--text-muted); margin-top:2px; }
+        .set-idx-c { flex:none; color:var(--ss-dim); font-size:1.3rem; }
+        .set-opsec { margin-top:1.25rem; }
+        /* The sub-page's own heading repeats the title in the top bar. */
+        .set-page > .set-label:first-child { display:none; }
+        .set-back { background:none; border:0; cursor:pointer; font:inherit;
+            font-size:0.85rem; font-weight:600; color:var(--accent-cyan,#22d3ee);
+            padding:8px 4px; min-height:44px; }
         .set-note { font-size:0.78rem; color:var(--text-muted); line-height:1.5; }
         .set-row { display:flex; justify-content:space-between; align-items:center; gap:10px;
             padding:0.7rem 0.85rem; background:rgba(255,255,255,0.05);
@@ -1098,10 +1118,18 @@
         .radio-tab[aria-selected="true"] { background:#141c2c; color:#e8eef7; }
         .radio-tab:focus-visible { outline:2px solid var(--accent-cyan); outline-offset:-2px; }
         /* The Wi-Fi sub-filter tucks under the radio strip it belongs to. */
-        /* The radio strip is five chips now (All / BLE / Wi-Fi / AP / Client),
-           not the three it was sized for. An explicit modifier rather than
-           redefining .radios, which the segmented pickers also use. */
+        /* The radio strip is three chips at rest and five once Wi-Fi is the
+           chosen radio (AP / Client mean nothing under All or BLE). The
+           modifier switches the column count in place, so the row's height
+           never changes -- an explicit modifier rather than redefining
+           .radios, which the segmented pickers also use. */
         .radios.five { grid-template-columns:repeat(5,1fr); }
+        /* The five-up chips need a smaller face to fit 412px, and a smaller
+           face is a shorter line box -- which moved every result below it by
+           1.3px on the switch. The strip's height is pinned so it cannot. */
+        #radios .radio-tab { display:flex; align-items:center; justify-content:center;
+            min-height:32px; padding:0 0.3rem; }
+        .radios.five .radio-tab { font-size:0.7rem; padding:0 0.15rem; }
         /* Recording. Idle it is one button; running it is a lit bar that says
            what has gone into the log and what is being pinned, because "am I
            recording?" must never need a tap to answer. */
@@ -1119,7 +1147,6 @@
         .rec-stop { flex:none; min-height:44px; padding:0 16px; border-radius:10px;
             font:inherit; font-size:0.8rem; font-weight:700; cursor:pointer;
             border:1px solid rgba(239,68,68,0.5); background:rgba(239,68,68,0.12); color:#f87171; }
-        .radios.five .radio-tab { padding:0.45rem 0.15rem; font-size:0.7rem; }
         /* Segmented pickers in the Alerts sheet (Sound, Lights). */
         .seg { margin:0; flex:0 1 auto; }
         /* .radios is sized for the 3-way radio strip (Both / Bluetooth / Wi-Fi).
@@ -1313,12 +1340,12 @@
         <!-- Radio filter. Two variables, five reachable combinations, one
              row: dropping a radio is the quickest way to cut a long list down
              to what you came for, so it stays permanently on screen. -->
-        <div class="radios five" id="radios" role="tablist">
+        <div class="radios" id="radios" role="tablist">
             <button class="radio-tab" role="tab" aria-selected="true" data-radio="any">All</button>
             <button class="radio-tab" role="tab" aria-selected="false" data-radio="BLE">BLE</button>
             <button class="radio-tab" role="tab" aria-selected="false" data-radio="WiFi">Wi&#8209;Fi</button>
-            <button class="radio-tab" role="tab" aria-selected="false" data-radio="ap">&#128225; AP</button>
-            <button class="radio-tab" role="tab" aria-selected="false" data-radio="client">&#128241; Client</button>
+            <button class="radio-tab" role="tab" aria-selected="false" data-radio="ap" hidden>&#128225; AP</button>
+            <button class="radio-tab" role="tab" aria-selected="false" data-radio="client" hidden>&#128241; Client</button>
         </div>
 
         <!-- Recording. One bracketed act, not two settings you hope are both
@@ -1438,20 +1465,52 @@
         </main>
 
         <main id="tab-settings" class="tab">
-            <div class="finder-topbar"><h2>Settings</h2></div>
+            <div class="finder-topbar">
+                <h2 id="set-title">Settings</h2>
+                <button class="set-back" id="set-back" onclick="showSetting(null)" hidden>&lsaquo; Settings</button>
+            </div>
             <div class="set-body">
-                <!-- Alerts: HOW the device gets your attention (sound, lights)
-                     and WHAT for (the categories). These are set before you go
-                     out, not in the field, which is why they are a setting and
-                     not a toolbar sheet any more. Every control paints from the
-                     device (1 Hz push + CMD:CFG) and never from itself, so it
-                     cannot show a setting the board does not hold. Buttons on
-                     purpose: a checkbox flips on tap before the write is even
-                     attempted. Sound is not a master over the categories -- the
-                     buzzer mute is sound only, while a category switch gates
-                     its beep AND its light -- so each row's chip (alertChip)
-                     says what it will do. -->
-                <h3 class="set-label">Alerts <span class="set-sum" id="alerts-summary"></span></h3>
+                <nav class="set-index" id="set-index">
+                <button class="set-idx" data-set="alerts">
+                    <span class="set-idx-i">&#128276;</span>
+                    <span class="set-idx-t">Alerts<span class="set-sum" id="alerts-summary"></span><em>Sound, lights, theme, and what beeps</em></span>
+                    <span class="set-idx-c">&rsaquo;</span>
+                </button>
+                <button class="set-idx" data-set="recording">
+                    <span class="set-idx-i">&#9679;</span>
+                    <span class="set-idx-t">Recording<em>The board&rsquo;s alert log and the pin prompt</em></span>
+                    <span class="set-idx-c">&rsaquo;</span>
+                </button>
+                <button class="set-idx" data-set="radios">
+                    <span class="set-idx-i">&#128225;</span>
+                    <span class="set-idx-t">Radios<em>Pause a radio, pick a Wi&#8209;Fi band</em></span>
+                    <span class="set-idx-c">&rsaquo;</span>
+                </button>
+                <button class="set-idx" data-set="detection">
+                    <span class="set-idx-i">&#127919;</span>
+                    <span class="set-idx-t">Detection<em>Attack&#8209;gear detection</em></span>
+                    <span class="set-idx-c">&rsaquo;</span>
+                </button>
+                <button class="set-idx" data-set="emissions">
+                    <span class="set-idx-i">&#128263;</span>
+                    <span class="set-idx-t">Emissions<em>Receive&#8209;only: stop announcing itself</em></span>
+                    <span class="set-idx-c">&rsaquo;</span>
+                </button>
+                <button class="set-idx" data-set="device">
+                    <span class="set-idx-i">&#127991;</span>
+                    <span class="set-idx-t">Device identity<em>Name and BLE address</em></span>
+                    <span class="set-idx-c">&rsaquo;</span>
+                </button>
+                <button class="set-idx" data-set="signatures">
+                    <span class="set-idx-i">&#128220;</span>
+                    <span class="set-idx-t">Signatures<em>The rules the board matches against</em></span>
+                    <span class="set-idx-c">&rsaquo;</span>
+                </button>
+                    <p class="set-note set-opsec">This app keeps no history of what it detected or where you went. The only thing stored is location pins you explicitly confirm, encrypted behind your PIN. Manage them under <strong>Survey</strong>.</p>
+                </nav>
+
+                <section class="set-page" id="setp-alerts" data-title="Alerts" hidden>
+                <h3 class="set-label">Alerts</h3>
                 <p class="set-note">
                     How the device gets your attention, and what for. Saved on the
                     board, so you can set it and walk away.
@@ -1521,6 +1580,9 @@
                      session at all (the car case) and so the maintenance
                      actions are not in the way in the field. The log toggle is
                      painted solely from device frames. -->
+                </section>
+
+                <section class="set-page" id="setp-recording" data-title="Recording" hidden>
                 <h3 class="set-label">Recording</h3>
                 <p class="set-note">
                     <strong>Record</strong> on the Sweep screen brackets an outing: it
@@ -1545,7 +1607,9 @@
                     <button class="ctrl-btn" onclick="saveAlertLog(true)">Save the whole log</button>
                     <button class="ctrl-btn" style="border-color:var(--accent-red,#ef4444);color:var(--accent-red,#ef4444)" onclick="clearAlertLogConfirm()">Clear log</button>
                 </div>
+                </section>
 
+                <section class="set-page" id="setp-radios" data-title="Radios" hidden>
                 <h3 class="set-label">Radios</h3>
                 <p class="set-note">
                     Both come back on after a power cycle &mdash; pausing one is for this session only.
@@ -1567,7 +1631,9 @@
                         <button class="radio-tab" data-band="2" aria-pressed="false">5 GHz</button>
                     </div>
                 </div>
+                </section>
 
+                <section class="set-page" id="setp-detection" data-title="Detection" hidden>
                 <h3 class="set-label">Detection</h3>
                 <p class="set-note">
                     <strong>Attack&#8209;gear detection</strong> flags nearby hacking tools &mdash; a
@@ -1579,7 +1645,9 @@
                     <span>Attack&#8209;gear detection</span>
                     <button class="set-toggle off" id="btn-attack" onclick="toggleAttack()">Off</button>
                 </div>
+                </section>
 
+                <section class="set-page" id="setp-emissions" data-title="Emissions" hidden>
                 <h3 class="set-label">Emissions</h3>
                 <p class="set-note">
                     <strong>Receive-only</strong> stops the device announcing itself &mdash; no advertising, no connection. It keeps scanning and keeps beeping; this is not the buzzer mute. Over Bluetooth <strong>this connection will drop</strong> &mdash; tap the BOOT button on the device to bring it back for two minutes. Over a USB cable nothing drops: only the radio goes quiet, and you can turn it back on here.
@@ -1588,7 +1656,9 @@
                     <span>Currently: <strong id="cfg-rxonly">advertising</strong></span>
                     <button class="set-toggle off" id="btn-rxonly" onclick="toggleReceiveOnly()">Go quiet</button>
                 </div>
+                </section>
 
+                <section class="set-page" id="setp-device" data-title="Device identity" hidden>
                 <h3 class="set-label">Device identity</h3>
                 <p class="set-note">
                     The app finds the device by its service UUID, so renaming it never breaks discovery. Useful for telling two boards apart &mdash; or for not announcing what it is.
@@ -1603,15 +1673,13 @@
                     </span>
                 </label>
                 <button class="ctrl-btn" style="width:100%;" onclick="saveIdentity()">Save &amp; restart device</button>
+                </section>
 
+                <section class="set-page" id="setp-signatures" data-title="Signatures" hidden>
                 <h3 class="set-label">Signatures</h3>
                 <p class="set-note">The rules the device matches against, read back from the board.</p>
                 <button class="ctrl-btn" style="width:100%;" onclick="document.getElementById('settings-modal').classList.remove('active'); openSignatures()">Edit signature rules</button>
-
-                <h3 class="set-label">Opsec</h3>
-                <p class="set-note">
-                    This app keeps no history of what it detected or where you went. The only thing stored is location pins you explicitly confirm, encrypted behind your PIN. Manage them under <strong>Survey</strong>.
-                </p>
+                </section>
             </div>
         </main>
 
@@ -1639,8 +1707,6 @@
                     </div>
                     <span class="btn-arrow">&rarr;</span>
                 </button>
-                <!-- A quiet board is invisible to the picker, and the picker cannot say so. -->
-                <div style="font-size:0.8rem;line-height:1.4;color:var(--text-muted);margin:-0.25rem 0 0.25rem;text-align:left;">Board not in the list? Tap its BOOT button to make it visible for 2 minutes. It may also still be connected to another phone.</div>
                 <button class="btn-conn-option" id="btnConnSerial" onclick="connectUsb()">
                     <div class="btn-left">
                         <svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="12" rx="2"/><line x1="8" y1="20" x2="16" y2="20"/><line x1="12" y1="16" x2="12" y2="20"/></svg>
@@ -1655,6 +1721,12 @@
             <div class="api-support-info">
                 <div class="api-badge-row"><span>Web Bluetooth API:</span><span class="api-badge" id="bleSupportBadge">Checking...</span></div>
                 <div class="api-badge-row"><span>USB serial:</span><span class="api-badge" id="serialSupportBadge">Checking...</span></div>
+                <!-- Troubleshooting, not instructions: it sits under the two
+                     choices rather than between them, because it is read once
+                     and then in the way of the button you came here to press.
+                     A quiet board is invisible to the picker, and the picker
+                     cannot say so, which is the one thing worth keeping here. -->
+                <div style="margin-top:0.5rem;line-height:1.4;color:var(--text-muted);">Board not in the list? Tap its BOOT button to make it visible for two minutes &mdash; it may also still be connected to another phone.</div>
                 <div style="margin-top:0.5rem;line-height:1.4;color:var(--text-muted);" id="connApiNote">On Android, USB goes through the phone's own USB host stack &mdash; plug the device in with a USB-C cable and accept the permission prompt. In a desktop browser it uses WebSerial, which needs Chrome, Edge or Opera.</div>
             </div>
         </div>
