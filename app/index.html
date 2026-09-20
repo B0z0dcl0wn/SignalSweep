@@ -938,10 +938,12 @@
         .hdr-conn { flex-basis:100%; display:flex; align-items:center; gap:8px; min-width:0;
             padding-top:0.8rem; border-top:1px solid var(--card-border);
             font-size:0.85rem; color:var(--text-muted); }
-        #hdr-dev { flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-        /* Uptime and the alert count, the two numbers that prove the headless
-           path worked. They shrink first: the board's name matters more. */
-        .hdr-stats { flex:1 1 auto; min-width:0; overflow:hidden; white-space:nowrap;
+        /* The name is what gives, not the numbers. A default board name is 19
+           characters ("OUI-SPY-SIGNALSWEEP") and letting both shrink cut the
+           alert count mid-word on the OnePlus, which is the one thing on this
+           line you cannot guess the rest of. */
+        #hdr-dev { flex:1 1 auto; min-width:2.5rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .hdr-stats { flex:none; white-space:nowrap;
             color:var(--ss-dim); font-variant-numeric:tabular-nums; }
         .hdr-gps { flex:none; display:flex; align-items:center; gap:5px;
             max-width:40%; overflow:hidden; white-space:nowrap; font-size:0.78rem; }
