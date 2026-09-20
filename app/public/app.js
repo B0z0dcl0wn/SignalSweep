@@ -867,8 +867,6 @@
             // dead: no error, no visual difference, just nothing happening.
             const tab = ev.target.closest('#bands .band');
             if (tab) { setLens(tab.getAttribute('data-lens')); return; }
-            const pl = ev.target.closest('#pin-lens .radio-tab');
-            if (pl) { setPinLens(pl.getAttribute('data-pin')); return; }
             const rt = ev.target.closest('#radios .radio-tab');
             if (rt) { setRadioChip(rt.getAttribute('data-radio')); return; }
             const lm = ev.target.closest('#led-modes .radio-tab');
@@ -1557,6 +1555,9 @@
             // Here rather than only on a change: a reconnect whose scan_all
             // matches the old value would otherwise leave "—" up.
             paintFilter();
+            // The Record bar's elapsed time and counters ride the same 1 Hz
+            // push rather than a timer of their own.
+            paintLogSession();
         }
 
         // One-shot location (never watchPosition — no passive trail).
@@ -1622,18 +1623,16 @@
             }
             const hdr = document.getElementById('btn-pins');
             if (hdr) hdr.classList.toggle('lit', recordEnabled);
-            paintPinLens();
         }
 
+        // Which categories ask to be pinned. There is no separate picker for
+        // it any more: the band tab you are looking at is the one you are
+        // deciding about, and two controls for one state only ever disagree.
+        // The Record bar states the current one.
         function setPinLens(key) {
             pinLens = key;
             try { localStorage.setItem('pinLens', key); } catch (e) {}
-            paintPinLens();
-        }
-        function paintPinLens() {
-            document.querySelectorAll('#pin-lens .radio-tab').forEach(function (el) {
-                el.setAttribute('aria-pressed', el.getAttribute('data-pin') === pinLens ? 'true' : 'false');
-            });
+            paintLogSession();
         }
 
         function maybeOfferRecord(match) {
@@ -1707,6 +1706,7 @@
                 rssi: m.rssi, lat: fix.lat, lng: fix.lng, acc: fix.acc, ts: Date.now()
             });
             await savePins();
+            paintLogSession();
             showToast('Pin saved (' + pinsCache.length + ' total)', '📍');
         }
 
@@ -2492,11 +2492,41 @@
             paintLogSession();
         }
 
+        // The Record bar on Sweep. Idle it is one button; running it is a lit
+        // bar reading elapsed, what has gone into the log, what has been
+        // pinned, and which category is being pinned -- so "am I recording?"
+        // and "recording what?" are both answered without a tap.
         function paintLogSession() {
-            const b = document.getElementById('btn-log-session');
-            if (!b) return;
-            b.textContent = logSession ? 'Stop session' : 'Start session';
-            b.classList.toggle('on', !!logSession);
+            const bar  = document.getElementById('rec-bar');
+            const b    = document.getElementById('btn-record-session');
+            const read = document.getElementById('rec-read');
+            const stop = document.getElementById('btn-record-stop');
+            if (!bar || !b) return;
+            const live = !!logSession;
+            bar.classList.toggle('live', live);
+            b.textContent = live ? '● REC' : '● Record';
+            if (stop) stop.hidden = !live;
+            if (!read) return;
+            if (!live) {
+                read.textContent = connectionType
+                    ? 'Log what the board beeps at, and pin what it matches.'
+                    : 'Connect the board to record an outing.';
+                return;
+            }
+            // m:ss, not fmtUptime's "4m": a recording that reads "0m" for its
+            // first whole minute looks like it did not start.
+            const secs = Math.max(0, Math.floor((Date.now() - logSession.at) / 1000));
+            const el = secs < 3600
+                ? Math.floor(secs / 60) + ':' + String(secs % 60).padStart(2, '0')
+                : Math.floor(secs / 3600) + ':' + String(Math.floor(secs / 60) % 60).padStart(2, '0')
+                  + ':' + String(secs % 60).padStart(2, '0');
+            const alerts = alertCount === null ? null : Math.max(0, alertCount - logSession.alerts0);
+            const pins = Math.max(0, pinsCache.length - logSession.pins0);
+            const bits = [el];
+            if (alerts !== null) bits.push(alerts + (alerts === 1 ? ' alert' : ' alerts'));
+            if (pins) bits.push(pins + (pins === 1 ? ' pin' : ' pins'));
+            const lensName = { all: 'everything', alpr: 'cameras', tracker: 'trackers', drone: 'drones' }[pinLens] || pinLens;
+            read.textContent = bits.join(' · ') + ' — pinning ' + lensName;
         }
 
         function toggleAlertLog() {
@@ -2516,18 +2546,37 @@
                 logPendingUntil = Date.now() + LOG_PENDING_MS;
                 setLogUi(true);
                 sendCommand({ log: true });
-                showToast('Board logging enabled', '●');
             }
-            logSession = { boot: logBootNow, secs: logSecsNow, at: Date.now() };
+            // One bracketed act. Recording an outing means both halves: the
+            // board writes what it beeped at, and the phone offers to pin what
+            // it matched. Two separate switches meant "am I recording?" had two
+            // answers and you could easily be half on.
+            logSession = {
+                boot: logBootNow, secs: logSecsNow, at: Date.now(),
+                alerts0: (alertCount === null ? 0 : alertCount),
+                pins0: pinsCache.length,
+                // Remember whether the pin prompt was already armed, so Stop
+                // puts it back rather than switching off something the user
+                // turned on themselves before ever starting a session.
+                wasRecording: recordEnabled
+            };
+            recordEnabled = true;
             try { localStorage.setItem(LOG_SESSION_KEY, JSON.stringify(logSession)); } catch (e) {}
+            paintRecord();
             paintLogSession();
-            showToast('Session started — the board is recording', '●');
+            showToast('Recording — the board is logging', '●');
         }
 
         function stopLogSession() {
             const sess = logSession;
             logSession = null;
             try { localStorage.removeItem(LOG_SESSION_KEY); } catch (e) {}
+            // Stop disarms the pin prompt again unless it was on beforehand.
+            // Stopping never turns the board's own log off: the car case wants
+            // it still logging after you put the phone away.
+            recordEnabled = !!(sess && sess.wasRecording);
+            try { localStorage.setItem(RECORD_PREF_KEY, recordEnabled ? '1' : '0'); } catch (e) {}
+            paintRecord();
             paintLogSession();
             saveAlertLog(false, sess);
         }

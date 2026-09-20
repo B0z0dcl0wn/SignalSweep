@@ -1095,6 +1095,23 @@
            not the three it was sized for. An explicit modifier rather than
            redefining .radios, which the segmented pickers also use. */
         .radios.five { grid-template-columns:repeat(5,1fr); }
+        /* Recording. Idle it is one button; running it is a lit bar that says
+           what has gone into the log and what is being pinned, because "am I
+           recording?" must never need a tap to answer. */
+        .rec { display:flex; align-items:center; gap:10px; margin:0 0 0.8rem; }
+        .rec.live { padding:0.55rem 0.7rem; border-radius:10px;
+            background:rgba(239,68,68,0.10); border:1px solid rgba(239,68,68,0.45); }
+        .rec-btn { flex:none; min-height:44px; padding:0 16px; border-radius:10px;
+            font:inherit; font-size:0.82rem; font-weight:700; cursor:pointer;
+            background:var(--ss-panel); border:1px solid var(--ss-line); color:var(--ss-ink); }
+        .rec.live .rec-btn { background:none; border:0; color:#f87171; padding:0;
+            min-height:0; animation:recpulse 2s ease-in-out infinite; }
+        @keyframes recpulse { 50% { opacity:0.45; } }
+        .rec-read { flex:1; min-width:0; font-size:0.76rem; line-height:1.35;
+            color:var(--ss-dim); overflow:hidden; }
+        .rec-stop { flex:none; min-height:44px; padding:0 16px; border-radius:10px;
+            font:inherit; font-size:0.8rem; font-weight:700; cursor:pointer;
+            border:1px solid rgba(239,68,68,0.5); background:rgba(239,68,68,0.12); color:#f87171; }
         .radios.five .radio-tab { padding:0.45rem 0.15rem; font-size:0.7rem; }
         /* Segmented pickers in the Alerts sheet (Sound, Lights). */
         .seg { margin:0; flex:0 1 auto; }
@@ -1103,7 +1120,6 @@
            by id on purpose: widening .radios itself would break the radio strip,
            and adding a shared class is how the chips ended up inheriting a
            layout class they had no business in. */
-        #pin-lens { grid-template-columns:repeat(4,1fr); }
         #sound-modes { grid-template-columns:repeat(2,1fr); }
         #led-modes { grid-template-columns:repeat(4,1fr); }
         /* Theme chips: a sideways strip, not a grid -- five names don't fit a
@@ -1306,6 +1322,17 @@
             <button class="radio-tab" role="tab" aria-selected="false" data-radio="client">&#128241; Client</button>
         </div>
 
+        <!-- Recording. One bracketed act, not two settings you hope are both
+             on: Start turns the board's alert log on and arms the pin prompt,
+             Stop reads the log back, writes the .txt and disarms it. The board
+             keeps logging either way -- that is the whole point of it working
+             with the phone in your pocket or at home. -->
+        <div class="rec" id="rec-bar">
+            <button class="rec-btn" id="btn-record-session" onclick="toggleLogSession()">&#9679; Record</button>
+            <span class="rec-read" id="rec-read"></span>
+            <button class="rec-stop" id="btn-record-stop" onclick="toggleLogSession()" hidden>Stop</button>
+        </div>
+
         <!-- Foxhunt readout, shown only while a target is locked. -->
         <div class="fox" id="fox" style="display:none;">
             <div class="fox-top">
@@ -1467,6 +1494,36 @@
                     use Receive&#8209;only in Settings.
                 </p>
 
+                <!-- Recording. What Start/Stop on the Sweep screen turns on
+                     for you; here so you can leave the board logging with no
+                     session at all (the car case) and so the maintenance
+                     actions are not in the way in the field. The log toggle is
+                     painted solely from device frames. -->
+                <h3 class="set-label">Recording</h3>
+                <p class="set-note">
+                    <strong>Record</strong> on the Sweep screen brackets an outing: it
+                    turns the board&rsquo;s log on, and asks to pin what matches. These
+                    are the same switches on their own, plus the housekeeping.
+                </p>
+                <div class="set-row">
+                    <span>Log alerts on the board</span>
+                    <button class="set-toggle" id="btn-log" onclick="toggleAlertLog()">Off</button>
+                </div>
+                <p class="set-note" id="log-note" style="margin:0.5rem 0 0.75rem;">Off. The board keeps no record of what it beeped at.</p>
+                <div class="set-row">
+                    <span>Ask to pin matches</span>
+                    <button class="set-toggle" id="btn-record" onclick="toggleRecording()">Off</button>
+                </div>
+                <p class="set-note" style="margin:0.5rem 0 0.75rem;">
+                    Each matched device asks before saving one GPS fix, and only in
+                    the category the band tab is on. Detecting never needs the PIN.
+                    Stopping a recording turns this back off unless you set it here.
+                </p>
+                <div class="modal-actions" style="display:flex;gap:10px;flex-wrap:wrap;">
+                    <button class="ctrl-btn" onclick="saveAlertLog(true)">Save the whole log</button>
+                    <button class="ctrl-btn" style="border-color:var(--accent-red,#ef4444);color:var(--accent-red,#ef4444)" onclick="clearAlertLogConfirm()">Clear log</button>
+                </div>
+
                 <h3 class="set-label">Radios</h3>
                 <p class="set-note">
                     Both come back on after a power cycle &mdash; pausing one is for this session only.
@@ -1620,32 +1677,6 @@
                  bookmark: the board keeps logging either way, which is the whole
                  point of it working while the phone is in your pocket or at home.
                  Painted solely from device frames, like every other control. -->
-            <div class="alert-sec">Alert log</div>
-            <div class="set-row">
-                <span>Log alerts on the board</span>
-                <button class="set-toggle" id="btn-log" onclick="toggleAlertLog()">Off</button>
-            </div>
-            <p class="set-note" id="log-note" style="margin:0.5rem 0 0.75rem;">Off. The board keeps no record of what it beeped at.</p>
-            <div class="modal-actions" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:0.5rem;">
-                <button class="ctrl-btn" id="btn-log-session" onclick="toggleLogSession()">Start session</button>
-                <button class="ctrl-btn" onclick="saveAlertLog(true)">Save everything</button>
-                <button class="ctrl-btn" style="border-color:var(--accent-red,#ef4444);color:var(--accent-red,#ef4444)" onclick="clearAlertLogConfirm()">Clear log</button>
-            </div>
-            <p class="set-note" style="margin:0 0 1.25rem;">A session just bookmarks &ldquo;from here&rdquo;. Stopping writes a .txt to Documents and shows what you passed. Stopping never turns the board&rsquo;s log off.</p>
-
-            <div class="alert-sec">Pins</div>
-            <div class="set-row">
-                <span>Ask to pin matches</span>
-                <button class="set-toggle" id="btn-record" onclick="toggleRecording()">Off</button>
-            </div>
-            <p class="set-note" style="margin:0.5rem 0 1rem;">When on, each matched device asks before saving one GPS fix. Detecting never needs the PIN.</p>
-            <div class="radios seg" id="pin-lens" role="group" aria-label="Pin which">
-                <button class="radio-tab" data-pin="all" aria-pressed="true">Everything</button>
-                <button class="radio-tab" data-pin="alpr" aria-pressed="false">Cameras</button>
-                <button class="radio-tab" data-pin="tracker" aria-pressed="false">Trackers</button>
-                <button class="radio-tab" data-pin="drone" aria-pressed="false">Drones</button>
-            </div>
-            <p class="set-note" style="margin:0.5rem 0 1rem;">Only matches in this category ask to be pinned. Picking a band tab sets this too.</p>
             <div id="pins-body" style="max-height:50vh;overflow-y:auto;margin-bottom:1rem;"></div>
             <div class="modal-actions" style="display:flex;gap:10px;flex-wrap:wrap;">
                 <button class="ctrl-btn" onclick="exportPinsFile()">Export JSON</button>
