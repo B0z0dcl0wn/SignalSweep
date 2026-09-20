@@ -944,16 +944,12 @@
             font-weight:700; font-size:0.8rem; border:1px solid var(--accent-cyan);
             background:rgba(0,242,254,0.1); color:var(--accent-cyan); }
         .hdr-btn.disc { border-color:rgba(239,68,68,0.5); background:rgba(239,68,68,0.12); color:#f87171; }
-        .btn-help.lit { color:var(--accent-emerald) !important; }
-        /* Four header icons beside the name must fit one row on a phone: on the
-           OnePlus 7T (411px) brand+icons measured ~341 of ~343px, which wraps.
-           The title shrinks, never the icons -- they are the tap targets. */
+        /* The header carries no icons at all now -- navigation is the bottom
+           bar -- so the phone breakpoint only has to tighten the brand. */
         @media (max-width: 480px) {
             header { padding: 1rem 1.1rem; gap: 0.5rem; }
             .brand { gap: 0.6rem; }
             .brand-text h1 { font-size: 1.25rem; }
-            .hdr-icons { gap: 2px !important; }
-            header .btn-help { padding: 6px !important; }
         }
         .set-text { width:100%; padding:0.7rem 0.85rem; font-size:1rem; border-radius:10px;
             border:1px solid rgba(255,255,255,0.15); background:rgba(0,0,0,0.3); color:#fff; }
@@ -1248,14 +1244,6 @@
                     <h1>SignalSweep</h1>
                 </div>
             </div>
-            <div class="hdr-icons" style="display: flex; gap: 10px;">
-                <button class="btn-help" id="btn-pins" onclick="openPins()" title="Pins" aria-label="Pins" style="background:none;border:none;color:white;cursor:pointer;padding:10px;">
-                    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
-                        <circle cx="12" cy="10" r="3"></circle>
-                    </svg>
-                </button>
-            </div>
             <!-- Which board, over what, how long it has been up, how many
                  times it has beeped, and a real button to connect or leave.
                  This was a three-cell card of its own; the numbers are the
@@ -1412,6 +1400,29 @@
                 <div id="finds-list" style="margin:0.6rem 0;"></div>
                 <button class="ctrl-btn on" style="width:100%;" onclick="exportEvidenceBundle()">📦 Export evidence bundle</button>
                 <p class="set-note">Export decrypts everything to <code>Documents/signalsweep-evidence-&lt;date&gt;/</code> — photos, <code>cameras.csv</code>, <code>cameras.osm</code> and the raw captures. Grab it with the Files app, a USB file transfer, or <code>adb pull /sdcard/Documents/</code>. That folder is plaintext: delete it once it's off the phone.</p>
+            </section>
+
+            <!-- Saved pins. Same encrypted store as the finds above, same PIN,
+                 same reason to exist: a geolocated record of surveillance
+                 hardware you chose to mark. The only difference is that one
+                 came from driving past and the other from standing at the pole
+                 with a camera, which is not a reason to keep them in two tabs
+                 with two exports. Opening this tab never prompts for the PIN --
+                 only "Unlock to view" does. -->
+            <section class="finder-card">
+                <h3 class="set-label">Saved pins</h3>
+                <p class="set-note">Places you confirmed, one GPS fix each, encrypted behind your PIN. Turn the prompt on with <strong>Record</strong> on the Sweep screen, or in Settings.</p>
+                <div id="pins-body" style="margin:0.6rem 0;"></div>
+                <div class="modal-actions" style="display:flex;gap:10px;flex-wrap:wrap;">
+                    <button class="ctrl-btn" onclick="exportPinsFile()">Export JSON</button>
+                    <button class="ctrl-btn" onclick="exportPinsOSM()">Export OSM</button>
+                </div>
+            </section>
+
+            <section class="finder-card">
+                <h3 class="set-label">Erase</h3>
+                <p class="set-note">One store, one key: this deletes every pin, every logged find and its photos. It cannot be undone, and a forgotten PIN is the same thing &mdash; by design.</p>
+                <button class="ctrl-btn" style="width:100%;border-color:var(--accent-red,#ef4444);color:var(--accent-red,#ef4444)" onclick="wipePinsConfirm()">Wipe everything saved</button>
             </section>
         </main>
 
@@ -1588,7 +1599,7 @@
 
                 <h3 class="set-label">Opsec</h3>
                 <p class="set-note">
-                    This app keeps no history of what it detected or where you went. The only thing stored is location pins you explicitly confirm, encrypted behind your PIN. Manage them under <strong>&#128205; Pins</strong> in the header.
+                    This app keeps no history of what it detected or where you went. The only thing stored is location pins you explicitly confirm, encrypted behind your PIN. Manage them under <strong>Survey</strong>.
                 </p>
             </div>
         </main>
@@ -1662,27 +1673,6 @@
             <div id="pin-error" style="color:var(--accent-red,#ef4444);font-size:0.8rem;text-align:center;min-height:1em;"></div>
             <div class="modal-actions"><button class="ctrl-btn on" id="pin-gate-submit" onclick="submitPin()">Unlock</button></div>
             <p style="font-size:0.75rem;color:var(--text-muted);text-align:center;margin-top:0.5rem;">Detecting and beeping never needs a PIN. This only protects your recorded pins. Forget it and the pins are unrecoverable — by design.</p>
-        </div>
-    </div>
-
-    <!-- Pins Modal -->
-    <div class="modal-overlay" id="pins-modal">
-        <div class="modal-card">
-            <button class="modal-close-btn" onclick="document.getElementById('pins-modal').classList.remove('active')">&times;</button>
-            <div class="modal-header"><h2>Record</h2><p>What gets written down. Pins are places you chose to mark, encrypted behind your PIN. The alert log is times and MACs only &mdash; no location &mdash; and lives on the board.</p></div>
-
-            <!-- Alert log. The board records every alert its buzzer sounds, with
-                 no phone needed, so a detector left in a car logs the whole drive
-                 and you read it back later. Start/Stop is only an app-side
-                 bookmark: the board keeps logging either way, which is the whole
-                 point of it working while the phone is in your pocket or at home.
-                 Painted solely from device frames, like every other control. -->
-            <div id="pins-body" style="max-height:50vh;overflow-y:auto;margin-bottom:1rem;"></div>
-            <div class="modal-actions" style="display:flex;gap:10px;flex-wrap:wrap;">
-                <button class="ctrl-btn" onclick="exportPinsFile()">Export JSON</button>
-                <button class="ctrl-btn" onclick="exportPinsOSM()">Export OSM</button>
-                <button class="ctrl-btn" style="border-color:var(--accent-red,#ef4444);color:var(--accent-red,#ef4444)" onclick="wipePinsConfirm()">Wipe All</button>
-            </div>
         </div>
     </div>
 

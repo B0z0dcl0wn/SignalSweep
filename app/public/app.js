@@ -226,6 +226,7 @@
                 if (!capturing) capStat = { wifi: 0, ble: 0, drops: 0, remain: capReqSecs };
                 paintCapture();
                 renderFinds();
+                renderPins();
             } else if (name === 'sweep' && viewMode === 'map' && map) {
                 setTimeout(() => { try { map.invalidateSize(); } catch (e) {} }, 0);
             }
@@ -1613,16 +1614,14 @@
             showToast(recordEnabled ? 'Will ask to pin each match' : 'Not asking to pin', '📍');
         }
 
-        // The switch lives in the Pins sheet; the header 📍 lights while it is
-        // on, so an armed prompt is visible without opening anything.
+        // The switch lives in Settings > Recording. While a recording is
+        // running the Record bar on Sweep is what says the prompt is armed.
         function paintRecord() {
             const btn = document.getElementById('btn-record');
             if (btn) {
                 btn.classList.toggle('on', recordEnabled);
                 btn.textContent = recordEnabled ? 'On' : 'Off';
             }
-            const hdr = document.getElementById('btn-pins');
-            if (hdr) hdr.classList.toggle('lit', recordEnabled);
         }
 
         // Which categories ask to be pinned. There is no separate picker for
@@ -1746,25 +1745,22 @@
         }
 
         // ---- Pins view / export ----
-        // Always opens: the "ask to pin" switch lives here and must never sit
-        // behind the PIN -- only viewing saved pins does.
-        function openPins() {
-            paintRecord();
-            if (pinKey || !pinStoreExists()) { renderPins(); return; }
-            document.getElementById('pins-body').innerHTML =
-                '<div class="scope-empty">Saved pins are locked.<br>' +
-                '<button class="ctrl-btn" style="margin-top:0.7rem" onclick="unlockPinsView()">Unlock to view</button></div>';
-            document.getElementById('pins-modal').classList.add('active');
-        }
-        // The PIN gate sits under the Pins sheet in the DOM, so close the sheet
-        // first; renderPins() reopens it once unlocked.
+        // Pins live in the Survey tab beside the logged finds: same encrypted
+        // store, same PIN, same kind of record. Opening the tab never prompts
+        // for the PIN -- only "Unlock to view" does.
+        function openPins() { showTab('survey'); }
         function unlockPinsView() {
-            document.getElementById('pins-modal').classList.remove('active');
-            pendingPinAction = renderPins;
+            pendingPinAction = () => { renderPins(); renderFinds(); };
             openPinGate('unlock');
         }
         function renderPins() {
             const body = document.getElementById('pins-body');
+            if (!body) return;
+            if (!pinKey && pinStoreExists()) {
+                body.innerHTML = '<div class="scope-empty">Saved pins are locked.<br>' +
+                    '<button class="ctrl-btn" style="margin-top:0.7rem" onclick="unlockPinsView()">Unlock to view</button></div>';
+                return;
+            }
             if (pinsCache.length === 0) {
                 body.innerHTML = '<div class="scope-empty">No pins yet. Turn on <strong>Ask to pin matches</strong> and confirm a device to drop one.</div>';
             } else {
@@ -1780,18 +1776,19 @@
                     '</div>';
                 }).join('');
             }
-            document.getElementById('pins-modal').classList.add('active');
         }
         async function deletePin(i) {
             pinsCache.splice(i, 1);
             await savePins();
             renderPins();
         }
+        // One store, one key: this takes the logged finds and their photos too.
         function wipePinsConfirm() {
-            if (!confirm('Delete ALL recorded pins permanently? This cannot be undone.')) return;
+            if (!confirm('Delete every saved pin and logged find permanently? This cannot be undone.')) return;
             wipePins();
-            document.getElementById('pins-modal').classList.remove('active');
-            showToast('All pins wiped', '🗑');
+            renderPins();
+            renderFinds();
+            showToast('Everything saved was wiped', '🗑');
         }
 
         function xmlAttr(v) { return esc(v); }
