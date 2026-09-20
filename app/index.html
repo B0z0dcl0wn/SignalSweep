@@ -928,7 +928,13 @@
         .hdr-conn { flex-basis:100%; display:flex; align-items:center; gap:8px; min-width:0;
             padding-top:0.8rem; border-top:1px solid var(--card-border);
             font-size:0.85rem; color:var(--text-muted); }
-        #hdr-dev { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        #hdr-dev { flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        /* Uptime and the alert count, the two numbers that prove the headless
+           path worked. They shrink first: the board's name matters more. */
+        .hdr-stats { flex:1 1 auto; min-width:0; overflow:hidden; white-space:nowrap;
+            color:var(--ss-dim); font-variant-numeric:tabular-nums; }
+        .hdr-gps { flex:none; display:flex; align-items:center; gap:5px;
+            max-width:40%; overflow:hidden; white-space:nowrap; font-size:0.78rem; }
         .hdr-btn { flex:none; min-height:40px; padding:0 16px; border-radius:20px; cursor:pointer;
             font-weight:700; font-size:0.8rem; border:1px solid var(--accent-cyan);
             background:rgba(0,242,254,0.1); color:var(--accent-cyan); }
@@ -1032,17 +1038,7 @@
         }
         .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 
-        /* Status strip: uptime / alerts / GPS (device identity is in the header).
-           Three separate cells rather than one run-on line, because they fail
-           independently and you need to see which one went dark. */
-        .statstrip { display:grid; grid-template-columns:repeat(3,1fr); gap:1px;
-            background:var(--ss-line); border:1px solid var(--ss-line);
-            border-radius:10px; overflow:hidden; margin:0.9rem 0; }
-        .statcell { background:var(--ss-panel); padding:0.55rem 0.7rem; min-width:0; }
-        .statcell-k { font-size:0.62rem; color:var(--ss-dim); letter-spacing:0.06em; }
-        .statcell-v { display:flex; align-items:center; gap:7px; margin-top:3px;
-            font-size:0.82rem; font-weight:600; white-space:nowrap;
-            overflow:hidden; text-overflow:ellipsis; }
+        /* Live dot, shared by the connection line and the GPS readout. */
         .statdot { width:7px; height:7px; border-radius:50%; flex:none;
             background:var(--ss-dim); box-shadow:0 0 7px currentColor; }
         .statdot.ok   { background:var(--ss-live);    color:var(--ss-live); }
@@ -1090,7 +1086,11 @@
         .radio-tab[aria-selected="true"] { background:#141c2c; color:#e8eef7; }
         .radio-tab:focus-visible { outline:2px solid var(--accent-cyan); outline-offset:-2px; }
         /* The Wi-Fi sub-filter tucks under the radio strip it belongs to. */
-        .radios.sub { margin-top:-0.5rem; }
+        /* The radio strip is five chips now (All / BLE / Wi-Fi / AP / Client),
+           not the three it was sized for. An explicit modifier rather than
+           redefining .radios, which the segmented pickers also use. */
+        .radios.five { grid-template-columns:repeat(5,1fr); }
+        .radios.five .radio-tab { padding:0.45rem 0.15rem; font-size:0.7rem; }
         /* Segmented pickers in the Alerts sheet (Sound, Lights). */
         .seg { margin:0; flex:0 1 auto; }
         /* .radios is sized for the 3-way radio strip (Both / Bluetooth / Wi-Fi).
@@ -1235,36 +1235,25 @@
                     </svg>
                 </button>
             </div>
-            <!-- Which board, over what, and a real button to connect or leave. -->
+            <!-- Which board, over what, how long it has been up, how many
+                 times it has beeped, and a real button to connect or leave.
+                 This was a three-cell card of its own; the numbers are the
+                 same, the card is not. The GPS dot appears only when a fix is
+                 actually being held, because "Location: Off" is the answer
+                 99% of the time and was taking up a third of that card. -->
             <div class="hdr-conn">
                 <span class="statdot off" id="hdr-dot"></span>
                 <span id="hdr-dev">Not connected</span>
+                <span class="hdr-stats" id="hdr-stats"></span>
+                <span class="hdr-gps" id="hdr-gps" hidden><span class="statdot off" id="st-gps-dot"></span><span id="st-gps"></span></span>
                 <button class="hdr-btn" id="hdr-act" onclick="hdrTap()">Connect</button>
             </div>
         </header>
 
         <main id="tab-sweep" class="tab active">
 
-        <!-- Status strip. Which board and how it is linked is in the header. -->
-        <div class="statstrip">
-            <div class="statcell" title="Time since the board last powered on. A reset here means it lost power.">
-                <div class="statcell-k">Uptime</div>
-                <div class="statcell-v"><span id="st-up">—</span></div>
-            </div>
-            <div class="statcell" title="Alerts the board has sounded since it powered on, including while nothing was connected.">
-                <div class="statcell-k">Alerts since boot</div>
-                <div class="statcell-v"><span id="st-alerts">—</span></div>
-            </div>
-            <div class="statcell" title="Location is taken as a single fix when you confirm a pin, or when you recenter the map. It is never tracked continuously.">
-                <div class="statcell-k">Location</div>
-                <div class="statcell-v"><span class="statdot off" id="st-gps-dot"></span><span id="st-gps">Off</span></div>
-            </div>
-        </div>
-
-        <!-- Controls. Pins live behind the header 📍, signatures in Settings. -->
         <div class="toolbar">
-            <button class="ctrl-btn" id="btn-buzzer" onclick="openSounds()">🔔 Alerts: —</button>
-            <button class="ctrl-btn" id="btn-foxhunt" onclick="toggleFoxhunt()">◉ Filter: —</button>
+            <button class="ctrl-btn" id="btn-buzzer" onclick="openSounds()">&#128276; Alerts: &mdash;</button>
         </div>
 
         <!-- Live scope -->
@@ -1272,6 +1261,10 @@
             <h2>Live scope</h2>
             <span class="scope-head-n"><span id="scope-count">0</span> now</span>
             <span class="scope-drop" id="scope-drop" style="display:none"></span>
+            <!-- What the list is allowed to contain. Reads its state, never
+                 "on/off": the word Filter now belongs to the radio chips, and
+                 this one was inverted anyway (foxhuntMode true = filter off). -->
+            <button class="scope-act" id="btn-foxhunt" onclick="toggleFoxhunt()">&mdash;</button>
             <button class="scope-act" id="btn-view" onclick="toggleView()">Map</button>
         </div>
 
@@ -1301,18 +1294,15 @@
             </button>
         </div>
 
-        <!-- Radio filter. Always available: dropping one radio is the quickest
-             way to cut a long list down to what you came for. -->
-        <div class="radios" id="radios" role="tablist">
-            <button class="radio-tab" role="tab" aria-selected="true" data-radio="any">Both radios</button>
-            <button class="radio-tab" role="tab" aria-selected="false" data-radio="BLE">Bluetooth</button>
+        <!-- Radio filter. Two variables, five reachable combinations, one
+             row: dropping a radio is the quickest way to cut a long list down
+             to what you came for, so it stays permanently on screen. -->
+        <div class="radios five" id="radios" role="tablist">
+            <button class="radio-tab" role="tab" aria-selected="true" data-radio="any">All</button>
+            <button class="radio-tab" role="tab" aria-selected="false" data-radio="BLE">BLE</button>
             <button class="radio-tab" role="tab" aria-selected="false" data-radio="WiFi">Wi&#8209;Fi</button>
-        </div>
-        <!-- Wi-Fi only: access points (beacons) vs clients (probe requests). -->
-        <div class="radios sub" id="wifi-roles" role="tablist" hidden>
-            <button class="radio-tab" role="tab" aria-selected="true" data-role="any">All Wi&#8209;Fi</button>
-            <button class="radio-tab" role="tab" aria-selected="false" data-role="ap">📡 APs</button>
-            <button class="radio-tab" role="tab" aria-selected="false" data-role="client">📱 Clients</button>
+            <button class="radio-tab" role="tab" aria-selected="false" data-radio="ap">&#128225; AP</button>
+            <button class="radio-tab" role="tab" aria-selected="false" data-radio="client">&#128241; Client</button>
         </div>
 
         <!-- Foxhunt readout, shown only while a target is locked. -->

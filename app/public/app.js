@@ -288,25 +288,41 @@
         // left behind can never silently hide rows under another tab.
         let wifiRole = 'any';   // 'any' | 'ap' | 'client'
 
-        function setRadio(key) {
-            radio = key;
+        // Radio and role are two variables but only five combinations are
+        // reachable, so they are one row of five chips. They used to be two
+        // rows, the second appearing and vanishing with the Wi-Fi tab, which
+        // moved everything below it by a row mid-scan.
+        const RADIO_CHIPS = {
+            any:    ['any',  'any'],
+            BLE:    ['BLE',  'any'],
+            WiFi:   ['WiFi', 'any'],
+            ap:     ['WiFi', 'ap'],
+            client: ['WiFi', 'client']
+        };
+        function radioChipKey() {
+            if (radio === 'any') return 'any';
+            if (radio === 'BLE') return 'BLE';
+            return wifiRole === 'any' ? 'WiFi' : wifiRole;
+        }
+        function paintRadioChips() {
+            const sel = radioChipKey();
             document.querySelectorAll('#radios .radio-tab').forEach(function (el) {
                 el.setAttribute('aria-selected',
-                    el.getAttribute('data-radio') === key ? 'true' : 'false');
+                    el.getAttribute('data-radio') === sel ? 'true' : 'false');
             });
-            const roles = document.getElementById('wifi-roles');
-            if (roles) roles.hidden = key !== 'WiFi';
+        }
+        function setRadioChip(key) {
+            const pair = RADIO_CHIPS[key];
+            if (!pair) return;
+            radio = pair[0];
+            wifiRole = pair[1];
+            paintRadioChips();
             renderScope();
         }
-
-        function setWifiRole(key) {
-            wifiRole = key;
-            document.querySelectorAll('#wifi-roles .radio-tab').forEach(function (el) {
-                el.setAttribute('aria-selected',
-                    el.getAttribute('data-role') === key ? 'true' : 'false');
-            });
-            renderScope();
-        }
+        // Kept as separate setters: they are the two independent variables
+        // matchesRadio() reads, and app.js's own self-test drives them directly.
+        function setRadio(key) { radio = key; paintRadioChips(); renderScope(); }
+        function setWifiRole(key) { wifiRole = key; paintRadioChips(); renderScope(); }
 
         // A device seen on both radios counts as either.
         function matchesRadio(m) {
@@ -691,8 +707,8 @@
             // The radio strip is always on screen and its choice is yours, not
             // the filter's — it used to appear and reset with foxhunt mode.
             if (!foxhuntMode && huntMac) stopHunt();
-            showToast(foxhuntMode ? 'Filter off \u2014 showing everything'
-                                  : 'Filter on \u2014 matches only',
+            showToast(foxhuntMode ? 'Showing every device the board tracks'
+                                  : 'Showing matches only',
                       foxhuntMode ? '\u25ce' : '\u25c9');
             renderScope();
         }
@@ -706,11 +722,13 @@
             if (!btn) return;
             if (!connectionType) {
                 btn.classList.remove('on');
-                btn.textContent = '◉ Filter: —';
+                btn.textContent = '—';
                 return;
             }
-            btn.classList.toggle('on', !foxhuntMode);
-            btn.textContent = foxhuntMode ? '\u25ce Filter: Off' : '\u25c9 Filter: On';
+            // A state, not a toggle name. "Filter: Off" meant the list was
+            // showing MORE, and the word now belongs to the radio chips.
+            btn.classList.toggle('on', foxhuntMode);
+            btn.textContent = foxhuntMode ? 'All devices' : 'Matches only';
         }
 
         function huntTarget(mac) {
@@ -852,9 +870,7 @@
             const pl = ev.target.closest('#pin-lens .radio-tab');
             if (pl) { setPinLens(pl.getAttribute('data-pin')); return; }
             const rt = ev.target.closest('#radios .radio-tab');
-            if (rt) { setRadio(rt.getAttribute('data-radio')); return; }
-            const wr = ev.target.closest('#wifi-roles .radio-tab');
-            if (wr) { setWifiRole(wr.getAttribute('data-role')); return; }
+            if (rt) { setRadioChip(rt.getAttribute('data-radio')); return; }
             const lm = ev.target.closest('#led-modes .radio-tab');
             if (lm) { setLed(Number(lm.getAttribute('data-led'))); return; }
             const tc = ev.target.closest('#theme-modes .theme-chip');
@@ -1511,7 +1527,10 @@
                 if (d) d.className = 'statdot ' + cls;
                 if (t) t.textContent = text;
             };
-            const via = { BLE: 'Bluetooth', USB: 'USB', SERIAL: 'USB serial' }[connectionType] || connectionType;
+            // Short forms: the name, the uptime and the alert count share one
+            // line with the Disconnect button, and "Bluetooth" alone cost
+            // enough of it to ellipsize the board's own name.
+            const via = { BLE: 'BLE', USB: 'USB', SERIAL: 'Serial' }[connectionType] || connectionType;
             set('hdr-dot', 'hdr-dev',
                 connectionType ? 'ok' : 'off',
                 !connectionType ? 'Not connected'
@@ -1521,11 +1540,19 @@
                 act.textContent = connectionType ? 'Disconnect' : 'Connect';
                 act.classList.toggle('disc', !!connectionType);
             }
-            const txt = (id, text) => { const e = document.getElementById(id); if (e) e.textContent = text; };
-            txt('st-up', bootAt === null ? '—'
-                : fmtUptime(Math.max(0, Math.floor((Date.now() - bootAt) / 1000))));
-            txt('st-alerts', alertCount === null ? '—' : String(alertCount));
+            // Uptime and the alert count ride the same line as the board name.
+            // Both are how you prove the headless path worked, so they stay on
+            // Sweep; they just no longer need a card to say it.
+            const bits = [];
+            if (bootAt !== null) bits.push(fmtUptime(Math.max(0, Math.floor((Date.now() - bootAt) / 1000))));
+            if (alertCount !== null) bits.push(alertCount + (alertCount === 1 ? ' alert' : ' alerts'));
+            const st = document.getElementById('hdr-stats');
+            if (st) st.textContent = bits.length ? ' · ' + bits.join(' · ') : '';
+            // The GPS readout appears only while there is something to say.
+            // Idle it read "Location: Off" forever and owned a third of a card.
             const g = gpsDisplay();
+            const gw = document.getElementById('hdr-gps');
+            if (gw) gw.hidden = (gpsState.state === 'off');
             set('st-gps-dot', 'st-gps', g.dot, g.text);
             // Here rather than only on a change: a reconnect whose scan_all
             // matches the old value would otherwise leave "—" up.
