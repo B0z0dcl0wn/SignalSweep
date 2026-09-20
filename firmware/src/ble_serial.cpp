@@ -119,6 +119,17 @@ void applyRandomMac() {
 static bool bleScanOn  = true;
 static bool wifiScanOn = true;
 
+// CMD:SIGS is answered from bleSerialTick(), not from the router — see the
+// comment at the command. Written on the NimBLE host task, read on loop().
+static volatile bool sigsRequested = false;
+
+// CMD:LOG:READ likewise. One request in flight is enough -- the app pages
+// strictly one at a time, waiting for the `done` frame before asking again.
+static volatile bool     logReadPending = false;
+static volatile uint16_t logReadBoot = 0;
+static volatile uint32_t logReadSecs = 0;
+static volatile uint32_t logReadSkip = 0;
+
 String getBleConfigJson() {
     JsonDocument doc;
     doc["cfg"] = true;
@@ -216,9 +227,10 @@ static void sendAlertLog(uint16_t fromBoot, uint32_t fromSecs, size_t skip) {
         sendReply(out);
     }
 
-    // Heap, not stack: this runs on the NimBLE host callback (onWrite), whose
-    // stack is small, and a ~1 KB local array here is exactly what overflowed
-    // the canary. malloc'd alongside buf so the callback frame stays lean.
+    // Heap, not stack. This is called from bleSerialTick() now, but it used to
+    // run on the NimBLE host callback (onWrite), where a ~1 KB local array here
+    // is exactly what overflowed the canary -- keep it malloc'd so moving the
+    // call site again cannot bring that back.
     const size_t b64cap = ((LOG_READ_BATCH * ALERT_LOG_REC_SIZE) * 4) / 3 + 8;
     uint8_t* b64 = (uint8_t*)malloc(b64cap);
     if (b64 == NULL) { free(buf); sendReply("{\"logrd\":{\"done\":true}}"); return; }
@@ -263,6 +275,12 @@ static bool deviceConnected = false;
 // the peer tells us otherwise; phones routinely negotiate 247 or more, which is
 // worth roughly 3x fewer notifications for the same payload.
 static uint16_t negotiatedMtu = 23;
+
+// One writer at a time. A push is reassembled by the app on newlines, so if the
+// detector's 1 Hz push interleaves its notifications with a multi-chunk reply
+// from loop() (CMD:SIGS is ~20 chunks), the app sees two half-JSONs and throws
+// both away. Created lazily on first use; a null mutex just means "send".
+static SemaphoreHandle_t txMutex = NULL;
 
 /**
  * @brief (Re)start advertising the Nordic UART Service.
@@ -446,6 +464,17 @@ void openAdvertisingWindow() {
 }
 
 void bleSerialTick() {
+    // Answer a deferred CMD:SIGS from loop(), off the NimBLE host task.
+    if (sigsRequested) {
+        sigsRequested = false;
+        sendReply(getWatchersSignaturesJson());
+    }
+
+    if (logReadPending) {
+        logReadPending = false;
+        sendAlertLog(logReadBoot, logReadSecs, (size_t)logReadSkip);
+    }
+
     // Close the window. A press in the field must not leave the device
     // broadcasting for the rest of the day — that would silently defeat the
     // only reason receive-only exists. A client that connected in time already
@@ -610,7 +639,17 @@ void processIncomingCommand(const String& rawCommand) {
             // replaced a rule set nobody had seen. On demand only, never on
             // connect: the reply is multi-KB and the 1 Hz push is the tight
             // budget. sendBleSerial() already chunks it to the MTU.
-            sendReply(getWatchersSignaturesJson());
+            //
+            // Deferred to bleSerialTick() instead of answered here, because
+            // this router runs on the NimBLE host task (the onWrite callback)
+            // and a multi-KB reply is ~20+ notifications with a vTaskDelay
+            // between each. The host task cannot drain its own tx queue while
+            // it is blocked inside our callback, so the mbuf pool runs dry and
+            // the reply is silently lost — the Signatures page loaded over USB
+            // (where commands run on loop()) and stayed blank over BLE.
+            // Building the JSON here also put a JsonDocument plus a multi-KB
+            // String on that small stack.
+            sigsRequested = true;
         } else if (rawStr == "CMD:SIGS:RESET") {
             // Restore the built-in signature rules, undoing a pushed rule set
             // without the full factory reset (which also wipes mode + lock).
@@ -675,7 +714,16 @@ void processIncomingCommand(const String& rawCommand) {
                 uint16_t fb = (uint16_t)args.substring(0, c1).toInt();
                 uint32_t fs = (uint32_t)args.substring(c1 + 1, c2).toInt();
                 size_t skip = (size_t)args.substring(c2 + 1).toInt();
-                sendAlertLog(fb, fs, skip);
+                // Deferred to bleSerialTick() for the same reason as CMD:SIGS:
+                // this router runs on the NimBLE host task, which cannot drain
+                // its own notify queue while blocked in our callback, and a
+                // page is a header plus up to 11 base64 lines. It also does
+                // LittleFS reads and two mallocs, none of which belong on that
+                // task. Over USB it ran on loop() and looked fine.
+                logReadBoot = fb;
+                logReadSecs = fs;
+                logReadSkip = skip;
+                logReadPending = true;
             }
         }
     }
@@ -768,6 +816,9 @@ void sendBleSerial(const String& data) {
     size_t length = payload.length();
     if (length == 0) return;
 
+    if (txMutex == NULL) txMutex = xSemaphoreCreateMutex();
+    if (txMutex) xSemaphoreTake(txMutex, portMAX_DELAY);
+
     // Chunk to the negotiated MTU rather than a fixed 180 bytes. A notification
     // carries MTU-3 bytes of payload; at the common 247-byte MTU that is 244
     // instead of 180, so a ~4 KB telemetry push costs ~17 notifications rather
@@ -796,4 +847,6 @@ void sendBleSerial(const String& data) {
             }
         }
     }
+
+    if (txMutex) xSemaphoreGive(txMutex);
 }

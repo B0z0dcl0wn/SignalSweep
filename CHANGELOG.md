@@ -4,6 +4,34 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Fixed — Bulk replies never arrived over BLE
+
+- The Signatures page loaded nothing over Bluetooth, on the phone and in the
+  hosted web app alike, while working perfectly over the USB cable. **Trap: the
+  command router runs on the NimBLE host task (the `onWrite` callback), and that
+  task cannot drain its own notification queue while it is blocked inside our
+  callback.** A short reply like `CMD:CFG` fits in a notification or two and
+  slips through; the `CMD:SIGS` readback is several KB — roughly twenty chunks
+  with a yield between each — so the mbuf pool ran dry partway and the rest of
+  the reply was simply dropped. Nothing errored, on either side. It hid for the
+  life of the feature because over USB the same command runs on `loop()`, which
+  is the transport the bench uses.
+- `CMD:SIGS` and `CMD:LOG:READ` now set a flag that `bleSerialTick()` acts on
+  from `loop()`. That also moves their work off that small stack: the signature
+  reply built a `JsonDocument` plus a multi-KB `String` there, and the log read
+  does LittleFS reads and two allocations. **Anything answering with more than a
+  couple of notifications belongs on `loop()`, not in the router** — and it must
+  be tested with a real BLE connect, because USB cannot reproduce the failure.
+- **Second bug, found on the way out: `sendBleSerial()` had no lock.** Moving a
+  bulk reply onto `loop()` put it in a race with the detector's 1 Hz push from
+  its own task, and because the app reassembles pushes on newlines, interleaved
+  chunks would hand it two half-JSONs and it discards both — the same silent
+  "the device found nothing" symptom an oversized push produces. One mutex
+  around the chunk loop, so there is one writer at a time whoever calls it.
+- Verified over serial on both boards: the signature readback returns 52 rules
+  with zero corrupt lines, and the log readback answers its header and `done`
+  frames cleanly. The multi-line log case is not yet exercised on hardware.
+
 ### Changed — Transient device state, and two bench traps
 
 - Added a device command that is deliberately the **opposite** of every other
