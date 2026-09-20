@@ -389,10 +389,17 @@ if (!/t\.logPending = true/.test(noteFn)) logFail.push('noteAlertForTarget no lo
 // hunt (both refused by noteAlert) write nothing.
 if (!/if \(noteAlert\([\s\S]{0,900}?logPending = true/.test(noteFn)) logFail.push('logPending set outside the noteAlert() gate -- muted categories or hunts would be logged');
 // The flush happens after the mutex is released: holding it across flash I/O
-// would stall the BLE scan callback for exactly as long as the write took.
-const giveAt = wwSrc.indexOf('xSemaphoreGive(watchersMutex);\n        }');
+// would stall the BLE scan callback for exactly as long as the write took. So
+// the mutex must be given back between collecting the pending records (inside
+// the lock) and writing them. Newline-agnostic on purpose -- the working copy
+// is CRLF on Windows, and a literal \n here silently passed on LF and failed on
+// CRLF.
+const collectAt = wwSrc.indexOf('toLog.push_back');
 const writeAt = wwSrc.indexOf('alertLogWrite(p.mac');
-if (giveAt < 0 || writeAt < 0 || writeAt < giveAt) logFail.push('alert log flush no longer happens after xSemaphoreGive -- flash I/O under the detection mutex');
+if (collectAt < 0 || writeAt < 0 || writeAt < collectAt ||
+    !wwSrc.slice(collectAt, writeAt).includes('xSemaphoreGive(watchersMutex)')) {
+    logFail.push('alert log flush no longer happens after xSemaphoreGive -- flash I/O under the detection mutex');
+}
 if (!/alertLogTick\(\);/.test(wwSrc)) logFail.push('the 1 Hz task no longer ticks the log clock (millis rollover would rewind the ordering key)');
 
 if (logFail.length) { console.log('FAIL: alert log:', logFail); process.exit(1); }

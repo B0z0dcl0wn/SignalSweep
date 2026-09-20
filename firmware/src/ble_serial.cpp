@@ -216,11 +216,16 @@ static void sendAlertLog(uint16_t fromBoot, uint32_t fromSecs, size_t skip) {
         sendReply(out);
     }
 
-    uint8_t b64[((LOG_READ_BATCH * ALERT_LOG_REC_SIZE) * 4) / 3 + 8];
+    // Heap, not stack: this runs on the NimBLE host callback (onWrite), whose
+    // stack is small, and a ~1 KB local array here is exactly what overflowed
+    // the canary. malloc'd alongside buf so the callback frame stays lean.
+    const size_t b64cap = ((LOG_READ_BATCH * ALERT_LOG_REC_SIZE) * 4) / 3 + 8;
+    uint8_t* b64 = (uint8_t*)malloc(b64cap);
+    if (b64 == NULL) { free(buf); sendReply("{\"logrd\":{\"done\":true}}"); return; }
     for (size_t off = 0; off < n; off += LOG_READ_BATCH) {
         size_t take = (n - off < LOG_READ_BATCH) ? (n - off) : LOG_READ_BATCH;
         size_t olen = 0;
-        if (mbedtls_base64_encode(b64, sizeof(b64), &olen,
+        if (mbedtls_base64_encode(b64, b64cap, &olen,
                                   buf + off * ALERT_LOG_REC_SIZE,
                                   take * ALERT_LOG_REC_SIZE) != 0) break;
         String line = "LOG:";
@@ -230,6 +235,7 @@ static void sendAlertLog(uint16_t fromBoot, uint32_t fromSecs, size_t skip) {
         // than stacking chunks faster than the link carries them.
         vTaskDelay(pdMS_TO_TICKS(2));
     }
+    free(b64);
     free(buf);
     sendReply("{\"logrd\":{\"done\":true}}");
 }

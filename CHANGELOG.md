@@ -4,6 +4,26 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Fixed — The BLE command handler was overflowing the NimBLE host task stack
+
+- **A phone connecting to the board could boot-loop it.** The BLE write callback
+  (`onWrite` → `processIncomingCommand`) runs on the NimBLE host task, whose stack
+  defaults to 4096 bytes, and the `CMD:CFG` reply builds JSON while doing several
+  NVS flash reads — already close to that limit. Adding the alert-log command
+  parsing enlarged the handler's stack frame (the compiler reserves space for
+  every branch's locals, even the `CMD:CFG` path that uses none of them), which
+  tipped it past the canary: the phone connects, the board panics
+  (`Stack canary watchpoint triggered (nimble_host)`), reboots, the phone
+  reconnects, and it loops. It was invisible until now because the board had only
+  ever been driven over USB, where commands are processed on `loop()`, not the
+  host-task callback.
+- **The NimBLE host task stack is now 8192** (`CONFIG_BT_NIMBLE_HOST_TASK_STACK_SIZE`,
+  both S3 and C5), and `sendAlertLog()`'s ~1 KB base64 buffer moved from the stack
+  to the heap so a log readback — which also runs on that callback — cannot
+  overflow it either. Verified on hardware: a phone connects and holds, a full
+  Start→alerts→Stop session reads back 6 alerts (3 drone, 3 camera) and writes the
+  `.txt` with no panic.
+
 ### Added — An alert log on the board's own flash, read back by the phone
 
 - **The device now keeps a record of what its buzzer sounded — with no phone
