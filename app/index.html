@@ -865,7 +865,12 @@
 <body>
     <style>
         /* Live scope + controls (single-detector UI) */
-        .toolbar { display:flex; flex-wrap:wrap; gap:10px; margin:1rem 0; }
+        /* A plain row of buttons outside a modal. .modal-actions is a COLUMN,
+           which is why the exports stacked full-width when the pins moved out
+           of their sheet; this is the old .toolbar rule, renamed for what it
+           actually is now that the toolbar itself is gone. */
+        .btn-row { display:flex; flex-wrap:wrap; gap:10px; margin:0.8rem 0; }
+        .btn-row .ctrl-btn { flex:1; }
         .ctrl-btn { flex:1; min-width:130px; padding:0.7rem 1rem; border-radius:10px;
             border:1px solid rgba(255,255,255,0.12); background:rgba(255,255,255,0.04);
             color:var(--text-main,#e6edf6); font-weight:600; cursor:pointer; font-size:0.85rem; }
@@ -1413,7 +1418,7 @@
                 <h3 class="set-label">Saved pins</h3>
                 <p class="set-note">Places you confirmed, one GPS fix each, encrypted behind your PIN. Turn the prompt on with <strong>Record</strong> on the Sweep screen, or in Settings.</p>
                 <div id="pins-body" style="margin:0.6rem 0;"></div>
-                <div class="modal-actions" style="display:flex;gap:10px;flex-wrap:wrap;">
+                <div class="btn-row">
                     <button class="ctrl-btn" onclick="exportPinsFile()">Export JSON</button>
                     <button class="ctrl-btn" onclick="exportPinsOSM()">Export OSM</button>
                 </div>
@@ -1530,7 +1535,7 @@
                     the category the band tab is on. Detecting never needs the PIN.
                     Stopping a recording turns this back off unless you set it here.
                 </p>
-                <div class="modal-actions" style="display:flex;gap:10px;flex-wrap:wrap;">
+                <div class="btn-row">
                     <button class="ctrl-btn" onclick="saveAlertLog(true)">Save the whole log</button>
                     <button class="ctrl-btn" style="border-color:var(--accent-red,#ef4444);color:var(--accent-red,#ef4444)" onclick="clearAlertLogConfirm()">Clear log</button>
                 </div>

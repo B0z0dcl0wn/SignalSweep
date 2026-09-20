@@ -2548,8 +2548,18 @@
             // board writes what it beeped at, and the phone offers to pin what
             // it matched. Two separate switches meant "am I recording?" had two
             // answers and you could easily be half on.
+            // The bookmark must be the board's clock NOW, not when we connected.
+            // log_boot/log_secs arrive only in the CMD:CFG reply, which is asked
+            // for once per connection, so logSecsNow is frozen at connect time --
+            // starting a recording an hour into a drive bookmarked an hour ago
+            // and read back alerts from before the tap. log_secs is seconds since
+            // boot, which is exactly what bootAt (from cfg.uptime) tracks, so it
+            // can be recomputed here with no extra round trip and no extra bytes
+            // on the push, which is the tightest budget on the device.
+            const secsNow = bootAt === null ? logSecsNow
+                : Math.max(logSecsNow, Math.floor((Date.now() - bootAt) / 1000));
             logSession = {
-                boot: logBootNow, secs: logSecsNow, at: Date.now(),
+                boot: logBootNow, secs: secsNow, at: Date.now(),
                 alerts0: (alertCount === null ? 0 : alertCount),
                 pins0: pinsCache.length,
                 // Remember whether the pin prompt was already armed, so Stop
