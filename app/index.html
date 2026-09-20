@@ -533,7 +533,11 @@
         .tab.active { display: block; }
         .tabbar {
             position: fixed; left: 0; right: 0; bottom: 0; z-index: 900;
+            /* The bar spans the window so it is always thumb-reachable, but its
+               three targets line up with the content column rather than being
+               flung to the corners of a desktop monitor. */
             display: grid; grid-template-columns: repeat(3, 1fr);
+            max-width: 1100px; margin: 0 auto;
             background: rgba(9, 13, 22, 0.97);
             backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
             border-top: 1px solid rgba(255, 255, 255, 0.08);
