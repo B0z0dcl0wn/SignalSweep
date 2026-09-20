@@ -204,6 +204,49 @@
             setSoundsSummary();
         }
 
+        // ---- Tabs ------------------------------------------------------------
+        // Three panels under one header, switched by the bottom bar. Deliberately
+        // not persisted: the app opens on Sweep because that is what the device
+        // is for, and because a phone that reopens on Settings after a reboot
+        // looks like it lost the connection.
+        let currentTab = 'sweep';
+        function showTab(name) {
+            currentTab = name;
+            document.querySelectorAll('.tab').forEach(el => {
+                el.classList.toggle('active', el.id === 'tab-' + name);
+            });
+            document.querySelectorAll('#tabbar button').forEach(b => {
+                b.setAttribute('aria-selected', b.dataset.tab === name ? 'true' : 'false');
+            });
+            window.scrollTo(0, 0);
+            // Survey's two lists are built on demand; Sweep repaints itself on
+            // the next push, and the map needs its size recomputed after being
+            // display:none (Leaflet measures a hidden container as 0x0).
+            if (name === 'survey') {
+                if (!capturing) capStat = { wifi: 0, ble: 0, drops: 0, remain: capReqSecs };
+                paintCapture();
+                renderFinds();
+            } else if (name === 'sweep' && viewMode === 'map' && map) {
+                setTimeout(() => { try { map.invalidateSize(); } catch (e) {} }, 0);
+            }
+        }
+
+        document.addEventListener('click', (e) => {
+            const t = e.target.closest('#tabbar button');
+            if (t) showTab(t.dataset.tab);
+        });
+
+        // Transient link state ("connecting", "reconnecting") painted into the
+        // header's own connection line. It used to go to a hidden status badge,
+        // so the app looked frozen for the whole of a slow BLE connect; the next
+        // renderStatusStrip() overwrites it with the real board name.
+        function setConnState(cls, text) {
+            const d = document.getElementById('hdr-dot');
+            const t = document.getElementById('hdr-dev');
+            if (d) d.className = 'statdot ' + cls;
+            if (t) t.textContent = text;
+        }
+
         function toggleView() {
             viewMode = (viewMode === 'list') ? 'map' : 'list';
             const wrap = document.getElementById('map-wrap');
@@ -2025,16 +2068,11 @@
             });
         }
 
-        // ---- The Finder page (full-screen investigation workflow) ----
-        function openFinder() {
-            document.getElementById('finder-page').classList.add('active');
-            if (!capturing) capStat = { wifi: 0, ble: 0, drops: 0, remain: capReqSecs };
-            paintCapture();
-            renderFinds();
-        }
-        function closeFinder() {
-            document.getElementById('finder-page').classList.remove('active');
-        }
+        // ---- The Survey tab (investigation workflow) ----
+        // openFinder/closeFinder keep their names: they are what the capture
+        // flow and the onclicks already call, and they now just move tabs.
+        function openFinder() { showTab('survey'); }
+        function closeFinder() { showTab('sweep'); }
         function unlockFindsView() {
             pendingPinAction = renderFinds;
             openPinGate(pinStoreExists() ? 'unlock' : 'create');
@@ -2995,13 +3033,8 @@
         function closeConnModal() { document.getElementById('connModal').classList.remove('active'); }
 
         function updateConnectionUI(isConnected, type = '') {
-            const pulseDot = document.getElementById('pulseDot');
-            const connStatusText = document.getElementById('connStatusText');
-
             if (isConnected) {
                 connectionType = type;
-                pulseDot.className = 'pulse-dot connected';
-                connStatusText.textContent = `CONNECTED (${type})`;
                 closeConnModal();
                 renderStatusStrip();
                 showToast(`Connected via ${type}`, '✓');
@@ -3027,8 +3060,6 @@
                 setBeepUi(null);
                 setSigUi(null);
                 devName = ''; bootAt = null; alertCount = null;
-                pulseDot.className = 'pulse-dot';
-                connStatusText.textContent = 'DISCONNECTED';
                 renderStatusStrip();
                 showToast('Device disconnected', '✕');
             }
@@ -3073,10 +3104,7 @@
         }
 
         async function connectNativeBluetooth() {
-            const pulseDot = document.getElementById('pulseDot');
-            const connStatusText = document.getElementById('connStatusText');
-            pulseDot.className = 'pulse-dot connecting';
-            connStatusText.textContent = 'CONNECTING NATIVE BLE...';
+            setConnState('warn', 'Connecting…');
             try {
                 await window.BleClient.initialize({ androidNeverForLocation: true });
                 // With the radio off the picker just scans nothing and shows an
@@ -3119,8 +3147,7 @@
                 // Closing the picker is a choice, not a failure: undo the
                 // "connecting" dot without the "Device disconnected" toast.
                 if (/cancelled/i.test(msg)) {
-                    pulseDot.className = 'pulse-dot';
-                    connStatusText.textContent = 'DISCONNECTED';
+                    renderStatusStrip();
                     return;
                 }
                 updateConnectionUI(false);
@@ -3188,10 +3215,7 @@
                 alert('Web Bluetooth API is not supported by your browser. Please use Google Chrome, Microsoft Edge, or Opera.');
                 return;
             }
-            const pulseDot = document.getElementById('pulseDot');
-            const connStatusText = document.getElementById('connStatusText');
-            pulseDot.className = 'pulse-dot connecting';
-            connStatusText.textContent = 'CONNECTING BLE...';
+            setConnState('warn', 'Connecting…');
             try {
                 let device;
                 try {
@@ -3309,10 +3333,7 @@
         }
 
         async function connectNativeUsb() {
-            const pulseDot = document.getElementById('pulseDot');
-            const connStatusText = document.getElementById('connStatusText');
-            pulseDot.className = 'pulse-dot connecting';
-            connStatusText.textContent = 'CONNECTING USB...';
+            setConnState('warn', 'Connecting…');
             try {
                 const { devices } = await window.UsbSerial.listDevices();
                 if (!devices || devices.length === 0) {
@@ -3412,10 +3433,7 @@
                 alert('WebSerial API is not supported by your browser. Please use Google Chrome, Microsoft Edge, or Opera.');
                 return;
             }
-            const pulseDot = document.getElementById('pulseDot');
-            const connStatusText = document.getElementById('connStatusText');
-            pulseDot.className = 'pulse-dot connecting';
-            connStatusText.textContent = 'CONNECTING SERIAL...';
+            setConnState('warn', 'Connecting…');
             try {
                 serialPort = await navigator.serial.requestPort();
                 await serialPort.open({ baudRate: 115200 });
@@ -3593,8 +3611,7 @@
             if (!wantConnection || reconnectTimer) return;
             reconnectDelay = Math.min(reconnectDelay ? reconnectDelay * 2 : 2000, 30000);
             const secs = Math.round(reconnectDelay / 1000);
-            const el = document.getElementById('connStatusText');
-            if (el) el.textContent = 'RECONNECTING (' + secs + 's)...';
+            setConnState('warn', 'Reconnecting in ' + secs + 's…');
             reconnectTimer = setTimeout(async () => {
                 reconnectTimer = null;
                 if (!wantConnection) return;
