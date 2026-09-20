@@ -4,6 +4,28 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Changed — The camera tab is strictly ALPR and mass surveillance
+
+- **The Surveillance/camera tab now shows only ALPRs and mass-surveillance
+  cameras (Flock, SoundThinking) plus body cams (Axon) — nothing else.** Before
+  this, any device whose category the app did not recognise fell into the
+  catch-all `other` bucket, which `inLens()` counted under the camera tab, and
+  `LENS_MASK.alpr` even included the generic beep bit. So a police-car router
+  (Cradlepoint / Peplink / Sierra), or any future unlabelled match, was listed
+  under Cameras and could beep while you were on that tab — the `bandOf()` class
+  of mistake, a weak or wrong hint being worse than none. The tab is now exactly
+  the `alpr` + `bodycam` categories; everything else (fleet routers, and any
+  category with no keyword) lives under **All** only, in the list and in the
+  tab's beep preset.
+- **SoundThinking / ShotSpotter is now named explicitly** in both
+  `categoryOf()` (app) and `alertCategoryFromName()` (firmware) so it routes to
+  the ALPR category and stays on the camera tab, rather than falling through the
+  catch-all it no longer has. A new `selftest.js` check fails if the two keyword
+  lists drift, since a mismatch would file a vendor under Cameras in the app
+  while the firmware beeps it as generic — a silent camera on the camera tab.
+- Body cams (Axon) stay on the tab (counted as mass surveillance here); fleet
+  routers move to All-only, which falls out of the same change.
+
 ### Fixed — Connect tells you when Bluetooth is off
 
 - **Tapping Connect on Android with Bluetooth off used to open an empty picker**

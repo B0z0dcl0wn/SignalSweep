@@ -40,7 +40,11 @@
                 return { key: 'tracker', label: 'Tracker',    color: '#ff3ac8', icon: '📍' };
             // ALPR before body cam, as in the firmware's alertCategoryFromName():
             // "ALPR / Camera" and "Surveillance Camera" both contain "cam".
-            if (c.indexOf('flock') >= 0 || c.indexOf('alpr') >= 0 || c.indexOf('plate') >= 0 || c.indexOf('surveil') >= 0)
+            // SoundThinking (ShotSpotter) is named here because the Cameras tab
+            // is strictly ALPR + mass surveillance: anything without a keyword
+            // lands in 'other', which is under Everything only.
+            if (c.indexOf('flock') >= 0 || c.indexOf('alpr') >= 0 || c.indexOf('plate') >= 0 || c.indexOf('surveil') >= 0 ||
+                c.indexOf('soundthinking') >= 0 || c.indexOf('shotspotter') >= 0)
                 return { key: 'alpr',    label: 'ALPR / Camera', color: '#ef4444', icon: '📷' };
             if (c.indexOf('body') >= 0 || c.indexOf('axon') >= 0 || c.indexOf('cam') >= 0)
                 return { key: 'bodycam', label: 'Body Cam',   color: '#ff5a1a', icon: '🎥' };
@@ -273,11 +277,12 @@
         function inLens(m, k) {
             if (k === 'all') return true;
             const c = bandOf(m);
-            // "Cameras" is the umbrella over what the buzzer says as two
-            // separate words (ALPR and body cam), plus a vendor category we
-            // have no keyword for (SoundThinking, Raven). It does NOT include
-            // 'weak' -- see bandOf(). LENS_MASK.alpr mirrors this umbrella.
-            if (k === 'alpr') return c === 'alpr' || c === 'bodycam' || c === 'other';
+            // "Cameras" is strictly ALPR + mass surveillance: the two buzzer
+            // words ALPR and body cam (Axon counts as mass surveillance here).
+            // NOT 'other' -- fleet routers, and any category with no keyword,
+            // are Everything only, or a police-car router reads as a camera.
+            // Not 'weak' either -- see bandOf(). LENS_MASK.alpr mirrors this.
+            if (k === 'alpr') return c === 'alpr' || c === 'bodycam';
             return c === k;
         }
 
@@ -2173,12 +2178,11 @@
         // hardware_manager.h's enum; change one, change both.
         const BEEP_BITS = { alpr: 1, bodycam: 2, drone: 4, tracker: 8, generic: 16 };
 
-        // The mask each band tab sets. Cameras is the same umbrella inLens()
-        // uses: ALPR + body cam + the vendor categories with no keyword,
-        // which the firmware sounds as GENERIC.
+        // The mask each band tab sets. Cameras is the same set inLens() uses:
+        // ALPR + body cam, never GENERIC (that is Everything only).
         const LENS_MASK = {
             all:     31,
-            alpr:    BEEP_BITS.alpr | BEEP_BITS.bodycam | BEEP_BITS.generic,
+            alpr:    BEEP_BITS.alpr | BEEP_BITS.bodycam,
             tracker: BEEP_BITS.tracker,
             drone:   BEEP_BITS.drone
         };
@@ -3378,6 +3382,7 @@
                 results.catTracker = categoryOf('Apple Find My Tracker').key === 'tracker';
                 results.catBodycam = categoryOf('Axon').key === 'bodycam';
                 results.catAlpr    = categoryOf('Flock Safety').key === 'alpr';
+                results.catSoundThinking = categoryOf('SoundThinking').key === 'alpr';
 
                 // Lens filtering. The lens must never be able to hide a match
                 // from its own tab, and 'all' must never hide anything -- the
@@ -3389,13 +3394,17 @@
                     { mac: 'AA:00:02', type: 'Axon',                   rssi: -60, confidence: 80 },
                     { mac: 'AA:00:03', type: 'Tracker',                rssi: -70, confidence: 80 },
                     { mac: 'AA:00:04', type: 'Drone', uas_id: 'X7',    rssi: -80, confidence: 90,
-                      lat: 30.2, lng: -92.0, op_lat: 30.1, op_lng: -92.1, alt: 120, speed: 4.5 }
+                      lat: 30.2, lng: -92.0, op_lat: 30.1, op_lng: -92.1, alt: 120, speed: 4.5 },
+                    { mac: 'AA:00:05', type: 'Fleet / Infrastructure', rssi: -90, confidence: 80 }
                 ]);
-                results.lensAll     = liveRows('all').length === 4;
+                results.lensAll     = liveRows('all').length === 5;
                 results.lensDrone   = liveRows('drone').length === 1;
                 results.lensTracker = liveRows('tracker').length === 1;
                 // Surveillance is the umbrella over ALPR + body cam.
-                results.lensAlpr    = liveRows('alpr').length === 2;
+                // Strictly: a fleet router (category 'other') stays out, and the
+                // tab's beep preset carries no GENERIC bit.
+                results.lensAlpr    = liveRows('alpr').length === 2 &&
+                    (LENS_MASK.alpr & BEEP_BITS.generic) === 0;
                 // Strongest-first ordering is what the list relies on.
                 results.lensSorted  = liveRows('all')[0].mac === 'AA:00:01';
                 const drone = liveMatches['AA:00:04'];

@@ -90,6 +90,20 @@ if (bitDrift.length) {
 }
 console.log('[signalsweep self-test] beep mask bits match firmware AlertCategory: ok');
 
+// The Cameras tab is strictly ALPR + mass surveillance, and the firmware and the
+// app each keep a keyword list that routes a category there. If the two drift,
+// a vendor the app files under Cameras beeps GENERIC, which that tab's preset
+// mutes -- a silent camera on the camera tab.
+const kw = src => new Set([...src.matchAll(/indexOf\(["'](\w+)["']\)/g)].map(m => m[1]));
+const fwAlpr = kw((readFileSync(new URL('../firmware/src/hardware_manager.cpp', import.meta.url), 'utf8')
+    .match(/if \(c\.indexOf\("flock"\)[\s\S]*?return ALERT_ALPR;/) || [''])[0]);
+const appAlpr = kw((appSrc.match(/if \(c\.indexOf\('flock'\)[\s\S]*?key: 'alpr'/) || [''])[0]);
+if (!fwAlpr.has('soundthinking') || [...fwAlpr].sort().join() !== [...appAlpr].sort().join()) {
+    console.log('FAIL: ALPR keyword drift: firmware', [...fwAlpr], 'app', [...appAlpr]);
+    process.exit(1);
+}
+console.log('[signalsweep self-test] ALPR / mass-surveillance keywords match firmware: ok');
+
 // Every field the firmware reports in CMD:CFG has to be read by the app, or it
 // is state the device owns and the phone silently guesses at. `buzzer` was
 // exactly that: reported by neither side, so the app shipped a hardcoded

@@ -782,8 +782,11 @@ AlertCategory alertCategoryFromName(const char* category) {
     // The shipped defaults ("Flock Safety", "Axon", "Tracker") dodge it, but the
     // signature list is operator-editable and the UI calls this bucket
     // "ALPR / camera". Naming only one of the two still lands where it did.
+    // SoundThinking is named so it speaks the ALPR word and sits under the
+    // app's Cameras tab (strictly ALPR + mass surveillance): an unknown
+    // category is GENERIC, which that tab's beep preset no longer includes.
     if (c.indexOf("flock") >= 0 || c.indexOf("alpr") >= 0 || c.indexOf("plate") >= 0 ||
-        c.indexOf("surveil") >= 0)
+        c.indexOf("surveil") >= 0 || c.indexOf("soundthinking") >= 0 || c.indexOf("shotspotter") >= 0)
         return ALERT_ALPR;
     if (c.indexOf("body") >= 0 || c.indexOf("axon") >= 0 || c.indexOf("cam") >= 0)
         return ALERT_BODYCAM;
