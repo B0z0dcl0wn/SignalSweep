@@ -914,6 +914,11 @@
         .set-body > .set-label:first-child { margin-top:0; }
         .set-label { font-size:0.75rem; font-weight:700; color:var(--text-muted);
             text-transform:uppercase; letter-spacing:0.08em; }
+        /* What the Alerts section is currently set to, on its own heading, so
+           the state is legible before you read a single row. */
+        .set-sum { text-transform:none; letter-spacing:0; font-weight:600;
+            color:var(--ss-dim); margin-left:0.4rem; }
+        .set-sum.on { color:var(--accent-emerald,#34d399); }
         .set-note { font-size:0.78rem; color:var(--text-muted); line-height:1.5; }
         .set-row { display:flex; justify-content:space-between; align-items:center; gap:10px;
             padding:0.7rem 0.85rem; background:rgba(255,255,255,0.05);
@@ -1252,10 +1257,6 @@
 
         <main id="tab-sweep" class="tab active">
 
-        <div class="toolbar">
-            <button class="ctrl-btn" id="btn-buzzer" onclick="openSounds()">&#128276; Alerts: &mdash;</button>
-        </div>
-
         <!-- Live scope -->
         <div class="scope-head">
             <h2>Live scope</h2>
@@ -1390,6 +1391,82 @@
         <main id="tab-settings" class="tab">
             <div class="finder-topbar"><h2>Settings</h2></div>
             <div class="set-body">
+                <!-- Alerts: HOW the device gets your attention (sound, lights)
+                     and WHAT for (the categories). These are set before you go
+                     out, not in the field, which is why they are a setting and
+                     not a toolbar sheet any more. Every control paints from the
+                     device (1 Hz push + CMD:CFG) and never from itself, so it
+                     cannot show a setting the board does not hold. Buttons on
+                     purpose: a checkbox flips on tap before the write is even
+                     attempted. Sound is not a master over the categories -- the
+                     buzzer mute is sound only, while a category switch gates
+                     its beep AND its light -- so each row's chip (alertChip)
+                     says what it will do. -->
+                <h3 class="set-label">Alerts <span class="set-sum" id="alerts-summary"></span></h3>
+                <p class="set-note">
+                    How the device gets your attention, and what for. Saved on the
+                    board, so you can set it and walk away.
+                </p>
+                <div class="alert-sec">How</div>
+                <div class="out-row">
+                    <span class="snd-label"><strong>&#128266; Sound</strong></span>
+                    <div class="radios seg" id="sound-modes" role="group" aria-label="Sound">
+                        <button class="radio-tab" data-sound="0" aria-pressed="false">Off</button>
+                        <button class="radio-tab" data-sound="1" aria-pressed="false">On</button>
+                    </div>
+                </div>
+                <div class="out-row">
+                    <span class="snd-label"><strong>&#128161; Lights</strong></span>
+                    <div class="radios seg" id="led-modes" role="group" aria-label="Lights">
+                        <button class="radio-tab" data-led="0" aria-pressed="false">Off</button>
+                        <button class="radio-tab" data-led="1" aria-pressed="false">One</button>
+                        <button class="radio-tab" data-led="2" aria-pressed="false">Dim</button>
+                        <button class="radio-tab" data-led="3" aria-pressed="false">Full</button>
+                    </div>
+                </div>
+                <p class="set-note alert-note">One lights a single LED in the alert&rsquo;s colour. Off stays dark, even during an alert.</p>
+                <div class="out-row" style="margin-top:12px;">
+                    <span class="snd-label"><strong>&#127912; Theme</strong></span>
+                </div>
+                <div id="theme-modes" role="group" aria-label="Theme">
+                    <button class="theme-chip" data-theme="0" aria-pressed="false"><i class="sw sw-classic"></i>Classic</button>
+                    <button class="theme-chip" data-theme="1" aria-pressed="false"><i class="sw sw-night"></i>Night Ops</button>
+                    <button class="theme-chip" data-theme="2" aria-pressed="false"><i class="sw sw-terminal"></i>Terminal</button>
+                    <button class="theme-chip" data-theme="3" aria-pressed="false"><i class="sw sw-glacier"></i>Glacier</button>
+                    <button class="theme-chip" data-theme="4" aria-pressed="false"><i class="sw sw-party"></i>Party</button>
+                </div>
+                <p class="set-note alert-note" id="theme-note" hidden></p>
+
+                <div class="alert-sec">What</div>
+                <div class="snd-list">
+                    <button class="snd-row" id="beep-alpr" onclick="toggleBeep('alpr')">
+                        <span class="snd-label"><strong>&#128247; ALPR / camera</strong><em>Two long beeps &middot; sweep</em></span>
+                        <span class="snd-state">&mdash;</span>
+                    </button>
+                    <button class="snd-row" id="beep-bodycam" onclick="toggleBeep('bodycam')">
+                        <span class="snd-label"><strong>&#127909; Body cam</strong><em>Long&#8209;short&#8209;short &middot; flash pops</em></span>
+                        <span class="snd-state">&mdash;</span>
+                    </button>
+                    <button class="snd-row" id="beep-drone" onclick="toggleBeep('drone')">
+                        <span class="snd-label"><strong>&#128760; Drone (Remote ID)</strong><em>Rising trill &middot; spinning rotors</em></span>
+                        <span class="snd-state">&mdash;</span>
+                    </button>
+                    <button class="snd-row" id="beep-tracker" onclick="toggleBeep('tracker')">
+                        <span class="snd-label"><strong>&#128205; Tracker</strong><em>Fast ticking &middot; sonar pings</em></span>
+                        <span class="snd-state">&mdash;</span>
+                    </button>
+                    <button class="snd-row" id="beep-generic" onclick="toggleBeep('generic')">
+                        <span class="snd-label"><strong>Other matches</strong><em>Plain warning &middot; glow</em></span>
+                        <span class="snd-state">&mdash;</span>
+                    </button>
+                </div>
+
+                <p class="set-note alert-note">
+                    A category you switch off stops beeping and flashing, but is <strong>still
+                    detected and listed</strong>. To stop the device announcing itself on the air,
+                    use Receive&#8209;only in Settings.
+                </p>
+
                 <h3 class="set-label">Radios</h3>
                 <p class="set-note">
                     Both come back on after a power cycle &mdash; pausing one is for this session only.
@@ -1423,12 +1500,6 @@
                     <span>Attack&#8209;gear detection</span>
                     <button class="set-toggle off" id="btn-attack" onclick="toggleAttack()">Off</button>
                 </div>
-
-                <h3 class="set-label">What beeps</h3>
-                <p class="set-note">
-                    Moved to <strong>&#128276; Alerts</strong> on the main screen &mdash; silencing a
-                    category is something you do in the field, not three taps deep in here.
-                </p>
 
                 <h3 class="set-label">Emissions</h3>
                 <p class="set-note">
@@ -1604,83 +1675,6 @@
                 <button class="ctrl-btn" onclick="resetSignatures()">Reset to defaults</button>
                 <button class="ctrl-btn on" id="btn-sig-save" onclick="saveSignatures()">Send to device</button>
             </div>
-        </div>
-    </div>
-
-    <!-- Alerts: HOW the device gets your attention (sound, lights) and WHAT
-         for (the categories). Every control paints from the device (1 Hz push +
-         CMD:CFG) and never from itself, so it cannot show a setting the board
-         does not hold. Buttons on purpose: a checkbox flips on tap before the
-         write is even attempted. Sound is not a master over the categories --
-         the buzzer mute is sound only, while a category switch gates its beep
-         AND its light -- so each row's chip (alertChip) says what it will do. -->
-    <div class="modal-overlay" id="sounds-modal">
-        <div class="modal-card">
-            <button class="modal-close-btn" onclick="document.getElementById('sounds-modal').classList.remove('active')">&times;</button>
-            <div class="modal-header">
-                <h2>Alerts</h2>
-                <p>How the device gets your attention, and what for. Saved on the board, so you can set it and walk away.</p>
-            </div>
-
-            <div class="alert-sec">How</div>
-            <div class="out-row">
-                <span class="snd-label"><strong>&#128266; Sound</strong></span>
-                <div class="radios seg" id="sound-modes" role="group" aria-label="Sound">
-                    <button class="radio-tab" data-sound="0" aria-pressed="false">Off</button>
-                    <button class="radio-tab" data-sound="1" aria-pressed="false">On</button>
-                </div>
-            </div>
-            <div class="out-row">
-                <span class="snd-label"><strong>&#128161; Lights</strong></span>
-                <div class="radios seg" id="led-modes" role="group" aria-label="Lights">
-                    <button class="radio-tab" data-led="0" aria-pressed="false">Off</button>
-                    <button class="radio-tab" data-led="1" aria-pressed="false">One</button>
-                    <button class="radio-tab" data-led="2" aria-pressed="false">Dim</button>
-                    <button class="radio-tab" data-led="3" aria-pressed="false">Full</button>
-                </div>
-            </div>
-            <p class="set-note alert-note">One lights a single LED in the alert&rsquo;s colour. Off stays dark, even during an alert.</p>
-            <div class="out-row" style="margin-top:12px;">
-                <span class="snd-label"><strong>&#127912; Theme</strong></span>
-            </div>
-            <div id="theme-modes" role="group" aria-label="Theme">
-                <button class="theme-chip" data-theme="0" aria-pressed="false"><i class="sw sw-classic"></i>Classic</button>
-                <button class="theme-chip" data-theme="1" aria-pressed="false"><i class="sw sw-night"></i>Night Ops</button>
-                <button class="theme-chip" data-theme="2" aria-pressed="false"><i class="sw sw-terminal"></i>Terminal</button>
-                <button class="theme-chip" data-theme="3" aria-pressed="false"><i class="sw sw-glacier"></i>Glacier</button>
-                <button class="theme-chip" data-theme="4" aria-pressed="false"><i class="sw sw-party"></i>Party</button>
-            </div>
-            <p class="set-note alert-note" id="theme-note" hidden></p>
-
-            <div class="alert-sec">What</div>
-            <div class="snd-list">
-                <button class="snd-row" id="beep-alpr" onclick="toggleBeep('alpr')">
-                    <span class="snd-label"><strong>&#128247; ALPR / camera</strong><em>Two long beeps &middot; sweep</em></span>
-                    <span class="snd-state">&mdash;</span>
-                </button>
-                <button class="snd-row" id="beep-bodycam" onclick="toggleBeep('bodycam')">
-                    <span class="snd-label"><strong>&#127909; Body cam</strong><em>Long&#8209;short&#8209;short &middot; flash pops</em></span>
-                    <span class="snd-state">&mdash;</span>
-                </button>
-                <button class="snd-row" id="beep-drone" onclick="toggleBeep('drone')">
-                    <span class="snd-label"><strong>&#128760; Drone (Remote ID)</strong><em>Rising trill &middot; spinning rotors</em></span>
-                    <span class="snd-state">&mdash;</span>
-                </button>
-                <button class="snd-row" id="beep-tracker" onclick="toggleBeep('tracker')">
-                    <span class="snd-label"><strong>&#128205; Tracker</strong><em>Fast ticking &middot; sonar pings</em></span>
-                    <span class="snd-state">&mdash;</span>
-                </button>
-                <button class="snd-row" id="beep-generic" onclick="toggleBeep('generic')">
-                    <span class="snd-label"><strong>Other matches</strong><em>Plain warning &middot; glow</em></span>
-                    <span class="snd-state">&mdash;</span>
-                </button>
-            </div>
-
-            <p class="set-note alert-note">
-                A category you switch off stops beeping and flashing, but is <strong>still
-                detected and listed</strong>. To stop the device announcing itself on the air,
-                use Receive&#8209;only in Settings.
-            </p>
         </div>
     </div>
 

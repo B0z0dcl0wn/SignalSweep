@@ -2365,15 +2365,15 @@
             }
         }
 
-        // The toolbar label, so what is muted is legible without opening
-        // anything -- the old controls were three taps deep in Settings.
+        // What is currently muted, on the Alerts heading itself, so the
+        // section says what it is set to before you scroll into it.
         // The icon says how (🔔 both, 🔊 sound only, 💡 lights only, 🔕 nothing
         // can alert), the word says how many categories.
         function setSoundsSummary() {
-            const btn = document.getElementById('btn-buzzer');
+            const btn = document.getElementById('alerts-summary');
             if (!btn) return;
             if (deviceBeepMask === null || buzzerOn === null) {
-                btn.textContent = '🔔 Alerts: —';
+                btn.textContent = '—';
                 btn.classList.remove('on');
                 return;
             }
@@ -2385,12 +2385,8 @@
             const one = { alpr: 'cameras', tracker: 'trackers', drone: 'drones' }[lensOfMask(deviceBeepMask)];
             const what = !sound && !light ? 'off'
                        : n === 0 ? 'none' : n === keys.length ? 'all' : one || n + '/' + keys.length;
-            btn.textContent = icon + ' Alerts: ' + what;
+            btn.textContent = icon + ' ' + what;
             btn.classList.toggle('on', icon !== '🔕');
-        }
-
-        function openSounds() {
-            document.getElementById('sounds-modal').classList.add('active');
         }
 
         // The device is the authority on the radios too: the toggles never
