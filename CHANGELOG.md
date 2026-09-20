@@ -4,6 +4,103 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Changed — Three tabs, one Record button: the app's navigation rebuilt
+
+- **Features had outgrown the navigation.** The main screen stacked six
+  horizontal bands of chrome before a single result row (status strip, toolbar,
+  scope head, band tabs, radio tabs, Wi-Fi role tabs), the header carried four
+  icons, and ten overlays sat on top. Two of those overlays — the pin sheet and
+  Site Survey — both started *recording sessions*, both held encrypted
+  geolocated data behind the same PIN, and both exported, so which one you
+  wanted was no longer obvious.
+- **This was an information-architecture problem, not a framework one, and a
+  rewrite was explicitly rejected.** `app.js` is behaviour — three transports
+  and one line reassembler, the AES-GCM store, the capture analyzer, Leaflet,
+  the hunt fast path, the device-authority paint rules — almost none of which a
+  framework would delete; and `selftest.js` cross-checks every id-anchored
+  selector in `app.js` against `index.html`, which a rewrite throws away. It
+  earned its keep during this work: it caught two stale ids on the first run.
+- **Three panels under one shared header, switched by a fixed bottom bar.**
+  **Sweep** is live and moving; **Survey** is standing still and saving;
+  **Settings** is what you set before you go. Every screen is one thumb-tap from
+  every other, which is also the "back out" that a scrolling overlay with a
+  small × never gave you. `showTab()` invalidates Leaflet's size when returning
+  to a map that was `display:none` — it measures a hidden container as 0×0.
+- **Recording is now one act.** There were two record mechanisms with two
+  switches in one sheet, so "am I recording?" had two answers and you could
+  easily be half on. One **Record** button on Sweep brackets an outing: Start
+  turns the board's alert log on and arms the pin prompt; Stop reads the log
+  back, writes the `.txt`, shows "what you passed" and disarms the prompt —
+  unless it was already on beforehand, which the session remembers so Stop does
+  not switch off something the operator set themselves. Stopping still never
+  turns the board's own log off: the car case wants it logging after the phone
+  is away. While running, the bar reads elapsed, alerts logged, pins dropped and
+  which category is being pinned, ticking off the 1 Hz push rather than a timer
+  of its own.
+- **The separate "Pin which" picker is deleted.** It was a second control for a
+  state the band tab already set (its own note said so), and two controls for
+  one state only ever disagree. `pinLens` survives as a variable driven by the
+  band tab; the Record bar states it.
+- **Alerts (sound, lights, theme, the five categories) moved into Settings.**
+  These are set once before a hunt so you are not fiddling in the field, which
+  makes them settings. The previous rule — that silencing a category must not be
+  three taps deep — assumed Settings was a gear-icon modal; with a bottom bar it
+  is one tap. The markup moved verbatim, so the ids and the device-only painting
+  are untouched. **Accepted cost, decided deliberately:** there is no longer a
+  sub-3-tap way to silence a beeping board, and BOOT is factory-reset, not mute.
+- **Saved pins moved into Survey, beside the logged finds.** Same encrypted
+  store, same PIN, same kind of record — the only difference is that one came
+  from driving past and the other from standing at the pole with a camera. One
+  unlock now serves both lists and one wipe covers the one store (it always took
+  the finds and their photos with it — now it says so). Opening Survey still
+  never prompts for the PIN. **Deliberately not merged: the exports.** A find is
+  a photographed confirmation, a pin is a drive-by guess, and one export button
+  would put guesses in `cameras.osm`. We never tag a guess onto OpenStreetMap.
+- **The radio tabs and Wi-Fi role tabs became one row of five chips**
+  (All / BLE / Wi-Fi / AP / Client) — two variables, five reachable
+  combinations. The second row used to appear and vanish with the Wi-Fi tab,
+  moving everything below it by a row mid-scan. The row is `.radios.five`, an
+  explicit modifier: `.radios` is a three-column grid shared with the segmented
+  pickers, and redefining it would have stretched those — the same class reuse
+  that once stretched the channel chips while the node self-test passed.
+- **The three-cell status strip folded into the header's connection line**, and
+  the GPS readout appears only when there is something to say (it read
+  "Location: Off" approximately always and owned a third of that card). The
+  transport shortens to BLE/USB/Serial, and the **name** is what gives when the
+  line is tight, never the numbers: a default board name is 19 characters
+  ("OUI-SPY-SIGNALSWEEP") and letting both shrink cut the alert count mid-word
+  on the phone, which is the one thing there you cannot guess the rest of.
+- **`scan_all` reads its state instead of a toggle name** — "Matches only" /
+  "All devices", in the scope head beside Map. It was "Filter: On/Off", which
+  meant the opposite of what it said (`foxhuntMode === true` means the filter is
+  *off*) and collided with the radio chips for the word "filter". With Alerts
+  moved out, the toolbar row is gone entirely.
+- **The Help modal is deleted.** Its content was duplicated everywhere it
+  mattered — the beep legend in the Alerts rows, opsec in Settings, pins in
+  Record — and its one unique line ("it still beeps without the phone") already
+  sits in the disconnected empty state.
+
+### Fixed — A recording bookmarked the board's clock as of *connect*, not as of Start
+
+- `log_boot`/`log_secs` arrive only in the `CMD:CFG` reply, and the app asks for
+  that exactly once per connection — the 1 Hz push carries only `log` (a bool).
+  So the session bookmark was frozen at connect time: starting a recording an
+  hour into a drive bookmarked an hour ago, and Stop read back every alert since
+  then, including everything from before the tap. Survivable while Start was a
+  button buried in a sheet; not once Record is the primary control.
+- `log_secs` is seconds since boot, which is exactly what `bootAt` (from
+  `cfg.uptime`) already tracks, so the bookmark is recomputed at Start with no
+  extra round trip and **no new field on the push** — telemetry is the tightest
+  budget on the device and this costs it nothing. Confirmed against hardware,
+  where a fresh board reported `log_secs: 11` against `uptime: 12`.
+
+### Fixed — "Connecting…" was written to an element nobody could see
+
+- Six call sites wrote `CONNECTING BLE...` / `RECONNECTING (Ns)...` into
+  `#connStatusText`, inside a status badge that was markup-level `hidden`. A
+  slow BLE connect therefore looked like a frozen app. Those states now paint
+  the header's own connection line, and the badge is deleted.
+
 ### Fixed — The BLE command handler was overflowing the NimBLE host task stack
 
 - **A phone connecting to the board could boot-loop it.** The BLE write callback

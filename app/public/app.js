@@ -1762,7 +1762,7 @@
                 return;
             }
             if (pinsCache.length === 0) {
-                body.innerHTML = '<div class="scope-empty">No pins yet. Turn on <strong>Ask to pin matches</strong> and confirm a device to drop one.</div>';
+                body.innerHTML = '<div class="scope-empty">No pins yet. Tap <strong>Record</strong> on the Sweep screen and confirm a device to drop one.</div>';
             } else {
                 body.innerHTML = pinsCache.map((p, i) => {
                     const cat = categoryOf(p.category);
