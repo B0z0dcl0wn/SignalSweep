@@ -943,6 +943,26 @@
             font-size:0.75rem; color:var(--text-muted); margin-top:2px; }
         .set-idx-c { flex:none; color:var(--ss-dim); font-size:1.3rem; }
         .set-opsec { margin-top:1.25rem; }
+        /* Signature rules, read back from the board and rendered as something
+           you can actually read. The JSON editor is still there for editing. */
+        .sig-fixed { display:flex; flex-direction:column; gap:6px; margin:0.6rem 0 0.4rem; }
+        .sig-row { display:flex; gap:10px; align-items:flex-start;
+            padding:0.6rem 0.7rem; border-radius:10px;
+            background:rgba(255,255,255,0.03); border:1px solid var(--card-border); }
+        .sig-i { flex:none; width:1.4rem; text-align:center; }
+        .sig-t { flex:1; min-width:0; font-size:0.85rem; }
+        .sig-t em { display:block; font-style:normal; font-size:0.75rem;
+            color:var(--text-muted); margin-top:2px; line-height:1.45; }
+        .sig-t code { font-family:var(--mono); font-size:0.72rem; color:var(--ss-ink); }
+        .sig-cat { float:right; font-size:0.68rem; font-weight:700; padding:1px 7px;
+            border-radius:999px; border:1px solid currentColor; margin-left:6px; }
+        /* The consent prompt's third answer: same weight as a real choice --
+           it is one -- but visibly quieter than yes/no so it reads as the
+           escalation it is. */
+        .consent-mute { width:100%; min-height:44px; padding:0.6rem 0.8rem;
+            border-radius:10px; cursor:pointer; font:inherit; font-size:0.8rem;
+            background:none; border:1px solid var(--card-border);
+            color:var(--text-muted); }
         /* The sub-page's own heading repeats the title in the top bar. */
         .set-page > .set-label:first-child { display:none; }
         .set-back { background:none; border:0; cursor:pointer; font:inherit;
@@ -1598,6 +1618,13 @@
                     <span>Ask to pin matches</span>
                     <button class="set-toggle" id="btn-record" onclick="toggleRecording()">Off</button>
                 </div>
+                <!-- Undo for the consent prompt's third answer. A mute made in
+                     one tap in the field must be visible somewhere, or it is a
+                     prompt that mysteriously stopped working weeks later. -->
+                <div id="pin-mute-row" hidden>
+                    <p class="set-note" style="margin:0.5rem 0 0.4rem;">Not asking about these any more &mdash; tap to start again:</p>
+                    <div class="btn-row" id="pin-mute-list"></div>
+                </div>
                 <p class="set-note" style="margin:0.5rem 0 0.75rem;">
                     Each matched device asks before saving one GPS fix, and only in
                     the category the band tab is on. Detecting never needs the PIN.
@@ -1677,8 +1704,29 @@
 
                 <section class="set-page" id="setp-signatures" data-title="Signatures" hidden>
                 <h3 class="set-label">Signatures</h3>
-                <p class="set-note">The rules the device matches against, read back from the board.</p>
-                <button class="ctrl-btn" style="width:100%;" onclick="document.getElementById('settings-modal').classList.remove('active'); openSignatures()">Edit signature rules</button>
+                <p class="set-note">Everything the board is looking for right now. The rules are read back from the board itself, on demand &mdash; the reply is several KB, so it is never sent on connect.</p>
+
+                <!-- The protocol detectors are compiled in and match no rule at
+                     all, so a page that listed only signatures.json would imply
+                     the board cannot see a drone or an AirTag. This list is
+                     prose describing firmware behaviour: if the detectors
+                     change, change it here too. -->
+                <div class="alert-sec">Always on</div>
+                <p class="set-note">Built into the firmware. These need no rule and cannot be edited.</p>
+                <div class="sig-fixed">
+                    <div class="sig-row"><span class="sig-i">&#128760;</span><span class="sig-t"><strong>Drone Remote ID</strong><em>ASTM F3411 over BLE, Wi&#8209;Fi beacons and NAN &mdash; decoded in full, including the operator&rsquo;s position</em></span></div>
+                    <div class="sig-row"><span class="sig-i">&#128205;</span><span class="sig-t"><strong>Apple Find My</strong><em>An AirTag separated from its owner. The short status ping every iPhone sends is deliberately ignored</em></span></div>
+                    <div class="sig-row"><span class="sig-i">&#128205;</span><span class="sig-t"><strong>Tile</strong><em>0xFEED service data</em></span></div>
+                    <div class="sig-row"><span class="sig-i">&#127919;</span><span class="sig-t"><strong>Pwnagotchi</strong><em>Only while Attack&#8209;gear detection is on</em></span></div>
+                    <div class="sig-row"><span class="sig-i">&#128247;</span><span class="sig-t"><strong>Flock wildcard probe</strong><em>Needs a Flock Safety OUI in the rules below &mdash; the IE alone is not a camera</em></span></div>
+                </div>
+
+                <div class="alert-sec">Rules on the board (<span id="sig-count">&mdash;</span>)</div>
+                <div id="sig-list"></div>
+                <div class="btn-row">
+                    <button class="ctrl-btn" onclick="requestSignatures()">Reload</button>
+                    <button class="ctrl-btn" onclick="openSignatures()">Edit as JSON</button>
+                </div>
                 </section>
             </div>
         </main>
@@ -1742,6 +1790,10 @@
             <div class="modal-actions" style="display:flex;gap:10px;">
                 <button class="ctrl-btn" onclick="consentDismiss()">No</button>
                 <button class="ctrl-btn on" onclick="consentYes()">Yes, pin it</button>
+                <!-- The moment you know you do not care about a whole category
+                     is this one. Making it a dead end sends you to Settings to
+                     say what you already decided here. -->
+                <button class="consent-mute" id="consent-mute" onclick="consentMuteCat()">No</button>
             </div>
             <p style="font-size:0.75rem;color:var(--text-muted);text-align:center;margin-top:0.5rem;">Only this device's location is saved, encrypted behind your PIN.</p>
         </div>

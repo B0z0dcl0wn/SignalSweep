@@ -237,7 +237,9 @@
             const t = e.target.closest('#tabbar button');
             if (t) { showTab(t.dataset.tab); return; }
             const si = e.target.closest('#set-index .set-idx');
-            if (si) showSetting(si.dataset.set);
+            if (si) { showSetting(si.dataset.set); return; }
+            const um = e.target.closest('[data-unmute]');
+            if (um) unmuteCat(um.dataset.unmute);
         });
 
         // Settings is an index of short screens. One extra tap to reach a
@@ -257,6 +259,9 @@
             });
             if (back) back.hidden = !key;
             if (title) title.textContent = label;
+            // On demand means exactly this: opening the page is the demand.
+            // CMD:SIGS is several KB, so it is never sent on connect.
+            if (key === 'signatures') requestSignatures();
             window.scrollTo(0, 0);
         }
 
@@ -1655,6 +1660,7 @@
                 btn.classList.toggle('on', recordEnabled);
                 btn.textContent = recordEnabled ? 'On' : 'Off';
             }
+            paintPinMute();
         }
 
         // Which categories ask to be pinned. There is no separate picker for
@@ -1667,6 +1673,24 @@
             paintLogSession();
         }
 
+        // Categories the pin prompt must stop asking about. This composes with
+        // pinLens rather than replacing it: the band tab picks ONE category to
+        // ask about, this subtracts categories from Everything. The names are
+        // fixed per key, never taken from cat.label -- 'other' labels itself
+        // with whatever vendor string tripped it ("Hacking gear"), and a button
+        // reading "stop asking about Hacking gear" would quietly mute every
+        // other unrecognised category too.
+        const PIN_MUTE_NAME = {
+            alpr: 'ALPR / cameras', bodycam: 'body cams', drone: 'drones',
+            tracker: 'trackers', other: 'other matches', none: 'unmatched devices'
+        };
+        let pinMute = new Set();
+        try { pinMute = new Set(JSON.parse(localStorage.getItem('pinMute') || '[]')); } catch (e) {}
+        function savePinMute() {
+            try { localStorage.setItem('pinMute', JSON.stringify([...pinMute])); } catch (e) {}
+            paintPinMute();
+        }
+
         function maybeOfferRecord(match) {
             if (!recordEnabled) return;
             // With the filter off the device reports everything it hears, and
@@ -1676,6 +1700,9 @@
             // Before handledMacs, so a device the filter skipped is still
             // offered if the filter widens later.
             if (!inLens(match, pinLens)) return;
+            // Before handledMacs for the same reason: un-muting a category must
+            // bring its devices back, not skip them for the rest of the session.
+            if (pinMute.has(categoryOf(match.type || match.rule).key)) return;
             if (handledMacs.has(match.mac)) return;
             handledMacs.add(match.mac);
             consentQueue.push(match);
@@ -1694,8 +1721,51 @@
             textEl.innerHTML =
                 'Record <strong style="color:' + cat.color + '">' + esc(cat.label) + '</strong> here?<br>' +
                 '<span style="color:var(--text-muted); font-size:0.85rem">' + esc(m.name || m.rule || m.mac) + '</span>';
+            // The third answer names the category it silences: "don't ask again"
+            // with no noun is the kind of button people stop trusting. Same key
+            // maybeOfferRecord() tests.
+            const mb = document.getElementById('consent-mute');
+            if (mb) {
+                mb.dataset.cat = cat.key;
+                mb.textContent = 'No — and stop asking about ' + (PIN_MUTE_NAME[cat.key] || 'these');
+            }
             const modal = document.getElementById('consent-modal');
             if (modal) modal.classList.add('active');
+        }
+
+        // Answering for the whole category drops every queued device of that
+        // kind too, or you would tap through the rest of the backlog you just
+        // said you did not want.
+        function consentMuteCat() {
+            const btn = document.getElementById('consent-mute');
+            const key = btn && btn.dataset.cat;
+            if (!key) return;
+            pinMute.add(key);
+            savePinMute();
+            document.getElementById('consent-modal').classList.remove('active');
+            consentQueue = consentQueue.filter(
+                m => categoryOf(m.type || m.rule).key !== key);
+            showToast('Not asking about ' + (PIN_MUTE_NAME[key] || 'these')
+                      + ' — undo in Settings › Recording', '🔕');
+            if (consentQueue.length) setTimeout(showNextConsent, 300);
+        }
+
+        // The undo, in Settings > Recording. A mute made in one tap in the field
+        // has to be visible somewhere, or it becomes a prompt that mysteriously
+        // stopped working weeks later.
+        function paintPinMute() {
+            const row = document.getElementById('pin-mute-row');
+            const list = document.getElementById('pin-mute-list');
+            if (!row || !list) return;
+            row.hidden = pinMute.size === 0;
+            list.innerHTML = [...pinMute].map(k =>
+                '<button class="ctrl-btn" data-unmute="' + esc(k) + '">'
+                + esc(PIN_MUTE_NAME[k] || k) + ' ✕</button>').join('');
+        }
+        function unmuteCat(key) {
+            pinMute.delete(key);
+            savePinMute();
+            showToast('Asking about ' + (PIN_MUTE_NAME[key] || key) + ' again', '🔔');
         }
 
         function consentDismiss() {
@@ -3054,6 +3124,51 @@
                 box.readOnly = !sigsLoaded;
             }
             if (save) save.disabled = !sigsLoaded;
+            renderSigList(sigsLoaded ? rules : null);
+        }
+
+        // The same rules as a list a person can read. The JSON box is for
+        // editing; this is for answering "what is it actually looking for",
+        // which was previously answerable only by opening a modal and parsing
+        // several KB of JSON in your head.
+        function renderSigList(rules) {
+            const el = document.getElementById('sig-list');
+            const n  = document.getElementById('sig-count');
+            if (!el) return;
+            if (!rules) {
+                if (n) n.textContent = '—';
+                el.innerHTML = '<div class="scope-empty">' + (connectionType
+                    ? 'Reading the rules off the board…'
+                    : 'Connect the board to see the rules it is carrying. They live on the device, not in the app.')
+                    + '</div>';
+                return;
+            }
+            if (n) n.textContent = rules.length;
+            if (!rules.length) {
+                el.innerHTML = '<div class="scope-empty">No rules on the board. The protocol detectors above still work; everything else is silent.</div>';
+                return;
+            }
+            // One line per matcher, named the way the firmware matches it, so a
+            // rule that never fires can be read against a capture.
+            const MATCH = [
+                ['oui',          'MAC prefix'],
+                ['mfg_id',       'BLE company'],
+                ['device_name',  'Name'],
+                ['service_uuid', 'Service UUID'],
+                ['ssid',         'SSID']
+            ];
+            el.innerHTML = rules.map(r => {
+                const cat = categoryOf(r.category || r.name);
+                const on = MATCH.filter(([k]) => r[k] !== undefined && String(r[k]).trim() !== '')
+                                .map(([k, lbl]) => lbl + ' <code>' + esc(String(r[k])) + '</code>');
+                return '<div class="sig-row">'
+                    + '<span class="sig-i">' + cat.icon + '</span>'
+                    + '<span class="sig-t">'
+                    + '<span class="sig-cat" style="color:' + cat.color + '">' + esc(cat.label) + '</span>'
+                    + '<strong>' + esc(r.name || '(unnamed rule)') + '</strong>'
+                    + '<em>' + (on.length ? on.join(' &middot; ') : 'matches nothing — every field is empty') + '</em>'
+                    + '</span></div>';
+            }).join('');
         }
 
         function requestSignatures() {
