@@ -2163,6 +2163,7 @@
             if (rndEl) rndEl.checked = !!cfg.rand_mac;
             setRxOnlyUi(!!cfg.rx_only);
             setRadioUi(cfg);
+            if (typeof cfg.attack === 'boolean') setAttackUi(cfg.attack);
             if (typeof cfg.beep_mask === 'number') setBeepUi(cfg.beep_mask);
             setBuzzerUi(cfg.buzzer);
             setLedUi(cfg.led);
@@ -2334,6 +2335,26 @@
         function toggleBleScan()  { toggleRadio('btn-ble-scan', 'CMD:BLE_SCAN'); }
         function toggleWifiScan() { toggleRadio('btn-wifi-scan', 'CMD:WIFI_SCAN'); }
 
+        // Attack-gear detection. The device is the authority (it persists the
+        // flag), so the button paints only from cfg/push, never optimistically.
+        let deviceAttack = false;
+        let attackPendingUntil = 0;
+        const ATTACK_PENDING_MS = 1500;
+        function setAttackUi(on) {
+            deviceAttack = !!on;
+            const b = document.getElementById('btn-attack');
+            if (!b) return;
+            b.textContent = on ? 'On' : 'Off';
+            b.classList.toggle('on', !!on);
+            b.classList.toggle('off', !on);
+        }
+        function toggleAttack() {
+            const want = !deviceAttack;
+            attackPendingUntil = Date.now() + ATTACK_PENDING_MS;
+            setAttackUi(want);
+            sendCommand({ attack: want });
+        }
+
         // The device is the authority on this; the app only mirrors what the
         // last CMD:CFG said.
         let deviceRxOnly = false;
@@ -2403,6 +2424,11 @@
                 foxhuntMode = devAll;
                 paintFilter();
             }
+            // attack rides the push conditionally (absent = off), and the app
+            // adopts it, so a board that ran headless comes back showing its
+            // real state. attackPendingUntil ignores a stale echo right after a tap.
+            const devAtk = !!data.attack;
+            if (devAtk !== deviceAttack && Date.now() > attackPendingUntil) setAttackUi(devAtk);
             if (typeof data.alerts === 'number') alertCount = data.alerts;
             // Every push, so uptime ticks with no timer of its own.
             renderStatusStrip();

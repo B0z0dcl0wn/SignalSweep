@@ -153,6 +153,8 @@ void restoreWatchersState();
 
 /** @brief True while the report filter is off. */
 bool getScanAll();
+void setAttackDetect(bool enabled);
+bool getAttackDetect();
 
 // Per-category buzzer mute. One bit per AlertCategory (hardware_manager.h), so
 // bit 0 = ALERT_ALPR ... bit 4 = ALERT_GENERIC. The app mirrors this bit order

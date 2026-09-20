@@ -4,6 +4,38 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Added — Pwnagotchi (pwngrid) detection, behind an off-by-default toggle
+
+- **The detector now flags a nearby Pwnagotchi.** A pwnagotchi advertises itself
+  to other units over pwngrid: Wi-Fi beacons from the fixed source
+  `de:ad:be:ef:de:ad` carrying its advertisement (name, pwned count, grid
+  version) in vendor information elements. A match lists under **All** as a
+  "Hacking gear" row titled `Pwnagotchi '<name>' - <N> pwned` and sounds the
+  generic alert. It is **not** a camera or tracker, so it never appears on those
+  tabs.
+- **It rides a new persisted toggle, off by default.** `{"attack":bool}` /
+  `CMD:ATTACK:ON|OFF`, stored in `sweep-st`, echoed in `CMD:CFG` and the 1 Hz
+  push, adopted by the app (Settings → Detection). Off by default because attack
+  detection is attack-adjacent and its future rate-based detectors (deauth,
+  karma) trip in busy places; the toggle gates them all.
+- **The wire format was read from pwngrid v1.10.3 source, and it is
+  gzip-compressed.** The advertisement rides IE 222 (`IDWhisperPayload`, chunked
+  at 0xFF); IE 223 (`IDWhisperCompression`) = 1 means the payload is gzip, which
+  a real advertisement is, because it shrinks. A first cut that parsed IE 222 as
+  raw JSON would have detected only an uncompressed test beacon and **missed
+  every real pwnagotchi** — the kind of gap that looks like a working feature on
+  the bench and silence in the field. The S3 now inflates the payload with the
+  ROM's `tinfl_decompress` (exported in `esp32s3.rom.ld` via `rom/miniz.h`) — no
+  new dependency, no vendored code — with a file-static decompressor and output
+  buffer kept off the promiscuous-callback stack. Verified end to end: a
+  byte-faithful gzip beacon was detected in 41 of 41 telemetry pushes at
+  confidence 100.
+- **The C5 cannot gunzip yet, deliberately.** Its ROM (IDF 5.x) dropped miniz, so
+  `rom/miniz.h` does not exist there; the gzip path is gated behind
+  `PWN_HAS_GUNZIP` (`#if !defined(CONFIG_IDF_TARGET_ESP32C5)`). The C5 detects an
+  uncompressed pwngrid advertisement but skips a compressed one until a portable
+  inflate is vendored. Both build environments compile.
+
 ### Changed — The camera tab is strictly ALPR and mass surveillance
 
 - **The Surveillance/camera tab now shows only ALPRs and mass-surveillance

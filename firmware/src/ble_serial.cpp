@@ -126,6 +126,7 @@ String getBleConfigJson() {
     // headless learns what it was already doing rather than assuming defaults.
     doc["hunt"] = getHuntTarget();
     doc["scan_all"] = getScanAll();
+    doc["attack"] = getAttackDetect();   // pwnagotchi/deauth/karma, off by default
     // Bitmask, not a counter -- "alerts" below is the alert count.
     doc["beep_mask"] = getBeepMask();
     // The mute is operator state and it persists, so the app must paint the
@@ -469,6 +470,14 @@ void processIncomingCommand(const String& rawCommand) {
             setScanAll(doc["scan_all"].as<bool>());
         }
 
+        // 3c'. Attack-gear detection: {"attack":bool}. Off by default; gates the
+        // pwnagotchi/deauth/karma detectors. Config reply so the app paints from
+        // the device, like the beep mask.
+        if (doc["attack"].is<bool>()) {
+            setAttackDetect(doc["attack"].as<bool>());
+            sendConfigReply();
+        }
+
         // 3d. What beeps: {"beep_mask":N}, one bit per AlertCategory. Answers
         // with a fresh config reply so the app's checkboxes paint from the
         // device rather than optimistically -- the mask persists, so a board
@@ -530,6 +539,12 @@ void processIncomingCommand(const String& rawCommand) {
         } else if (rawStr == "CMD:WIFI_SCAN:ON") {
             pauseWifi(false);
             wifiScanOn = true;
+            sendConfigReply();
+        } else if (rawStr == "CMD:ATTACK:ON") {
+            setAttackDetect(true);
+            sendConfigReply();
+        } else if (rawStr == "CMD:ATTACK:OFF") {
+            setAttackDetect(false);
             sendConfigReply();
         } else if (rawStr == "CMD:RXONLY:ON") {
             setRxOnly(true, true);

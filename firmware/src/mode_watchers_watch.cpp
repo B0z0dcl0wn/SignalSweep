@@ -8,6 +8,14 @@
 #include <NimBLEAdvertisedDevice.h>
 #include <WiFi.h>
 #include <esp_wifi.h>
+// The S3 ROM exports tinfl_decompress (esp32s3.rom.ld), so we gunzip a compressed
+// pwngrid advertisement for free. The C5 ROM (IDF 5.x) dropped miniz, so it has no
+// rom/miniz.h — the C5 detects only uncompressed pwngrid until a portable inflate
+// is vendored. Gate the whole gzip path on this.
+#if !defined(CONFIG_IDF_TARGET_ESP32C5)
+  #include "rom/miniz.h"
+  #define PWN_HAS_GUNZIP 1
+#endif
 #include <ArduinoJson.h>
 #include <LittleFS.h>
 #include <Preferences.h>
@@ -99,6 +107,10 @@ static String pendingRingMac = "";
 // with no client — so the earlier "always boot quiet" argument was protecting
 // a budget that isn't being spent when nobody is listening.
 static bool scanAll = false;
+// Attack-gear detection (pwnagotchi, and later deauth/karma). Off by default:
+// it is attack-adjacent and, unlike a signature match, some of its detectors
+// are rate-based and prone to false alarms in busy places. Persisted, echoed.
+static bool attackDetect = false;
 
 // Whether the clicker is currently sounding. Tracked separately from huntMac so
 // the hunt can stay armed while the target is out of earshot.
@@ -318,6 +330,11 @@ static void ensureSignaturesFileExists() {
 // detection — no need to decode operator GPS just to sound the buzzer.
 #define W_DRONE      90
 #define W_TRACKER    80
+// Pwnagotchi (pwngrid) presence: a beacon from the fixed source MAC
+// de:ad:be:ef:de:ad carrying JSON in vendor IE id 222. The JSON fields
+// (pwnd_tot/pwnd_run/grid_version) are the real tell — the MAC is trivially
+// editable, so it is only corroboration. Strong: it identifies on its own.
+#define W_PWNGRID    90
 // A single weak, non-Flock-specific signal (a broad OUI prefix, or the Lite-On
 // vendor IE that rides countless consumer WiFi chips) is noise on its own. Only
 // list a device that clears 60 — i.e. one specific signal (SSID/UUID/name at
@@ -550,6 +567,18 @@ static int matchDeviceAgainstRule(SWEEP_ADV* dev, const WatcherSignature& sig, S
 // only from the single-threaded promiscuous callback. Do not cross them.
 static ODID_UAS_Data bleUas;
 static ODID_UAS_Data wifiUas;
+// Pwnagotchi IE-222 reassembly buffer. File-static for the same reason as
+// wifiUas: touched only from the single-threaded promiscuous callback, and
+// too big to want on that tight callback stack.
+static char pwngridBuf[513];
+// gunzip scratch for a compressed pwngrid advertisement (S3 only). The
+// decompressor state is ~11 KB, far too big for the promiscuous callback stack;
+// both are file-static and touched only from that single-threaded callback, like
+// wifiUas/pwngridBuf.
+#ifdef PWN_HAS_GUNZIP
+static tinfl_decompressor pwnInflator;
+static char pwnJson[1024];
+#endif
 
 // True if a decode produced anything worth reporting.
 static bool odidUseful(const ODID_UAS_Data& d) {
@@ -1203,6 +1232,18 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
             // of upstream's retry-with-(len-4) dance — do not "simplify" that
             // subtraction away.
             bool wildcardSsid = false, liteonSig = false;
+            // Pwnagotchi (pwngrid) beacons carry the advertisement chunked at 0xFF
+            // across vendor IE 222 (IDWhisperPayload), and a 1-byte IE 223
+            // (IDWhisperCompression = 0x01) iff that payload is gzip-compressed.
+            // Confirmed from pwngrid v1.10.3 source (2026-09-20), not a guess.
+            // Reassemble the 222 chunks in-frame, then parse after the walk. Only
+            // while the attack toggle is on and only on beacons. pwngridBuf is
+            // file-static (below) — the promiscuous callback is single-threaded.
+            bool pwnScan = attackDetect && fsubtype == 8;
+            bool pwnMac  = (addr2[0]==0xDE && addr2[1]==0xAD && addr2[2]==0xBE &&
+                            addr2[3]==0xEF && addr2[4]==0xDE && addr2[5]==0xAD);
+            int  pwnLen  = 0;
+            bool pwnGzip = false;   // IE 223 seen == payload is gzip
 
             int b = 0;
             while (b < body_len - 1) {
@@ -1268,6 +1309,13 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
                 // — and the whole signal is that it came from a Flock OUI.
                 if (id == 0 && elen == 0 && fsubtype == 4) wildcardSsid = true;
 
+                if (pwnScan && id == 222 && elen > 0 &&
+                    pwnLen + (int)elen < (int)sizeof(pwngridBuf)) {
+                    memcpy(pwngridBuf + pwnLen, body + b + 2, elen);
+                    pwnLen += (int)elen;
+                }
+                if (pwnScan && id == 223 && elen >= 1 && body[b+2] == 0x01) pwnGzip = true;
+
                 if (id == 0 && elen > 0 && elen <= 32) {
                     char ssid[33] = {0};
                     memcpy(ssid, body + b + 2, elen);
@@ -1309,6 +1357,63 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
                     bestWeight = w;
                     matchedRule = liteonSig ? "Flock probe + IE" : "Flock wildcard probe";
                     matchedCategory = "Flock Safety";
+                }
+            }
+
+            // Pwnagotchi: the reassembled IE-222 payload is the advertisement —
+            // raw JSON, or gzip when IE 223 = 1. A real advert normally compresses
+            // (confirmed from pwngrid v1.10.3 source), so the gzip path is the
+            // common one in the field; the raw path is what our bench emitter and
+            // the `raw` scapy beacon send. pwngrid-specific fields are the
+            // discriminator — the source MAC alone proves nothing (it is
+            // editable). A garbage/partial parse just fails and never alerts.
+            if (pwnScan && pwnLen > 0) {
+                const char* json = nullptr;
+                if (pwnGzip) {
+#ifdef PWN_HAS_GUNZIP
+                    // gzip = 10-byte header (pwngrid's writer sets no optional
+                    // fields), raw DEFLATE, 8-byte trailer. Strip the header and
+                    // inflate; tinfl stops at the DEFLATE end and ignores the
+                    // trailer. NON_WRAPPING output = our buffer holds it all.
+                    if (pwnLen > 18 && (uint8_t)pwngridBuf[0] == 0x1F &&
+                                        (uint8_t)pwngridBuf[1] == 0x8B) {
+                        tinfl_init(&pwnInflator);
+                        size_t inSz  = (size_t)(pwnLen - 10);
+                        size_t outSz = sizeof(pwnJson) - 1;
+                        tinfl_status st = tinfl_decompress(&pwnInflator,
+                            (const mz_uint8*)(pwngridBuf + 10), &inSz,
+                            (mz_uint8*)pwnJson, (mz_uint8*)pwnJson, &outSz,
+                            TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF);
+                        if (st == TINFL_STATUS_DONE) { pwnJson[outSz] = 0; json = pwnJson; }
+                    }
+#endif
+                    // C5 (no ROM miniz): a compressed advert is left undecoded.
+                } else {
+                    pwngridBuf[pwnLen] = 0;
+                    json = pwngridBuf;
+                }
+                JsonDocument pdoc;
+                if (json && deserializeJson(pdoc, json) == DeserializationError::Ok &&
+                    (pdoc["pwnd_tot"].is<long>() || pdoc["pwnd_run"].is<long>() ||
+                     !pdoc["grid_version"].isNull())) {
+                    long tot = pdoc["pwnd_tot"] | (pdoc["pwnd_run"] | -1L);
+                    const char* nm = pdoc["name"] | "";
+                    char clean[25]; int ci = 0;
+                    for (int i = 0; nm[i] && ci < (int)sizeof(clean) - 1; i++)
+                        if (nm[i] >= 0x20 && nm[i] != '"' && nm[i] != '\\' && (uint8_t)nm[i] < 0x7F)
+                            clean[ci++] = nm[i];
+                    clean[ci] = 0;
+                    char rbuf[64];
+                    if (tot >= 0) snprintf(rbuf, sizeof(rbuf), "Pwnagotchi '%s' - %ld pwned", clean, tot);
+                    else          snprintf(rbuf, sizeof(rbuf), "Pwnagotchi '%s'", clean);
+                    int w = pwnMac ? W_PWNGRID + W_CORROBORATION : W_PWNGRID;
+                    if (w > 100) w = 100;
+                    wifiConfidence += w;
+                    if (w > bestWeight) {
+                        bestWeight = w;
+                        matchedRule = String(rbuf);
+                        matchedCategory = "Hacking gear";
+                    }
                 }
             }
         }
@@ -1397,6 +1502,7 @@ static void persistState() {
     if (huntMac.length() > 0) prefs.putString("hunt", huntMac);
     else                      prefs.remove("hunt");
     prefs.putBool("scanall", scanAll);
+    prefs.putBool("attack", attackDetect);
     prefs.putUChar("beepmask", beepMask);
 #if CONFIG_IDF_TARGET_ESP32C5
     prefs.putUChar("band", sweepBand);
@@ -1409,6 +1515,7 @@ void restoreWatchersState() {
     if (!prefs.begin(STATE_NVS_NS, true)) return;
     String mac = prefs.getString("hunt", "");
     bool all = prefs.getBool("scanall", false);
+    bool atk = prefs.getBool("attack", false);
     uint8_t mask = prefs.getUChar("beepmask", BEEP_MASK_ALL);
 #if CONFIG_IDF_TARGET_ESP32C5
     uint8_t band = prefs.getUChar("band", BAND_BOTH);
@@ -1419,6 +1526,7 @@ void restoreWatchersState() {
     beepMask = mask & BEEP_MASK_ALL;
 
     scanAll = all;
+    attackDetect = atk;
     huntMac = mac;
     huntMac.toUpperCase();
     if (huntMac.length() > 0) {
@@ -1428,6 +1536,7 @@ void restoreWatchersState() {
         ESP_LOGI(TAG, "Restored hunt target %s", huntMac.c_str());
     }
     if (scanAll) ESP_LOGI(TAG, "Restored report filter: OFF (reporting everything)");
+    if (attackDetect) ESP_LOGI(TAG, "Restored attack-gear detection ON");
     if (beepMask != BEEP_MASK_ALL) ESP_LOGI(TAG, "Restored beep mask 0x%02X", beepMask);
 }
 
@@ -1459,6 +1568,16 @@ void setScanAll(bool enabled) {
 
 bool getScanAll() {
     return scanAll;
+}
+
+void setAttackDetect(bool enabled) {
+    attackDetect = enabled;
+    persistState();
+    ESP_LOGI(TAG, "Attack-gear detection %s", enabled ? "ON" : "OFF");
+}
+
+bool getAttackDetect() {
+    return attackDetect;
 }
 
 int getHuntChannel() {
@@ -1874,6 +1993,9 @@ String getWatchersTargetsJson() {
     // So the app never implies "match" for a row that is only being listed
     // because the filter is off.
     if (scanAll) doc["scan_all"] = true;
+    // Absent = off, like scan_all; the app adopts it. Persisted, so a board
+    // that ran headless comes back with attack detection however it was left.
+    if (attackDetect) doc["attack"] = true;
     if (huntMac.length() > 0) doc["hunt"] = huntMac;
     // Echoed on EVERY push, not just in the CMD:CFG reply, so the app's sound
     // controls reconcile continuously instead of once per connection. They used
