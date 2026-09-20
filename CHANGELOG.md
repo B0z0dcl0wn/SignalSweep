@@ -4,6 +4,24 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Fixed — Back left the app instead of leaving the page
+
+- Back minimized from anywhere, so backing out of Settings › Recording put you
+  on the home screen. As far as the hardware button was concerned the app had
+  one screen; the tabs and sub-pages it grew were invisible to it.
+- `handleBack()` answers in the order a person means it: dismiss what is on
+  top, then leave the sub-page, then leave the tab, and only then return false
+  so the caller may background. The consent prompt is handled by name rather
+  than as a generic overlay, because it owns a queue — hiding its card without
+  shifting it would strand every device behind it. Escape on the desktop runs
+  the same chain, so the two agree.
+- It still never `exitApp()`s: that killed the page but not the process, so the
+  BLE link and the USB port outlived the UI that owned them.
+- The on-screen back control is now a pill the shape and colour of the header's
+  Connect button, placed *before* the page title so it reads as a breadcrumb
+  (`‹ Settings   Recording`). It was a small right-aligned text link, which did
+  not read as the way out — presumably why the hardware button got used for it.
+
 ### Added — Answer the pin prompt for a whole category
 
 - The prompt was Yes or No, one device at a time. The moment you know you do
