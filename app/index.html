@@ -525,27 +525,38 @@
            behind them -- a keypad over an invisible prompt. Keep it on top. */
         #pin-gate-modal { z-index: 1002; }
 
-        /* The Finder is a full-screen page (not a modal): it has its own
-           workflow and a scrolling list, so it slides up over everything. */
-        .finder-page {
-            position: fixed; inset: 0; z-index: 1000;
-            background-color: var(--bg-color, #090d16);
-            overflow-y: auto;
-            transform: translateY(100%);
-            transition: transform 0.25s ease;
-            pointer-events: none;
+        /* Tabs. Three panels under one shared header; the bar at the bottom is
+           the only navigation, so every screen is one thumb-tap from every
+           other and nothing can trap you. Panels are shown, not slid: a
+           transform here would fight the map's own sizing. */
+        .tab { display: none; }
+        .tab.active { display: block; }
+        .tabbar {
+            position: fixed; left: 0; right: 0; bottom: 0; z-index: 900;
+            display: grid; grid-template-columns: repeat(3, 1fr);
+            background: rgba(9, 13, 22, 0.97);
+            backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+            border-top: 1px solid rgba(255, 255, 255, 0.08);
+            padding-bottom: env(safe-area-inset-bottom, 0);
         }
-        .finder-page.active { transform: translateY(0); pointer-events: auto; }
+        .tabbar button {
+            background: none; border: none; cursor: pointer;
+            display: flex; flex-direction: column; align-items: center; gap: 3px;
+            /* 44px minimum, same rule as the live-list row actions. */
+            padding: 8px 0 10px; min-height: 52px;
+            color: var(--text-muted, #8b98a9);
+            font-family: inherit; font-size: 0.72rem; letter-spacing: 0.04em;
+        }
+        .tabbar button svg { width: 22px; height: 22px; }
+        .tabbar button[aria-selected="true"] { color: var(--accent-cyan, #22d3ee); }
+
+        /* Survey keeps its own card styling; it is a page inside a tab now,
+           not a slide-up overlay. */
         .finder-topbar {
-            position: sticky; top: 0; z-index: 1;
             display: flex; align-items: center; justify-content: space-between;
-            padding: 1rem 1.2rem;
-            background: rgba(9, 13, 22, 0.96);
-            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            margin-bottom: 0.6rem;
         }
         .finder-topbar h2 { margin: 0; color: var(--accent-cyan, #22d3ee); font-size: 1.3rem; }
-        .finder-close { background: none; border: none; color: var(--text-muted); font-size: 2rem; line-height: 1; cursor: pointer; padding: 0 0.3rem; }
-        .finder-body { padding: 1rem 1.2rem 3rem; max-width: 640px; margin: 0 auto; }
         .finder-card {
             background: rgba(255, 255, 255, 0.03);
             border: 1px solid rgba(255, 255, 255, 0.07);
@@ -854,7 +865,12 @@
 <body>
     <style>
         /* Live scope + controls (single-detector UI) */
-        .toolbar { display:flex; flex-wrap:wrap; gap:10px; margin:1rem 0; }
+        /* A plain row of buttons outside a modal. .modal-actions is a COLUMN,
+           which is why the exports stacked full-width when the pins moved out
+           of their sheet; this is the old .toolbar rule, renamed for what it
+           actually is now that the toolbar itself is gone. */
+        .btn-row { display:flex; flex-wrap:wrap; gap:10px; margin:0.8rem 0; }
+        .btn-row .ctrl-btn { flex:1; }
         .ctrl-btn { flex:1; min-width:130px; padding:0.7rem 1rem; border-radius:10px;
             border:1px solid rgba(255,255,255,0.12); background:rgba(255,255,255,0.04);
             color:var(--text-main,#e6edf6); font-weight:600; cursor:pointer; font-size:0.85rem; }
@@ -903,6 +919,11 @@
         .set-body > .set-label:first-child { margin-top:0; }
         .set-label { font-size:0.75rem; font-weight:700; color:var(--text-muted);
             text-transform:uppercase; letter-spacing:0.08em; }
+        /* What the Alerts section is currently set to, on its own heading, so
+           the state is legible before you read a single row. */
+        .set-sum { text-transform:none; letter-spacing:0; font-weight:600;
+            color:var(--ss-dim); margin-left:0.4rem; }
+        .set-sum.on { color:var(--accent-emerald,#34d399); }
         .set-note { font-size:0.78rem; color:var(--text-muted); line-height:1.5; }
         .set-row { display:flex; justify-content:space-between; align-items:center; gap:10px;
             padding:0.7rem 0.85rem; background:rgba(255,255,255,0.05);
@@ -917,21 +938,25 @@
         .hdr-conn { flex-basis:100%; display:flex; align-items:center; gap:8px; min-width:0;
             padding-top:0.8rem; border-top:1px solid var(--card-border);
             font-size:0.85rem; color:var(--text-muted); }
-        #hdr-dev { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        /* The name is what gives, not the numbers. A default board name is 19
+           characters ("OUI-SPY-SIGNALSWEEP") and letting both shrink cut the
+           alert count mid-word on the OnePlus, which is the one thing on this
+           line you cannot guess the rest of. */
+        #hdr-dev { flex:1 1 auto; min-width:2.5rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .hdr-stats { flex:none; white-space:nowrap;
+            color:var(--ss-dim); font-variant-numeric:tabular-nums; }
+        .hdr-gps { flex:none; display:flex; align-items:center; gap:5px;
+            max-width:40%; overflow:hidden; white-space:nowrap; font-size:0.78rem; }
         .hdr-btn { flex:none; min-height:40px; padding:0 16px; border-radius:20px; cursor:pointer;
             font-weight:700; font-size:0.8rem; border:1px solid var(--accent-cyan);
             background:rgba(0,242,254,0.1); color:var(--accent-cyan); }
         .hdr-btn.disc { border-color:rgba(239,68,68,0.5); background:rgba(239,68,68,0.12); color:#f87171; }
-        .btn-help.lit { color:var(--accent-emerald) !important; }
-        /* Four header icons beside the name must fit one row on a phone: on the
-           OnePlus 7T (411px) brand+icons measured ~341 of ~343px, which wraps.
-           The title shrinks, never the icons -- they are the tap targets. */
+        /* The header carries no icons at all now -- navigation is the bottom
+           bar -- so the phone breakpoint only has to tighten the brand. */
         @media (max-width: 480px) {
             header { padding: 1rem 1.1rem; gap: 0.5rem; }
             .brand { gap: 0.6rem; }
             .brand-text h1 { font-size: 1.25rem; }
-            .hdr-icons { gap: 2px !important; }
-            header .btn-help { padding: 6px !important; }
         }
         .set-text { width:100%; padding:0.7rem 0.85rem; font-size:1rem; border-radius:10px;
             border:1px solid rgba(255,255,255,0.15); background:rgba(0,0,0,0.3); color:#fff; }
@@ -1021,17 +1046,7 @@
         }
         .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 
-        /* Status strip: uptime / alerts / GPS (device identity is in the header).
-           Three separate cells rather than one run-on line, because they fail
-           independently and you need to see which one went dark. */
-        .statstrip { display:grid; grid-template-columns:repeat(3,1fr); gap:1px;
-            background:var(--ss-line); border:1px solid var(--ss-line);
-            border-radius:10px; overflow:hidden; margin:0.9rem 0; }
-        .statcell { background:var(--ss-panel); padding:0.55rem 0.7rem; min-width:0; }
-        .statcell-k { font-size:0.62rem; color:var(--ss-dim); letter-spacing:0.06em; }
-        .statcell-v { display:flex; align-items:center; gap:7px; margin-top:3px;
-            font-size:0.82rem; font-weight:600; white-space:nowrap;
-            overflow:hidden; text-overflow:ellipsis; }
+        /* Live dot, shared by the connection line and the GPS readout. */
         .statdot { width:7px; height:7px; border-radius:50%; flex:none;
             background:var(--ss-dim); box-shadow:0 0 7px currentColor; }
         .statdot.ok   { background:var(--ss-live);    color:var(--ss-live); }
@@ -1079,7 +1094,28 @@
         .radio-tab[aria-selected="true"] { background:#141c2c; color:#e8eef7; }
         .radio-tab:focus-visible { outline:2px solid var(--accent-cyan); outline-offset:-2px; }
         /* The Wi-Fi sub-filter tucks under the radio strip it belongs to. */
-        .radios.sub { margin-top:-0.5rem; }
+        /* The radio strip is five chips now (All / BLE / Wi-Fi / AP / Client),
+           not the three it was sized for. An explicit modifier rather than
+           redefining .radios, which the segmented pickers also use. */
+        .radios.five { grid-template-columns:repeat(5,1fr); }
+        /* Recording. Idle it is one button; running it is a lit bar that says
+           what has gone into the log and what is being pinned, because "am I
+           recording?" must never need a tap to answer. */
+        .rec { display:flex; align-items:center; gap:10px; margin:0 0 0.8rem; }
+        .rec.live { padding:0.55rem 0.7rem; border-radius:10px;
+            background:rgba(239,68,68,0.10); border:1px solid rgba(239,68,68,0.45); }
+        .rec-btn { flex:none; min-height:44px; padding:0 16px; border-radius:10px;
+            font:inherit; font-size:0.82rem; font-weight:700; cursor:pointer;
+            background:var(--ss-panel); border:1px solid var(--ss-line); color:var(--ss-ink); }
+        .rec.live .rec-btn { background:none; border:0; color:#f87171; padding:0;
+            min-height:0; animation:recpulse 2s ease-in-out infinite; }
+        @keyframes recpulse { 50% { opacity:0.45; } }
+        .rec-read { flex:1; min-width:0; font-size:0.76rem; line-height:1.35;
+            color:var(--ss-dim); overflow:hidden; }
+        .rec-stop { flex:none; min-height:44px; padding:0 16px; border-radius:10px;
+            font:inherit; font-size:0.8rem; font-weight:700; cursor:pointer;
+            border:1px solid rgba(239,68,68,0.5); background:rgba(239,68,68,0.12); color:#f87171; }
+        .radios.five .radio-tab { padding:0.45rem 0.15rem; font-size:0.7rem; }
         /* Segmented pickers in the Alerts sheet (Sound, Lights). */
         .seg { margin:0; flex:0 1 auto; }
         /* .radios is sized for the 3-way radio strip (Both / Bluetooth / Wi-Fi).
@@ -1087,7 +1123,6 @@
            by id on purpose: widening .radios itself would break the radio strip,
            and adding a shared class is how the chips ended up inheriting a
            layout class they had no business in. */
-        #pin-lens { grid-template-columns:repeat(4,1fr); }
         #sound-modes { grid-template-columns:repeat(2,1fr); }
         #led-modes { grid-template-columns:repeat(4,1fr); }
         /* Theme chips: a sideways strip, not a grid -- five names don't fit a
@@ -1216,77 +1251,32 @@
                     <h1>SignalSweep</h1>
                 </div>
             </div>
-            <div class="hdr-icons" style="display: flex; gap: 10px;">
-                <button class="btn-help" id="btn-finder" onclick="openFinder()" title="Site Survey" aria-label="Site Survey" style="background:none;border:none;color:white;cursor:pointer;padding:10px;">
-                    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <circle cx="11" cy="11" r="7"></circle>
-                        <path d="M21 21l-4.3-4.3"></path>
-                    </svg>
-                </button>
-                <button class="btn-help" id="btn-pins" onclick="openPins()" title="Pins" aria-label="Pins" style="background:none;border:none;color:white;cursor:pointer;padding:10px;">
-                    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
-                        <circle cx="12" cy="10" r="3"></circle>
-                    </svg>
-                </button>
-                <button class="btn-help" title="Settings" aria-label="Settings" onclick="document.getElementById('settings-modal').classList.add('active')" style="background:none;border:none;color:white;cursor:pointer;padding:10px;">
-                    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <circle cx="12" cy="12" r="3"></circle>
-                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-                    </svg>
-                </button>
-                <button class="btn-help" onclick="document.getElementById('help-modal').classList.add('active')" style="background:none;border:none;color:white;cursor:pointer;padding:10px;">
-                    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <circle cx="12" cy="12" r="10"></circle>
-                        <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
-                        <line x1="12" y1="17" x2="12.01" y2="17"></line>
-                    </svg>
-                </button>
-            </div>
-            <!-- Which board, over what, and a real button to connect or leave. -->
+            <!-- Which board, over what, how long it has been up, how many
+                 times it has beeped, and a real button to connect or leave.
+                 This was a three-cell card of its own; the numbers are the
+                 same, the card is not. The GPS dot appears only when a fix is
+                 actually being held, because "Location: Off" is the answer
+                 99% of the time and was taking up a third of that card. -->
             <div class="hdr-conn">
                 <span class="statdot off" id="hdr-dot"></span>
                 <span id="hdr-dev">Not connected</span>
+                <span class="hdr-stats" id="hdr-stats"></span>
+                <span class="hdr-gps" id="hdr-gps" hidden><span class="statdot off" id="st-gps-dot"></span><span id="st-gps"></span></span>
                 <button class="hdr-btn" id="hdr-act" onclick="hdrTap()">Connect</button>
             </div>
         </header>
 
-        <div class="header-controls">
-            <!-- Device state lives in the status strip below; these stay only
-                 because updateConnectionUI() writes to them. -->
-            <div class="status-badge" id="statusBadge" hidden>
-                <div class="pulse-dot" id="pulseDot"></div>
-                <div class="status-info"><span id="connStatusText"></span></div>
-            </div>
-        </div>
-
-        <!-- Status strip. Which board and how it is linked is in the header. -->
-        <div class="statstrip">
-            <div class="statcell" title="Time since the board last powered on. A reset here means it lost power.">
-                <div class="statcell-k">Uptime</div>
-                <div class="statcell-v"><span id="st-up">—</span></div>
-            </div>
-            <div class="statcell" title="Alerts the board has sounded since it powered on, including while nothing was connected.">
-                <div class="statcell-k">Alerts since boot</div>
-                <div class="statcell-v"><span id="st-alerts">—</span></div>
-            </div>
-            <div class="statcell" title="Location is taken as a single fix when you confirm a pin, or when you recenter the map. It is never tracked continuously.">
-                <div class="statcell-k">Location</div>
-                <div class="statcell-v"><span class="statdot off" id="st-gps-dot"></span><span id="st-gps">Off</span></div>
-            </div>
-        </div>
-
-        <!-- Controls. Pins live behind the header 📍, signatures in Settings. -->
-        <div class="toolbar">
-            <button class="ctrl-btn" id="btn-buzzer" onclick="openSounds()">🔔 Alerts: —</button>
-            <button class="ctrl-btn" id="btn-foxhunt" onclick="toggleFoxhunt()">◉ Filter: —</button>
-        </div>
+        <main id="tab-sweep" class="tab active">
 
         <!-- Live scope -->
         <div class="scope-head">
             <h2>Live scope</h2>
             <span class="scope-head-n"><span id="scope-count">0</span> now</span>
             <span class="scope-drop" id="scope-drop" style="display:none"></span>
+            <!-- What the list is allowed to contain. Reads its state, never
+                 "on/off": the word Filter now belongs to the radio chips, and
+                 this one was inverted anyway (foxhuntMode true = filter off). -->
+            <button class="scope-act" id="btn-foxhunt" onclick="toggleFoxhunt()">&mdash;</button>
             <button class="scope-act" id="btn-view" onclick="toggleView()">Map</button>
         </div>
 
@@ -1316,18 +1306,26 @@
             </button>
         </div>
 
-        <!-- Radio filter. Always available: dropping one radio is the quickest
-             way to cut a long list down to what you came for. -->
-        <div class="radios" id="radios" role="tablist">
-            <button class="radio-tab" role="tab" aria-selected="true" data-radio="any">Both radios</button>
-            <button class="radio-tab" role="tab" aria-selected="false" data-radio="BLE">Bluetooth</button>
+        <!-- Radio filter. Two variables, five reachable combinations, one
+             row: dropping a radio is the quickest way to cut a long list down
+             to what you came for, so it stays permanently on screen. -->
+        <div class="radios five" id="radios" role="tablist">
+            <button class="radio-tab" role="tab" aria-selected="true" data-radio="any">All</button>
+            <button class="radio-tab" role="tab" aria-selected="false" data-radio="BLE">BLE</button>
             <button class="radio-tab" role="tab" aria-selected="false" data-radio="WiFi">Wi&#8209;Fi</button>
+            <button class="radio-tab" role="tab" aria-selected="false" data-radio="ap">&#128225; AP</button>
+            <button class="radio-tab" role="tab" aria-selected="false" data-radio="client">&#128241; Client</button>
         </div>
-        <!-- Wi-Fi only: access points (beacons) vs clients (probe requests). -->
-        <div class="radios sub" id="wifi-roles" role="tablist" hidden>
-            <button class="radio-tab" role="tab" aria-selected="true" data-role="any">All Wi&#8209;Fi</button>
-            <button class="radio-tab" role="tab" aria-selected="false" data-role="ap">📡 APs</button>
-            <button class="radio-tab" role="tab" aria-selected="false" data-role="client">📱 Clients</button>
+
+        <!-- Recording. One bracketed act, not two settings you hope are both
+             on: Start turns the board's alert log on and arms the pin prompt,
+             Stop reads the log back, writes the .txt and disarms it. The board
+             keeps logging either way -- that is the whole point of it working
+             with the phone in your pocket or at home. -->
+        <div class="rec" id="rec-bar">
+            <button class="rec-btn" id="btn-record-session" onclick="toggleLogSession()">&#9679; Record</button>
+            <span class="rec-read" id="rec-read"></span>
+            <button class="rec-stop" id="btn-record-stop" onclick="toggleLogSession()" hidden>Stop</button>
         </div>
 
         <!-- Foxhunt readout, shown only while a target is locked. -->
@@ -1353,6 +1351,266 @@
             <div class="map-note" id="map-note"></div>
         </div>
         <div class="targets-list" id="targets-list"></div>
+        </main>
+
+        <main id="tab-survey" class="tab">
+            <div class="finder-topbar"><h2>📡 Site Survey</h2></div>
+            <p class="set-note">Stand next to a suspect device, capture the raw air, and the app tells you its signature — then log it (photo + GPS) to your encrypted database and export it for DeFlock. USB cable only.</p>
+
+            <section class="finder-card">
+                <h3 class="set-label">1 · Investigate an environment</h3>
+
+                <div id="cap-idle">
+                    <p class="set-note">Logs every WiFi frame and BLE advert on all channels. Longer is better — one full sweep takes a few minutes, so give it time to catch a rare transmitter. The detector's beeper is paused while capturing.</p>
+                    <div id="cap-usb-warn" class="set-note" style="color:var(--accent-red);display:none;">Connect the board by USB cable first — this is far too much data for Bluetooth.</div>
+                    <h3 class="set-label">Duration</h3>
+                    <div style="display:flex;gap:8px;">
+                        <button class="ctrl-btn cap-dur" data-secs="120" onclick="pickCapDuration(120)">2 min</button>
+                        <button class="ctrl-btn cap-dur on" data-secs="300" onclick="pickCapDuration(300)">5 min</button>
+                        <button class="ctrl-btn cap-dur" data-secs="600" onclick="pickCapDuration(600)">10 min</button>
+                    </div>
+                    <button class="ctrl-btn on" id="cap-start-btn" style="width:100%;margin-top:14px;" onclick="startCapture()">◉ Capture this environment</button>
+                </div>
+
+                <div id="cap-running" style="display:none;">
+                    <p class="set-note">Capturing… keep the board still and next to the device.</p>
+                    <div style="font-size:2.2rem;font-weight:700;text-align:center;color:var(--accent-cyan);" id="cap-remain">—</div>
+                    <div style="text-align:center;color:var(--text-muted);margin-bottom:14px;">remaining</div>
+                    <div style="display:flex;justify-content:space-around;text-align:center;">
+                        <div><div style="font-size:1.4rem;font-weight:700;" id="cap-wifi">0</div><div style="color:var(--text-muted);font-size:0.8rem;">WiFi</div></div>
+                        <div><div style="font-size:1.4rem;font-weight:700;" id="cap-ble">0</div><div style="color:var(--text-muted);font-size:0.8rem;">BLE</div></div>
+                        <div><div style="font-size:1.4rem;font-weight:700;" id="cap-drops">0</div><div style="color:var(--text-muted);font-size:0.8rem;">dropped</div></div>
+                    </div>
+                    <button class="ctrl-btn" style="width:100%;margin-top:16px;" onclick="stopCaptureManual()">Stop &amp; save now</button>
+                </div>
+
+                <div id="cap-done" style="display:none;">
+                    <div style="text-align:center;font-size:1.4rem;margin:8px 0;">✓ Capture saved</div>
+                    <p class="set-note" id="cap-summary"></p>
+                    <div id="cap-analysis" style="margin:10px 0;"></div>
+                    <h3 class="set-label">2 · Log this device</h3>
+                    <p class="set-note">A photo drops the device into your encrypted database with the detected signature and this capture attached. GPS fills in on its own — a slow fix won't lose the photo. (Your camera app keeps its own copy of the shot.)</p>
+                    <p class="set-note">What are you photographing? Only a camera you're sure of goes on the map in the export.</p>
+                    <div style="display:flex;flex-direction:column;gap:8px;">
+                        <button class="ctrl-btn on" onclick="logDevice('ALPR / Camera')">📷 Flock / ALPR camera</button>
+                        <button class="ctrl-btn" onclick="logDevice('Surveillance Camera')">📷 Other camera</button>
+                        <button class="ctrl-btn" onclick="logDevice('Unconfirmed')">📷 Not sure</button>
+                    </div>
+                    <details style="margin-top:10px;"><summary class="set-note" style="cursor:pointer;">Pull the raw capture to a PC</summary><p class="set-note" style="font-family:monospace;font-size:0.8rem;word-break:break-all;" id="cap-path"></p></details>
+                    <button class="ctrl-btn" style="width:100%;margin-top:10px;" onclick="closeCapture()">Done — new capture</button>
+                </div>
+            </section>
+
+            <section class="finder-card">
+                <h3 class="set-label">Survey log (<span id="finds-count">0</span>)</h3>
+                <p class="set-note">Every survey on this phone, newest first. Tap one to analyze it again or log a photo against it. Photos and locations are encrypted behind your PIN.</p>
+                <div id="finds-list" style="margin:0.6rem 0;"></div>
+                <button class="ctrl-btn on" style="width:100%;" onclick="exportEvidenceBundle()">📦 Export evidence bundle</button>
+                <p class="set-note">Export decrypts everything to <code>Documents/signalsweep-evidence-&lt;date&gt;/</code> — photos, <code>cameras.csv</code>, <code>cameras.osm</code> and the raw captures. Grab it with the Files app, a USB file transfer, or <code>adb pull /sdcard/Documents/</code>. That folder is plaintext: delete it once it's off the phone.</p>
+            </section>
+
+            <!-- Saved pins. Same encrypted store as the finds above, same PIN,
+                 same reason to exist: a geolocated record of surveillance
+                 hardware you chose to mark. The only difference is that one
+                 came from driving past and the other from standing at the pole
+                 with a camera, which is not a reason to keep them in two tabs
+                 with two exports. Opening this tab never prompts for the PIN --
+                 only "Unlock to view" does. -->
+            <section class="finder-card">
+                <h3 class="set-label">Saved pins</h3>
+                <p class="set-note">Places you confirmed, one GPS fix each, encrypted behind your PIN. Turn the prompt on with <strong>Record</strong> on the Sweep screen, or in Settings.</p>
+                <div id="pins-body" style="margin:0.6rem 0;"></div>
+                <div class="btn-row">
+                    <button class="ctrl-btn" onclick="exportPinsFile()">Export JSON</button>
+                    <button class="ctrl-btn" onclick="exportPinsOSM()">Export OSM</button>
+                </div>
+            </section>
+
+            <section class="finder-card">
+                <h3 class="set-label">Erase</h3>
+                <p class="set-note">One store, one key: this deletes every pin, every logged find and its photos. It cannot be undone, and a forgotten PIN is the same thing &mdash; by design.</p>
+                <button class="ctrl-btn" style="width:100%;border-color:var(--accent-red,#ef4444);color:var(--accent-red,#ef4444)" onclick="wipePinsConfirm()">Wipe everything saved</button>
+            </section>
+        </main>
+
+        <main id="tab-settings" class="tab">
+            <div class="finder-topbar"><h2>Settings</h2></div>
+            <div class="set-body">
+                <!-- Alerts: HOW the device gets your attention (sound, lights)
+                     and WHAT for (the categories). These are set before you go
+                     out, not in the field, which is why they are a setting and
+                     not a toolbar sheet any more. Every control paints from the
+                     device (1 Hz push + CMD:CFG) and never from itself, so it
+                     cannot show a setting the board does not hold. Buttons on
+                     purpose: a checkbox flips on tap before the write is even
+                     attempted. Sound is not a master over the categories -- the
+                     buzzer mute is sound only, while a category switch gates
+                     its beep AND its light -- so each row's chip (alertChip)
+                     says what it will do. -->
+                <h3 class="set-label">Alerts <span class="set-sum" id="alerts-summary"></span></h3>
+                <p class="set-note">
+                    How the device gets your attention, and what for. Saved on the
+                    board, so you can set it and walk away.
+                </p>
+                <div class="alert-sec">How</div>
+                <div class="out-row">
+                    <span class="snd-label"><strong>&#128266; Sound</strong></span>
+                    <div class="radios seg" id="sound-modes" role="group" aria-label="Sound">
+                        <button class="radio-tab" data-sound="0" aria-pressed="false">Off</button>
+                        <button class="radio-tab" data-sound="1" aria-pressed="false">On</button>
+                    </div>
+                </div>
+                <div class="out-row">
+                    <span class="snd-label"><strong>&#128161; Lights</strong></span>
+                    <div class="radios seg" id="led-modes" role="group" aria-label="Lights">
+                        <button class="radio-tab" data-led="0" aria-pressed="false">Off</button>
+                        <button class="radio-tab" data-led="1" aria-pressed="false">One</button>
+                        <button class="radio-tab" data-led="2" aria-pressed="false">Dim</button>
+                        <button class="radio-tab" data-led="3" aria-pressed="false">Full</button>
+                    </div>
+                </div>
+                <p class="set-note alert-note">One lights a single LED in the alert&rsquo;s colour. Off stays dark, even during an alert.</p>
+                <div class="out-row" style="margin-top:12px;">
+                    <span class="snd-label"><strong>&#127912; Theme</strong></span>
+                </div>
+                <div id="theme-modes" role="group" aria-label="Theme">
+                    <button class="theme-chip" data-theme="0" aria-pressed="false"><i class="sw sw-classic"></i>Classic</button>
+                    <button class="theme-chip" data-theme="1" aria-pressed="false"><i class="sw sw-night"></i>Night Ops</button>
+                    <button class="theme-chip" data-theme="2" aria-pressed="false"><i class="sw sw-terminal"></i>Terminal</button>
+                    <button class="theme-chip" data-theme="3" aria-pressed="false"><i class="sw sw-glacier"></i>Glacier</button>
+                    <button class="theme-chip" data-theme="4" aria-pressed="false"><i class="sw sw-party"></i>Party</button>
+                </div>
+                <p class="set-note alert-note" id="theme-note" hidden></p>
+
+                <div class="alert-sec">What</div>
+                <div class="snd-list">
+                    <button class="snd-row" id="beep-alpr" onclick="toggleBeep('alpr')">
+                        <span class="snd-label"><strong>&#128247; ALPR / camera</strong><em>Two long beeps &middot; sweep</em></span>
+                        <span class="snd-state">&mdash;</span>
+                    </button>
+                    <button class="snd-row" id="beep-bodycam" onclick="toggleBeep('bodycam')">
+                        <span class="snd-label"><strong>&#127909; Body cam</strong><em>Long&#8209;short&#8209;short &middot; flash pops</em></span>
+                        <span class="snd-state">&mdash;</span>
+                    </button>
+                    <button class="snd-row" id="beep-drone" onclick="toggleBeep('drone')">
+                        <span class="snd-label"><strong>&#128760; Drone (Remote ID)</strong><em>Rising trill &middot; spinning rotors</em></span>
+                        <span class="snd-state">&mdash;</span>
+                    </button>
+                    <button class="snd-row" id="beep-tracker" onclick="toggleBeep('tracker')">
+                        <span class="snd-label"><strong>&#128205; Tracker</strong><em>Fast ticking &middot; sonar pings</em></span>
+                        <span class="snd-state">&mdash;</span>
+                    </button>
+                    <button class="snd-row" id="beep-generic" onclick="toggleBeep('generic')">
+                        <span class="snd-label"><strong>Other matches</strong><em>Plain warning &middot; glow</em></span>
+                        <span class="snd-state">&mdash;</span>
+                    </button>
+                </div>
+
+                <p class="set-note alert-note">
+                    A category you switch off stops beeping and flashing, but is <strong>still
+                    detected and listed</strong>. To stop the device announcing itself on the air,
+                    use Receive&#8209;only in Settings.
+                </p>
+
+                <!-- Recording. What Start/Stop on the Sweep screen turns on
+                     for you; here so you can leave the board logging with no
+                     session at all (the car case) and so the maintenance
+                     actions are not in the way in the field. The log toggle is
+                     painted solely from device frames. -->
+                <h3 class="set-label">Recording</h3>
+                <p class="set-note">
+                    <strong>Record</strong> on the Sweep screen brackets an outing: it
+                    turns the board&rsquo;s log on, and asks to pin what matches. These
+                    are the same switches on their own, plus the housekeeping.
+                </p>
+                <div class="set-row">
+                    <span>Log alerts on the board</span>
+                    <button class="set-toggle" id="btn-log" onclick="toggleAlertLog()">Off</button>
+                </div>
+                <p class="set-note" id="log-note" style="margin:0.5rem 0 0.75rem;">Off. The board keeps no record of what it beeped at.</p>
+                <div class="set-row">
+                    <span>Ask to pin matches</span>
+                    <button class="set-toggle" id="btn-record" onclick="toggleRecording()">Off</button>
+                </div>
+                <p class="set-note" style="margin:0.5rem 0 0.75rem;">
+                    Each matched device asks before saving one GPS fix, and only in
+                    the category the band tab is on. Detecting never needs the PIN.
+                    Stopping a recording turns this back off unless you set it here.
+                </p>
+                <div class="btn-row">
+                    <button class="ctrl-btn" onclick="saveAlertLog(true)">Save the whole log</button>
+                    <button class="ctrl-btn" style="border-color:var(--accent-red,#ef4444);color:var(--accent-red,#ef4444)" onclick="clearAlertLogConfirm()">Clear log</button>
+                </div>
+
+                <h3 class="set-label">Radios</h3>
+                <p class="set-note">
+                    Both come back on after a power cycle &mdash; pausing one is for this session only.
+                    The device is the authority here: these read back what it reported.
+                </p>
+                <div class="set-row">
+                    <span>Bluetooth LE</span>
+                    <button class="set-toggle on" id="btn-ble-scan" onclick="toggleBleScan()">Scanning</button>
+                </div>
+                <div class="set-row">
+                    <span>Wi&#8209;Fi</span>
+                    <button class="set-toggle on" id="btn-wifi-scan" onclick="toggleWifiScan()">Scanning</button>
+                </div>
+                <div class="set-row" id="band-row" hidden>
+                    <span>Wi&#8209;Fi bands</span>
+                    <div class="radios seg" id="band-modes" role="group" aria-label="Wi-Fi bands">
+                        <button class="radio-tab" data-band="0" aria-pressed="false">Both</button>
+                        <button class="radio-tab" data-band="1" aria-pressed="false">2.4 GHz</button>
+                        <button class="radio-tab" data-band="2" aria-pressed="false">5 GHz</button>
+                    </div>
+                </div>
+
+                <h3 class="set-label">Detection</h3>
+                <p class="set-note">
+                    <strong>Attack&#8209;gear detection</strong> flags nearby hacking tools &mdash; a
+                    Pwnagotchi today, deauth and karma later. Off by default: it is attack&#8209;adjacent
+                    and some of it trips in busy places. These devices list and beep under
+                    <strong>All</strong> only, never the camera tab. Persisted on the board.
+                </p>
+                <div class="set-row">
+                    <span>Attack&#8209;gear detection</span>
+                    <button class="set-toggle off" id="btn-attack" onclick="toggleAttack()">Off</button>
+                </div>
+
+                <h3 class="set-label">Emissions</h3>
+                <p class="set-note">
+                    <strong>Receive-only</strong> stops the device announcing itself &mdash; no advertising, no connection. It keeps scanning and keeps beeping; this is not the buzzer mute. Over Bluetooth <strong>this connection will drop</strong> &mdash; tap the BOOT button on the device to bring it back for two minutes. Over a USB cable nothing drops: only the radio goes quiet, and you can turn it back on here.
+                </p>
+                <div class="set-row">
+                    <span>Currently: <strong id="cfg-rxonly">advertising</strong></span>
+                    <button class="set-toggle off" id="btn-rxonly" onclick="toggleReceiveOnly()">Go quiet</button>
+                </div>
+
+                <h3 class="set-label">Device identity</h3>
+                <p class="set-note">
+                    The app finds the device by its service UUID, so renaming it never breaks discovery. Useful for telling two boards apart &mdash; or for not announcing what it is.
+                </p>
+                <input class="set-text" id="cfg-name" type="text" maxlength="20" autocomplete="off" placeholder="SignalSweep">
+                <label class="set-check">
+                    <input type="checkbox" id="cfg-randmac">
+                    <span>Randomize BLE address each boot
+                        <span class="set-warn">
+                            Breaks silent auto&#8209;reconnect. The phone remembers the device by its address, so after every reboot you must pick it from the dialog again &mdash; no use on a dash mount.
+                        </span>
+                    </span>
+                </label>
+                <button class="ctrl-btn" style="width:100%;" onclick="saveIdentity()">Save &amp; restart device</button>
+
+                <h3 class="set-label">Signatures</h3>
+                <p class="set-note">The rules the device matches against, read back from the board.</p>
+                <button class="ctrl-btn" style="width:100%;" onclick="document.getElementById('settings-modal').classList.remove('active'); openSignatures()">Edit signature rules</button>
+
+                <h3 class="set-label">Opsec</h3>
+                <p class="set-note">
+                    This app keeps no history of what it detected or where you went. The only thing stored is location pins you explicitly confirm, encrypted behind your PIN. Manage them under <strong>Survey</strong>.
+                </p>
+            </div>
+        </main>
+
     </div>
 
     <!-- Connection Modal -->
@@ -1425,53 +1683,6 @@
         </div>
     </div>
 
-    <!-- Pins Modal -->
-    <div class="modal-overlay" id="pins-modal">
-        <div class="modal-card">
-            <button class="modal-close-btn" onclick="document.getElementById('pins-modal').classList.remove('active')">&times;</button>
-            <div class="modal-header"><h2>Record</h2><p>What gets written down. Pins are places you chose to mark, encrypted behind your PIN. The alert log is times and MACs only &mdash; no location &mdash; and lives on the board.</p></div>
-
-            <!-- Alert log. The board records every alert its buzzer sounds, with
-                 no phone needed, so a detector left in a car logs the whole drive
-                 and you read it back later. Start/Stop is only an app-side
-                 bookmark: the board keeps logging either way, which is the whole
-                 point of it working while the phone is in your pocket or at home.
-                 Painted solely from device frames, like every other control. -->
-            <div class="alert-sec">Alert log</div>
-            <div class="set-row">
-                <span>Log alerts on the board</span>
-                <button class="set-toggle" id="btn-log" onclick="toggleAlertLog()">Off</button>
-            </div>
-            <p class="set-note" id="log-note" style="margin:0.5rem 0 0.75rem;">Off. The board keeps no record of what it beeped at.</p>
-            <div class="modal-actions" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:0.5rem;">
-                <button class="ctrl-btn" id="btn-log-session" onclick="toggleLogSession()">Start session</button>
-                <button class="ctrl-btn" onclick="saveAlertLog(true)">Save everything</button>
-                <button class="ctrl-btn" style="border-color:var(--accent-red,#ef4444);color:var(--accent-red,#ef4444)" onclick="clearAlertLogConfirm()">Clear log</button>
-            </div>
-            <p class="set-note" style="margin:0 0 1.25rem;">A session just bookmarks &ldquo;from here&rdquo;. Stopping writes a .txt to Documents and shows what you passed. Stopping never turns the board&rsquo;s log off.</p>
-
-            <div class="alert-sec">Pins</div>
-            <div class="set-row">
-                <span>Ask to pin matches</span>
-                <button class="set-toggle" id="btn-record" onclick="toggleRecording()">Off</button>
-            </div>
-            <p class="set-note" style="margin:0.5rem 0 1rem;">When on, each matched device asks before saving one GPS fix. Detecting never needs the PIN.</p>
-            <div class="radios seg" id="pin-lens" role="group" aria-label="Pin which">
-                <button class="radio-tab" data-pin="all" aria-pressed="true">Everything</button>
-                <button class="radio-tab" data-pin="alpr" aria-pressed="false">Cameras</button>
-                <button class="radio-tab" data-pin="tracker" aria-pressed="false">Trackers</button>
-                <button class="radio-tab" data-pin="drone" aria-pressed="false">Drones</button>
-            </div>
-            <p class="set-note" style="margin:0.5rem 0 1rem;">Only matches in this category ask to be pinned. Picking a band tab sets this too.</p>
-            <div id="pins-body" style="max-height:50vh;overflow-y:auto;margin-bottom:1rem;"></div>
-            <div class="modal-actions" style="display:flex;gap:10px;flex-wrap:wrap;">
-                <button class="ctrl-btn" onclick="exportPinsFile()">Export JSON</button>
-                <button class="ctrl-btn" onclick="exportPinsOSM()">Export OSM</button>
-                <button class="ctrl-btn" style="border-color:var(--accent-red,#ef4444);color:var(--accent-red,#ef4444)" onclick="wipePinsConfirm()">Wipe All</button>
-            </div>
-        </div>
-    </div>
-
     <!-- What you passed, after a session or a full save. The board logged it
          whether or not the phone was watching; this is just the readout. -->
     <div class="modal-overlay" id="logsum-modal">
@@ -1495,252 +1706,34 @@
         </div>
     </div>
 
-    <!-- Alerts: HOW the device gets your attention (sound, lights) and WHAT
-         for (the categories). Every control paints from the device (1 Hz push +
-         CMD:CFG) and never from itself, so it cannot show a setting the board
-         does not hold. Buttons on purpose: a checkbox flips on tap before the
-         write is even attempted. Sound is not a master over the categories --
-         the buzzer mute is sound only, while a category switch gates its beep
-         AND its light -- so each row's chip (alertChip) says what it will do. -->
-    <div class="modal-overlay" id="sounds-modal">
-        <div class="modal-card">
-            <button class="modal-close-btn" onclick="document.getElementById('sounds-modal').classList.remove('active')">&times;</button>
-            <div class="modal-header">
-                <h2>Alerts</h2>
-                <p>How the device gets your attention, and what for. Saved on the board, so you can set it and walk away.</p>
-            </div>
-
-            <div class="alert-sec">How</div>
-            <div class="out-row">
-                <span class="snd-label"><strong>&#128266; Sound</strong></span>
-                <div class="radios seg" id="sound-modes" role="group" aria-label="Sound">
-                    <button class="radio-tab" data-sound="0" aria-pressed="false">Off</button>
-                    <button class="radio-tab" data-sound="1" aria-pressed="false">On</button>
-                </div>
-            </div>
-            <div class="out-row">
-                <span class="snd-label"><strong>&#128161; Lights</strong></span>
-                <div class="radios seg" id="led-modes" role="group" aria-label="Lights">
-                    <button class="radio-tab" data-led="0" aria-pressed="false">Off</button>
-                    <button class="radio-tab" data-led="1" aria-pressed="false">One</button>
-                    <button class="radio-tab" data-led="2" aria-pressed="false">Dim</button>
-                    <button class="radio-tab" data-led="3" aria-pressed="false">Full</button>
-                </div>
-            </div>
-            <p class="set-note alert-note">One lights a single LED in the alert&rsquo;s colour. Off stays dark, even during an alert.</p>
-            <div class="out-row" style="margin-top:12px;">
-                <span class="snd-label"><strong>&#127912; Theme</strong></span>
-            </div>
-            <div id="theme-modes" role="group" aria-label="Theme">
-                <button class="theme-chip" data-theme="0" aria-pressed="false"><i class="sw sw-classic"></i>Classic</button>
-                <button class="theme-chip" data-theme="1" aria-pressed="false"><i class="sw sw-night"></i>Night Ops</button>
-                <button class="theme-chip" data-theme="2" aria-pressed="false"><i class="sw sw-terminal"></i>Terminal</button>
-                <button class="theme-chip" data-theme="3" aria-pressed="false"><i class="sw sw-glacier"></i>Glacier</button>
-                <button class="theme-chip" data-theme="4" aria-pressed="false"><i class="sw sw-party"></i>Party</button>
-            </div>
-            <p class="set-note alert-note" id="theme-note" hidden></p>
-
-            <div class="alert-sec">What</div>
-            <div class="snd-list">
-                <button class="snd-row" id="beep-alpr" onclick="toggleBeep('alpr')">
-                    <span class="snd-label"><strong>&#128247; ALPR / camera</strong><em>Two long beeps &middot; sweep</em></span>
-                    <span class="snd-state">&mdash;</span>
-                </button>
-                <button class="snd-row" id="beep-bodycam" onclick="toggleBeep('bodycam')">
-                    <span class="snd-label"><strong>&#127909; Body cam</strong><em>Long&#8209;short&#8209;short &middot; flash pops</em></span>
-                    <span class="snd-state">&mdash;</span>
-                </button>
-                <button class="snd-row" id="beep-drone" onclick="toggleBeep('drone')">
-                    <span class="snd-label"><strong>&#128760; Drone (Remote ID)</strong><em>Rising trill &middot; spinning rotors</em></span>
-                    <span class="snd-state">&mdash;</span>
-                </button>
-                <button class="snd-row" id="beep-tracker" onclick="toggleBeep('tracker')">
-                    <span class="snd-label"><strong>&#128205; Tracker</strong><em>Fast ticking &middot; sonar pings</em></span>
-                    <span class="snd-state">&mdash;</span>
-                </button>
-                <button class="snd-row" id="beep-generic" onclick="toggleBeep('generic')">
-                    <span class="snd-label"><strong>Other matches</strong><em>Plain warning &middot; glow</em></span>
-                    <span class="snd-state">&mdash;</span>
-                </button>
-            </div>
-
-            <p class="set-note alert-note">
-                A category you switch off stops beeping and flashing, but is <strong>still
-                detected and listed</strong>. To stop the device announcing itself on the air,
-                use Receive&#8209;only in Settings.
-            </p>
-        </div>
-    </div>
-
-    <!-- Settings Modal -->
-    <div id="settings-modal" class="modal-overlay">
-        <div class="modal-card">
-            <button class="modal-close-btn" onclick="document.getElementById('settings-modal').classList.remove('active')">&times;</button>
-            <div class="modal-header"><h2>Settings</h2><p>Radios, emissions and identity.</p></div>
-            <div class="set-body">
-                <h3 class="set-label">Radios</h3>
-                <p class="set-note">
-                    Both come back on after a power cycle &mdash; pausing one is for this session only.
-                    The device is the authority here: these read back what it reported.
-                </p>
-                <div class="set-row">
-                    <span>Bluetooth LE</span>
-                    <button class="set-toggle on" id="btn-ble-scan" onclick="toggleBleScan()">Scanning</button>
-                </div>
-                <div class="set-row">
-                    <span>Wi&#8209;Fi</span>
-                    <button class="set-toggle on" id="btn-wifi-scan" onclick="toggleWifiScan()">Scanning</button>
-                </div>
-                <div class="set-row" id="band-row" hidden>
-                    <span>Wi&#8209;Fi bands</span>
-                    <div class="radios seg" id="band-modes" role="group" aria-label="Wi-Fi bands">
-                        <button class="radio-tab" data-band="0" aria-pressed="false">Both</button>
-                        <button class="radio-tab" data-band="1" aria-pressed="false">2.4 GHz</button>
-                        <button class="radio-tab" data-band="2" aria-pressed="false">5 GHz</button>
-                    </div>
-                </div>
-
-                <h3 class="set-label">Detection</h3>
-                <p class="set-note">
-                    <strong>Attack&#8209;gear detection</strong> flags nearby hacking tools &mdash; a
-                    Pwnagotchi today, deauth and karma later. Off by default: it is attack&#8209;adjacent
-                    and some of it trips in busy places. These devices list and beep under
-                    <strong>All</strong> only, never the camera tab. Persisted on the board.
-                </p>
-                <div class="set-row">
-                    <span>Attack&#8209;gear detection</span>
-                    <button class="set-toggle off" id="btn-attack" onclick="toggleAttack()">Off</button>
-                </div>
-
-                <h3 class="set-label">What beeps</h3>
-                <p class="set-note">
-                    Moved to <strong>&#128276; Alerts</strong> on the main screen &mdash; silencing a
-                    category is something you do in the field, not three taps deep in here.
-                </p>
-
-                <h3 class="set-label">Emissions</h3>
-                <p class="set-note">
-                    <strong>Receive-only</strong> stops the device announcing itself &mdash; no advertising, no connection. It keeps scanning and keeps beeping; this is not the buzzer mute. Over Bluetooth <strong>this connection will drop</strong> &mdash; tap the BOOT button on the device to bring it back for two minutes. Over a USB cable nothing drops: only the radio goes quiet, and you can turn it back on here.
-                </p>
-                <div class="set-row">
-                    <span>Currently: <strong id="cfg-rxonly">advertising</strong></span>
-                    <button class="set-toggle off" id="btn-rxonly" onclick="toggleReceiveOnly()">Go quiet</button>
-                </div>
-
-                <h3 class="set-label">Device identity</h3>
-                <p class="set-note">
-                    The app finds the device by its service UUID, so renaming it never breaks discovery. Useful for telling two boards apart &mdash; or for not announcing what it is.
-                </p>
-                <input class="set-text" id="cfg-name" type="text" maxlength="20" autocomplete="off" placeholder="SignalSweep">
-                <label class="set-check">
-                    <input type="checkbox" id="cfg-randmac">
-                    <span>Randomize BLE address each boot
-                        <span class="set-warn">
-                            Breaks silent auto&#8209;reconnect. The phone remembers the device by its address, so after every reboot you must pick it from the dialog again &mdash; no use on a dash mount.
-                        </span>
-                    </span>
-                </label>
-                <button class="ctrl-btn" style="width:100%;" onclick="saveIdentity()">Save &amp; restart device</button>
-
-                <h3 class="set-label">Signatures</h3>
-                <p class="set-note">The rules the device matches against, read back from the board.</p>
-                <button class="ctrl-btn" style="width:100%;" onclick="document.getElementById('settings-modal').classList.remove('active'); openSignatures()">Edit signature rules</button>
-
-                <h3 class="set-label">Opsec</h3>
-                <p class="set-note">
-                    This app keeps no history of what it detected or where you went. The only thing stored is location pins you explicitly confirm, encrypted behind your PIN. Manage them under <strong>&#128205; Pins</strong> in the header.
-                </p>
-            </div>
-        </div>
-    </div>
-
-    <!-- Finder Page (full-screen investigation workflow) -->
-    <div id="finder-page" class="finder-page">
-        <div class="finder-topbar">
-            <h2>📡 Site Survey</h2>
-            <button class="finder-close" onclick="closeFinder()" aria-label="Close">&times;</button>
-        </div>
-        <div class="finder-body">
-            <p class="set-note">Stand next to a suspect device, capture the raw air, and the app tells you its signature — then log it (photo + GPS) to your encrypted database and export it for DeFlock. USB cable only.</p>
-
-            <section class="finder-card">
-                <h3 class="set-label">1 · Investigate an environment</h3>
-
-                <div id="cap-idle">
-                    <p class="set-note">Logs every WiFi frame and BLE advert on all channels. Longer is better — one full sweep takes a few minutes, so give it time to catch a rare transmitter. The detector's beeper is paused while capturing.</p>
-                    <div id="cap-usb-warn" class="set-note" style="color:var(--accent-red);display:none;">Connect the board by USB cable first — this is far too much data for Bluetooth.</div>
-                    <h3 class="set-label">Duration</h3>
-                    <div style="display:flex;gap:8px;">
-                        <button class="ctrl-btn cap-dur" data-secs="120" onclick="pickCapDuration(120)">2 min</button>
-                        <button class="ctrl-btn cap-dur on" data-secs="300" onclick="pickCapDuration(300)">5 min</button>
-                        <button class="ctrl-btn cap-dur" data-secs="600" onclick="pickCapDuration(600)">10 min</button>
-                    </div>
-                    <button class="ctrl-btn on" id="cap-start-btn" style="width:100%;margin-top:14px;" onclick="startCapture()">◉ Capture this environment</button>
-                </div>
-
-                <div id="cap-running" style="display:none;">
-                    <p class="set-note">Capturing… keep the board still and next to the device.</p>
-                    <div style="font-size:2.2rem;font-weight:700;text-align:center;color:var(--accent-cyan);" id="cap-remain">—</div>
-                    <div style="text-align:center;color:var(--text-muted);margin-bottom:14px;">remaining</div>
-                    <div style="display:flex;justify-content:space-around;text-align:center;">
-                        <div><div style="font-size:1.4rem;font-weight:700;" id="cap-wifi">0</div><div style="color:var(--text-muted);font-size:0.8rem;">WiFi</div></div>
-                        <div><div style="font-size:1.4rem;font-weight:700;" id="cap-ble">0</div><div style="color:var(--text-muted);font-size:0.8rem;">BLE</div></div>
-                        <div><div style="font-size:1.4rem;font-weight:700;" id="cap-drops">0</div><div style="color:var(--text-muted);font-size:0.8rem;">dropped</div></div>
-                    </div>
-                    <button class="ctrl-btn" style="width:100%;margin-top:16px;" onclick="stopCaptureManual()">Stop &amp; save now</button>
-                </div>
-
-                <div id="cap-done" style="display:none;">
-                    <div style="text-align:center;font-size:1.4rem;margin:8px 0;">✓ Capture saved</div>
-                    <p class="set-note" id="cap-summary"></p>
-                    <div id="cap-analysis" style="margin:10px 0;"></div>
-                    <h3 class="set-label">2 · Log this device</h3>
-                    <p class="set-note">A photo drops the device into your encrypted database with the detected signature and this capture attached. GPS fills in on its own — a slow fix won't lose the photo. (Your camera app keeps its own copy of the shot.)</p>
-                    <p class="set-note">What are you photographing? Only a camera you're sure of goes on the map in the export.</p>
-                    <div style="display:flex;flex-direction:column;gap:8px;">
-                        <button class="ctrl-btn on" onclick="logDevice('ALPR / Camera')">📷 Flock / ALPR camera</button>
-                        <button class="ctrl-btn" onclick="logDevice('Surveillance Camera')">📷 Other camera</button>
-                        <button class="ctrl-btn" onclick="logDevice('Unconfirmed')">📷 Not sure</button>
-                    </div>
-                    <details style="margin-top:10px;"><summary class="set-note" style="cursor:pointer;">Pull the raw capture to a PC</summary><p class="set-note" style="font-family:monospace;font-size:0.8rem;word-break:break-all;" id="cap-path"></p></details>
-                    <button class="ctrl-btn" style="width:100%;margin-top:10px;" onclick="closeCapture()">Done — new capture</button>
-                </div>
-            </section>
-
-            <section class="finder-card">
-                <h3 class="set-label">Survey log (<span id="finds-count">0</span>)</h3>
-                <p class="set-note">Every survey on this phone, newest first. Tap one to analyze it again or log a photo against it. Photos and locations are encrypted behind your PIN.</p>
-                <div id="finds-list" style="margin:0.6rem 0;"></div>
-                <button class="ctrl-btn on" style="width:100%;" onclick="exportEvidenceBundle()">📦 Export evidence bundle</button>
-                <p class="set-note">Export decrypts everything to <code>Documents/signalsweep-evidence-&lt;date&gt;/</code> — photos, <code>cameras.csv</code>, <code>cameras.osm</code> and the raw captures. Grab it with the Files app, a USB file transfer, or <code>adb pull /sdcard/Documents/</code>. That folder is plaintext: delete it once it's off the phone.</p>
-            </section>
-        </div>
-    </div>
+    <!-- Navigation. The only way between the three screens, and the only exit
+         any of them needs: whatever you are looking at, the other two are one
+         thumb-tap away. Sweep is live and moving; Survey is standing still and
+         saving; Settings is what you set before you go. -->
+    <nav class="tabbar" id="tabbar" role="tablist">
+        <button role="tab" data-tab="sweep" aria-selected="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><path d="M12 12L19 5"/>
+            </svg>
+            <span>Sweep</span>
+        </button>
+        <button role="tab" data-tab="survey" aria-selected="false">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>
+            </svg>
+            <span>Survey</span>
+        </button>
+        <button role="tab" data-tab="settings" aria-selected="false">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="3"/>
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+            </svg>
+            <span>Settings</span>
+        </button>
+    </nav>
 
     <!-- Toast -->
     <div id="toast"><span id="toast-icon">✓</span><span id="toast-msg"></span></div>
-
-    <!-- Help Modal -->
-    <div id="help-modal" class="modal-overlay">
-        <div class="modal-card">
-            <div class="modal-header">
-                <h2>How SignalSweep works</h2>
-                <button class="modal-close-btn" onclick="document.getElementById('help-modal').classList.remove('active')">&times;</button>
-            </div>
-            <div class="modal-body" style="color:var(--text-muted);line-height:1.6;">
-                <p><strong>Turn it on, pocket it or dash-mount it.</strong> The device scans BLE and WiFi and beeps when it hears known surveillance hardware. You don't need the phone for it to work.</p>
-                <h3 style="color:white;margin-top:15px;">The buzzer tells you what it is</h3>
-                <p>📷 <strong>ALPR / camera</strong> — two long beeps<br>
-                   🎥 <strong>Body cam</strong> — long-short-short<br>
-                   🛸 <strong>Drone (Remote ID)</strong> — rising trill<br>
-                   📍 <strong>Tracker</strong> — fast ticking</p>
-                <h3 style="color:white;margin-top:15px;">The phone (optional)</h3>
-                <p>Connect for a live view of what's matching right now, to tune the alarm, or to edit the signature list. Nothing is stored when you close it.</p>
-                <h3 style="color:white;margin-top:15px;">Pins are opt-in</h3>
-                <p>Tap <strong>&#128205;</strong> in the header and turn on <strong>Ask to pin matches</strong>, and the app asks, per device, whether to save its location. Those pins are the only thing kept — encrypted behind your PIN, so a lost phone reveals nothing.</p>
-            </div>
-        </div>
-    </div>
 
     <script defer src="/app.js"></script>
 </body>

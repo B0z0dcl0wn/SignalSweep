@@ -204,6 +204,50 @@
             setSoundsSummary();
         }
 
+        // ---- Tabs ------------------------------------------------------------
+        // Three panels under one header, switched by the bottom bar. Deliberately
+        // not persisted: the app opens on Sweep because that is what the device
+        // is for, and because a phone that reopens on Settings after a reboot
+        // looks like it lost the connection.
+        let currentTab = 'sweep';
+        function showTab(name) {
+            currentTab = name;
+            document.querySelectorAll('.tab').forEach(el => {
+                el.classList.toggle('active', el.id === 'tab-' + name);
+            });
+            document.querySelectorAll('#tabbar button').forEach(b => {
+                b.setAttribute('aria-selected', b.dataset.tab === name ? 'true' : 'false');
+            });
+            window.scrollTo(0, 0);
+            // Survey's two lists are built on demand; Sweep repaints itself on
+            // the next push, and the map needs its size recomputed after being
+            // display:none (Leaflet measures a hidden container as 0x0).
+            if (name === 'survey') {
+                if (!capturing) capStat = { wifi: 0, ble: 0, drops: 0, remain: capReqSecs };
+                paintCapture();
+                renderFinds();
+                renderPins();
+            } else if (name === 'sweep' && viewMode === 'map' && map) {
+                setTimeout(() => { try { map.invalidateSize(); } catch (e) {} }, 0);
+            }
+        }
+
+        document.addEventListener('click', (e) => {
+            const t = e.target.closest('#tabbar button');
+            if (t) showTab(t.dataset.tab);
+        });
+
+        // Transient link state ("connecting", "reconnecting") painted into the
+        // header's own connection line. It used to go to a hidden status badge,
+        // so the app looked frozen for the whole of a slow BLE connect; the next
+        // renderStatusStrip() overwrites it with the real board name.
+        function setConnState(cls, text) {
+            const d = document.getElementById('hdr-dot');
+            const t = document.getElementById('hdr-dev');
+            if (d) d.className = 'statdot ' + cls;
+            if (t) t.textContent = text;
+        }
+
         function toggleView() {
             viewMode = (viewMode === 'list') ? 'map' : 'list';
             const wrap = document.getElementById('map-wrap');
@@ -245,25 +289,41 @@
         // left behind can never silently hide rows under another tab.
         let wifiRole = 'any';   // 'any' | 'ap' | 'client'
 
-        function setRadio(key) {
-            radio = key;
+        // Radio and role are two variables but only five combinations are
+        // reachable, so they are one row of five chips. They used to be two
+        // rows, the second appearing and vanishing with the Wi-Fi tab, which
+        // moved everything below it by a row mid-scan.
+        const RADIO_CHIPS = {
+            any:    ['any',  'any'],
+            BLE:    ['BLE',  'any'],
+            WiFi:   ['WiFi', 'any'],
+            ap:     ['WiFi', 'ap'],
+            client: ['WiFi', 'client']
+        };
+        function radioChipKey() {
+            if (radio === 'any') return 'any';
+            if (radio === 'BLE') return 'BLE';
+            return wifiRole === 'any' ? 'WiFi' : wifiRole;
+        }
+        function paintRadioChips() {
+            const sel = radioChipKey();
             document.querySelectorAll('#radios .radio-tab').forEach(function (el) {
                 el.setAttribute('aria-selected',
-                    el.getAttribute('data-radio') === key ? 'true' : 'false');
+                    el.getAttribute('data-radio') === sel ? 'true' : 'false');
             });
-            const roles = document.getElementById('wifi-roles');
-            if (roles) roles.hidden = key !== 'WiFi';
+        }
+        function setRadioChip(key) {
+            const pair = RADIO_CHIPS[key];
+            if (!pair) return;
+            radio = pair[0];
+            wifiRole = pair[1];
+            paintRadioChips();
             renderScope();
         }
-
-        function setWifiRole(key) {
-            wifiRole = key;
-            document.querySelectorAll('#wifi-roles .radio-tab').forEach(function (el) {
-                el.setAttribute('aria-selected',
-                    el.getAttribute('data-role') === key ? 'true' : 'false');
-            });
-            renderScope();
-        }
+        // Kept as separate setters: they are the two independent variables
+        // matchesRadio() reads, and app.js's own self-test drives them directly.
+        function setRadio(key) { radio = key; paintRadioChips(); renderScope(); }
+        function setWifiRole(key) { wifiRole = key; paintRadioChips(); renderScope(); }
 
         // A device seen on both radios counts as either.
         function matchesRadio(m) {
@@ -648,8 +708,8 @@
             // The radio strip is always on screen and its choice is yours, not
             // the filter's — it used to appear and reset with foxhunt mode.
             if (!foxhuntMode && huntMac) stopHunt();
-            showToast(foxhuntMode ? 'Filter off \u2014 showing everything'
-                                  : 'Filter on \u2014 matches only',
+            showToast(foxhuntMode ? 'Showing every device the board tracks'
+                                  : 'Showing matches only',
                       foxhuntMode ? '\u25ce' : '\u25c9');
             renderScope();
         }
@@ -663,11 +723,13 @@
             if (!btn) return;
             if (!connectionType) {
                 btn.classList.remove('on');
-                btn.textContent = '◉ Filter: —';
+                btn.textContent = '—';
                 return;
             }
-            btn.classList.toggle('on', !foxhuntMode);
-            btn.textContent = foxhuntMode ? '\u25ce Filter: Off' : '\u25c9 Filter: On';
+            // A state, not a toggle name. "Filter: Off" meant the list was
+            // showing MORE, and the word now belongs to the radio chips.
+            btn.classList.toggle('on', foxhuntMode);
+            btn.textContent = foxhuntMode ? 'All devices' : 'Matches only';
         }
 
         function huntTarget(mac) {
@@ -806,12 +868,8 @@
             // dead: no error, no visual difference, just nothing happening.
             const tab = ev.target.closest('#bands .band');
             if (tab) { setLens(tab.getAttribute('data-lens')); return; }
-            const pl = ev.target.closest('#pin-lens .radio-tab');
-            if (pl) { setPinLens(pl.getAttribute('data-pin')); return; }
             const rt = ev.target.closest('#radios .radio-tab');
-            if (rt) { setRadio(rt.getAttribute('data-radio')); return; }
-            const wr = ev.target.closest('#wifi-roles .radio-tab');
-            if (wr) { setWifiRole(wr.getAttribute('data-role')); return; }
+            if (rt) { setRadioChip(rt.getAttribute('data-radio')); return; }
             const lm = ev.target.closest('#led-modes .radio-tab');
             if (lm) { setLed(Number(lm.getAttribute('data-led'))); return; }
             const tc = ev.target.closest('#theme-modes .theme-chip');
@@ -1468,7 +1526,10 @@
                 if (d) d.className = 'statdot ' + cls;
                 if (t) t.textContent = text;
             };
-            const via = { BLE: 'Bluetooth', USB: 'USB', SERIAL: 'USB serial' }[connectionType] || connectionType;
+            // Short forms: the name, the uptime and the alert count share one
+            // line with the Disconnect button, and "Bluetooth" alone cost
+            // enough of it to ellipsize the board's own name.
+            const via = { BLE: 'BLE', USB: 'USB', SERIAL: 'Serial' }[connectionType] || connectionType;
             set('hdr-dot', 'hdr-dev',
                 connectionType ? 'ok' : 'off',
                 !connectionType ? 'Not connected'
@@ -1478,15 +1539,26 @@
                 act.textContent = connectionType ? 'Disconnect' : 'Connect';
                 act.classList.toggle('disc', !!connectionType);
             }
-            const txt = (id, text) => { const e = document.getElementById(id); if (e) e.textContent = text; };
-            txt('st-up', bootAt === null ? '—'
-                : fmtUptime(Math.max(0, Math.floor((Date.now() - bootAt) / 1000))));
-            txt('st-alerts', alertCount === null ? '—' : String(alertCount));
+            // Uptime and the alert count ride the same line as the board name.
+            // Both are how you prove the headless path worked, so they stay on
+            // Sweep; they just no longer need a card to say it.
+            const bits = [];
+            if (bootAt !== null) bits.push(fmtUptime(Math.max(0, Math.floor((Date.now() - bootAt) / 1000))));
+            if (alertCount !== null) bits.push(alertCount + (alertCount === 1 ? ' alert' : ' alerts'));
+            const st = document.getElementById('hdr-stats');
+            if (st) st.textContent = bits.length ? ' · ' + bits.join(' · ') : '';
+            // The GPS readout appears only while there is something to say.
+            // Idle it read "Location: Off" forever and owned a third of a card.
             const g = gpsDisplay();
+            const gw = document.getElementById('hdr-gps');
+            if (gw) gw.hidden = (gpsState.state === 'off');
             set('st-gps-dot', 'st-gps', g.dot, g.text);
             // Here rather than only on a change: a reconnect whose scan_all
             // matches the old value would otherwise leave "—" up.
             paintFilter();
+            // The Record bar's elapsed time and counters ride the same 1 Hz
+            // push rather than a timer of their own.
+            paintLogSession();
         }
 
         // One-shot location (never watchPosition — no passive trail).
@@ -1542,28 +1614,24 @@
             showToast(recordEnabled ? 'Will ask to pin each match' : 'Not asking to pin', '📍');
         }
 
-        // The switch lives in the Pins sheet; the header 📍 lights while it is
-        // on, so an armed prompt is visible without opening anything.
+        // The switch lives in Settings > Recording. While a recording is
+        // running the Record bar on Sweep is what says the prompt is armed.
         function paintRecord() {
             const btn = document.getElementById('btn-record');
             if (btn) {
                 btn.classList.toggle('on', recordEnabled);
                 btn.textContent = recordEnabled ? 'On' : 'Off';
             }
-            const hdr = document.getElementById('btn-pins');
-            if (hdr) hdr.classList.toggle('lit', recordEnabled);
-            paintPinLens();
         }
 
+        // Which categories ask to be pinned. There is no separate picker for
+        // it any more: the band tab you are looking at is the one you are
+        // deciding about, and two controls for one state only ever disagree.
+        // The Record bar states the current one.
         function setPinLens(key) {
             pinLens = key;
             try { localStorage.setItem('pinLens', key); } catch (e) {}
-            paintPinLens();
-        }
-        function paintPinLens() {
-            document.querySelectorAll('#pin-lens .radio-tab').forEach(function (el) {
-                el.setAttribute('aria-pressed', el.getAttribute('data-pin') === pinLens ? 'true' : 'false');
-            });
+            paintLogSession();
         }
 
         function maybeOfferRecord(match) {
@@ -1637,6 +1705,7 @@
                 rssi: m.rssi, lat: fix.lat, lng: fix.lng, acc: fix.acc, ts: Date.now()
             });
             await savePins();
+            paintLogSession();
             showToast('Pin saved (' + pinsCache.length + ' total)', '📍');
         }
 
@@ -1676,27 +1745,24 @@
         }
 
         // ---- Pins view / export ----
-        // Always opens: the "ask to pin" switch lives here and must never sit
-        // behind the PIN -- only viewing saved pins does.
-        function openPins() {
-            paintRecord();
-            if (pinKey || !pinStoreExists()) { renderPins(); return; }
-            document.getElementById('pins-body').innerHTML =
-                '<div class="scope-empty">Saved pins are locked.<br>' +
-                '<button class="ctrl-btn" style="margin-top:0.7rem" onclick="unlockPinsView()">Unlock to view</button></div>';
-            document.getElementById('pins-modal').classList.add('active');
-        }
-        // The PIN gate sits under the Pins sheet in the DOM, so close the sheet
-        // first; renderPins() reopens it once unlocked.
+        // Pins live in the Survey tab beside the logged finds: same encrypted
+        // store, same PIN, same kind of record. Opening the tab never prompts
+        // for the PIN -- only "Unlock to view" does.
+        function openPins() { showTab('survey'); }
         function unlockPinsView() {
-            document.getElementById('pins-modal').classList.remove('active');
-            pendingPinAction = renderPins;
+            pendingPinAction = () => { renderPins(); renderFinds(); };
             openPinGate('unlock');
         }
         function renderPins() {
             const body = document.getElementById('pins-body');
+            if (!body) return;
+            if (!pinKey && pinStoreExists()) {
+                body.innerHTML = '<div class="scope-empty">Saved pins are locked.<br>' +
+                    '<button class="ctrl-btn" style="margin-top:0.7rem" onclick="unlockPinsView()">Unlock to view</button></div>';
+                return;
+            }
             if (pinsCache.length === 0) {
-                body.innerHTML = '<div class="scope-empty">No pins yet. Turn on <strong>Ask to pin matches</strong> and confirm a device to drop one.</div>';
+                body.innerHTML = '<div class="scope-empty">No pins yet. Tap <strong>Record</strong> on the Sweep screen and confirm a device to drop one.</div>';
             } else {
                 body.innerHTML = pinsCache.map((p, i) => {
                     const cat = categoryOf(p.category);
@@ -1710,18 +1776,19 @@
                     '</div>';
                 }).join('');
             }
-            document.getElementById('pins-modal').classList.add('active');
         }
         async function deletePin(i) {
             pinsCache.splice(i, 1);
             await savePins();
             renderPins();
         }
+        // One store, one key: this takes the logged finds and their photos too.
         function wipePinsConfirm() {
-            if (!confirm('Delete ALL recorded pins permanently? This cannot be undone.')) return;
+            if (!confirm('Delete every saved pin and logged find permanently? This cannot be undone.')) return;
             wipePins();
-            document.getElementById('pins-modal').classList.remove('active');
-            showToast('All pins wiped', '🗑');
+            renderPins();
+            renderFinds();
+            showToast('Everything saved was wiped', '🗑');
         }
 
         function xmlAttr(v) { return esc(v); }
@@ -2025,16 +2092,11 @@
             });
         }
 
-        // ---- The Finder page (full-screen investigation workflow) ----
-        function openFinder() {
-            document.getElementById('finder-page').classList.add('active');
-            if (!capturing) capStat = { wifi: 0, ble: 0, drops: 0, remain: capReqSecs };
-            paintCapture();
-            renderFinds();
-        }
-        function closeFinder() {
-            document.getElementById('finder-page').classList.remove('active');
-        }
+        // ---- The Survey tab (investigation workflow) ----
+        // openFinder/closeFinder keep their names: they are what the capture
+        // flow and the onclicks already call, and they now just move tabs.
+        function openFinder() { showTab('survey'); }
+        function closeFinder() { showTab('sweep'); }
         function unlockFindsView() {
             pendingPinAction = renderFinds;
             openPinGate(pinStoreExists() ? 'unlock' : 'create');
@@ -2300,15 +2362,15 @@
             }
         }
 
-        // The toolbar label, so what is muted is legible without opening
-        // anything -- the old controls were three taps deep in Settings.
+        // What is currently muted, on the Alerts heading itself, so the
+        // section says what it is set to before you scroll into it.
         // The icon says how (🔔 both, 🔊 sound only, 💡 lights only, 🔕 nothing
         // can alert), the word says how many categories.
         function setSoundsSummary() {
-            const btn = document.getElementById('btn-buzzer');
+            const btn = document.getElementById('alerts-summary');
             if (!btn) return;
             if (deviceBeepMask === null || buzzerOn === null) {
-                btn.textContent = '🔔 Alerts: —';
+                btn.textContent = '—';
                 btn.classList.remove('on');
                 return;
             }
@@ -2320,12 +2382,8 @@
             const one = { alpr: 'cameras', tracker: 'trackers', drone: 'drones' }[lensOfMask(deviceBeepMask)];
             const what = !sound && !light ? 'off'
                        : n === 0 ? 'none' : n === keys.length ? 'all' : one || n + '/' + keys.length;
-            btn.textContent = icon + ' Alerts: ' + what;
+            btn.textContent = icon + ' ' + what;
             btn.classList.toggle('on', icon !== '🔕');
-        }
-
-        function openSounds() {
-            document.getElementById('sounds-modal').classList.add('active');
         }
 
         // The device is the authority on the radios too: the toggles never
@@ -2431,11 +2489,41 @@
             paintLogSession();
         }
 
+        // The Record bar on Sweep. Idle it is one button; running it is a lit
+        // bar reading elapsed, what has gone into the log, what has been
+        // pinned, and which category is being pinned -- so "am I recording?"
+        // and "recording what?" are both answered without a tap.
         function paintLogSession() {
-            const b = document.getElementById('btn-log-session');
-            if (!b) return;
-            b.textContent = logSession ? 'Stop session' : 'Start session';
-            b.classList.toggle('on', !!logSession);
+            const bar  = document.getElementById('rec-bar');
+            const b    = document.getElementById('btn-record-session');
+            const read = document.getElementById('rec-read');
+            const stop = document.getElementById('btn-record-stop');
+            if (!bar || !b) return;
+            const live = !!logSession;
+            bar.classList.toggle('live', live);
+            b.textContent = live ? '● REC' : '● Record';
+            if (stop) stop.hidden = !live;
+            if (!read) return;
+            if (!live) {
+                read.textContent = connectionType
+                    ? 'Log what the board beeps at, and pin what it matches.'
+                    : 'Connect the board to record an outing.';
+                return;
+            }
+            // m:ss, not fmtUptime's "4m": a recording that reads "0m" for its
+            // first whole minute looks like it did not start.
+            const secs = Math.max(0, Math.floor((Date.now() - logSession.at) / 1000));
+            const el = secs < 3600
+                ? Math.floor(secs / 60) + ':' + String(secs % 60).padStart(2, '0')
+                : Math.floor(secs / 3600) + ':' + String(Math.floor(secs / 60) % 60).padStart(2, '0')
+                  + ':' + String(secs % 60).padStart(2, '0');
+            const alerts = alertCount === null ? null : Math.max(0, alertCount - logSession.alerts0);
+            const pins = Math.max(0, pinsCache.length - logSession.pins0);
+            const bits = [el];
+            if (alerts !== null) bits.push(alerts + (alerts === 1 ? ' alert' : ' alerts'));
+            if (pins) bits.push(pins + (pins === 1 ? ' pin' : ' pins'));
+            const lensName = { all: 'everything', alpr: 'cameras', tracker: 'trackers', drone: 'drones' }[pinLens] || pinLens;
+            read.textContent = bits.join(' · ') + ' — pinning ' + lensName;
         }
 
         function toggleAlertLog() {
@@ -2455,18 +2543,47 @@
                 logPendingUntil = Date.now() + LOG_PENDING_MS;
                 setLogUi(true);
                 sendCommand({ log: true });
-                showToast('Board logging enabled', '●');
             }
-            logSession = { boot: logBootNow, secs: logSecsNow, at: Date.now() };
+            // One bracketed act. Recording an outing means both halves: the
+            // board writes what it beeped at, and the phone offers to pin what
+            // it matched. Two separate switches meant "am I recording?" had two
+            // answers and you could easily be half on.
+            // The bookmark must be the board's clock NOW, not when we connected.
+            // log_boot/log_secs arrive only in the CMD:CFG reply, which is asked
+            // for once per connection, so logSecsNow is frozen at connect time --
+            // starting a recording an hour into a drive bookmarked an hour ago
+            // and read back alerts from before the tap. log_secs is seconds since
+            // boot, which is exactly what bootAt (from cfg.uptime) tracks, so it
+            // can be recomputed here with no extra round trip and no extra bytes
+            // on the push, which is the tightest budget on the device.
+            const secsNow = bootAt === null ? logSecsNow
+                : Math.max(logSecsNow, Math.floor((Date.now() - bootAt) / 1000));
+            logSession = {
+                boot: logBootNow, secs: secsNow, at: Date.now(),
+                alerts0: (alertCount === null ? 0 : alertCount),
+                pins0: pinsCache.length,
+                // Remember whether the pin prompt was already armed, so Stop
+                // puts it back rather than switching off something the user
+                // turned on themselves before ever starting a session.
+                wasRecording: recordEnabled
+            };
+            recordEnabled = true;
             try { localStorage.setItem(LOG_SESSION_KEY, JSON.stringify(logSession)); } catch (e) {}
+            paintRecord();
             paintLogSession();
-            showToast('Session started — the board is recording', '●');
+            showToast('Recording — the board is logging', '●');
         }
 
         function stopLogSession() {
             const sess = logSession;
             logSession = null;
             try { localStorage.removeItem(LOG_SESSION_KEY); } catch (e) {}
+            // Stop disarms the pin prompt again unless it was on beforehand.
+            // Stopping never turns the board's own log off: the car case wants
+            // it still logging after you put the phone away.
+            recordEnabled = !!(sess && sess.wasRecording);
+            try { localStorage.setItem(RECORD_PREF_KEY, recordEnabled ? '1' : '0'); } catch (e) {}
+            paintRecord();
             paintLogSession();
             saveAlertLog(false, sess);
         }
@@ -2995,13 +3112,8 @@
         function closeConnModal() { document.getElementById('connModal').classList.remove('active'); }
 
         function updateConnectionUI(isConnected, type = '') {
-            const pulseDot = document.getElementById('pulseDot');
-            const connStatusText = document.getElementById('connStatusText');
-
             if (isConnected) {
                 connectionType = type;
-                pulseDot.className = 'pulse-dot connected';
-                connStatusText.textContent = `CONNECTED (${type})`;
                 closeConnModal();
                 renderStatusStrip();
                 showToast(`Connected via ${type}`, '✓');
@@ -3027,8 +3139,6 @@
                 setBeepUi(null);
                 setSigUi(null);
                 devName = ''; bootAt = null; alertCount = null;
-                pulseDot.className = 'pulse-dot';
-                connStatusText.textContent = 'DISCONNECTED';
                 renderStatusStrip();
                 showToast('Device disconnected', '✕');
             }
@@ -3073,10 +3183,7 @@
         }
 
         async function connectNativeBluetooth() {
-            const pulseDot = document.getElementById('pulseDot');
-            const connStatusText = document.getElementById('connStatusText');
-            pulseDot.className = 'pulse-dot connecting';
-            connStatusText.textContent = 'CONNECTING NATIVE BLE...';
+            setConnState('warn', 'Connecting…');
             try {
                 await window.BleClient.initialize({ androidNeverForLocation: true });
                 // With the radio off the picker just scans nothing and shows an
@@ -3119,8 +3226,7 @@
                 // Closing the picker is a choice, not a failure: undo the
                 // "connecting" dot without the "Device disconnected" toast.
                 if (/cancelled/i.test(msg)) {
-                    pulseDot.className = 'pulse-dot';
-                    connStatusText.textContent = 'DISCONNECTED';
+                    renderStatusStrip();
                     return;
                 }
                 updateConnectionUI(false);
@@ -3188,10 +3294,7 @@
                 alert('Web Bluetooth API is not supported by your browser. Please use Google Chrome, Microsoft Edge, or Opera.');
                 return;
             }
-            const pulseDot = document.getElementById('pulseDot');
-            const connStatusText = document.getElementById('connStatusText');
-            pulseDot.className = 'pulse-dot connecting';
-            connStatusText.textContent = 'CONNECTING BLE...';
+            setConnState('warn', 'Connecting…');
             try {
                 let device;
                 try {
@@ -3309,10 +3412,7 @@
         }
 
         async function connectNativeUsb() {
-            const pulseDot = document.getElementById('pulseDot');
-            const connStatusText = document.getElementById('connStatusText');
-            pulseDot.className = 'pulse-dot connecting';
-            connStatusText.textContent = 'CONNECTING USB...';
+            setConnState('warn', 'Connecting…');
             try {
                 const { devices } = await window.UsbSerial.listDevices();
                 if (!devices || devices.length === 0) {
@@ -3412,10 +3512,7 @@
                 alert('WebSerial API is not supported by your browser. Please use Google Chrome, Microsoft Edge, or Opera.');
                 return;
             }
-            const pulseDot = document.getElementById('pulseDot');
-            const connStatusText = document.getElementById('connStatusText');
-            pulseDot.className = 'pulse-dot connecting';
-            connStatusText.textContent = 'CONNECTING SERIAL...';
+            setConnState('warn', 'Connecting…');
             try {
                 serialPort = await navigator.serial.requestPort();
                 await serialPort.open({ baudRate: 115200 });
@@ -3593,8 +3690,7 @@
             if (!wantConnection || reconnectTimer) return;
             reconnectDelay = Math.min(reconnectDelay ? reconnectDelay * 2 : 2000, 30000);
             const secs = Math.round(reconnectDelay / 1000);
-            const el = document.getElementById('connStatusText');
-            if (el) el.textContent = 'RECONNECTING (' + secs + 's)...';
+            setConnState('warn', 'Reconnecting in ' + secs + 's…');
             reconnectTimer = setTimeout(async () => {
                 reconnectTimer = null;
                 if (!wantConnection) return;
