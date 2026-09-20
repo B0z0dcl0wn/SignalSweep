@@ -4,6 +4,8 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-09-20 — Three tabs, an alert log on the board, and an LED scene that forgets itself
+
 ### Fixed — Bulk replies never arrived over BLE
 
 - The Signatures page loaded nothing over Bluetooth, on the phone and in the
