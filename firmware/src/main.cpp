@@ -9,6 +9,7 @@
 #include <NimBLEDevice.h>
 #include <nvs_flash.h>
 #include <LittleFS.h>
+#include "alert_log.h"
 
 #if CONFIG_IDF_TARGET_ESP32C5
 #define BOOT_BUTTON_PIN BOOT_PIN   // GPIO28 on the XIAO ESP32-C5 (esp32-hal.h)
@@ -48,6 +49,11 @@ void setup() {
     } else {
         Serial.println("[FS] LittleFS mounted.");
     }
+
+    // Must follow the mount: it bumps the boot counter that makes the alert
+    // log's ordering key monotonic across power cycles, and derives the ring's
+    // write head from the data rather than from a stored pointer.
+    alertLogInit();
 
     // Initialize BLE stack under whatever identity is stored. Both the name
     // and the address have to be settled before init/advertising, which is why

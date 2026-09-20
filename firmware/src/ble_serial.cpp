@@ -4,6 +4,8 @@
 #include "ble_serial.h"
 #include "mode_manager.h"
 #include "mode_watchers_watch.h"
+#include "alert_log.h"
+#include "mbedtls/base64.h"
 #include "mode_capture.h"
 #include <NimBLEDevice.h>
 #include <ArduinoJson.h>
@@ -142,6 +144,15 @@ String getBleConfigJson() {
     doc["ble_scan"] = bleScanOn;
     doc["wifi_scan"] = wifiScanOn;
     doc["alerts"] = getAlertCount();
+    // Alert log (alert_log.h). log_boot/log_secs are the board's current
+    // ordering key: the app stores them as a "from here" bookmark when you
+    // start a session, and passes them back to CMD:LOG:READ. log_n is what is
+    // held, for the fill gauge -- ALERT_LOG_MAX_RECS is the ceiling and
+    // app/selftest.js pins the two together.
+    doc["log"] = getAlertLogEnabled();
+    doc["log_n"] = alertLogCount();
+    doc["log_boot"] = alertLogBoot();
+    doc["log_secs"] = alertLogSecs();
     // Seconds since boot, asked once on connect; the app counts on from there
     // rather than have it ride the 1 Hz push.
     doc["uptime"] = millis() / 1000;
@@ -165,6 +176,62 @@ static void sendReply(const String& payload) {
 
 static void sendConfigReply() {
     sendReply(getBleConfigJson());
+}
+
+// ---------------------------------------------------------------------------
+// Alert log readback.
+//
+// Bulk, so it follows the CAP: precedent: a JSON header frame, then base64
+// payload lines, then a done frame. Unlike capture this does NOT pause the
+// detector and is small enough for BLE -- a walk or a drive is tens to a few
+// hundred records (16 B each), not the megabytes a packet capture produces.
+//
+// Capped per request; the app pages with <skip>. The scratch buffer is a
+// plain heap allocation, deliberately not ps_malloc: the C5 has no PSRAM, and
+// 8 KB is small enough to be uncontroversial on either board.
+// ---------------------------------------------------------------------------
+#define LOG_READ_MAX   512    // records per request, 8 KB
+#define LOG_READ_BATCH 48     // records per base64 line (768 B -> 1024 chars)
+
+static void sendAlertLog(uint16_t fromBoot, uint32_t fromSecs, size_t skip) {
+    uint8_t* buf = (uint8_t*)malloc(LOG_READ_MAX * ALERT_LOG_REC_SIZE);
+    if (buf == NULL) {
+        sendReply("{\"logrd\":{\"err\":\"mem\"}}");
+        return;
+    }
+    bool more = false;
+    size_t n = alertLogRead(fromBoot, fromSecs, skip, buf, LOG_READ_MAX, &more);
+
+    // The name table only on the first page -- it is the same every page and
+    // the app has it after one.
+    {
+        JsonDocument hdr;
+        JsonObject o = hdr["logrd"].to<JsonObject>();
+        o["n"] = (uint32_t)n;
+        o["skip"] = (uint32_t)skip;
+        o["more"] = more;
+        if (skip == 0) o["names"] = alertLogNames();
+        String out;
+        serializeJson(hdr, out);
+        sendReply(out);
+    }
+
+    uint8_t b64[((LOG_READ_BATCH * ALERT_LOG_REC_SIZE) * 4) / 3 + 8];
+    for (size_t off = 0; off < n; off += LOG_READ_BATCH) {
+        size_t take = (n - off < LOG_READ_BATCH) ? (n - off) : LOG_READ_BATCH;
+        size_t olen = 0;
+        if (mbedtls_base64_encode(b64, sizeof(b64), &olen,
+                                  buf + off * ALERT_LOG_REC_SIZE,
+                                  take * ALERT_LOG_REC_SIZE) != 0) break;
+        String line = "LOG:";
+        line.concat((const char*)b64, olen);
+        sendReply(line);
+        // Same courtesy the 1 Hz push pays: let the notify queue drain rather
+        // than stacking chunks faster than the link carries them.
+        vTaskDelay(pdMS_TO_TICKS(2));
+    }
+    free(buf);
+    sendReply("{\"logrd\":{\"done\":true}}");
 }
 
 void requestReboot() {
@@ -478,6 +545,15 @@ void processIncomingCommand(const String& rawCommand) {
             sendConfigReply();
         }
 
+        // 3c''. Alert logging: {"log":bool}. Off by default, persisted. Writes
+        // every sounded alert to the board's flash so a headless drive can be
+        // read back later -- see alert_log.h. Config reply so the app paints
+        // from the device.
+        if (doc["log"].is<bool>()) {
+            setAlertLogEnabled(doc["log"].as<bool>());
+            sendConfigReply();
+        }
+
         // 3d. What beeps: {"beep_mask":N}, one bit per AlertCategory. Answers
         // with a fresh config reply so the app's checkboxes paint from the
         // device rather than optimistically -- the mask persists, so a board
@@ -561,6 +637,31 @@ void processIncomingCommand(const String& rawCommand) {
             startCapture(secs);
         } else if (rawStr == "CMD:CAP:STOP") {
             stopCapture();
+        } else if (rawStr == "CMD:LOG:ON") {
+            setAlertLogEnabled(true);
+            sendConfigReply();
+        } else if (rawStr == "CMD:LOG:OFF") {
+            setAlertLogEnabled(false);
+            sendConfigReply();
+        } else if (rawStr == "CMD:LOG:CLEAR") {
+            alertLogClear();
+            sendConfigReply();
+        } else if (rawStr == "CMD:LOG:STAT") {
+            sendConfigReply();   // log_n / log_boot / log_secs all ride CMD:CFG
+        } else if (rawStr.startsWith("CMD:LOG:READ:")) {
+            // CMD:LOG:READ:<boot>:<secs>:<skip> -- everything at or after that
+            // key, oldest first, skipping the first <skip> matches. Exact
+            // paging: several alerts can share one second, so a timestamp-only
+            // cursor would make the app de-duplicate.
+            String args = rawStr.substring(13);   // 13 = len("CMD:LOG:READ:")
+            int c1 = args.indexOf(':');
+            int c2 = (c1 < 0) ? -1 : args.indexOf(':', c1 + 1);
+            if (c1 > 0 && c2 > c1) {
+                uint16_t fb = (uint16_t)args.substring(0, c1).toInt();
+                uint32_t fs = (uint32_t)args.substring(c1 + 1, c2).toInt();
+                size_t skip = (size_t)args.substring(c2 + 1).toInt();
+                sendAlertLog(fb, fs, skip);
+            }
         }
     }
 }

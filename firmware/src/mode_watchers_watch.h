@@ -44,6 +44,13 @@ struct WatcherTargetInfo {
     // belongs to the device, not to the moment it was first heard -- see the
     // comment on noteAlertForTarget() in the .cpp.
     bool alerted = false;
+    // Set alongside `alerted` when an alert really sounded, cleared by the 1 Hz
+    // task once the record is on flash. The target IS the log queue: it already
+    // holds the mac, category, rule and rssi a record needs, it is bounded so
+    // nothing can overflow, and it means no second ring and no lock shared
+    // between the two radio callbacks. A LittleFS write must never happen on
+    // those callbacks -- see the drain in watchersPeriodicTask().
+    bool logPending = false;
 
     // Who made it, and which side of a Wi-Fi link it is. The app turns these
     // into a vendor name and an AP/client badge; the lookups live on the phone.
@@ -171,6 +178,20 @@ void setBeepMask(uint8_t mask);
 
 /** @brief Categories currently allowed to beep (bitmask, see BEEP_MASK_ALL). */
 uint8_t getBeepMask();
+
+/**
+ * @brief Record every alert the buzzer sounds to the board's own flash.
+ * Off by default and persisted (sweep-st/log), like every other operator
+ * setting: a detector wired into a car must keep logging across the engine
+ * stopping, or the feature only works while tethered to the phone you were
+ * trying to walk away from. Follows the buzzer exactly — a muted beep_mask
+ * category and an active hunt both write nothing, so the log is a faithful
+ * record of what you actually heard. See alert_log.h.
+ */
+void setAlertLogEnabled(bool enabled);
+
+/** @brief True while alerts are being written to flash. */
+bool getAlertLogEnabled();
 
 /**
  * @brief Wi-Fi channel the hunted target was last heard on, or 0 if unknown.

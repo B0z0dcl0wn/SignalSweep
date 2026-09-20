@@ -965,6 +965,15 @@
         .out-row { display:flex; align-items:center; justify-content:space-between; gap:12px; }
         .out-row + .out-row { margin-top:8px; }
         .alert-note { margin-top:10px; }
+        /* End-of-session summary: the count is the payoff, so it is the size of
+           the payoff. Rows are the per-category breakdown in category colours. */
+        .logsum-big { font-size:3rem; font-weight:800; line-height:1; text-align:center; }
+        .logsum-sub { text-align:center; color:var(--text-muted); font-size:0.85rem;
+            margin:0.25rem 0 1.1rem; }
+        .logsum-rows { display:flex; flex-direction:column; gap:6px; margin-bottom:1rem; }
+        .logsum-row { display:flex; justify-content:space-between; align-items:center;
+            padding:0.55rem 0.8rem; background:rgba(255,255,255,0.05);
+            border:1px solid var(--card-border); border-radius:10px; font-size:0.9rem; }
         .snd-label { display:flex; flex-direction:column; gap:2px; }
         .snd-label em { font-style:normal; font-size:0.72rem; color:var(--text-muted); }
         .snd-state { flex:none; min-width:64px;  /* fits "🔊 💡", so the chip doesn't shift as outputs toggle */ padding:6px 12px; border-radius:6px;
@@ -1073,6 +1082,12 @@
         .radios.sub { margin-top:-0.5rem; }
         /* Segmented pickers in the Alerts sheet (Sound, Lights). */
         .seg { margin:0; flex:0 1 auto; }
+        /* .radios is sized for the 3-way radio strip (Both / Bluetooth / Wi-Fi).
+           The pin lens has four, so it wrapped 3+1 with a dead half-row. Scoped
+           by id on purpose: widening .radios itself would break the radio strip,
+           and adding a shared class is how the chips ended up inheriting a
+           layout class they had no business in. */
+        #pin-lens { grid-template-columns:repeat(4,1fr); }
         #sound-modes { grid-template-columns:repeat(2,1fr); }
         #led-modes { grid-template-columns:repeat(4,1fr); }
         /* Theme chips: a sideways strip, not a grid -- five names don't fit a
@@ -1414,7 +1429,28 @@
     <div class="modal-overlay" id="pins-modal">
         <div class="modal-card">
             <button class="modal-close-btn" onclick="document.getElementById('pins-modal').classList.remove('active')">&times;</button>
-            <div class="modal-header"><h2>Pins</h2><p>Locations you chose to mark, encrypted behind your PIN. Nothing else is stored.</p></div>
+            <div class="modal-header"><h2>Record</h2><p>What gets written down. Pins are places you chose to mark, encrypted behind your PIN. The alert log is times and MACs only &mdash; no location &mdash; and lives on the board.</p></div>
+
+            <!-- Alert log. The board records every alert its buzzer sounds, with
+                 no phone needed, so a detector left in a car logs the whole drive
+                 and you read it back later. Start/Stop is only an app-side
+                 bookmark: the board keeps logging either way, which is the whole
+                 point of it working while the phone is in your pocket or at home.
+                 Painted solely from device frames, like every other control. -->
+            <div class="alert-sec">Alert log</div>
+            <div class="set-row">
+                <span>Log alerts on the board</span>
+                <button class="set-toggle" id="btn-log" onclick="toggleAlertLog()">Off</button>
+            </div>
+            <p class="set-note" id="log-note" style="margin:0.5rem 0 0.75rem;">Off. The board keeps no record of what it beeped at.</p>
+            <div class="modal-actions" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:0.5rem;">
+                <button class="ctrl-btn" id="btn-log-session" onclick="toggleLogSession()">Start session</button>
+                <button class="ctrl-btn" onclick="saveAlertLog(true)">Save everything</button>
+                <button class="ctrl-btn" style="border-color:var(--accent-red,#ef4444);color:var(--accent-red,#ef4444)" onclick="clearAlertLogConfirm()">Clear log</button>
+            </div>
+            <p class="set-note" style="margin:0 0 1.25rem;">A session just bookmarks &ldquo;from here&rdquo;. Stopping writes a .txt to Documents and shows what you passed. Stopping never turns the board&rsquo;s log off.</p>
+
+            <div class="alert-sec">Pins</div>
             <div class="set-row">
                 <span>Ask to pin matches</span>
                 <button class="set-toggle" id="btn-record" onclick="toggleRecording()">Off</button>
@@ -1433,6 +1469,16 @@
                 <button class="ctrl-btn" onclick="exportPinsOSM()">Export OSM</button>
                 <button class="ctrl-btn" style="border-color:var(--accent-red,#ef4444);color:var(--accent-red,#ef4444)" onclick="wipePinsConfirm()">Wipe All</button>
             </div>
+        </div>
+    </div>
+
+    <!-- What you passed, after a session or a full save. The board logged it
+         whether or not the phone was watching; this is just the readout. -->
+    <div class="modal-overlay" id="logsum-modal">
+        <div class="modal-card">
+            <button class="modal-close-btn" onclick="document.getElementById('logsum-modal').classList.remove('active')">&times;</button>
+            <div class="modal-header"><h2>What you passed</h2><p>From the board&rsquo;s own alert log. No location was recorded.</p></div>
+            <div id="logsum-body"></div>
         </div>
     </div>
 

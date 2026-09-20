@@ -1003,11 +1003,20 @@
                 capAppend(dataStr.slice(4));
                 return;
             }
+            // Alert-log readback payload, same shape as CAP: -- raw base64, not
+            // JSON, so route it before the parser. Only while a read is running.
+            if (logRx && dataStr.charCodeAt(0) === 76 /* 'L' */ && dataStr.startsWith('LOG:')) {
+                try { logRx.recs.push(unb64(dataStr.slice(4))); } catch (e) {}
+                logRx.arm();
+                return;
+            }
             try {
                 const data = JSON.parse(dataStr);
                 rxOk++;
                 // Capture progress / completion frame ({"cap":{...}}).
                 if (data.cap) { handleCapStat(data.cap); return; }
+                // Alert-log readback header / done frame ({"logrd":{...}}).
+                if (data.logrd) { handleLogFrame(data.logrd); return; }
                 // Ring result: the firmware reports whether the write landed.
                 if (typeof data.ring === 'string' && 'ok' in data) {
                     showToast(data.ok ? 'Ring landed — listen for it'
@@ -2171,6 +2180,15 @@
             setBandUi(cfg.band);
             devName = (typeof cfg.ble_name === 'string' && cfg.ble_name) || 'SignalSweep';
             if (typeof cfg.uptime === 'number') bootAt = Date.now() - cfg.uptime * 1000;
+            // Alert log. log_boot/log_secs are the board's current ordering key:
+            // the bookmark a session starts from, and the only way to date
+            // records later -- the board has no clock, so this is the one moment
+            // a boot can be tied to real time.
+            if (typeof cfg.log_n === 'number') logHeld = cfg.log_n;
+            if (typeof cfg.log_boot === 'number') logBootNow = cfg.log_boot;
+            if (typeof cfg.log_secs === 'number') logSecsNow = cfg.log_secs;
+            noteBootEpoch(logBootNow, logSecsNow);
+            if (typeof cfg.log === 'boolean') setLogUi(cfg.log);
             renderStatusStrip();
         }
 
@@ -2355,6 +2373,299 @@
             sendCommand({ attack: want });
         }
 
+        // ===================== Alert log =====================
+        // The board records every alert its buzzer sounds to its own flash
+        // (firmware/src/alert_log.h). No phone is required, which is the point:
+        // a detector wired into a car logs the whole drive while the phone is in
+        // a pocket, dead, or at home. The app only turns it on and reads it back.
+        //
+        // Start/Stop is an app-side BOOKMARK, not a board mode. The board keeps
+        // logging either way; a session just remembers "from here" so Stop can
+        // read back that stretch. Stopping never disables the board's log.
+        let deviceLog = false;
+        let logPendingUntil = 0;
+        const LOG_PENDING_MS = 1500;
+        // Mirrors ALERT_LOG_MAX_RECS in firmware/src/alert_log.h; selftest pins them.
+        const LOG_MAX_RECS = 100000;
+        const LOG_SESSION_KEY = 'logSession';
+        const LOG_EPOCHS_KEY = 'logBootEpochs';
+        let logHeld = 0, logBootNow = 0, logSecsNow = 0;
+        let logSession = null;   // { boot, secs, at }
+
+        // A record carries (boot, seconds-since-boot), never a wall clock: the
+        // board has no RTC and is deliberately offline. Any boot this phone has
+        // actually seen can be dated, though, so remember when each one started
+        // and old records become real timestamps. First observation wins --
+        // later ones drift with the board's own clock.
+        let logBootEpochs = {};
+        try { logBootEpochs = JSON.parse(localStorage.getItem(LOG_EPOCHS_KEY) || '{}'); } catch (e) { logBootEpochs = {}; }
+
+        function noteBootEpoch(boot, secs) {
+            if (!boot || typeof secs !== 'number') return;
+            if (logBootEpochs[boot]) return;
+            logBootEpochs[boot] = Date.now() - secs * 1000;
+            const keys = Object.keys(logBootEpochs).map(Number).sort(function (a, b) { return a - b; });
+            while (keys.length > 200) delete logBootEpochs[keys.shift()];
+            try { localStorage.setItem(LOG_EPOCHS_KEY, JSON.stringify(logBootEpochs)); } catch (e) {}
+        }
+
+        function setLogUi(on) {
+            deviceLog = !!on;
+            const b = document.getElementById('btn-log');
+            if (b) {
+                b.textContent = on ? 'On' : 'Off';
+                b.classList.toggle('on', !!on);
+                b.classList.toggle('off', !on);
+            }
+            const note = document.getElementById('log-note');
+            if (note) {
+                if (!on) {
+                    note.textContent = 'Off. The board keeps no record of what it beeped at.';
+                } else {
+                    const pct = Math.min(100, Math.round((logHeld / LOG_MAX_RECS) * 1000) / 10);
+                    note.textContent = 'Recording every alert on the board, with or without the phone. '
+                        + logHeld.toLocaleString() + ' held (' + pct + '% full)'
+                        + (logHeld >= LOG_MAX_RECS ? ' — oldest are being overwritten.' : '.');
+                }
+            }
+            paintLogSession();
+        }
+
+        function paintLogSession() {
+            const b = document.getElementById('btn-log-session');
+            if (!b) return;
+            b.textContent = logSession ? 'Stop session' : 'Start session';
+            b.classList.toggle('on', !!logSession);
+        }
+
+        function toggleAlertLog() {
+            const want = !deviceLog;
+            logPendingUntil = Date.now() + LOG_PENDING_MS;
+            setLogUi(want);
+            sendCommand({ log: want });
+        }
+
+        // Nobody who taps Start wants to be told they cannot. Enabling is
+        // announced rather than silent, and it stays on afterwards -- the car
+        // case depends on the board still logging once you walk away.
+        function toggleLogSession() {
+            if (!connectionType) { showToast('Connect the device first', '…'); return; }
+            if (logSession) { stopLogSession(); return; }
+            if (!deviceLog) {
+                logPendingUntil = Date.now() + LOG_PENDING_MS;
+                setLogUi(true);
+                sendCommand({ log: true });
+                showToast('Board logging enabled', '●');
+            }
+            logSession = { boot: logBootNow, secs: logSecsNow, at: Date.now() };
+            try { localStorage.setItem(LOG_SESSION_KEY, JSON.stringify(logSession)); } catch (e) {}
+            paintLogSession();
+            showToast('Session started — the board is recording', '●');
+        }
+
+        function stopLogSession() {
+            const sess = logSession;
+            logSession = null;
+            try { localStorage.removeItem(LOG_SESSION_KEY); } catch (e) {}
+            paintLogSession();
+            saveAlertLog(false, sess);
+        }
+
+        // ---- readback ----------------------------------------------------
+        // Bulk, so it follows the capture precedent: a JSON header frame, then
+        // base64 payload lines, then a done frame. Paged with an explicit skip
+        // because several alerts can share one second, which a timestamp-only
+        // cursor would force the app to de-duplicate.
+        let logRx = null;
+        const LOG_RX_TIMEOUT_MS = 12000;
+
+        function handleLogFrame(o) {
+            if (!logRx) return;
+            if (o.names) logRx.names = String(o.names).split('\n').filter(Boolean);
+            if (o.err) { logRx.fail('device: ' + o.err); return; }
+            if ('more' in o) logRx.more = !!o.more;
+            if (o.done) logRx.page();
+        }
+
+        function readAlertLog(fromBoot, fromSecs, onProgress) {
+            return new Promise(function (resolve, reject) {
+                if (logRx) { reject(new Error('a readback is already running')); return; }
+                const st = {
+                    recs: [], names: [], more: false, skip: 0, timer: null,
+                    fail: function (msg) { clearTimeout(st.timer); logRx = null; reject(new Error(msg)); },
+                    arm: function () {
+                        clearTimeout(st.timer);
+                        st.timer = setTimeout(function () { st.fail('the board stopped replying'); }, LOG_RX_TIMEOUT_MS);
+                    },
+                    page: function () {
+                        // One page done. Keep going only while the board says
+                        // more remain, advancing skip by what actually arrived.
+                        if (onProgress) onProgress(st.recs.length);
+                        if (!st.more) {
+                            clearTimeout(st.timer); logRx = null;
+                            resolve({ recs: st.recs, names: st.names });
+                            return;
+                        }
+                        st.skip = st.recs.length;
+                        st.more = false;
+                        st.arm();
+                        sendCommand({ raw: 'CMD:LOG:READ:' + fromBoot + ':' + fromSecs + ':' + st.skip });
+                    }
+                };
+                logRx = st;
+                st.arm();
+                sendCommand({ raw: 'CMD:LOG:READ:' + fromBoot + ':' + fromSecs + ':0' });
+            });
+        }
+
+        // 16-byte fixed records; the layout is the wire contract with
+        // firmware/src/alert_log.h and app/selftest.js pins the two together.
+        function parseLogRecords(chunks, names) {
+            const out = [];
+            for (const bytes of chunks) {
+                for (let i = 0; i + 16 <= bytes.length; i += 16) {
+                    const boot = bytes[i] | (bytes[i + 1] << 8);
+                    const secs = (bytes[i + 2] | (bytes[i + 3] << 8) |
+                                  (bytes[i + 4] << 16) | (bytes[i + 5] << 24)) >>> 0;
+                    let mac = '';
+                    for (let k = 0; k < 6; k++) {
+                        mac += (k ? ':' : '') + bytes[i + 6 + k].toString(16).padStart(2, '0');
+                    }
+                    const ruleIdx = bytes[i + 13];
+                    out.push({
+                        boot: boot, secs: secs,
+                        mac: mac.toUpperCase(),
+                        cat: bytes[i + 12],
+                        rule: (names && ruleIdx < names.length) ? names[ruleIdx] : '',
+                        rssi: (bytes[i + 14] << 24) >> 24
+                    });
+                }
+            }
+            return out;
+        }
+
+        // Category byte -> label. Mirrors AlertCategory in
+        // firmware/src/hardware_manager.h; selftest pins the order.
+        const LOG_CATS = ['ALPR / Camera', 'Body Cam', 'Drone', 'Tracker', 'Other'];
+
+        function logWallClock(rec) {
+            const epoch = logBootEpochs[rec.boot];
+            return epoch ? new Date(epoch + rec.secs * 1000) : null;
+        }
+
+        function logLine(rec) {
+            const when = logWallClock(rec);
+            const pad = function (n) { return String(n).padStart(2, '0'); };
+            const t = when
+                ? when.getFullYear() + '-' + pad(when.getMonth() + 1) + '-' + pad(when.getDate()) +
+                  ' ' + pad(when.getHours()) + ':' + pad(when.getMinutes()) + ':' + pad(when.getSeconds())
+                // A boot this phone never saw cannot be dated: the board has no
+                // clock. Say how far into that boot it was rather than invent one.
+                : ('boot ' + rec.boot + ' +' + rec.secs + 's').padEnd(19);
+            const cat = LOG_CATS[rec.cat] || ('cat ' + rec.cat);
+            let vend = '';
+            try { vend = vendorOf({ mac: rec.mac, pub: true }) || ''; } catch (e) { vend = ''; }
+            return [t, cat.padEnd(13), rec.mac, vend.padEnd(18),
+                    rec.rule ? '"' + rec.rule + '"' : '', String(rec.rssi)]
+                   .join('  ').replace(/\s+$/, '');
+        }
+
+        function logSummary(recs) {
+            const by = {};
+            const macs = {};
+            for (const r of recs) {
+                const k = LOG_CATS[r.cat] || 'Other';
+                by[k] = (by[k] || 0) + 1;
+                macs[r.mac] = 1;
+            }
+            return { total: recs.length, devices: Object.keys(macs).length, by: by };
+        }
+
+        // Writes the human file. Plaintext in Documents beside the .sscap
+        // captures, deliberately: it carries no location, and a PIN prompt on
+        // the move is how a log never gets saved.
+        async function saveAlertLog(everything, sess) {
+            if (!connectionType) { showToast('Connect the device first', '…'); return; }
+            const from = (!everything && sess) ? sess : { boot: 0, secs: 0 };
+            showToast('Reading the log from the board…', '…');
+            let got;
+            try {
+                got = await readAlertLog(from.boot | 0, from.secs | 0, function (n) {
+                    if (n && n % 512 === 0) showToast('Read ' + n + '…', '…');
+                });
+            } catch (e) {
+                showToast('Could not read the log: ' + e.message, '⚠');
+                return;
+            }
+            const recs = parseLogRecords(got.recs, got.names);
+            if (!recs.length) { showToast('Nothing logged in that range', '○'); return; }
+
+            const sum = logSummary(recs);
+            const name = 'signalsweep-log-' + capStamp() + '.txt';
+            const head = [
+                '# SignalSweep alert log',
+                '# board: ' + (devName || 'unknown') + '   pulled: ' + new Date().toLocaleString(),
+                '# ' + sum.total + ' alerts from ' + sum.devices + ' devices',
+                '# times are local. "boot N +Ms" = a boot this phone never saw, so it cannot be dated.',
+                '# no location is recorded, by design.',
+                ''
+            ].join('\n');
+            const body = recs.map(logLine).join('\n') + '\n';
+
+            let saved = null;
+            if (capNativeFs()) {
+                try {
+                    await window.CapFilesystem.writeFile({
+                        path: name, data: head + body,
+                        directory: window.CapDirectory.Documents,
+                        encoding: window.CapEncoding.UTF8, recursive: true
+                    });
+                    saved = name;
+                } catch (e) {
+                    showToast('Could not write the file: ' + e.message, '⚠');
+                }
+            }
+            showLogSummary(sum, saved, recs);
+        }
+
+        function showLogSummary(sum, savedAs, recs) {
+            const body = document.getElementById('logsum-body');
+            if (body) {
+                let html = '<div class="logsum-big">' + sum.total + '</div>'
+                         + '<div class="logsum-sub">alerts from ' + sum.devices + ' device'
+                         + (sum.devices === 1 ? '' : 's') + '</div><div class="logsum-rows">';
+                for (const k of LOG_CATS) {
+                    if (!sum.by[k]) continue;
+                    const c = categoryOf(k);
+                    html += '<div class="logsum-row"><span style="color:' + esc(c.color) + '">'
+                          + esc(c.icon || '•') + ' ' + esc(k) + '</span><strong>'
+                          + sum.by[k] + '</strong></div>';
+                }
+                html += '</div>';
+                html += savedAs
+                    ? '<p class="set-note">Saved to Documents as <code>' + esc(savedAs) + '</code></p>'
+                    : '<p class="set-note">Not saved to a file — no filesystem on this platform.</p>';
+                const fw = logWallClock(recs[0]), lw = logWallClock(recs[recs.length - 1]);
+                if (fw && lw) {
+                    html += '<p class="set-note">' + esc(fw.toLocaleString()) + ' → '
+                          + esc(lw.toLocaleString()) + '</p>';
+                }
+                body.innerHTML = html;
+            }
+            const m = document.getElementById('logsum-modal');
+            if (m) m.classList.add('active');
+        }
+
+        function clearAlertLogConfirm() {
+            if (!connectionType) { showToast('Connect the device first', '…'); return; }
+            if (!confirm('Erase the alert log on the board? ' + logHeld.toLocaleString()
+                         + ' records will be gone for good.')) return;
+            sendCommand({ raw: 'CMD:LOG:CLEAR' });
+            logHeld = 0;
+            setLogUi(deviceLog);
+            showToast('Log cleared', '○');
+        }
+
         // The device is the authority on this; the app only mirrors what the
         // last CMD:CFG said.
         let deviceRxOnly = false;
@@ -2429,6 +2740,9 @@
             // real state. attackPendingUntil ignores a stale echo right after a tap.
             const devAtk = !!data.attack;
             if (devAtk !== deviceAttack && Date.now() > attackPendingUntil) setAttackUi(devAtk);
+            // Alert logging rides the push conditionally too (absent = off).
+            const devLog = !!data.log;
+            if (devLog !== deviceLog && Date.now() > logPendingUntil) setLogUi(devLog);
             if (typeof data.alerts === 'number') alertCount = data.alerts;
             // Every push, so uptime ticks with no timer of its own.
             renderStatusStrip();
@@ -3339,6 +3653,10 @@
         // about recording" set), because a flapping BLE link would otherwise
         // re-prompt for consent on every reconnect.
         function clearLiveState() {
+            // A readback in flight will never complete once the link is gone --
+            // fail it now rather than leave the promise hanging and lock out the
+            // next attempt on "a readback is already running".
+            if (logRx) logRx.fail('disconnected');
             liveMatches = {};
             mapFix = null;
             huntMac = '';
@@ -3378,6 +3696,15 @@
             // Restore only the recording toggle (a preference, not a trail).
             try { recordEnabled = localStorage.getItem(RECORD_PREF_KEY) === '1'; } catch (e) {}
             paintRecord();
+            // An open log session is a bookmark, not a trail: two integers saying
+            // where to start reading. Android kills the app behind the camera and
+            // in the background, and losing the mark would silently turn Stop into
+            // "give me everything".
+            try {
+                const raw = localStorage.getItem(LOG_SESSION_KEY);
+                if (raw) logSession = JSON.parse(raw);
+            } catch (e) { logSession = null; }
+            paintLogSession();
 
             checkApiSupport();
             renderScope();
@@ -3868,6 +4195,55 @@
                     pinKey = null; pinsCache = []; findsCache = [];
                     await unlockPins('1234');
                     results.v1Migration = pinsCache.length === 1 && pinsCache[0].mac === 'OLD' && findsCache.length === 0;
+                }
+
+                // Alert log: a hand-built 16-byte record, laid out exactly as
+                // firmware/src/alert_log.h packs it, must decode to the values
+                // that went in. A byte off here is the Remote ID offset bug all
+                // over again -- every field wrong, nothing visibly broken.
+                {
+                    const rec = new Uint8Array(16);
+                    rec[0] = 0x07; rec[1] = 0x00;                       // boot 7
+                    rec[2] = 0x2C; rec[3] = 0x01; rec[4] = 0; rec[5] = 0; // secs 300
+                    [0xA4, 0x11, 0x22, 0x33, 0x44, 0x55].forEach((b, i) => { rec[6 + i] = b; });
+                    rec[12] = 0;      // ALERT_ALPR
+                    rec[13] = 1;      // second name in the table
+                    rec[14] = 0xBD;   // -67 as int8
+                    const got = parseLogRecords([rec], ['other rule', 'Flock probe + IE']);
+                    const r = got[0];
+                    results.logRecordDecode = got.length === 1 && r.boot === 7 && r.secs === 300 &&
+                        r.mac === 'A4:11:22:33:44:55' && r.cat === 0 &&
+                        r.rule === 'Flock probe + IE' && r.rssi === -67;
+
+                    // Two records in one chunk, and a rule index past the end of
+                    // the table (a log written before a name was recorded) must
+                    // degrade to an empty name rather than throw.
+                    const two = new Uint8Array(32);
+                    two.set(rec, 0); two.set(rec, 16); two[16 + 13] = 255;
+                    const pair = parseLogRecords([two], ['only one']);
+                    results.logRecordChunking = pair.length === 2 && pair[1].rule === '';
+
+                    // The summary is the payoff of a session: counts by category
+                    // and distinct devices, not total beeps.
+                    const sum = logSummary([
+                        { mac: 'AA', cat: 0 }, { mac: 'AA', cat: 0 },
+                        { mac: 'BB', cat: 3 }, { mac: 'CC', cat: 2 }
+                    ]);
+                    results.logSummaryCounts = sum.total === 4 && sum.devices === 3 &&
+                        sum.by['ALPR / Camera'] === 2 && sum.by['Tracker'] === 1 &&
+                        sum.by['Drone'] === 1;
+
+                    // A boot this phone never saw has no wall clock -- the board
+                    // has no RTC. Say where in that boot it was; never invent a date.
+                    const saved = logBootEpochs;
+                    logBootEpochs = {};
+                    const undated = logLine(r);
+                    logBootEpochs = { 7: Date.parse('2026-09-19T12:00:00') };
+                    const dated = logLine(r);
+                    logBootEpochs = saved;
+                    results.logLineUndatedBoot = undated.indexOf('boot 7 +300s') === 0 &&
+                        undated.indexOf('A4:11:22:33:44:55') > 0 && undated.indexOf('-67') > 0;
+                    results.logLineDatedBoot = dated.indexOf('2026-09-19 12:05:00') === 0;
                 }
 
                 // The on-phone analyzer finds the exact Flock fingerprint in a
