@@ -41,6 +41,14 @@ All notable changes to SignalSweep are recorded here.
   state the band tab already set (its own note said so), and two controls for
   one state only ever disagree. `pinLens` survives as a variable driven by the
   band tab; the Record bar states it.
+- **Settings is an index of seven short screens, not one long scroll.** Alerts,
+  Recording, Radios, Detection, Emissions, Device identity and Signatures each
+  open their own page with a back link and the top bar naming it; Opsec is prose
+  with no controls, so it stays a footnote on the index. This costs one extra
+  tap to reach a control, accepted deliberately — these are set before you go
+  out, and hunting down an eight-section scroll for one row was the worse trade.
+  The live Alerts summary sits on its index row, so what is muted still reads at
+  a glance without opening anything.
 - **Alerts (sound, lights, theme, the five categories) moved into Settings.**
   These are set once before a hunt so you are not fiddling in the field, which
   makes them settings. The previous rule — that silencing a category must not be
@@ -56,13 +64,18 @@ All notable changes to SignalSweep are recorded here.
   never prompts for the PIN. **Deliberately not merged: the exports.** A find is
   a photographed confirmation, a pin is a drive-by guess, and one export button
   would put guesses in `cameras.osm`. We never tag a guess onto OpenStreetMap.
-- **The radio tabs and Wi-Fi role tabs became one row of five chips**
-  (All / BLE / Wi-Fi / AP / Client) — two variables, five reachable
-  combinations. The second row used to appear and vanish with the Wi-Fi tab,
-  moving everything below it by a row mid-scan. The row is `.radios.five`, an
-  explicit modifier: `.radios` is a three-column grid shared with the segmented
-  pickers, and redefining it would have stretched those — the same class reuse
-  that once stretched the channel chips while the node self-test passed.
+- **The radio tabs and Wi-Fi role tabs became one row**, three chips at rest
+  (All / BLE / Wi-Fi) and five once Wi-Fi is the chosen radio — AP and Client
+  mean nothing under All or BLE, and five chips at rest was simply too many to
+  read. They appear *in* the same row, never a second one: the old sub-row
+  appeared and vanished with the Wi-Fi tab and moved every result below it by a
+  row mid-scan. The strip's height is pinned (`#radios .radio-tab`
+  `min-height`) because the five-up chips take a smaller face to fit 412 px and
+  a smaller face is a shorter line box — 1.3 px of drift before it was pinned,
+  0 px after. The row is `.radios.five`, an explicit modifier: `.radios` is a
+  three-column grid shared with the segmented pickers, and redefining it would
+  have stretched those — the same class reuse that once stretched the channel
+  chips while the node self-test passed.
 - **The three-cell status strip folded into the header's connection line**, and
   the GPS readout appears only when there is something to say (it read
   "Location: Off" approximately always and owned a third of that card). The
@@ -75,6 +88,10 @@ All notable changes to SignalSweep are recorded here.
   meant the opposite of what it said (`foxhuntMode === true` means the filter is
   *off*) and collided with the radio chips for the word "filter". With Alerts
   moved out, the toolbar row is gone entirely.
+- **The two connect buttons are adjacent.** The "tap BOOT to make it visible"
+  hint sat between them, putting troubleshooting in the way of the button you
+  came to press; it is read once and remembered, so it moved down to the
+  support block beside the USB note.
 - **The Help modal is deleted.** Its content was duplicated everywhere it
   mattered — the beep legend in the Alerts rows, opsec in Settings, pins in
   Record — and its one unique line ("it still beeps without the phone") already
