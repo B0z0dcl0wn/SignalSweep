@@ -16,6 +16,7 @@
   #include "rom/miniz.h"
   #define PWN_HAS_GUNZIP 1
 #endif
+#include "alert_log.h"
 #include <ArduinoJson.h>
 #include <LittleFS.h>
 #include <Preferences.h>
@@ -409,6 +410,10 @@ static volatile AlertCategory pendingAlertCat = ALERT_GENERIC;
 // Persisted (sweep-st/beepmask): headless means a power cycle must not undo it.
 static uint8_t beepMask = BEEP_MASK_ALL;
 
+// Write every sounded alert to flash (alert_log.h). Off by default and
+// persisted (sweep-st/log) -- headless means a power cycle must not undo it.
+static bool alertLogOn = false;
+
 // Returns true if the alert was recorded (i.e. it will actually sound).
 static bool noteAlert(int weight, const char* category) {
     if (weight < CONF_ALERT_MIN) return false;
@@ -449,7 +454,15 @@ static void noteAlertForTarget(WatcherTargetInfo& t, int bestWeight, const Strin
     // muted category must stay un-flagged, or un-muting it mid-appearance would
     // be silent until the target went stale — the AirTag in your hand would
     // never beep.
-    if (noteAlert(bestWeight, category.c_str())) t.alerted = true;
+    if (noteAlert(bestWeight, category.c_str())) {
+        t.alerted = true;
+        // The log follows the buzzer exactly: noteAlert() has already said no
+        // for a muted category and during a hunt, so what reaches flash is what
+        // you actually heard. Only the flag is set here -- this runs on both
+        // radio callbacks, and a LittleFS write is tens of milliseconds. The
+        // 1 Hz task does the I/O.
+        if (alertLogOn) t.logPending = true;
+    }
 }
 
 /**
@@ -1504,6 +1517,7 @@ static void persistState() {
     prefs.putBool("scanall", scanAll);
     prefs.putBool("attack", attackDetect);
     prefs.putUChar("beepmask", beepMask);
+    prefs.putBool("log", alertLogOn);
 #if CONFIG_IDF_TARGET_ESP32C5
     prefs.putUChar("band", sweepBand);
 #endif
@@ -1517,6 +1531,7 @@ void restoreWatchersState() {
     bool all = prefs.getBool("scanall", false);
     bool atk = prefs.getBool("attack", false);
     uint8_t mask = prefs.getUChar("beepmask", BEEP_MASK_ALL);
+    bool logOn = prefs.getBool("log", false);
 #if CONFIG_IDF_TARGET_ESP32C5
     uint8_t band = prefs.getUChar("band", BAND_BOTH);
     sweepBand = (band <= BAND_5) ? band : BAND_BOTH;
@@ -1524,6 +1539,7 @@ void restoreWatchersState() {
     prefs.end();
 
     beepMask = mask & BEEP_MASK_ALL;
+    alertLogOn = logOn;
 
     scanAll = all;
     attackDetect = atk;
@@ -1538,6 +1554,8 @@ void restoreWatchersState() {
     if (scanAll) ESP_LOGI(TAG, "Restored report filter: OFF (reporting everything)");
     if (attackDetect) ESP_LOGI(TAG, "Restored attack-gear detection ON");
     if (beepMask != BEEP_MASK_ALL) ESP_LOGI(TAG, "Restored beep mask 0x%02X", beepMask);
+    if (alertLogOn) ESP_LOGI(TAG, "Restored alert logging ON (%u records held)",
+                             (unsigned)alertLogCount());
 }
 
 void setBeepMask(uint8_t mask) {
@@ -1548,6 +1566,16 @@ void setBeepMask(uint8_t mask) {
 
 uint8_t getBeepMask() {
     return beepMask;
+}
+
+void setAlertLogEnabled(bool enabled) {
+    alertLogOn = enabled;
+    persistState();
+    ESP_LOGI(TAG, "Alert logging %s", enabled ? "ON" : "OFF");
+}
+
+bool getAlertLogEnabled() {
+    return alertLogOn;
 }
 
 #if CONFIG_IDF_TARGET_ESP32C5
@@ -1724,10 +1752,35 @@ static void watchersPeriodicTask(void *pvParameters) {
             performRing(target);
         }
 
+        // Keep the log's ordering key moving whether or not anything alerted:
+        // it accumulates deltas, so it must be ticked more often than millis()
+        // rolls over (49.7 days) on a board wired to a car battery.
+        alertLogTick();
+
+        // Alerts waiting to go to flash. Collected under the mutex but WRITTEN
+        // outside it: a LittleFS write is tens of milliseconds and the BLE scan
+        // callback takes this same mutex, so holding it across the I/O would
+        // stall detection for exactly as long as the flash took.
+        struct PendingLog { uint8_t mac[6]; uint8_t cat; int8_t rssi; String rule; };
+        std::vector<PendingLog> toLog;
+
         // Prune stale targets. This mode used to be the only one that never
         // expired anything, so trackedTargets grew for the whole session.
         if (watchersMutex != NULL && xSemaphoreTake(watchersMutex, pdMS_TO_TICKS(200)) == pdTRUE) {
             uint32_t now = millis();
+
+            // Before the prune, or a target that alerted and then went stale in
+            // the same interval would be erased with its record unwritten.
+            for (auto& t : trackedTargets) {
+                if (!t.logPending) continue;
+                t.logPending = false;
+                PendingLog p;
+                if (!alertLogParseMac(t.mac.c_str(), p.mac)) continue;
+                p.cat  = (uint8_t)alertCategoryFromName(t.type.c_str());
+                p.rssi = (int8_t)t.rssi;
+                p.rule = t.matchedRule;
+                toLog.push_back(p);
+            }
             for (size_t i = 0; i < trackedTargets.size(); ) {
                 if (now - trackedTargets[i].lastSeenMs > WATCHERS_STALE_MS) {
                     trackedTargets.erase(trackedTargets.begin() + i);
@@ -1767,6 +1820,12 @@ static void watchersPeriodicTask(void *pvParameters) {
                 }
             }
             xSemaphoreGive(watchersMutex);
+        }
+
+        // Flash I/O, deliberately outside the mutex and off both radio
+        // callbacks. Typically zero or one record per second.
+        for (const auto& p : toLog) {
+            alertLogWrite(p.mac, p.cat, p.rule.c_str(), p.rssi);
         }
 
         String jsonStr = getWatchersTargetsJson();
@@ -1996,6 +2055,10 @@ String getWatchersTargetsJson() {
     // Absent = off, like scan_all; the app adopts it. Persisted, so a board
     // that ran headless comes back with attack detection however it was left.
     if (attackDetect) doc["attack"] = true;
+    // Absent = off, same as attack. Unlike beep_mask/buzzer there is no
+    // ambiguity to protect against: "firmware too old to send it" and "the
+    // default" both mean nothing is being logged, so this costs 0 B when off.
+    if (alertLogOn) doc["log"] = true;
     if (huntMac.length() > 0) doc["hunt"] = huntMac;
     // Echoed on EVERY push, not just in the CMD:CFG reply, so the app's sound
     // controls reconcile continuously instead of once per connection. They used

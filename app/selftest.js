@@ -334,6 +334,70 @@ if (!/if \(document\.hidden\) setTimeout\(drainUsbQueue/.test(appSrc)) usbFail.p
 if (usbFail.length) { console.log('FAIL: USB connect/capture recovery:', usbFail); process.exit(1); }
 console.log('[signalsweep self-test] USB connect/capture recovery intact: ok');
 
+// Alert log. The 16-byte record is a wire contract between alert_log.h and the
+// parser in app.js, and the whole design rests on two things the compiler
+// cannot check: the layout matching, and the flash write never happening on a
+// radio callback (a LittleFS write is tens of ms; both callbacks must stay fast,
+// and the BLE one holds watchersMutex).
+const logSrc = readFileSync(new URL('../firmware/src/alert_log.h', import.meta.url), 'utf8');
+const wwSrc  = readFileSync(new URL('../firmware/src/mode_watchers_watch.cpp', import.meta.url), 'utf8');
+const hwSrc2 = readFileSync(new URL('../firmware/src/hardware_manager.h', import.meta.url), 'utf8');
+const logFail = [];
+
+const recSize = (logSrc.match(/#define\s+ALERT_LOG_REC_SIZE\s+(\d+)/) || [])[1];
+if (recSize !== '16') logFail.push(`ALERT_LOG_REC_SIZE is ${recSize}, app.js parses 16-byte records`);
+if (!/for \(let i = 0; i \+ 16 <= bytes\.length; i \+= 16\)/.test(appSrc)) logFail.push('app.js no longer strides 16-byte records');
+// Field offsets, as the header documents them and the parser reads them.
+[['boot', 0], ['secs', 2], ['mac', 6], ['cat', 12], ['rule', 13], ['rssi', 14]].forEach(([f, off]) => {
+    if (!new RegExp(`^//\\s+${off}\\s+\\d+\\s+${f}\\b`, 'm').test(logSrc)) logFail.push(`alert_log.h no longer documents ${f} at offset ${off}`);
+});
+if (!/bytes\[i\] \| \(bytes\[i \+ 1\] << 8\)/.test(appSrc)) logFail.push('app.js boot field moved off offset 0');
+if (!/bytes\[i \+ 12\]/.test(appSrc)) logFail.push('app.js category field moved off offset 12');
+if (!/bytes\[i \+ 13\]/.test(appSrc)) logFail.push('app.js rule index moved off offset 13');
+if (!/\(bytes\[i \+ 14\] << 24\) >> 24/.test(appSrc)) logFail.push('app.js rssi moved off offset 14, or stopped sign-extending');
+
+const maxRecs = (logSrc.match(/#define\s+ALERT_LOG_MAX_RECS\s+(\d+)/) || [])[1];
+const appMax  = (appSrc.match(/const LOG_MAX_RECS = (\d+)/) || [])[1];
+if (!maxRecs || maxRecs !== appMax) logFail.push(`ring capacity drifted: firmware ${maxRecs}, app ${appMax} (the fill gauge would lie)`);
+// The bench env shrinks it with -D, so it has to stay overridable.
+if (!/#ifndef ALERT_LOG_MAX_RECS/.test(logSrc)) logFail.push('ALERT_LOG_MAX_RECS is no longer overridable (the logtest bench env cannot shrink the ring)');
+
+// Category byte order == AlertCategory order, or every logged alert reads back
+// as the wrong kind of device.
+const enumOrder = (hwSrc2.match(/enum AlertCategory \{([\s\S]*?)\}/) || [, ''])[1]
+    .split('\n').map(l => (l.match(/ALERT_([A-Z]+)/) || [])[1]).filter(Boolean);
+const appCats = (appSrc.match(/const LOG_CATS = \[([^\]]*)\]/) || [, ''])[1]
+    .split(',').map(s => s.trim().replace(/^'|'$/g, '')).filter(Boolean);
+const catWord = { ALPR: 'alpr', BODYCAM: 'body', DRONE: 'drone', TRACKER: 'tracker', GENERIC: 'other' };
+if (enumOrder.length !== appCats.length) {
+    logFail.push(`LOG_CATS has ${appCats.length} entries, AlertCategory has ${enumOrder.length}`);
+} else {
+    enumOrder.forEach((e, i) => {
+        const want = catWord[e];
+        if (!want || !appCats[i].toLowerCase().includes(want)) {
+            logFail.push(`LOG_CATS[${i}] is "${appCats[i]}" but AlertCategory[${i}] is ALERT_${e}`);
+        }
+    });
+}
+
+// The write must not be on the detection path. noteAlertForTarget() runs on both
+// radio callbacks: it may only set a flag.
+const noteFn = (wwSrc.match(/static void noteAlertForTarget\([\s\S]*?\n\}/) || [''])[0];
+if (/alertLogWrite\(/.test(noteFn)) logFail.push('alertLogWrite() called from noteAlertForTarget -- that is a radio callback, and a LittleFS write is tens of ms');
+if (!/t\.logPending = true/.test(noteFn)) logFail.push('noteAlertForTarget no longer flags the target for logging');
+// ...and it must follow the alert decision, so a muted category and an active
+// hunt (both refused by noteAlert) write nothing.
+if (!/if \(noteAlert\([\s\S]{0,900}?logPending = true/.test(noteFn)) logFail.push('logPending set outside the noteAlert() gate -- muted categories or hunts would be logged');
+// The flush happens after the mutex is released: holding it across flash I/O
+// would stall the BLE scan callback for exactly as long as the write took.
+const giveAt = wwSrc.indexOf('xSemaphoreGive(watchersMutex);\n        }');
+const writeAt = wwSrc.indexOf('alertLogWrite(p.mac');
+if (giveAt < 0 || writeAt < 0 || writeAt < giveAt) logFail.push('alert log flush no longer happens after xSemaphoreGive -- flash I/O under the detection mutex');
+if (!/alertLogTick\(\);/.test(wwSrc)) logFail.push('the 1 Hz task no longer ticks the log clock (millis rollover would rewind the ordering key)');
+
+if (logFail.length) { console.log('FAIL: alert log:', logFail); process.exit(1); }
+console.log('[signalsweep self-test] alert log record + write path: ok');
+
 const results = await global.__signalsweepSelfTest();
 const failed = Object.entries(results).filter(([, v]) => !v).map(([k]) => k);
 console.log('[signalsweep self-test]', results);

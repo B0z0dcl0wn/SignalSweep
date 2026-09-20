@@ -4,6 +4,57 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Added — An alert log on the board's own flash, read back by the phone
+
+- **The device now keeps a record of what its buzzer sounded — with no phone
+  required.** The detector is headless and often unattended: wired into a car it
+  runs whether or not a phone is present, and driving, you cannot look at the
+  screen. Off by default, `{"log":bool}` / `CMD:LOG:ON|OFF` (persisted in
+  `sweep-st`, echoed in `CMD:CFG` and the push, adopted by the app) makes it
+  write every alert to LittleFS: a 16-byte record of time-since-boot, MAC,
+  category and RSSI, plus a per-log rule-name table so the log carries its own
+  names and editing the signature list later cannot mislabel an old log.
+  **No position is recorded, by design** — the app's whole opsec property is that
+  it keeps no passive trail, and times-and-MACs is the most that can be logged
+  without rebuilding the `sightStore` that was removed.
+- **It had to be the board, not the phone.** Android cannot auto-launch an app on
+  a BLE GATT connection (that belongs to paired Bluetooth Classic devices like
+  headphones), and keeping a backgrounded WebView alive with the screen off needs
+  a foreground service with a permanent notification — which collides with this
+  app posting none. A log on the board works with the phone dead, absent, or in a
+  pocket, and it collapses the walk/bike case and the car case into one feature.
+- **The ring has no stored write pointer, and that is the load-bearing trick.**
+  A pointer would mean an NVS write per alert (flash wear on a device meant to run
+  for months) and could still disagree with the data after a power cut, which
+  this device suffers every time the engine stops. Instead a boot counter (one
+  NVS write per boot) makes each record's `(boot, seconds)` key monotonic across
+  power cycles, so the ring is a rotated sorted array and its head is found by
+  binary search (~17 reads) at startup. When full it **wraps**, overwriting the
+  oldest — losing old history beats missing the next device. Proven on hardware:
+  a bench harness shrinks the ring and overruns it (27/27 checks — wrap
+  boundaries, no gaps or duplicates, head recovered after reboot), and a real
+  mid-write USB power-pull left the log intact with its ordering monotonic and at
+  most the one in-flight record lost.
+- **The write never happens on a radio callback.** `noteAlertForTarget()` runs on
+  both the BLE scan and Wi-Fi promiscuous callbacks and only flags the target; the
+  1 Hz task collects flagged targets under the mutex and writes them to flash
+  *after releasing it*, because a LittleFS write is tens of milliseconds and the
+  BLE callback takes that same mutex. The flag is set only when the alert actually
+  sounded, so a muted `beep_mask` category and an active hunt write nothing — the
+  log is a faithful record of what you heard. Telemetry stayed healthy through it:
+  123 pushes in a 120 s soak with logging on.
+- **The app reads it back over the existing pipe.** A ranged, chunked,
+  resumable `CMD:LOG:READ:<boot>:<secs>:<skip>` streams base64 records the same
+  way capture streams `CAP:` lines — a walk or a drive is tens to a few hundred
+  records, seconds over BLE. Start/Stop in the Record sheet is an **app-side
+  bookmark**, not a board mode: the board logs continuously either way, and Stop
+  reads back the bookmarked stretch, writes a plaintext `.txt` to Documents
+  (wall-clock times derived from the board's uptime, vendor names from the
+  offline OUI tables), and shows a "what you passed" summary. Every field decodes
+  faithfully — the 16-byte layout is pinned between firmware and `app.js` by
+  `selftest.js`, because a byte-off record would be the Remote ID offset bug all
+  over again: every field wrong, nothing visibly broken.
+
 ### Added — Pwnagotchi (pwngrid) detection, behind an off-by-default toggle
 
 - **The detector now flags a nearby Pwnagotchi.** A pwnagotchi advertises itself
