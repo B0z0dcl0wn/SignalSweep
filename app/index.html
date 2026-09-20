@@ -1293,12 +1293,29 @@
         #map .leaflet-control-attribution a { color:#9fb4cc; }
         .map-note { font-size:0.72rem; color:var(--text-muted,#8b98a9); line-height:1.5;
             margin-bottom:0.6rem; }
+        /* Easter egg. Three taps on the logo. A CRT, basically.
+           Blue never exceeds red in these greens -- the bar had the same bug
+           (Terminal was {20,255,60}) and read blue-green rather than phosphor. */
+        #egg-modal .modal-card { max-width: 520px; }
+        .egg-term {
+            font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+            font-size: 0.82rem; line-height: 1.55; color: #33ff33;
+            background: #04120a; border: 1px solid #2a6b2a; border-radius: 8px;
+            /* Clear the absolutely-positioned close button's corner. */
+            padding: 14px; margin: 26px 0 14px; white-space: pre-wrap;
+            min-height: 150px; text-shadow: 0 0 6px rgba(51,255,51,0.45);
+        }
+        .egg-term b { color: #b6ffb6; font-weight: 600; }
+        .egg-cur { animation: eggblink 1s steps(1) infinite; }
+        @keyframes eggblink { 50% { opacity: 0; } }
+        #egg-scenes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+        #egg-scenes .radio-tab { min-height: 44px; }
     </style>
 
     <div class="container">
         <!-- Header -->
         <header style="display: flex; justify-content: space-between; align-items: center;">
-            <div class="brand">
+            <div class="brand" id="brand">
                 <div class="radar-icon">
                     <svg viewBox="0 0 24 24">
                         <circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/>
@@ -1842,6 +1859,27 @@
                 <button class="ctrl-btn" onclick="resetSignatures()">Reset to defaults</button>
                 <button class="ctrl-btn on" id="btn-sig-save" onclick="saveSignatures()">Send to device</button>
             </div>
+        </div>
+    </div>
+
+    <!-- Easter egg. Three taps on the logo. A .modal-overlay because that gets
+         the Back precedence rung and the backdrop dismissal for free. -->
+    <div class="modal-overlay" id="egg-modal">
+        <div class="modal-card">
+            <button class="modal-close-btn" onclick="closeEgg()">&times;</button>
+            <div class="egg-term" id="egg-term"></div>
+            <div class="radios seg" id="egg-scenes" role="group" aria-label="Light show">
+                <button class="radio-tab" data-egg="0" aria-pressed="true">Off</button>
+                <button class="radio-tab" data-egg="1" aria-pressed="false">Torch</button>
+                <button class="radio-tab" data-egg="2" aria-pressed="false">Lantern</button>
+                <button class="radio-tab" data-egg="3" aria-pressed="false">Campfire</button>
+                <button class="radio-tab" data-egg="4" aria-pressed="false">S.O.S.</button>
+                <button class="radio-tab" data-egg="5" aria-pressed="false">Strobe</button>
+                <button class="radio-tab" data-egg="6" aria-pressed="false">K.I.T.T.</button>
+                <button class="radio-tab" data-egg="7" aria-pressed="false">Matrix</button>
+                <button class="radio-tab" data-egg="8" aria-pressed="false">Rainbow</button>
+            </div>
+            <p class="set-note" id="egg-note"></p>
         </div>
     </div>
 

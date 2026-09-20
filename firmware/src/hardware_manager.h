@@ -97,6 +97,29 @@ void setTheme(uint8_t theme);
 /** @brief Current theme; no mutex, reported by CMD:CFG and the 1 Hz push. */
 uint8_t getTheme();
 
+// Easter-egg scenes: the bar as a flashlight / light show. Deliberately NOT a
+// mode and NOT persisted -- it owns the frame while it is set, expires on its
+// own, and a power cycle always comes back to the detector's own heartbeat.
+// This order is the wire contract with data-egg in index.html (selftest pins it).
+enum EggScene : uint8_t {
+    EGG_OFF = 0,
+    EGG_TORCH,     // full white, full brightness — the reason this exists
+    EGG_LANTERN,   // warm white at normal brightness — a tent light, not a searchlight
+    EGG_CAMPFIRE,  // warm flicker, lantern brightness
+    EGG_SOS,       // white morse SOS on a loop — the one that could matter
+    EGG_STROBE,    // white, 20 ms in every 100
+    EGG_SCANNER,   // KITT/Cylon red sweep
+    EGG_MATRIX,    // green rain falling down the bar
+    EGG_RAINBOW    // full-brightness rotating rainbow
+};
+#define EGG_COUNT 9
+
+/** @brief Set the easter-egg scene (clamped). Transient: never persisted. */
+void setEggScene(uint8_t scene);
+
+/** @brief Current easter-egg scene; no mutex, deliberately not in CMD:CFG. */
+uint8_t getEggScene();
+
 /**
  * @brief Swap the idle blink to dim blue while the device is in receive-only.
  * The only visible sign that it has stopped advertising.

@@ -500,6 +500,15 @@ void processIncomingCommand(const String& rawCommand) {
             sendConfigReply();
         }
 
+        // 2d. Easter egg: {"egg":0..5}, the bar as a flashlight / light show.
+        // Deliberately NOT persisted, NOT in CMD:CFG and NOT in the push, so
+        // no reply here either: it is transient by design and the firmware's
+        // own timeout, not the app, is what guarantees a board never gets
+        // stranded at full white. The app is the authority on this one.
+        if (doc["egg"].is<int>()) {
+            setEggScene((uint8_t)constrain(doc["egg"].as<int>(), 0, EGG_COUNT - 1));
+        }
+
 #if CONFIG_IDF_TARGET_ESP32C5
         if (doc["band"].is<int>()) {
             setBand((uint8_t)constrain(doc["band"].as<int>(), 0, 2));

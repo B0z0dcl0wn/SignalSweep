@@ -220,6 +220,40 @@ if (!/if \(!flashActive\) applyTheme\(now\)/.test(hwSrc))
 if (themeFail.length) { console.log('FAIL: themes:', themeFail); process.exit(1); }
 console.log('[signalsweep self-test] theme ids match firmware ThemeId: ok');
 
+// The easter egg is another shared index, with no reply to catch a drift: the
+// device deliberately does not report `egg` anywhere, so a scene added on one
+// side only would just light the wrong thing. And it must stay transient --
+// persisting it would make a board come back from a power cycle as a
+// flashlight instead of a detector, which is the headless rule inverted.
+const eggFail = [];
+const fwHdr = readFileSync(new URL('../firmware/src/hardware_manager.h', import.meta.url), 'utf8');
+const fwEgg = ((fwHdr.match(/enum EggScene[^{]*\{([^}]*)\}/) || [])[1] || '').match(/EGG_([A-Z]+)/g) || [];
+const appEgg = ((appSrc.match(/const EGG_SCENES = \[([^\]]*)\]/) || [])[1] || '').match(/'(\w+)'/g) || [];
+const eggCount = Number((fwHdr.match(/#define EGG_COUNT (\d+)/) || [])[1]);
+if (fwEgg.length !== eggCount) eggFail.push('EGG_COUNT is ' + eggCount + ' but EggScene has ' + fwEgg.length);
+fwEgg.forEach((s, i) => {
+    if (("'" + s.slice(4).toLowerCase() + "'") !== appEgg[i]) eggFail.push(s + ' vs ' + appEgg[i]);
+    if (!htmlSrc.includes('data-egg="' + i + '"')) eggFail.push('no button for scene ' + i);
+});
+if (!/setEggScene\(\(uint8_t\)constrain\(doc\["egg"\]\.as<int>\(\), 0, EGG_COUNT - 1\)\)/
+    .test(readFileSync(new URL('../firmware/src/ble_serial.cpp', import.meta.url), 'utf8')))
+    eggFail.push('the egg command does not clamp to EGG_COUNT - 1');
+const setEggBody = (hwSrc.match(/void setEggScene\([^)]*\) \{[\s\S]*?\n\}/) || [''])[0];
+if (/Preferences|putUChar|NVS_NS/.test(setEggBody)) eggFail.push('setEggScene persists the scene');
+if (!/eggUntil/.test(setEggBody)) eggFail.push('setEggScene does not re-arm the timeout');
+if (!/if \(eggScene && \(int32_t\)\(now - eggUntil\) >= 0\) eggScene = EGG_OFF;/.test(hwSrc))
+    eggFail.push('the egg never expires on its own');
+if (!/THEME_CLASSIC \|\| ledMode == LED_ONE \|\| eggScene/.test(applyThemeBody))
+    eggFail.push('applyTheme recolours the flashlight');
+// Nobody holding a flashlight is hunting. Gated in noteAlert(), like the hunt
+// target, so the alert log keeps matching what you actually heard.
+const noteAlertBody = (readFileSync(new URL('../firmware/src/mode_watchers_watch.cpp', import.meta.url), 'utf8')
+    .match(/static bool noteAlert\([^)]*\) \{[\s\S]*?\n\}/) || [''])[0];
+if (!/getEggScene\(\) != EGG_OFF/.test(noteAlertBody))
+    eggFail.push('alerts still sound during the easter egg');
+if (eggFail.length) { console.log('FAIL: easter egg:', eggFail); process.exit(1); }
+console.log('[signalsweep self-test] egg scenes match firmware EggScene, transient: ok');
+
 // The cable chirp is a two-sided handshake with no reply to fail loudly on: if
 // either side renames a command the board just goes quiet. Both strings must
 // appear on both sides.

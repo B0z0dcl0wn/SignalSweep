@@ -4,6 +4,46 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Changed — Transient device state, and two bench traps
+
+- Added a device command that is deliberately the **opposite** of every other
+  piece of operator state: it writes no NVS, is absent from `CMD:CFG` and from
+  the 1 Hz push, and expires itself after five minutes, with the app refreshing
+  it while it is in use. Everything an operator sets must survive a power
+  cycle; this must not. A board wired into a car that came back from an
+  engine-stop still in this state would be the headless rule exactly inverted,
+  and the firmware's own timeout — not the app — is what makes that impossible.
+  It is therefore the one control the app paints optimistically, because the
+  device is deliberately not the authority on it.
+- It takes over the LED bar while set: it outranks the whole render chain,
+  bypasses the LED-mode block, and bails out of `applyTheme()` **from inside
+  the function rather than at the call site**, because `selftest.js` pins the
+  literal `if (!flashActive) applyTheme(now)`. `noteAlert()` returns false
+  throughout, beside the identical line the hunt target uses, so the beep, the
+  animation, the alert count and the log record stop together and the alert log
+  keeps matching what you actually heard. Nothing is recorded, so the `alerted`
+  flag stays clear and a device still nearby sounds again the moment it ends.
+- **Bench trap: a XIAO S3 enumerates as native USB CDC, so toggling DTR/RTS
+  does not reset it.** A script that "reboots the stimulus board" that way
+  silently does nothing and the run still prints a clean-looking zero, which
+  reads as a passing test. Reboot a board by writing `{"ble_name":...}`
+  (`requestReboot()` is unconditional) or by pulling power.
+- **Second trap from the same run: a stimulus rule filed under a category the
+  board's `beep_mask` has muted measures the mute, not the code.** A muted
+  category is fully silent by design — the board was on mask 23, which has the
+  tracker bit clear, so a tracker-category rule produced zero alerts and looked
+  exactly like a broken detector.
+
+### Fixed — Terminal green was blue-green
+
+- The Terminal theme was `{20, 255, 60}` — three times as much blue as red,
+  which is spring green heading for teal, not phosphor. Balanced to
+  `{30, 255, 30}`, and the app's matching CSS carried the identical skew
+  (`#33ff66`, blue double red) and now agrees with the bar.
+- Worth recording because of what it is *not*: a colour-order mismatch. If the
+  bar were secretly RGB rather than `NEO_GRB`, green would come out **red**,
+  not teal. Blue-green means blue in the numbers.
+
 ### Fixed — Back left the app instead of leaving the page
 
 - Back minimized from anywhere, so backing out of Settings › Recording put you

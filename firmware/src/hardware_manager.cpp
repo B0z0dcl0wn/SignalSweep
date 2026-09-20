@@ -41,6 +41,19 @@ static volatile bool buzzerEnabled = true;
 static volatile uint8_t ledMode = LED_FULL;
 // Same contract as ledMode: one byte, no hwMutex.
 static volatile uint8_t themeId = THEME_CLASSIC;
+// Easter-egg scene. Same volatile/no-mutex contract as ledMode, and the same
+// reason: it must never fail on a lock. Unlike ledMode and themeId it is NOT
+// persisted and NOT reported -- see setEggScene().
+static volatile uint8_t eggScene = EGG_OFF;
+static volatile uint32_t eggUntil = 0;
+// The egg must not be able to strand a board at full white. The app refreshes
+// the scene every 60 s while its page is open, so anything that stops the app
+// -- force stop, dropped notification, phone in a pocket -- lets this expire.
+#define EGG_TIMEOUT_MS 300000
+// ponytail: 255 is "as bright as the strip goes", which is the whole point of
+// the torch. If the bench measures an unhappy regulator at 8 px full white,
+// drop this number -- don't add a brightness slider.
+#define EGG_BRIGHTNESS 255
 static bool rxOnlyIndicator = false;
 
 // Indexed by ThemeId. Colour is what a mono theme paints every lit pixel;
@@ -50,7 +63,10 @@ struct Theme { uint8_t r, g, b; float pitch; };
 static const Theme THEMES[] = {
     {0,   0,   0,   1.0f},  // Classic  -- colour unused, frame left as drawn
     {255, 0,   0,   0.5f},  // Night Ops
-    {20,  255, 60,  2.0f},  // Terminal
+    // Blue must not exceed red here or the hue skews toward teal: it was
+    // {20,255,60}, three times as much blue as red, which read blue-green on
+    // the bench bar. Balanced channels keep it phosphor green.
+    {30,  255, 30,  2.0f},  // Terminal
     {110, 190, 255, 1.5f},  // Glacier
     {0,   0,   0,   1.0f},  // Party    -- hue per pixel, see applyTheme()
 };
@@ -195,6 +211,91 @@ static void drawAnimation(int cat, uint32_t e) {
     }
 }
 
+// The easter egg. None of these carry meaning -- they exist because the bar is
+// good and the detector only ever shows you 4% of it. Torch is the one with a
+// job: a dark car park, a dropped screw, a tent. Same shape as drawAnimation()
+// so it gets dim()/falloff() and the dirty-frame push for free.
+static void drawEgg(uint8_t s, uint32_t now) {
+    const int N = NEOPIXEL_COUNT;
+    switch (s) {
+        case EGG_TORCH:
+            strip.fill(strip.Color(255, 255, 255));
+            break;
+        case EGG_LANTERN:
+            strip.fill(strip.Color(255, 170, 80));  // warm, easy on night vision
+            break;
+        case EGG_CAMPFIRE: {
+            // Each pixel drifts on its own, which is what reads as fire -- one
+            // shared flicker just looks like a loose connection. State is
+            // file-static because this runs only on the render task.
+            static uint8_t heat[NEOPIXEL_COUNT];
+            static uint32_t lastStep = 0;
+            if (now - lastStep > 60) {
+                lastStep = now;
+                for (int i = 0; i < N; i++)
+                    heat[i] = constrain(heat[i] + (int)random(-40, 41), 90, 255);
+            }
+            for (int i = 0; i < N; i++)
+                strip.setPixelColor(i, strip.Color(heat[i], heat[i] * 45 / 255, 0));
+            break;
+        }
+        case EGG_SOS: {
+            // ... --- ... on a loop. Alternating on/off durations starting lit,
+            // so the table reads as the morse itself: three dots, three dashes,
+            // three dots, then a word gap long enough to be obviously a repeat.
+            static const uint16_t SOS[] = {
+                150, 150, 150, 150, 150, 450,   // S
+                450, 150, 450, 150, 450, 450,   // O
+                150, 150, 150, 150, 150, 1400   // S + word gap
+            };
+            uint32_t total = 0;
+            for (unsigned i = 0; i < sizeof(SOS) / sizeof(SOS[0]); i++) total += SOS[i];
+            uint32_t t = now % total;
+            for (unsigned i = 0; i < sizeof(SOS) / sizeof(SOS[0]); i++) {
+                if (t < SOS[i]) {
+                    if ((i & 1) == 0) strip.fill(strip.Color(255, 255, 255));
+                    break;
+                }
+                t -= SOS[i];
+            }
+            break;
+        }
+        case EGG_MATRIX: {
+            // Rain down the bar: every step the trail shifts one pixel along
+            // and a new drop may start at the top. Decay makes the tail, so a
+            // drop is never just one lit pixel.
+            static uint8_t trail[NEOPIXEL_COUNT];
+            static uint32_t lastStep = 0;
+            if (now - lastStep > 90) {
+                lastStep = now;
+                for (int i = N - 1; i > 0; i--) trail[i] = trail[i - 1] * 3 / 4;
+                trail[0] = random(100) < 35 ? 255 : trail[0] * 3 / 4;
+            }
+            for (int i = 0; i < N; i++)
+                // No blue at all, deliberately: the first version had more
+                // blue than red and read teal. This doubles as the test for
+                // whether the bar itself is blue-shifted -- if it still looks
+                // blue-green with the channel at literal zero, it is the LEDs.
+                strip.setPixelColor(i, strip.Color(trail[i] / 8, trail[i], 0));
+            break;
+        }
+        case EGG_STROBE:
+            if (now % 100 < 20) strip.fill(strip.Color(255, 255, 255));
+            break;
+        case EGG_SCANNER: {  // KITT. 1.2 s end to end and back.
+            float ph = (now % 1200) / 600.0f;
+            float x = (ph < 1 ? ph : 2 - ph) * (N - 1);
+            for (int i = 0; i < N; i++)
+                strip.setPixelColor(i, dim(strip.Color(255, 0, 0), falloff(fabsf(i - x), 2.5f)));
+            break;
+        }
+        case EGG_RAINBOW:  // ~1 turn every 4 s
+            for (int i = 0; i < N; i++)
+                strip.setPixelColor(i, strip.gamma32(strip.ColorHSV((uint16_t)(i * 65536 / N + now * 16))));
+            break;
+    }
+}
+
 // Hunting: the bar is a steady signal meter, one pixel per ~8 dB (-95 dBm = 1
 // lit, -30 = all 8), on the same scale as the Geiger clicker. Read like a
 // phone's signal bars: the count is the strength and the whole meter is one
@@ -221,9 +322,12 @@ static void drawHuntMeter(int rssi) {
 // meter's length -- the parts that carry meaning -- survive any theme. Works
 // on the raw buffer, which is already brightness-scaled, so the result stays
 // in the same space the LED-mode block below expects. NEO_GRB buffer order.
+// The egg bails here rather than at the call site: selftest pins the literal
+// `if (!flashActive) applyTheme(now)` in the task. Terminal green over a
+// flashlight is not a flashlight.
 static void applyTheme(uint32_t now) {
     uint8_t th = themeId;
-    if (th == THEME_CLASSIC || ledMode == LED_ONE) return;
+    if (th == THEME_CLASSIC || ledMode == LED_ONE || eggScene) return;
     uint8_t *px = strip.getPixels();
     for (int i = 0; i < NEOPIXEL_COUNT; i++) {
         uint8_t *p = px + i * 3;
@@ -400,16 +504,31 @@ static void HardwareManagerTask(void *pvParameters) {
             uint32_t currentPixelColor = strip.Color(0, 0, 0);
             bool onePixel = false;  // idle heartbeat lights LED 0 only
             bool drawn = false;     // an animation or the meter owns the frame
+            // The egg is a toy, so it is never allowed to become a state the
+            // board is stuck in. Signed compare so millis() rollover expires it
+            // rather than pinning it on for 49 days.
+            if (eggScene && (int32_t)(now - eggUntil) >= 0) eggScene = EGG_OFF;
             // No-op when unchanged. Its rescale of the stored pixels is lossy,
             // which doesn't matter: the frame is rebuilt from scratch below.
             // Night Ops is capped at Dim: red light for dark-adapted eyes.
             // One is exempt -- it's Classic-only, so Night Ops must not dim it.
-            strip.setBrightness((ledMode == LED_DIM || (themeId == THEME_NIGHT && ledMode != LED_ONE))
+            // The egg overrides both: a flashlight the theme dimmed is not one.
+            // The two "sit next to it" lights are the exception -- a campfire
+            // at 255 is a searchlight, which is not what either is for.
+            strip.setBrightness(
+                eggScene ? ((eggScene == EGG_LANTERN || eggScene == EGG_CAMPFIRE)
+                                ? LED_FULL_BRIGHTNESS : EGG_BRIGHTNESS)
+                : (ledMode == LED_DIM || (themeId == THEME_NIGHT && ledMode != LED_ONE))
                                     ? LED_DIM_BRIGHTNESS : LED_FULL_BRIGHTNESS);
             strip.clear();
 
             if (flashActive && now >= flashEndTime) flashActive = false;
-            if (flashActive) {
+            if (eggScene) {
+                // Outranks everything, flashes included: you opened it on purpose
+                // and you are pointing it at something.
+                drawEgg(eggScene, now);
+                drawn = true;
+            } else if (flashActive) {
                 currentPixelColor = strip.Color(flashR, flashG, flashB);
             } else if (animCat >= 0 && now - animStart < ANIM_MS[animCat]) {
                 drawAnimation(animCat, now - animStart);
@@ -501,7 +620,11 @@ static void HardwareManagerTask(void *pvParameters) {
             // flash included. One LED keeps the frame's brightest colour on
             // pixel 0, so the hunt meter still reads red/yellow/green and an
             // alert still shows its category colour.
-            if (ledMode == LED_OFF) {
+            // The egg bypasses it: a flashlight opened on purpose must not be
+            // blanked by a setting from last week.
+            if (eggScene) {
+                // nothing to do
+            } else if (ledMode == LED_OFF) {
                 strip.clear();
             } else if (ledMode == LED_ONE) {
                 uint8_t *px = strip.getPixels();
@@ -725,6 +848,21 @@ void setTheme(uint8_t theme) {
 
 uint8_t getTheme() {
     return themeId;
+}
+
+// Deliberately unlike setLedMode()/setTheme(): no Preferences write, no mutex,
+// no sendConfigReply(). The egg is a toy, not operator state -- the headless
+// persistence rule exists so a board wired into a car comes back doing its job,
+// and a board that came back as a flashlight would be the exact opposite. Every
+// call also re-arms the timeout, which is how the app's keepalive works.
+void setEggScene(uint8_t scene) {
+    if (scene >= EGG_COUNT) scene = EGG_OFF;
+    eggUntil = millis() + EGG_TIMEOUT_MS;
+    eggScene = scene;
+}
+
+uint8_t getEggScene() {
+    return eggScene;
 }
 
 void triggerLedFlash(uint8_t r, uint8_t g, uint8_t b, uint32_t durationMs) {

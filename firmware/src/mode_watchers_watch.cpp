@@ -423,6 +423,11 @@ static bool noteAlert(int weight, const char* category) {
     // recorded, so the target's alerted flag stays clear and it sounds once the
     // hunt ends if it is still around.
     if (huntMac.length() > 0) return false;
+    // Easter egg: the bar is a flashlight or a party trick and nobody holding
+    // it is looking for anything. Same contract as hunting -- not recorded, so
+    // nothing is logged that you did not hear, the alerted flag stays clear,
+    // and a device still around when the egg closes sounds then.
+    if (getEggScene() != EGG_OFF) return false;
     AlertCategory cat = alertCategoryFromName(category);
     if (!(beepMask & (1 << cat))) return false;
     if (weight > pendingAlertConf) {

@@ -918,6 +918,19 @@
             if (bm) { setBand(Number(bm.getAttribute('data-band'))); return; }
             const sm = ev.target.closest('#sound-modes .radio-tab');
             if (sm) { setSound(sm.getAttribute('data-sound') === '1'); return; }
+            const eg = ev.target.closest('#egg-scenes .radio-tab');
+            if (eg) { setEggAsk(Number(eg.getAttribute('data-egg'))); return; }
+            // Three taps on the logo inside 1.5 s. Anything slower is someone
+            // adjusting their grip, so the counter resets rather than
+            // accumulating stray taps over a whole session.
+            const br = ev.target.closest('#brand');
+            if (br) {
+                const now = Date.now();
+                eggTaps = (now - eggLastTap < 1500) ? eggTaps + 1 : 1;
+                eggLastTap = now;
+                if (eggTaps >= 3) { eggTaps = 0; openEgg(); }
+                return;
+            }
             const act = ev.target.closest('.scope-act');
             if (!act) return;
             if (act.getAttribute('data-act') === 'expand') {
@@ -3084,6 +3097,107 @@
             sendCommand({ theme: n });
         }
 
+        // =====================================================================
+        //  Easter egg. Three taps on the logo.
+        //
+        //  Firmware EggScene, same index order (selftest pins it). This is the
+        //  ONE control in the app that paints optimistically, and the exception
+        //  is deliberate: the device does not report `egg` in CMD:CFG or the
+        //  push, because a toy has no business in the tightest budget on the
+        //  device or in the persistence rules. What makes that safe is the
+        //  firmware's own 5-minute expiry -- so the app's job is not to be the
+        //  authority, it is to keep saying "still here" while the page is open.
+        const EGG_SCENES = ['off', 'torch', 'lantern', 'campfire', 'sos', 'strobe', 'scanner', 'matrix', 'rainbow'];
+        const EGG_KEEPALIVE_MS = 60000;   // firmware expires the scene at 5 min
+        let eggScene = 0;
+        let eggKeepalive = null;
+        let eggTaps = 0, eggLastTap = 0, eggTyper = null;
+
+        // Lines are hand-wrapped to ~34 characters: the terminal is pre-wrap
+        // monospace, and anything longer folds raggedly at 412 px.
+        const EGG_BOOT = [
+            'SIGNALSWEEP :: maintenance shell',
+            'GREETINGS PROFESSOR FALKEN.',
+            '',
+            'SHALL WE PLAY A GAME?',
+            'The only winning move is to',
+            'point 8 LEDs at something.',
+            '',
+            '> setec astronomy ....... ok',
+            '> too many secrets ...... ok',
+            '> hack the planet ...... <b>ok</b>',
+            '',
+            'Nothing here is saved. Pull the',
+            'power and the board goes back to',
+            'work like this never happened.'
+        ];
+
+        function eggType() {
+            const el = document.getElementById('egg-term');
+            if (!el) return;
+            let i = 0;
+            el.innerHTML = '';
+            clearInterval(eggTyper);
+            eggTyper = setInterval(function () {
+                if (i >= EGG_BOOT.length) {
+                    clearInterval(eggTyper);
+                    eggTyper = null;
+                    el.innerHTML += '<span class="egg-cur">_</span>';
+                    return;
+                }
+                el.innerHTML += EGG_BOOT[i++] + '\n';
+            }, 120);
+        }
+
+        function openEgg() {
+            const m = document.getElementById('egg-modal');
+            if (!m) return;
+            // A disconnected app already has the connect modal up, and the egg
+            // would stack on top of it: Escape/Back then closes the one you
+            // cannot see first, which reads as the exit being broken.
+            document.querySelectorAll('.modal-overlay.active').forEach(function (el) {
+                el.classList.remove('active');
+            });
+            m.classList.add('active');
+            eggType();
+            // Straight to Torch: that is what the page is for, and making a
+            // flashlight cost a second tap in the dark is the wrong default.
+            if (connectionType) { eggScene = 1; sendCommand({ egg: 1 }); }
+            paintEgg();
+            clearInterval(eggKeepalive);
+            eggKeepalive = setInterval(function () {
+                if (eggScene) sendCommand({ egg: eggScene });
+            }, EGG_KEEPALIVE_MS);
+        }
+
+        // Every exit funnels here: the x, the backdrop, Escape and Back. Turning
+        // the bar off is the courtesy; the firmware timeout is the guarantee.
+        function closeEgg() {
+            const m = document.getElementById('egg-modal');
+            if (m) m.classList.remove('active');
+            clearInterval(eggTyper); eggTyper = null;
+            clearInterval(eggKeepalive); eggKeepalive = null;
+            if (eggScene) { eggScene = 0; sendCommand({ egg: 0 }); }
+        }
+
+        function paintEgg() {
+            document.querySelectorAll('#egg-scenes .radio-tab').forEach(function (el) {
+                el.setAttribute('aria-pressed',
+                    Number(el.getAttribute('data-egg')) === eggScene ? 'true' : 'false');
+            });
+            const note = document.getElementById('egg-note');
+            if (note) note.textContent = connectionType
+                ? 'The board stops beeping and flashing while this is open — it still detects, it just stops telling you. Turns itself off after 5 minutes.'
+                : 'Connect a board and these light it up.';
+        }
+
+        function setEggAsk(n) {
+            if (!connectionType) { showToast('Connect the device first', '…'); return; }
+            eggScene = n;
+            paintEgg();
+            sendCommand({ egg: n });
+        }
+
         // Wi-Fi bands (XIAO C5 only): 0 both, 1 2.4 GHz, 2 5 GHz -- firmware SweepBand
         // order (selftest pins it). The row stays hidden for a board that never
         // reports a band (the S3 has one), and like the LED mode it paints only from
@@ -3250,6 +3364,8 @@
         // dismissing it just leaves the store locked.
         document.addEventListener('click', (e) => {
             if (e.target.classList && e.target.classList.contains('modal-overlay')) {
+                // The egg has a keepalive and a lit bar to put back.
+                if (e.target.id === 'egg-modal') { closeEgg(); return; }
                 e.target.classList.remove('active');
             }
         });
@@ -3264,7 +3380,11 @@
             const consent = document.getElementById('consent-modal');
             if (consent && consent.classList.contains('active')) { consentDismiss(); return true; }
             const open = document.querySelector('.modal-overlay.active');
-            if (open) { open.classList.remove('active'); return true; }
+            if (open) {
+                if (open.id === 'egg-modal') closeEgg();
+                else open.classList.remove('active');
+                return true;
+            }
             if (currentSetting) { showSetting(null); return true; }
             if (currentTab !== 'sweep') { showTab('sweep'); return true; }
             return false;
@@ -3927,6 +4047,11 @@
             // Per link, not per app session: a bad stretch on the last board
             // must not paint "updates lost" over the next one.
             rxOk = 0; rxDropped = 0;
+            // Nothing to send -- the link is gone and the board expires the
+            // scene itself. Just stop the keepalive writing into a dead socket.
+            clearInterval(eggKeepalive); eggKeepalive = null;
+            eggScene = 0;
+            paintEgg();
             if (liveLayer) liveLayer.clearLayers();
             if (meLayer) meLayer.clearLayers();
             renderScope();
