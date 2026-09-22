@@ -70,7 +70,13 @@ static const char *SIG_FILE_PATH = "/data/signatures.json";
 //       which @NitekryDPaul field-demoted in that same revision — it hits a Sony
 //       Media Player, not a Flock device. Same class of false positive as the
 //       Espressif prefixes purged at v2 and the mfg 0x01 rule purged at v3.
-#define SIG_SCHEMA_VERSION 6
+//   v7: removed the standalone mfg 0x09C8 (XUNTONG) rule. At W_MFG it did not
+//       beep alone, but it listed any 0x09C8 device as Flock. The Flock battery
+//       ("Penguin") is now matched in code (blePenguin), which demands 0x09C8
+//       PLUS a serial, or the full "Penguin-<10 digits>" name.
+//   v8: label-only OUI hints for Genetec (AutoVu/Sharp ALPR) and Ubicquia
+//       (streetlight camera/sensor nodes). OUI-only, so they never beep.
+#define SIG_SCHEMA_VERSION 8
 
 static SemaphoreHandle_t watchersMutex = NULL;
 static bool watchersRunning = false;
@@ -257,7 +263,6 @@ static void ensureSignaturesFileExists() {
             // class of junk as the Espressif OUIs above.
 
             // Pre-existing SignalSweep Rules
-            addRule("Flock Safety Mfg ID", "Flock Safety", "", "0x09C8", "", "");
             addRule("Axon Body Camera / Taser", "Axon", "00:25:df", "", "", "");
             addRule("Axon Signal System", "Axon", "", "", "", "fe6c");
             addRule("Axon Signal System", "Axon", "", "", "", "fe6d");
@@ -266,6 +271,18 @@ static void ensureSignaturesFileExists() {
             addRule("Sierra Wireless Infrastructure", "Fleet / Infrastructure", "00:21:b2", "", "", "");
             addRule("Sierra Wireless Infrastructure", "Fleet / Infrastructure", "00:f0:8a", "", "", "");
             addRule("Sierra Wireless Infrastructure", "Fleet / Infrastructure", "00:07:e2", "", "", "");
+
+            // Label-only hints for surveillance vendors we have NOT yet heard
+            // on the air (IEEE registrations, not field captures). OUI alone is
+            // W_OUI (30): under CONF_LIST_MIN and CONF_ALERT_MIN, so these never
+            // beep and only name a row while the filter is off. The categories
+            // carry no routing keyword on purpose -- "other", All tab only --
+            // until a Site Survey capture proves the hardware transmits. Promote
+            // (category naming "alpr", a stronger signal) only on that evidence.
+            addRule("Genetec (AutoVu / Sharp)", "Genetec", "00:0a:b1", "", "", "");
+            addRule("Genetec (AutoVu / Sharp)", "Genetec", "00:bf:15", "", "", "");
+            addRule("Genetec (AutoVu / Sharp)", "Genetec", "0c:bf:15", "", "", "");
+            addRule("Ubicquia (streetlight node)", "Ubicquia", "94:7b:be", "", "", "");
 
             // Trackers (planted-on-you category). Keyed on service UUID, which
             // the matcher already handles. AirTag is matched in code (its Find
@@ -331,6 +348,9 @@ static void ensureSignaturesFileExists() {
 // detection — no need to decode operator GPS just to sound the buzzer.
 #define W_DRONE      90
 #define W_TRACKER    80
+// Flock's solar battery pack. Two facts at once (0x09C8 + a serial, or the full
+// "Penguin-<10 digits>" name), so it identifies on its own. See blePenguin().
+#define W_PENGUIN    80
 // Pwnagotchi (pwngrid) presence: a beacon from the fixed source MAC
 // de:ad:be:ef:de:ad carrying JSON in vendor IE id 222. The JSON fields
 // (pwnd_tot/pwnd_run/grid_version) are the real tell — the MAC is trivially
@@ -703,6 +723,36 @@ static bool bleIsAirtag(SWEEP_ADV* dev) {
                              && static_cast<uint8_t>(mfg[3]) == 0x19;
 }
 
+// Flock's solar battery pack, codename "Penguin" (Nordic; the camera's own app
+// calls it ExternalBattery). A Falcon itself never advertises BLE and keeps its
+// Wi-Fi off on LTE, so this battery is the only radio on the pole -- and the
+// camera holds a permanent link to it, so a healthy install is usually silent.
+// It advertises when that link is down (camera rebooting, dead, or unpaired).
+// Source: a published Falcon firmware dump (2026-09-21) for the codename and
+// the held link; upstream oui-spy notes for the advert (facts only, no code):
+//   before ~March 2025  name "Penguin-" + 10-digit serial
+//   after               name is the bare 10-digit serial, mfg 0x09C8 (XUNTONG),
+//                       "TN<digits>" in the manufacturer payload
+// A bare 10-digit name is NOT enough: Apple Nearby Info adverts carry the
+// placeholder name "0102000000" (two in our own captures). Nor is 0x09C8 alone.
+static bool isTenDigits(const std::string& s, size_t from) {
+    if (s.length() != from + 10) return false;
+    for (size_t i = from; i < s.length(); i++) if (s[i] < '0' || s[i] > '9') return false;
+    return true;
+}
+
+static bool blePenguin(SWEEP_ADV* dev) {
+    std::string name = dev->haveName() ? dev->getName() : std::string();
+    if (isTenDigits(name, 8) && strncasecmp(name.c_str(), "penguin-", 8) == 0) return true;
+    if (!dev->haveManufacturerData()) return false;
+    std::string mfg = dev->getManufacturerData();
+    if (mfg.length() < 2 || static_cast<uint8_t>(mfg[0]) != 0xC8 || static_cast<uint8_t>(mfg[1]) != 0x09) return false;
+    if (isTenDigits(name, 0)) return true;
+    for (size_t i = 2; i + 2 < mfg.length(); i++)
+        if (mfg[i] == 'T' && mfg[i + 1] == 'N' && mfg[i + 2] >= '0' && mfg[i + 2] <= '9') return true;
+    return false;
+}
+
 // What an Apple device is DOING, from the Continuity message type — or nullptr
 // when this is not Apple manufacturer data. Not a category and not a detection:
 // it adds no confidence, so these rows stay out of the filtered list and never
@@ -895,6 +945,13 @@ class WatchersScanCallbacks : public NimBLEAdvertisedDeviceCallbacks {
                     bestWeight = W_TRACKER;
                     matchedRule = trackerNet;
                     matchedCategory = "Tracker";
+                }
+            } else if (blePenguin(advertisedDevice)) {
+                confidence += W_PENGUIN;
+                if (W_PENGUIN > bestWeight) {
+                    bestWeight = W_PENGUIN;
+                    matchedRule = "Flock Battery (Penguin)";
+                    matchedCategory = "Flock Safety";
                 }
             } else if (matchedRule.length() == 0) {
                 // Label only. No confidence, no category, so it cannot beep, is
@@ -1344,8 +1401,12 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
                     if (fsubtype == 8 || fsubtype == 5) foundSsid = String(ssid);
                     String ssidStr = String(ssid);
                     ssidStr.toLowerCase();
+                    // "flock-" as a PREFIX: the Falcon's own hotspot is "Flock-" +
+                    // the MAC's last 6 chars (WifiApService, 2026-09-21 firmware
+                    // dump), and a bare substring matched home routers named
+                    // "FlockNation" (TP-Link, in our own captures).
                     if (!ssidHit &&
-                        (ssidStr.indexOf("flock") >= 0 || ssidStr.indexOf("fs_") >= 0 || ssidStr.indexOf("pigvision") >= 0)) {
+                        (ssidStr.startsWith("flock-") || ssidStr.indexOf("fs_") >= 0 || ssidStr.indexOf("pigvision") >= 0)) {
                         ssidHit = true;
                         wifiConfidence += W_WIFI_SSID;
                         if (W_WIFI_SSID > bestWeight) {

@@ -4,6 +4,37 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Added — Flock's battery, and label-only hints for Flock's competitors
+
+- **The Flock solar battery ("Penguin") is detected in code, not by a rule.** A
+  published Falcon firmware dump (2026-09-21) settled what a deployed camera
+  sends: nothing we can hear. Wi-Fi stays off on LTE, the camera never
+  advertises BLE, and it holds a permanent link to its battery. The battery is
+  the only radio on the pole, and it advertises only when that link drops.
+  `blePenguin()` demands two facts: the full `Penguin-<10 digits>` name, or
+  manufacturer ID `0x09C8` *plus* a 10-digit name or a `TN<digits>` serial in
+  the payload. Scores `W_PENGUIN` (80) under Flock Safety. **Trap: a bare
+  10-digit name is not enough.** Apple Nearby Info adverts carry the placeholder
+  name `0102000000` (two in our own captures). Neither is `0x09C8` alone.
+- **The standalone `0x09C8` rule is gone (schema v7).** At `W_MFG` it could not
+  beep on its own, but it listed any XUNTONG device as Flock.
+- **Flock SSIDs match the `flock-` prefix, not the substring.** The Falcon's
+  hotspot is `Flock-` + the MAC's last six characters, and a substring match
+  beeped for a TP-Link home router named "FlockNation" in our captures.
+- **Genetec and Ubicquia ship as label-only hints (schema v8).** Genetec
+  (AutoVu/Sharp ALPR: `00:0a:b1`, `00:bf:15`, `0c:bf:15`) and Ubicquia
+  (streetlight camera/sensor nodes: `94:7b:be`) come from the IEEE registry,
+  not from field captures. So they are vendor-prefix-only rules: `W_OUI` 30 sits
+  under both the list gate (60) and the beep gate (70). They never beep, and
+  they only name a row while the filter shows all devices. Their categories
+  carry no routing keyword, so they sit under All, never the Cameras tab. They
+  get promoted only when a Site Survey capture proves the hardware transmits.
+  After Flock turned out to be RF-silent, an unproven prefix is a question, not
+  a detection. `selftest.js` fails if either rule gains a non-OUI condition or a
+  category that routes to a camera tab.
+- Verified on all three bench boards (two S3, one C5): each reports schema 8
+  with 55 rules, and each holds 30 pushes in 30 s after the flash.
+
 ## [0.5.0] — 2026-09-20 — Three tabs, an alert log on the board, and an LED scene that forgets itself
 
 ### Fixed — Bulk replies never arrived over BLE

@@ -287,7 +287,32 @@ const flockFail = [];
 
 // Schema must be bumped, or deployed boards keep the stale rule set for ever.
 const ver = Number((fw.match(/#define SIG_SCHEMA_VERSION\s+(\d+)/) || [])[1]);
-if (!(ver >= 6)) flockFail.push('SIG_SCHEMA_VERSION is ' + ver + ', expected >= 6');
+if (!(ver >= 8)) flockFail.push('SIG_SCHEMA_VERSION is ' + ver + ', expected >= 8');
+
+// Genetec / Ubicquia are label-only: OUI and nothing else (W_OUI 30 can neither
+// list nor beep), and a category that routes to 'other', never a camera tab.
+const catKw = kw((appSrc.match(/function categoryOf\([\s\S]*?key: 'other'/) || [''])[0]);
+for (const v of ['Genetec', 'Ubicquia']) {
+    const rules = [...fw.matchAll(new RegExp('addRule\\("[^"]*' + v + '[^"]*", "([^"]*)", "([^"]*)", "([^"]*)", "([^"]*)", "([^"]*)"\\);', 'g'))];
+    if (!rules.length) flockFail.push(v + ' label-only rule missing');
+    for (const [r, cat, oui, ...rest] of rules) {
+        if (!oui || rest.some(Boolean)) flockFail.push(v + ' rule is not OUI-only: ' + r);
+        const hit = [...catKw].find(k => cat.toLowerCase().includes(k));
+        if (!catKw.size || hit) flockFail.push(v + ' category "' + cat + '" hits routing keyword "' + hit + '", expected other');
+    }
+}
+
+// 2026-09-21 firmware-dump cleanups. The Falcon hotspot is "Flock-" + 6 chars; a
+// bare "flock" substring beeped for a TP-Link router named FlockNation.
+if (/ssidStr\.indexOf\("flock"\)/.test(fw) || !/ssidStr\.startsWith\("flock-"\)/.test(fw))
+    flockFail.push('Flock SSID match must be the "flock-" prefix, not a substring');
+// 0x09C8 alone is not Flock; the battery is matched in code with a second fact.
+if (/addRule\([^)]*"0x09C8"/i.test(fw)) flockFail.push('standalone 0x09C8 rule is back in the defaults');
+const peng = (fw.match(/static bool blePenguin\([\s\S]*?\n\}/) || [''])[0];
+if (!peng) flockFail.push('blePenguin() missing');
+// A bare 10-digit name counts only after the 0x09C8 check: Apple Nearby Info
+// sends the placeholder name "0102000000".
+else if (peng.indexOf('isTenDigits(name, 0)') < peng.indexOf('0x09')) flockFail.push('blePenguin accepts a bare 10-digit name without mfg 0x09C8');
 
 // Default OUI list invariants: the 2026-07-16 sync, and no randomized-MAC prefix.
 const flockBlock = (fw.match(/const char\* flockOuis\[\] = \{([\s\S]*?)\};/) || [])[1] || '';
