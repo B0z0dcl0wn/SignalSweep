@@ -2338,6 +2338,7 @@
         // ON would show a lie, and with two boards around it would show the
         // wrong board's lie. Painted only from CMD:CFG, like the radios.
         let buzzerOn = null;
+        let crashNotedBoot = '';
         // ---- Device identity (name / random address) ------------------------
         // Both live in the firmware's NVS and are read at boot before the BLE
         // stack comes up, so saving either restarts the board. The device is
@@ -2360,6 +2361,15 @@
             setBandUi(cfg.band);
             devName = (typeof cfg.ble_name === 'string' && cfg.ble_name) || 'SignalSweep';
             if (typeof cfg.uptime === 'number') bootAt = Date.now() - cfg.uptime * 1000;
+            // A board that crashed says so once per boot (CMD:CFG arrives three
+            // times on connect). Codes are esp_reset_reason().
+            const crash = { 4: 'crashed (panic)', 5: 'hit a watchdog', 6: 'hit a watchdog',
+                            7: 'hit a watchdog', 9: 'browned out' }[cfg.reset];
+            const bootKey = devName + '@' + Math.round(bootAt / 10000);
+            if (crash && crashNotedBoot !== bootKey) {
+                crashNotedBoot = bootKey;
+                showToast(devName + ' restarted: it ' + crash, '⚠');
+            }
             // Alert log. log_boot/log_secs are the board's current ordering key:
             // the bookmark a session starts from, and the only way to date
             // records later -- the board has no clock, so this is the one moment

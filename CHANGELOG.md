@@ -4,6 +4,21 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Added — the board says why it last restarted
+
+- **`CMD:CFG` carries `reset`, the chip's `esp_reset_reason()`** (4 panic,
+  5-7 watchdog, 9 brownout, 11 USB). A board that restarts unattended leaves no
+  other witness: the boot banner is lost while the USB port re-enumerates, and
+  a crash backtrace only exists if something was logging the whole stream. The
+  app raises one toast per boot when it connects to a board whose last restart
+  was a panic, watchdog or brownout.
+- **Trap: closing a serial port can reset the board.** pyserial raises DTR and
+  RTS on open by default; when the holding process dies, Windows drops both, and
+  the ESP32's USB-Serial-JTAG reads that as a reset request. A killed bench
+  logger rebooted the C5 one second later, which looked exactly like the C5's
+  known controller crash until `reset` read 11 instead of 4. Bench tools open
+  with `dtr=False, rts=False` set before `open()`.
+
 ### Added — Flock's battery, and label-only hints for Flock's competitors
 
 - **The Flock solar battery ("Penguin") is detected in code, not by a rule.** A

@@ -12,6 +12,7 @@
 #include <esp_log.h>
 #include <Preferences.h>
 #include <esp_random.h>
+#include <esp_system.h>
 #include "hardware_manager.h"
 
 
@@ -167,6 +168,9 @@ String getBleConfigJson() {
     // Seconds since boot, asked once on connect; the app counts on from there
     // rather than have it ride the 1 Hz push.
     doc["uptime"] = millis() / 1000;
+    // Why the board last booted (esp_reset_reason(): 4 panic, 5-7 watchdog,
+    // 9 brownout). Nothing else survives a crash with no host logging.
+    doc["reset"] = (int)esp_reset_reason();
     String out;
     serializeJson(doc, out);
     return out;
