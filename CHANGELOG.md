@@ -4,6 +4,58 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Added — an optional clock, and dates on the alert log
+
+- **A DS3231 RTC is now an optional accessory, like the buzzer and LED bar.**
+  `rtc_clock.{h,cpp}` probes I2C address `0x68` on D4/D5 (SDA/SCL, the same
+  pads on both boards) once in `setup()`; absent means today's behaviour
+  unchanged. `CMD:CFG` reports `rtc` (0 absent, 1 ok, 2 fitted but its
+  oscillator stopped — the coin cell died, present but untrusted) and `epoch`
+  (the board's current UTC, 0 until something has set it). Neither rides the
+  1 Hz push.
+- **The host is always the authority.** The app sends `{"time":<unix seconds>}`
+  on every connect, and the board simply overwrites its system clock and the
+  RTC — no comparison, no "whichever is newer." The one guard is a range
+  check (2026-01-01..2100-01-01 UTC): a phone with a dead clock must not
+  stamp 1970 over a good RTC. `rtcSetEpoch()` rejects anything outside that
+  window and leaves the clock untouched.
+- **Trap: the time push rides every `CMD:CFG` retry, not just the first.**
+  Opening a USB port resets the board, so a single `{"time"}` sent once can
+  land mid-boot and vanish with nothing to show for it. `requestConfig()`
+  now queues `{"time":...}` immediately before `CMD:CFG` on each of its three
+  retries (400 ms / 1.5 s / 4 s) — the CFG reply itself proves whichever push
+  landed.
+- **Trap: the board keeps UTC only, on purpose.** TZ is never set, so
+  `mktime()` on the DS3231's registers is UTC by construction; the app
+  renders local time from the epoch it already gets. If anything ever calls
+  `setenv("TZ", ...)` the RTC read needs a `timegm`-equivalent instead.
+- **The alert log gets real dates without changing its 16-byte record.**
+  `alert_log.cpp` now writes one 8-byte anchor per boot to `/log/epochs.bin`
+  (`boot` u16, pad, `epoch` u32) — `epoch_at_secs0 = time(nullptr) -
+  secsSinceBoot` — whenever time becomes known this boot: from the RTC at
+  boot, or from a host push. A later push overwrites that boot's own anchor,
+  so earlier records in the same boot re-date correctly. This helps even
+  with no RTC fitted: any phone that ever connects before power is lost
+  dates that whole boot, and the anchor lives on the board, so a *different*
+  phone (or `read-log.py`) can read it back later. Capped at 1024 boots
+  (years of engine-starts); the oldest half drops when full.
+- **Trap: the anchor write is deliberately never on the NimBLE host task.**
+  `alertLogAnchorSoon()` only sets a flag; `alertLogTick()` (called from the
+  1 Hz task, same as the alert-record write) does the actual LittleFS write.
+  Anchoring straight from `rtcSetEpoch()` — which runs on the `onWrite`
+  callback — would be the stack-overrun trap all over again.
+- `CMD:LOG:READ`'s `logrd` header now carries `epochs` (one `{boot: epoch}`
+  entry per boot present on that page) alongside `names`, so a boot the
+  connected phone never witnessed still comes back dated.
+  `firmware/tools/read-log.py` prints a `when (local)` column from it.
+  `app.js`'s log-to-file path prefers the board's `epochs` over its own
+  per-session `logBootEpochs` guesses, falling back to the guess only for
+  boots recorded before this firmware.
+- Settings › device identity gets a **Clock** line ("RTC fitted · synced" /
+  "RTC fitted, lost power · time from the phone until power off" / "No RTC ·
+  time from the phone until power off"), painted from `rtc`/`epoch` in
+  `CMD:CFG`.
+
 ### Added — the board says why it last restarted
 
 - **`CMD:CFG` carries `reset`, the chip's `esp_reset_reason()`** (4 panic,
