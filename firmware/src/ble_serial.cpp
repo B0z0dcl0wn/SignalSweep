@@ -231,6 +231,22 @@ static void sendAlertLog(uint16_t fromBoot, uint32_t fromSecs, size_t skip) {
         o["skip"] = (uint32_t)skip;
         o["more"] = more;
         if (skip == 0) o["names"] = alertLogNames();
+
+        // One anchor per boot present in this page (records are key-ordered,
+        // so each boot is a contiguous run). Every page, not just the first:
+        // a later page can start a boot the first one never reached.
+        JsonObject ep = o["epochs"].to<JsonObject>();
+        bool any = false;
+        uint16_t lastBoot = 0;
+        for (size_t i = 0; i < n; i++) {
+            const uint8_t* r = buf + i * ALERT_LOG_REC_SIZE;
+            uint16_t b = (uint16_t)(r[0] | (r[1] << 8));
+            if (any && b == lastBoot) continue;
+            any = true;
+            lastBoot = b;
+            uint32_t e = alertLogEpochFor(b);
+            if (e) ep[String(b)] = e;
+        }
         String out;
         serializeJson(hdr, out);
         sendReply(out);

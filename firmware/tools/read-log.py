@@ -19,11 +19,13 @@ import json
 import struct
 import sys
 import time
+from datetime import datetime
 
 import serial
 
 REC = 16
 CATS = ["ALPR/Camera", "Body cam", "Drone", "Tracker", "Other"]
+EPOCHS = {}  # boot -> UTC epoch at secs 0, from the logrd header
 
 
 def drain(ser, seconds):
@@ -73,6 +75,8 @@ def read_page(ser, boot, secs, skip, wait):
                 continue
             if "names" in o:
                 names = [n for n in o["names"].split("\n") if n]
+            if "epochs" in o:
+                EPOCHS.update({int(k): v for k, v in o["epochs"].items()})
             if "more" in o:
                 more, hdr_seen = bool(o["more"]), True
             if o.get("err"):
@@ -168,12 +172,14 @@ def report(ser, a, c):
 
         print(f"\n{len(all_recs)} records"
               + (f", {len(names)} rule names" if names else ""))
-        print(f"{'boot':>5} {'secs':>8}  {'mac':<17} {'category':<12} {'rssi':>5}  rule")
+        print(f"{'when (local)':<19}  {'boot':>5} {'secs':>8}  {'mac':<17} {'category':<12} {'rssi':>5}  rule")
         for r in all_recs:
             boot, secs, mac, cat, rule, rssi = decode(r)
             cname = CATS[cat] if cat < len(CATS) else f"?{cat}"
             rname = names[rule] if (names and rule < len(names)) else ""
-            print(f"{boot:>5} {secs:>8}  {mac:<17} {cname:<12} {rssi:>5}  {rname}")
+            when = (datetime.fromtimestamp(EPOCHS[boot] + secs).strftime("%Y-%m-%d %H:%M:%S")
+                    if boot in EPOCHS else "undated")
+            print(f"{when:<19}  {boot:>5} {secs:>8}  {mac:<17} {cname:<12} {rssi:>5}  {rname}")
 
         # The ordering key must never go backwards: it is what lets the board
         # derive its ring head instead of storing one.

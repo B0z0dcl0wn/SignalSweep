@@ -2587,13 +2587,27 @@
         let logBootEpochs = {};
         try { logBootEpochs = JSON.parse(localStorage.getItem(LOG_EPOCHS_KEY) || '{}'); } catch (e) { logBootEpochs = {}; }
 
+        function saveBootEpochs() {
+            const keys = Object.keys(logBootEpochs).map(Number).sort(function (a, b) { return a - b; });
+            while (keys.length > 200) delete logBootEpochs[keys.shift()];
+            try { localStorage.setItem(LOG_EPOCHS_KEY, JSON.stringify(logBootEpochs)); } catch (e) {}
+        }
+
         function noteBootEpoch(boot, secs) {
             if (!boot || typeof secs !== 'number') return;
             if (logBootEpochs[boot]) return;
             logBootEpochs[boot] = Date.now() - secs * 1000;
-            const keys = Object.keys(logBootEpochs).map(Number).sort(function (a, b) { return a - b; });
-            while (keys.length > 200) delete logBootEpochs[keys.shift()];
-            try { localStorage.setItem(LOG_EPOCHS_KEY, JSON.stringify(logBootEpochs)); } catch (e) {}
+            saveBootEpochs();
+        }
+
+        // Anchors the board stored itself (its DS3231 at boot, or a host push).
+        // They win over this phone's own guesses: the board saw the boot, while
+        // the phone may never have. Seconds on the wire, ms here.
+        function adoptBoardEpochs(map) {
+            Object.keys(map).forEach(function (b) {
+                if (typeof map[b] === 'number' && map[b] > 0) logBootEpochs[b] = map[b] * 1000;
+            });
+            saveBootEpochs();
         }
 
         function setLogUi(on) {
@@ -2728,6 +2742,7 @@
         function handleLogFrame(o) {
             if (!logRx) return;
             if (o.names) logRx.names = String(o.names).split('\n').filter(Boolean);
+            if (o.epochs) adoptBoardEpochs(o.epochs);
             if (o.err) { logRx.fail('device: ' + o.err); return; }
             if ('more' in o) logRx.more = !!o.more;
             if (o.done) logRx.page();
@@ -2805,8 +2820,8 @@
             const t = when
                 ? when.getFullYear() + '-' + pad(when.getMonth() + 1) + '-' + pad(when.getDate()) +
                   ' ' + pad(when.getHours()) + ':' + pad(when.getMinutes()) + ':' + pad(when.getSeconds())
-                // A boot this phone never saw cannot be dated: the board has no
-                // clock. Say how far into that boot it was rather than invent one.
+                // A boot nobody dated (no RTC, and no host connected before the
+                // power went) cannot be placed in time. Say how far into it.
                 : ('boot ' + rec.boot + ' +' + rec.secs + 's').padEnd(19);
             const cat = LOG_CATS[rec.cat] || ('cat ' + rec.cat);
             let vend = '';
@@ -3004,7 +3019,15 @@
         function requestConfig() {
             cfgSeen = false;
             CFG_RETRY_MS.forEach(ms => setTimeout(() => {
-                if (!cfgSeen && connectionType) sendCommand({ raw: 'CMD:CFG' });
+                if (!cfgSeen && connectionType) {
+                    // The phone's clock is the authority. Sent with every
+                    // attempt, ahead of CMD:CFG on the same queue: opening a USB
+                    // port resets the board, so a lone push can land mid-boot and
+                    // vanish, but a CFG reply proves the push before it landed
+                    // too. The {"time"} reply is itself a CFG reply.
+                    sendCommand({ time: Math.floor(Date.now() / 1000) });
+                    sendCommand({ raw: 'CMD:CFG' });
+                }
             }, ms));
         }
 
