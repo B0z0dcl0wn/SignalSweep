@@ -2361,6 +2361,7 @@
             setBandUi(cfg.band);
             devName = (typeof cfg.ble_name === 'string' && cfg.ble_name) || 'SignalSweep';
             if (typeof cfg.uptime === 'number') bootAt = Date.now() - cfg.uptime * 1000;
+            if (typeof cfg.rtc === 'number') setClockUi(cfg.rtc, cfg.epoch);
             // A board that crashed says so once per boot (CMD:CFG arrives three
             // times on connect). Codes are esp_reset_reason().
             const crash = { 4: 'crashed (panic)', 5: 'hit a watchdog', 6: 'hit a watchdog',
@@ -3007,6 +3008,18 @@
             }, ms));
         }
 
+        // Optional DS3231. The phone sets the board's clock on every connect,
+        // so "off by" here means the push was lost or rejected.
+        function setClockUi(rtc, epoch) {
+            const el = document.getElementById('cfg-clock');
+            if (!el) return;
+            const src = rtc === 1 ? 'RTC fitted' : rtc === 2 ? 'RTC fitted, lost power' : 'No RTC';
+            const off = epoch ? Math.round(epoch - Date.now() / 1000) : null;
+            const sync = off === null ? 'not set' : Math.abs(off) <= 5 ? 'synced' : ('off by ' + off + ' s');
+            el.textContent = src + ' · ' + sync +
+                (rtc === 1 ? '' : ' · time from the phone until power off');
+        }
+
         function saveIdentity() {
             const nameEl = document.getElementById('cfg-name');
             const rndEl  = document.getElementById('cfg-randmac');
@@ -3435,6 +3448,8 @@
                 setBeepUi(null);
                 setSigUi(null);
                 devName = ''; bootAt = null; alertCount = null;
+                const clk = document.getElementById('cfg-clock');
+                if (clk) clk.textContent = 'Not connected';
                 renderStatusStrip();
                 showToast('Device disconnected', '✕');
             }
