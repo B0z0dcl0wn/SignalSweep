@@ -4,6 +4,7 @@
 #include "alert_log.h"
 #include <LittleFS.h>
 #include <Preferences.h>
+#include <time.h>
 #include <vector>
 
 static const char* TAG = "ALERTLOG";
@@ -12,6 +13,14 @@ static const char* TAG = "ALERTLOG";
 #define LOG_FILE   "/log/alerts.bin"
 #define NAMES_FILE "/log/names.txt"
 #define BOOT_NVS_NS "sweep-st"
+#define EPOCH_FILE       "/log/epochs.bin"
+#define EPOCH_REC        8
+// ponytail: flat file, ~2 boots a day in a car is years. When full the oldest
+// half goes; losing the date on very old records beats an unbounded file.
+#define EPOCH_MAX_BOOTS  1024
+// Any time() past this was set by a host or the RTC (an unset clock counts
+// from 1970). Only used to decide whether clearing the log should re-anchor.
+#define TIME_SET_FLOOR   1000000000UL
 
 // Ring state, all derived at init — there is deliberately no persisted write
 // pointer. A pointer would have to be written on every alert (NVS wear on a
@@ -41,6 +50,68 @@ static uint32_t lastMs = 0;
 static uint32_t secsNow = 0;
 static uint32_t remMs = 0;
 
+static volatile bool anchorPending = false;
+void alertLogAnchorSoon() { anchorPending = true; }
+
+static void writeAnchor() {
+    if (!fsReady) return;
+    uint32_t epoch = (uint32_t)time(nullptr) - secsNow;
+    uint8_t rec[EPOCH_REC] = {
+        (uint8_t)bootCount, (uint8_t)(bootCount >> 8), 0, 0,
+        (uint8_t)epoch, (uint8_t)(epoch >> 8), (uint8_t)(epoch >> 16), (uint8_t)(epoch >> 24) };
+
+    // Only the current boot is ever anchored and it is always the newest, so
+    // "replace" can only ever mean the last entry.
+    File f = LittleFS.open(EPOCH_FILE, "r");
+    size_t n = f ? f.size() / EPOCH_REC : 0;
+    bool replaceLast = false;
+    std::vector<uint8_t> keep;
+    if (f && n > 0) {
+        uint8_t last[EPOCH_REC];
+        f.seek((n - 1) * EPOCH_REC);
+        f.read(last, EPOCH_REC);
+        replaceLast = (uint16_t)(last[0] | (last[1] << 8)) == bootCount;
+        if (!replaceLast && n >= EPOCH_MAX_BOOTS) {
+            size_t from = n / 2;
+            keep.resize((n - from) * EPOCH_REC);
+            f.seek(from * EPOCH_REC);
+            f.read(keep.data(), keep.size());
+        }
+    }
+    if (f) f.close();
+
+    File w;
+    if (!keep.empty()) {
+        w = LittleFS.open(EPOCH_FILE, "w");
+        if (w) w.write(keep.data(), keep.size());
+    } else if (replaceLast) {
+        w = LittleFS.open(EPOCH_FILE, "r+");
+        if (w) w.seek((n - 1) * EPOCH_REC);
+    } else {
+        w = LittleFS.open(EPOCH_FILE, "a");
+    }
+    if (!w) return;
+    w.write(rec, EPOCH_REC);
+    w.close();
+    ESP_LOGI(TAG, "Boot %u anchored at epoch %u", (unsigned)bootCount, (unsigned)epoch);
+}
+
+uint32_t alertLogEpochFor(uint16_t boot) {
+    File f = LittleFS.open(EPOCH_FILE, "r");
+    if (!f) return 0;
+    uint8_t r[EPOCH_REC];
+    uint32_t found = 0;
+    // Last match wins: the boot counter is u16, so after 65535 boots an old
+    // number can recur, and the newest entry is the one that is meant.
+    while (f.read(r, EPOCH_REC) == EPOCH_REC) {
+        if ((uint16_t)(r[0] | (r[1] << 8)) == boot)
+            found = (uint32_t)r[4] | ((uint32_t)r[5] << 8) |
+                    ((uint32_t)r[6] << 16) | ((uint32_t)r[7] << 24);
+    }
+    f.close();
+    return found;
+}
+
 void alertLogTick() {
     uint32_t now = millis();
     uint32_t delta = now - lastMs;   // unsigned: correct across rollover
@@ -49,6 +120,13 @@ void alertLogTick() {
     if (remMs >= 1000) {
         secsNow += remMs / 1000;
         remMs   %= 1000;
+    }
+
+    // Deferred here from rtcInit()/the {"time"} command: a LittleFS write is
+    // tens of ms and must not run on the NimBLE host task.
+    if (anchorPending) {
+        anchorPending = false;
+        writeAnchor();
     }
 }
 
@@ -284,6 +362,9 @@ void alertLogClear() {
     ruleNames.clear();
     headIdx = 0;
     wrapped = false;
+    LittleFS.remove(EPOCH_FILE);
+    // Records written after the clear still belong to this boot; keep them datable.
+    if ((uint32_t)time(nullptr) > TIME_SET_FLOOR) anchorPending = true;
     ESP_LOGI(TAG, "Log cleared");
 }
 
