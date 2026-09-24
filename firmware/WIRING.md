@@ -23,13 +23,13 @@ harness fits either board. Only the GPIO numbers underneath differ:
 | **D1** | GPIO2 | GPIO0 | LED bar **DIN** | LED bar |
 | **D2** | GPIO3 | GPIO25 | buzzer **+** | buzzer |
 | **D3** | GPIO4 | GPIO7 | SD **CS** | SD (reserved) |
-| **D4** | GPIO5 | GPIO23 | RTC **SDA** | RTC |
-| **D5** | GPIO6 | GPIO24 | RTC **SCL** | RTC |
+| **D4** | GPIO5 | GPIO23 | RTC **D** (SDA) | RTC |
+| **D5** | GPIO6 | GPIO24 | RTC **C** (SCL) | RTC |
 | **D8** | GPIO7 | GPIO8 | SD **SCK** | SD (reserved) |
 | **D9** | GPIO8 | GPIO9 | SD **MISO** | SD (reserved) |
 | **D10** | GPIO9 | GPIO10 | SD **MOSI** | SD (reserved) |
 | **5V** (VUSB) | — | — | LED bar **VCC** | power |
-| **3V3** | — | — | RTC **VCC** (and a 3.3 V SD module) | power |
+| **3V3** | — | — | RTC **+** (VCC), the only 3V3 load | power |
 | **GND** | — | — | the ground chain (below) | power |
 | BOOT button | GPIO0 | GPIO28 | tap = 2 min advertising window; hold 5 s = factory reset | built in |
 
@@ -41,42 +41,52 @@ Reading the board: Seeed silk-screens the pads **D0–D10**. One long edge has
 **D0–D6**; the other has **5V, GND, 3V3, D10, D9, D8, D7**. The pad printed
 **VUSB** on the underside is the same 5V.
 
-## One wire per XIAO pad: chain the power
+## One wire per XIAO pad: chain the ground
 
 The XIAO has one GND pad, one 3V3 and one 5V, each a tiny through-hole. With
 every accessory fitted there are four grounds, which will not all fit in one
-hole. So **each XIAO pad gets exactly one wire**. Power and ground then
-**daisy-chain from part to part**, and any doubling up happens on the parts'
-bigger pads and header pins, never on the XIAO.
+hole. So **each XIAO pad gets exactly one wire**. Ground then
+**daisy-chains from part to part**, and any doubling up happens on the LED
+bar's bigger pads, never on the XIAO.
 
-It works because two of the parts already pass power through:
+It works because the LED bar passes ground through: a 4-pad clone has two GND
+pads (`GND, IN, VCC, GND`), which are one net. Ground comes in on one and
+leaves on the other, and each pad is big enough for two wires.
 
-- **The LED bar**: a 4-pad clone has two GND pads (`GND, IN, VCC, GND`),
-  which are one net. Ground comes in on one and leaves on the other. On a
-  3-pad bar, its GND pad is big enough to take two wires.
-- **The DS3231 module** (the common ZS-042 board): it has a header on
-  **each end** (6-pin `32K SQW SCL SDA VCC GND` and 4-pin `SCL SDA VCC GND`),
-  and the same-named pins are connected. Power and ground come in on one end
-  and leave on the other.
+The clock does **not** pass anything through. The DS3231 drawn here is the
+small **"DS3231 For Pi"** module: one 5-pin female header, silkscreen left to
+right `+  D  C  NC  −` (`+` = VCC 3.3 V, `D` = SDA, `C` = SCL, `NC` = not
+connected, `−` = GND), with a coin cell on a tab holder on top. With a single
+header it is the end of any chain.
 
 Chain order (skip any part you don't have and join its neighbours):
 
 ```
-GND : XIAO GND ─► LED bar GND ═► LED bar 2nd GND ─► RTC GND (4-pin end) ═► RTC GND (6-pin end) ─► SD GND
-                       ▲
-                       └── buzzer − (piggybacks on the bar's GND pad)
+GND : XIAO GND ─► LED bar GND ═► LED bar 2nd GND ─► RTC −
+                       ▲                ▲
+                       │                └── SD GND (reserved; piggybacks next to the RTC wire)
+                       └── buzzer − (piggybacks next to the wire in from the XIAO)
 
-3V3 : XIAO 3V3 ─► RTC VCC (4-pin end) ═► RTC VCC (6-pin end) ─► SD VCC   (3.3 V SD module)
+3V3 : XIAO 3V3 ─► RTC +                          (one wire: the RTC is the only 3V3 load)
 
-5V  : XIAO 5V  ─► LED bar VCC ─► SD VCC                                  (5 V SD module instead)
+5V  : XIAO 5V  ─► LED bar VCC ─► SD VCC           (reserved; "VCC 5V" SD module only)
 
  ─►  a wire you add        ═►  already connected inside the part
 ```
 
+This assumes the common 4-pad bar. A 3-pad bar has one GND pad, which would
+need all four ground wires.
+
 **Which SD rail?** Check the label on your module's power pin. The common
 "Micro SD Card Adapter" boards with a regulator and level shifter on them say
-**VCC 5V**: chain them off the LED bar's VCC pad. Bare 3.3 V breakouts go on
-the 3V3 chain after the RTC. Never feed 5 V to a bare 3.3 V card slot.
+**VCC 5V**: take VCC off the LED bar's VCC pad. A bare 3.3 V breakout has no
+clean 3V3 source in this harness, because the RTC can't pass power through.
+That gets settled when SD firmware support lands. Never feed 5 V to a bare
+3.3 V card slot.
+
+**Got a ZS-042 instead?** The two-header DS3231 board also works. Its pin
+names are the same (SDA → D4, SCL → D5, VCC → 3V3, GND → ground), and it can
+pass power through its second header.
 
 The signal wires are all one-to-one (pad → part) and never share a hole.
 
@@ -92,10 +102,10 @@ at the top.
                           │         [ USB-C ]          │
                (unused)   │ ● D0                  5V ● │ ──► LED bar VCC      (5V chain)
       LED bar DIN   ◄──── │ ● D1                 GND ● │ ──► LED bar GND      (GND chain)
-      buzzer +      ◄──── │ ● D2                 3V3 ● │ ──► RTC VCC          (3V3 chain)
+      buzzer +      ◄──── │ ● D2                 3V3 ● │ ──► RTC +            (only 3V3 load)
       SD CS         ◄ ─ ─ │ ● D3                 D10 ● │ ─ ─► SD MOSI
-      RTC SDA       ◄──── │ ● D4                  D9 ● │ ─ ─► SD MISO
-      RTC SCL       ◄──── │ ● D5                  D8 ● │ ─ ─► SD SCK
+      RTC D (SDA)   ◄──── │ ● D4                  D9 ● │ ─ ─► SD MISO
+      RTC C (SCL)   ◄──── │ ● D5                  D8 ● │ ─ ─► SD SCK
                (unused)   │ ● D6                  D7 ● │      (unused)
                           └────────────────────────────┘
 
@@ -105,37 +115,40 @@ at the top.
 What each part ends up with (skip any part you don't have):
 
 ```
-  LED bar  (DIN end)            DS3231 (ZS-042)                    microSD module
-  ┌──────────────────┐          ┌──────────────────────────────┐   ┌──────────────────┐
-  │ VCC ◄ XIAO 5V    │          │ 4-pin end       6-pin end    │   │ VCC ◄ 3V3 chain  │
-  │ GND ◄ XIAO GND   │          │ VCC ◄ XIAO 3V3  VCC ► SD VCC │   │       (or 5V)    │
-  │ DIN ◄ D1         │          │ GND ◄ bar GND   GND ► SD GND │   │ GND ◄ RTC GND    │
-  │ GND ► RTC GND    │          │ SDA ◄ D4        SDA  (spare) │   │ CS  ◄ D3         │
-  │  └─ buzzer −     │          │ SCL ◄ D5        SCL  (spare) │   │ SCK ◄ D8         │
-  └──────────────────┘          └──────────────────────────────┘   │ MISO► D9         │
-                                                                    │ MOSI◄ D10        │
-  Passive buzzer                                                    └──────────────────┘
-  ┌──────────────────┐
-  │ +  ◄ D2          │
-  │ −  ► bar GND pad │
-  └──────────────────┘
+  LED bar  (DIN end)             DS3231 "For Pi"            microSD module (reserved)
+  ┌──────────────────────┐       ┌──────────────────┐       ┌───────────────────────┐
+  │ GND ◄ XIAO GND       │       │ +  ◄ XIAO 3V3    │       │ VCC ◄ bar VCC         │
+  │  └─ buzzer −         │       │ D  ◄ D4          │       │       ("VCC 5V" only) │
+  │ DIN ◄ D1             │       │ C  ◄ D5          │       │ GND ◄ bar 2nd GND     │
+  │ VCC ◄ XIAO 5V        │       │ NC   (no wire)   │       │ CS  ◄ D3              │
+  │ GND ► RTC −          │       │ −  ◄ bar 2nd GND │       │ SCK ◄ D8              │
+  │  └─ SD GND           │       └──────────────────┘       │ MISO► D9              │
+  └──────────────────────┘                                  │ MOSI◄ D10             │
+                                                            └───────────────────────┘
+  Passive buzzer
+  ┌──────────────────────┐
+  │ +  ◄ D2              │
+  │ −  ► bar 1st GND pad │
+  └──────────────────────┘
 ```
 
 ## Parts detail
 
 - **Buzzer:** a **passive** buzzer/piezo, since it is driven with `tone()` at
   varying pitches. An active buzzer still plays each category's rhythm, but at
-  one fixed pitch. For a 3-pin module: VCC → the 3V3 chain, GND → the GND
-  chain, I/O → D2. A small passive buzzer (< 30 mA) drives fine straight off
-  the GPIO.
+  one fixed pitch. For a 3-pin module: I/O → D2, GND → the bar's first GND
+  pad. Its VCC needs a supply: 3V3 is taken by the clock, so use the bar's
+  VCC pad (5 V) only if the module is rated for 5 V. A small passive buzzer
+  (< 30 mA) drives fine straight off the GPIO.
 - **LED bar:** WS2812/SK6812 8-LED clone. Wire the **DIN** end (the arrows
   point into the LEDs), not DOUT. Optional hardening: a 330–470 Ω resistor in
   series at DIN, and a 1000 µF cap across the bar's VCC ↔ GND to absorb the
   inrush when all eight LEDs snap on.
-- **DS3231:** any breakout at I²C address 0x68 works. The ZS-042 board already
-  has pull-up resistors on SDA/SCL, so add none. It keeps time on its coin
-  cell while the board is unpowered. The app sets the clock on every connect,
-  and if the cell dies, the next connect fixes it.
+- **DS3231:** any breakout at I²C address 0x68 works. The one drawn is the
+  "DS3231 For Pi" module: `+` ← 3V3, `D` ← D4, `C` ← D5, `NC` gets no wire,
+  `−` ← the bar's 2nd GND pad. It keeps time on its coin cell while the board
+  is unpowered. The app sets the clock on every connect, and if the cell dies,
+  the next connect fixes it. A ZS-042 works the same way (see above).
 - **C5 antenna:** use a **dual-band** U.FL antenna. The stock one is 2.4 GHz only.
 
 ## Power sanity
@@ -147,9 +160,16 @@ peaks on SD writes. If you run it off a weak battery, budget for those numbers.
 
 ## Gotchas
 
+- **I²C pull-ups on a "For Pi" board:** many of them leave out the SDA/SCL
+  pull-up resistors, because a Raspberry Pi has its own. The XIAO's internal
+  pull-ups usually do on short wires. If the serial log says
+  `[RTC] none fitted` with the module attached, add a 4.7 kΩ resistor from D4
+  to 3V3 and another from D5 to 3V3.
+- **"For Pi" module cell:** check whether the coin cell is marked **LIR2032**
+  (rechargeable) or **CR2032**, and keep a replacement of the same kind.
 - **ZS-042 + a CR2032:** that board has a trickle-charge circuit (a resistor
   and diode near the header) meant for a rechargeable LIR2032. Fed from 3V3 —
-  which is how this guide wires it — the charge voltage through the diode
+  as the ZS-042 note above wires it — the charge voltage through the diode
   (~2.7 V) is below a CR2032's own 3.0 V, so no charge current flows: a plain
   CR2032 here is harmless. The hazard is feeding the module **5 V** with a
   plain CR2032 fitted — that does charge it, which it is not built for. If you

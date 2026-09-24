@@ -1,6 +1,6 @@
 <meta charset="utf-8">
 <title>SignalSweep Wiring</title>
-<meta name="description" content="How to wire the XIAO ESP32-S3 to its optional parts: passive buzzer, 8-LED NeoPixel bar, DS3231 clock, and the reserved microSD slot, with power and ground daisy-chained so every XIAO pad carries one wire.">
+<meta name="description" content="How to wire the XIAO ESP32-S3 to its optional parts: passive buzzer, 8-LED NeoPixel bar, DS3231 clock, and the reserved microSD slot, with ground daisy-chained through the bar so every XIAO pad carries one wire.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
@@ -116,7 +116,10 @@
   .svg-stroke-line { stroke: var(--line); }
   .svg-board { fill: var(--board); }
   .sd-body { stroke: var(--wire-spi); stroke-width: 1.5; stroke-dasharray: 7 5; }
-  .coin { stroke: var(--muted); stroke-width: 1.2; stroke-dasharray: 3 3; }
+  .coin { fill: var(--surface); stroke: var(--muted); stroke-width: 1.4; }
+  .tab { fill: var(--surface-2); stroke: var(--muted); stroke-width: 1.2; }
+  .hdr { fill: var(--ink); opacity: 0.82; }
+  .hdr-hole { fill: var(--surface); }
   .t-ink { fill: var(--ink); font-family: var(--mono); }
   .t-muted { fill: var(--muted); font-family: var(--mono); }
   .t-board { fill: var(--board-ink); font-family: var(--mono); }
@@ -259,25 +262,27 @@
     <figure>
       <p class="scroll-hint">← scroll the drawing sideways →</p>
       <div class="diagram">
-        <svg viewBox="95 62 930 846" role="img" aria-label="Wiring schematic, XIAO ESP32-S3 top view with USB-C at the top. Left edge D0 to D6, right edge 5V/VUSB, GND, 3V3, D10, D9, D8, D7. Every XIAO pad carries exactly one wire. Red runs from 5V to the LED bar VCC. Grey ground runs from the XIAO GND to one bar GND pad; the buzzer minus lands on the bar's other GND pad, and from that pad the ground chain continues over the bar and down the right side to the DS3231 GND on its 4-pin end. Violet 3V3 runs from the XIAO 3V3 over the SD module and down the right side to the DS3231 VCC on its 4-pin end, hopping over the ground chain. Amber runs from D1 over the top to the bar DIN; green from D2 to the buzzer plus. Blue SDA from D4 and cyan SCL from D5 run down the left and under the parts to the DS3231's 4-pin end. The DS3231 passes 3V3 and ground through to its 6-pin end, which feeds the microSD module's VCC and GND. The microSD module is reserved, firmware not shipped yet, and all its wires are dashed pink: D3 to CS under the board, D10 to MOSI, D9 from MISO, D8 to SCK. The SDA and SCL wires hop over the dashed CS wire. Buzzer, LED bar, DS3231 and microSD are each marked optional or reserved; the XIAO is required.">
+        <svg viewBox="95 62 945 846" role="img" aria-label="Wiring schematic, XIAO ESP32-S3 top view with USB-C at the top. Left edge D0 to D6, right edge 5V/VUSB, GND, 3V3, D10, D9, D8, D7. Every XIAO pad carries exactly one wire. Red runs from 5V to the LED bar VCC. Grey ground runs from the XIAO GND up to the bar's top GND pad, and the buzzer minus lands on that same pad from above. From the bar's bottom GND pad the ground chain runs under the bar, down the right side and over the clock to the DS3231's minus pin. Violet 3V3 runs from the XIAO 3V3 over the SD module, down the right side and under the clock to the DS3231's plus pin; it is the only 3V3 wire. Amber runs from D1 over the top to the bar DIN; green from D2 to the buzzer plus. Blue SDA from D4 and cyan SCL from D5 run down the left and under the board to the DS3231's D and C pins. The DS3231 is a small 'For Pi' module with one 5-pin female header reading plus, D, C, NC, minus, and a coin cell on top; NC has no wire and nothing passes through it. The microSD module is reserved, firmware not shipped yet, and all its wires are dashed: D3 to CS under the board, D10 to MOSI, D9 from MISO, D8 to SCK, and its GND from the bar's bottom GND pad next to the clock wire. Its VCC is left unwired: a VCC 5V module takes it from the bar VCC pad. Hops mark crossings: 5V and D1 hop the XIAO ground wire, 3V3 hops the SD ground and the clock ground, and SDA and SCL hop the dashed CS wire. Buzzer, LED bar, DS3231 and microSD are each marked optional or reserved; the XIAO is required.">
           <defs>
             <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
               <path d="M0,0 L10,5 L0,10 z" fill="context-stroke"></path>
             </marker>
           </defs>
           <!-- ===== Wires (drawn first, parts sit on top). Every XIAO pad carries exactly ONE wire. ===== -->
-          <!-- Power: 5V -> bar VCC -->
-          <path class="w w-5v" d="M590,290 H635 V205 H690"></path>
-          <!-- Ground chain, link 1: XIAO GND -> bar GND -->
-          <path class="w w-gnd" d="M590,325 H660 V235 H690"></path>
-          <!-- Buzzer minus piggybacks on the bar's other GND pad -->
-          <path class="w w-gnd" d="M270,145 H690"></path>
-          <!-- Ground chain, link 2: bar 2nd GND -> over the bar -> down the right -> RTC GND (4-pin end) -->
-          <path class="w w-gnd" d="M690,145 V95 H975 V842 H882 V812"></path>
-          <!-- 3V3 chain, link 1: XIAO 3V3 -> over the SD -> down the right -> RTC VCC (4-pin end); hops the ground chain -->
-          <path class="w w-3v3" d="M590,360 H968 A7,7 0 0 1 982,360 H1000 V886 H858 V812"></path>
-          <!-- D1 -> bar DIN, over the top of the board -->
-          <path class="w w-data" d="M430,325 H392 V175 H690" marker-end="url(#arrow)"></path>
+          <!-- Power: 5V -> bar VCC; hops the XIAO ground wire -->
+          <path class="w w-5v" d="M590,290 H635 V205 H653 A7,7 0 0 1 667,205 H690"></path>
+          <!-- Ground chain, link 1: XIAO GND -> the bar's first GND pad (top) -->
+          <path class="w w-gnd" d="M590,325 H660 V145 H690"></path>
+          <!-- Buzzer minus piggybacks on that same pad, arriving from above -->
+          <path class="w w-gnd" d="M270,125 H690 V145"></path>
+          <!-- Ground chain, link 2: bar 2nd GND pad -> under the bar -> down the right -> over the RTC -> RTC - -->
+          <path class="w w-gnd" d="M690,235 V300 H1000 V575 H722 V615 H740"></path>
+          <!-- SD GND (reserved, dashed) piggybacks on the 2nd GND pad, next to the RTC wire -->
+          <path class="w w-gnd dash" d="M690,235 H675 V330 H908 V378"></path>
+          <!-- 3V3: the RTC is its only load. Over the SD, down the right, under the RTC, onto +. Hops SD GND and RTC ground. -->
+          <path class="w w-3v3" d="M590,360 H901 A7,7 0 0 1 915,360 H993 A7,7 0 0 1 1007,360 H1016 V808 H722 V727 H740"></path>
+          <!-- D1 -> bar DIN, over the top of the board; hops the XIAO ground wire -->
+          <path class="w w-data" d="M430,325 H392 V175 H653 A7,7 0 0 1 667,175 H690" marker-end="url(#arrow)"></path>
           <!-- D2 -> buzzer + -->
           <path class="w w-sig" d="M430,360 H355 V190 H270" marker-end="url(#arrow)"></path>
           <!-- SD (reserved, dashed): D3 -> CS, under the board -->
@@ -285,12 +290,9 @@
           <path class="w w-spi" d="M590,395 H730" marker-end="url(#arrow)"></path>
           <path class="w w-spi" d="M730,430 H590" marker-end="url(#arrow)"></path>
           <path class="w w-spi" d="M590,465 H730" marker-end="url(#arrow)"></path>
-          <!-- SD power, out of the RTC 6-pin end (dashed: reserved) -->
-          <path class="w w-3v3 dash" d="M858,632 V545"></path>
-          <path class="w w-gnd dash" d="M882,632 V545"></path>
-          <!-- I2C: D4 -> SDA, D5 -> SCL (4-pin end). Both hop the dashed CS wire. -->
-          <path class="w w-sda" d="M430,430 H419 A7,7 0 0 0 405,430 H340 V864 H834 V812" marker-end="url(#arrow)"></path>
-          <path class="w w-scl" d="M430,465 H419 A7,7 0 0 0 405,465 H378 V842 H810 V812" marker-end="url(#arrow)"></path>
+          <!-- I2C: D4 -> D (SDA), D5 -> C (SCL), under the board to the header. Both hop the dashed CS wire. -->
+          <path class="w w-sda" d="M430,430 H419 A7,7 0 0 0 405,430 H340 V699 H740" marker-end="url(#arrow)"></path>
+          <path class="w w-scl" d="M430,465 H419 A7,7 0 0 0 405,465 H378 V671 H740" marker-end="url(#arrow)"></path>
           <!-- ===== XIAO (top view, USB-C up, both edges as on the real board) ===== -->
           <rect class="svg-board" x="430" y="250" width="160" height="342" rx="12"></rect>
           <rect class="svg-board svg-stroke-line" x="491" y="242" width="38" height="12" rx="3" style="stroke-width:1.5"></rect>
@@ -336,9 +338,9 @@
           <circle class="t-muted" cx="190" cy="168" r="3.5"></circle>
           <text class="t-ink" x="190" y="129" text-anchor="middle" font-size="11" font-weight="600">PASSIVE</text>
           <text class="t-ink" x="190" y="217" text-anchor="middle" font-size="11" font-weight="600">BUZZER</text>
-          <line class="svg-stroke-line" x1="262" y1="145" x2="270" y2="145" style="stroke-width:2"></line>
-          <circle class="pad pin-gnd" cx="270" cy="145" r="4.5"></circle>
-          <text class="t-ink" x="252" y="150" text-anchor="end" font-size="14" font-weight="700">−</text>
+          <line class="svg-stroke-line" x1="262" y1="125" x2="270" y2="125" style="stroke-width:2"></line>
+          <circle class="pad pin-gnd" cx="270" cy="125" r="4.5"></circle>
+          <text class="t-ink" x="252" y="130" text-anchor="end" font-size="14" font-weight="700">−</text>
           <line class="svg-stroke-line" x1="262" y1="190" x2="270" y2="190" style="stroke-width:2"></line>
           <circle class="pad pin-sig" cx="270" cy="190" r="4.5"></circle>
           <text class="t-ink" x="252" y="195" text-anchor="end" font-size="14" font-weight="700">+</text>
@@ -371,12 +373,13 @@
           <text class="t-ink" x="707" y="238.5" font-size="10">GND</text>
           <path class="link" d="M732,145 h4 V235 h-4"></path>
           <circle class="junction" cx="690" cy="145" r="4"></circle>
+          <circle class="junction" cx="690" cy="235" r="4"></circle>
           <text class="t-muted" x="940" y="252" text-anchor="end" font-size="10.5">OUT →</text>
-          <text class="t-muted" x="700" y="282" font-size="10">wire the IN end · both GND pads are one net</text>
-          <text class="t-muted" x="700" y="298" font-size="10.5"><tspan class="t-ink" font-weight="600">adds</tspan> colour per category, hunt meter</text>
-          <text class="t-muted" x="700" y="313" font-size="10.5"><tspan class="t-ink" font-weight="600">without</tspan> phone only</text>
+          <text class="t-muted" x="700" y="78" font-size="10.5"><tspan class="t-ink" font-weight="600">adds</tspan> colour per category, hunt meter</text>
+          <text class="t-muted" x="700" y="93" font-size="10.5"><tspan class="t-ink" font-weight="600">without</tspan> phone only</text>
+          <text class="t-muted" x="700" y="110" font-size="10">wire the IN end · both GND pads are one net</text>
           <!-- ===== microSD module (reserved: firmware support not shipped yet) ===== -->
-          <rect class="svg-fill-surface sd-body" x="730" y="375" width="205" height="170" rx="10"></rect>
+          <rect class="svg-fill-surface sd-body" x="730" y="378" width="205" height="167" rx="10"></rect>
           <circle class="pad pin-spi" cx="730" cy="395" r="4.5"></circle>
           <text class="t-ink" x="740" y="398.5" font-size="10">MOSI</text>
           <circle class="pad pin-spi" cx="730" cy="430" r="4.5"></circle>
@@ -385,59 +388,63 @@
           <text class="t-ink" x="740" y="468.5" font-size="10">SCK</text>
           <circle class="pad pin-spi" cx="730" cy="505" r="4.5"></circle>
           <text class="t-ink" x="740" y="508.5" font-size="10">CS</text>
-          <circle class="pad pin-3v3" cx="858" cy="545" r="4.5"></circle>
-          <text class="t-ink" x="858" y="535" text-anchor="middle" font-size="9.5">VCC</text>
-          <circle class="pad pin-gnd" cx="882" cy="545" r="4.5"></circle>
-          <text class="t-ink" x="882" y="535" text-anchor="middle" font-size="9.5">GND</text>
-          <text class="t-ink" x="800" y="399" font-size="11.5" font-weight="600">microSD</text>
-          <rect class="pill-res" x="800" y="407" width="74" height="16" rx="8"></rect>
-          <text class="t-pill-res" x="837" y="418.5" text-anchor="middle" font-size="9.5" font-weight="700">RESERVED</text>
-          <text class="t-muted" x="800" y="441" font-size="10">firmware support</text>
-          <text class="t-muted" x="800" y="455" font-size="10">not shipped yet</text>
-          <text class="t-muted" x="800" y="490" font-size="9.5">3.3 V module shown.</text>
-          <text class="t-muted" x="800" y="503" font-size="9.5">"VCC 5V" label? → 5V</text>
-          <text class="t-muted" x="800" y="516" font-size="9.5">chain, off the bar VCC</text>
-          <!-- ===== DS3231 RTC, ZS-042 board, standing on end (optional) ===== -->
-          <rect class="svg-fill-surface svg-stroke-line" x="738" y="632" width="168" height="180" rx="8" style="stroke-width:1.5"></rect>
-          <circle class="pad" cx="762" cy="632" r="3.5" style="stroke:var(--muted)"></circle>
-          <text class="t-muted" x="762" y="649" text-anchor="middle" font-size="8.5">32K</text>
-          <circle class="pad" cx="786" cy="632" r="3.5" style="stroke:var(--muted)"></circle>
-          <text class="t-muted" x="786" y="649" text-anchor="middle" font-size="8.5">SQW</text>
-          <circle class="pad" cx="810" cy="632" r="3.5" style="stroke:var(--muted)"></circle>
-          <text class="t-muted" x="810" y="649" text-anchor="middle" font-size="8.5">SCL</text>
-          <circle class="pad" cx="834" cy="632" r="3.5" style="stroke:var(--muted)"></circle>
-          <text class="t-muted" x="834" y="649" text-anchor="middle" font-size="8.5">SDA</text>
-          <circle class="pad pin-3v3" cx="858" cy="632" r="4.5"></circle>
-          <text class="t-ink" x="858" y="649" text-anchor="middle" font-size="8.5">VCC</text>
-          <circle class="pad pin-gnd" cx="882" cy="632" r="4.5"></circle>
-          <text class="t-ink" x="882" y="649" text-anchor="middle" font-size="8.5">GND</text>
-          <circle class="pad pin-scl" cx="810" cy="812" r="4.5"></circle>
-          <text class="t-ink" x="810" y="802" text-anchor="middle" font-size="8.5">SCL</text>
-          <circle class="pad pin-sda" cx="834" cy="812" r="4.5"></circle>
-          <text class="t-ink" x="834" y="802" text-anchor="middle" font-size="8.5">SDA</text>
-          <circle class="pad pin-3v3" cx="858" cy="812" r="4.5"></circle>
-          <text class="t-ink" x="858" y="802" text-anchor="middle" font-size="8.5">VCC</text>
-          <circle class="pad pin-gnd" cx="882" cy="812" r="4.5"></circle>
-          <text class="t-ink" x="882" y="802" text-anchor="middle" font-size="8.5">GND</text>
-          <text class="t-muted" x="750" y="664" font-size="8.5">6-pin end</text>
-          <text class="t-muted" x="750" y="788" font-size="8.5">4-pin end</text>
-          <path class="link" d="M858,670 V776"></path>
-          <path class="link" d="M882,670 V776"></path>
-          <text class="t-ink" x="750" y="682" font-size="12" font-weight="700">DS3231</text>
-          <text class="t-muted" x="750" y="696" font-size="9.5">ZS-042</text>
-          <circle cx="776" cy="735" r="24" fill="none" class="coin"></circle>
-          <text class="t-muted" x="776" y="738" text-anchor="middle" font-size="8.5">CR2032</text>
-          <text class="t-muted" x="776" y="773" text-anchor="middle" font-size="8.5">cell on back</text>
-          <text class="t-ink" x="716" y="646" text-anchor="end" font-size="12" font-weight="600">DS3231 clock</text>
-          <rect class="pill-opt" x="644" y="655" width="72" height="16" rx="8"></rect>
-          <text class="t-pill-opt" x="680" y="666.5" text-anchor="middle" font-size="9.5" font-weight="700">OPTIONAL</text>
-          <text class="t-muted" x="716" y="692" text-anchor="end" font-size="10.5"><tspan class="t-ink" font-weight="600">adds</tspan> the alert log keeps real</text>
-          <text class="t-muted" x="716" y="707" text-anchor="end" font-size="10.5">dates across power cuts</text>
-          <text class="t-muted" x="716" y="722" text-anchor="end" font-size="10.5"><tspan class="t-ink" font-weight="600">without</tspan> time from the phone</text>
-          <text class="t-muted" x="716" y="737" text-anchor="end" font-size="10.5">at each connect, lost</text>
-          <text class="t-muted" x="716" y="752" text-anchor="end" font-size="10.5">when the power goes</text>
-          <text class="t-muted" x="716" y="775" text-anchor="end" font-size="10">power in at the 4-pin end,</text>
-          <text class="t-muted" x="716" y="789" text-anchor="end" font-size="10">out the 6-pin end to the SD</text>
+          <circle class="pad pin-gnd" cx="908" cy="378" r="4.5"></circle>
+          <text class="t-ink" x="908" y="394" text-anchor="middle" font-size="9.5">GND</text>
+          <circle class="pad" cx="872" cy="378" r="4" style="stroke:var(--muted)"></circle>
+          <text class="t-muted" x="872" y="394" text-anchor="middle" font-size="9.5">VCC</text>
+          <text class="t-ink" x="800" y="408" font-size="11.5" font-weight="600">microSD</text>
+          <rect class="pill-res" x="800" y="416" width="74" height="16" rx="8"></rect>
+          <text class="t-pill-res" x="837" y="427.5" text-anchor="middle" font-size="9.5" font-weight="700">RESERVED</text>
+          <text class="t-muted" x="800" y="448" font-size="10">firmware support</text>
+          <text class="t-muted" x="800" y="462" font-size="10">not shipped yet</text>
+          <text class="t-muted" x="800" y="486" font-size="9.5"><tspan class="t-ink">VCC</tspan>: "VCC 5V" module</text>
+          <text class="t-muted" x="800" y="499" font-size="9.5">→ the bar VCC pad</text>
+          <text class="t-muted" x="800" y="515" font-size="9.5">bare 3.3 V module:</text>
+          <text class="t-muted" x="800" y="528" font-size="9.5">no clean 3V3 yet</text>
+          <!-- ===== DS3231 "For Pi" module (optional): one 5-pin female header, end of every chain ===== -->
+          <rect class="svg-fill-surface svg-stroke-line" x="750" y="595" width="160" height="195" rx="8" style="stroke-width:1.5"></rect>
+          <rect class="hdr" x="754" y="602" width="16" height="138" rx="2"></rect>
+          <line class="svg-stroke-line" x1="740" y1="615" x2="754" y2="615" style="stroke-width:2"></line>
+          <rect class="hdr-hole" x="758" y="611" width="8" height="8" rx="1"></rect>
+          <circle class="pad pin-gnd" cx="740" cy="615" r="4.5"></circle>
+          <text class="t-ink" x="778" y="619.5" font-size="12" font-weight="700">−</text>
+          <text class="t-muted" x="794" y="619" font-size="9.5">GND</text>
+          <line class="svg-stroke-line" x1="740" y1="643" x2="754" y2="643" style="stroke-width:2"></line>
+          <rect class="hdr-hole" x="758" y="639" width="8" height="8" rx="1"></rect>
+          <circle class="pad" cx="740" cy="643" r="3.5" style="stroke:var(--muted)"></circle>
+          <text class="t-muted" x="778" y="647" font-size="10" font-weight="700">NC</text>
+          <text class="t-muted" x="800" y="647" font-size="9.5">no wire</text>
+          <line class="svg-stroke-line" x1="740" y1="671" x2="754" y2="671" style="stroke-width:2"></line>
+          <rect class="hdr-hole" x="758" y="667" width="8" height="8" rx="1"></rect>
+          <circle class="pad pin-scl" cx="740" cy="671" r="4.5"></circle>
+          <text class="t-ink" x="778" y="675.5" font-size="12" font-weight="700">C</text>
+          <text class="t-muted" x="794" y="675" font-size="9.5">SCL</text>
+          <line class="svg-stroke-line" x1="740" y1="699" x2="754" y2="699" style="stroke-width:2"></line>
+          <rect class="hdr-hole" x="758" y="695" width="8" height="8" rx="1"></rect>
+          <circle class="pad pin-sda" cx="740" cy="699" r="4.5"></circle>
+          <text class="t-ink" x="778" y="703.5" font-size="12" font-weight="700">D</text>
+          <text class="t-muted" x="794" y="703" font-size="9.5">SDA</text>
+          <line class="svg-stroke-line" x1="740" y1="727" x2="754" y2="727" style="stroke-width:2"></line>
+          <rect class="hdr-hole" x="758" y="723" width="8" height="8" rx="1"></rect>
+          <circle class="pad pin-3v3" cx="740" cy="727" r="4.5"></circle>
+          <text class="t-ink" x="778" y="731.5" font-size="12" font-weight="700">+</text>
+          <text class="t-muted" x="794" y="731" font-size="9.5">VCC</text>
+          <circle class="coin" cx="864" cy="677" r="38"></circle>
+          <rect class="tab" x="855" y="633" width="18" height="30" rx="3"></rect>
+          <text class="t-muted" x="864" y="683" text-anchor="middle" font-size="9.5">coin cell</text>
+          <text class="t-muted" x="864" y="696" text-anchor="middle" font-size="8.5">on top</text>
+          <text class="t-ink" x="762" y="762" font-size="12" font-weight="700">DS3231</text>
+          <text class="t-muted" x="762" y="777" font-size="9.5">"For Pi" module</text>
+          <text class="t-ink" x="702" y="739" text-anchor="end" font-size="12" font-weight="600">DS3231 clock</text>
+          <rect class="pill-opt" x="630" y="748" width="72" height="16" rx="8"></rect>
+          <text class="t-pill-opt" x="666" y="759.5" text-anchor="middle" font-size="9.5" font-weight="700">OPTIONAL</text>
+          <text class="t-muted" x="702" y="783" text-anchor="end" font-size="10.5"><tspan class="t-ink" font-weight="600">adds</tspan> the alert log keeps real</text>
+          <text class="t-muted" x="702" y="798" text-anchor="end" font-size="10.5">dates across power cuts</text>
+          <text class="t-muted" x="702" y="813" text-anchor="end" font-size="10.5"><tspan class="t-ink" font-weight="600">without</tspan> time from the phone</text>
+          <text class="t-muted" x="702" y="828" text-anchor="end" font-size="10.5">at each connect, lost</text>
+          <text class="t-muted" x="702" y="843" text-anchor="end" font-size="10.5">when the power goes</text>
+          <text class="t-muted" x="702" y="864" text-anchor="end" font-size="10">one header: end of the chain,</text>
+          <text class="t-muted" x="702" y="878" text-anchor="end" font-size="10">passes nothing on</text>
           <!-- ===== Line key ===== -->
           <text class="t-ink" x="110" y="700" font-size="10.5" font-weight="600">KEY</text>
           <path class="w w-gnd" d="M110,720 h34"></path>
@@ -455,18 +462,24 @@
           <text class="t-muted" x="154" y="814" font-size="10">joined on the part itself</text>
         </svg>
       </div>
-      <figcaption>Top view, USB-C up. Each XIAO pad carries <b>one</b> wire; power and ground then hop from part to part, and any doubling up happens on a part's bigger pad. Dashed pink is the microSD: reserved, not driven by the firmware yet.</figcaption>
+      <figcaption>Top view, USB-C up. Each XIAO pad carries <b>one</b> wire; ground then hops from part to part, and any doubling up happens on a bar pad. The clock is the small "DS3231 For Pi" module, the end of the chain. Dashed pink is the microSD: reserved, not driven by the firmware yet.</figcaption>
     </figure>
 
     <div class="legend">
       <div class="leg"><span class="swatch" style="background:var(--wire-5v)"></span><span class="net">5V</span><span class="to">VUSB pad → bar VCC</span></div>
-      <div class="leg"><span class="swatch" style="background:var(--wire-gnd)"></span><span class="net">GND</span><span class="to">chained: bar → RTC → SD</span></div>
-      <div class="leg"><span class="swatch" style="background:var(--wire-3v3)"></span><span class="net">3V3</span><span class="to">chained: RTC → SD</span></div>
+      <div class="leg"><span class="swatch" style="background:var(--wire-gnd)"></span><span class="net">GND</span><span class="to">chained: bar → RTC −</span></div>
+      <div class="leg"><span class="swatch" style="background:var(--wire-3v3)"></span><span class="net">3V3</span><span class="to">3V3 pad → RTC +, only load</span></div>
       <div class="leg"><span class="swatch" style="background:var(--wire-data)"></span><span class="net">DATA</span><span class="to">D1/GPIO2 → bar IN</span></div>
       <div class="leg"><span class="swatch" style="background:var(--wire-sig)"></span><span class="net">SIGNAL</span><span class="to">D2/GPIO3 → buzzer +</span></div>
-      <div class="leg"><span class="swatch" style="background:var(--wire-sda)"></span><span class="net">SDA</span><span class="to">D4/GPIO5 → RTC SDA</span></div>
-      <div class="leg"><span class="swatch" style="background:var(--wire-scl)"></span><span class="net">SCL</span><span class="to">D5/GPIO6 → RTC SCL</span></div>
+      <div class="leg"><span class="swatch" style="background:var(--wire-sda)"></span><span class="net">SDA</span><span class="to">D4/GPIO5 → RTC D</span></div>
+      <div class="leg"><span class="swatch" style="background:var(--wire-scl)"></span><span class="net">SCL</span><span class="to">D5/GPIO6 → RTC C</span></div>
       <div class="leg"><span class="swatch dashed"></span><span class="net">SPI</span><span class="to">reserved · D3 D8 D9 D10</span></div>
+    </div>
+    <div class="callout" style="margin-top:16px">
+      <h3>Got a ZS-042 instead? <span class="k">two headers</span></h3>
+      <ul>
+        <li>It works too: same pin names (<b>SDA → D4</b>, <b>SCL → D5</b>, <b>VCC → 3V3</b>, <b>GND → ground</b>), and its second header can pass power and ground on to another part.</li>
+      </ul>
     </div>
   </section>
 
@@ -474,14 +487,14 @@
     <h2>Power chains</h2>
     <div class="chains">
       <div class="chain"><span class="net"><span class="swatch" style="background:var(--wire-gnd)"></span>GND</span>
-        <span class="hop">XIAO GND</span><span class="ar">→</span><span class="hop">bar GND</span><span class="in">═</span><span class="hop">bar 2nd GND</span><span class="ar">→</span><span class="hop">RTC GND (4-pin)</span><span class="in">═</span><span class="hop">RTC GND (6-pin)</span><span class="ar">→</span><span class="hop res">SD GND</span>
-        <span class="note">The buzzer − piggybacks on a bar GND pad: a bar pad is big enough for two wires, a XIAO pad is not. On a 3-pad bar, both wires share its one GND pad.</span></div>
+        <span class="hop">XIAO GND</span><span class="ar">→</span><span class="hop">bar GND</span><span class="in">═</span><span class="hop">bar 2nd GND</span><span class="ar">→</span><span class="hop">RTC −</span>
+        <span class="note">The buzzer − piggybacks on the first bar GND pad, next to the wire in from the XIAO; the SD GND (reserved) piggybacks on the 2nd pad, next to the RTC wire. A bar pad is big enough for two wires, a XIAO pad is not. The RTC has one header, so it ends the chain. This assumes the common 4-pad bar: a 3-pad bar has one GND pad, which would need all four ground wires.</span></div>
       <div class="chain"><span class="net"><span class="swatch" style="background:var(--wire-3v3)"></span>3V3</span>
-        <span class="hop">XIAO 3V3</span><span class="ar">→</span><span class="hop">RTC VCC (4-pin)</span><span class="in">═</span><span class="hop">RTC VCC (6-pin)</span><span class="ar">→</span><span class="hop res">SD VCC</span>
-        <span class="note">For a 3.3 V SD module. A module labelled <b>VCC 5V</b> (regulator + level shifter on board) goes on the 5V chain instead.</span></div>
+        <span class="hop">XIAO 3V3</span><span class="ar">→</span><span class="hop">RTC +</span>
+        <span class="note">One wire. The RTC is the only 3V3 load, and it cannot pass power on.</span></div>
       <div class="chain"><span class="net"><span class="swatch" style="background:var(--wire-5v)"></span>5V</span>
         <span class="hop">XIAO 5V</span><span class="ar">→</span><span class="hop">LED bar VCC</span><span class="ar">→</span><span class="hop res">SD VCC</span>
-        <span class="note">Only if your SD module says <b>VCC 5V</b>. Never feed 5 V to a bare 3.3 V card slot.</span></div>
+        <span class="note">For an SD module labelled <b>VCC 5V</b> (the common kind, with a regulator on board). A bare 3.3 V module has no clean 3V3 source in this harness, because the RTC can't pass power through; that gets settled when SD firmware support lands. Never feed 5 V to a bare 3.3 V card slot.</span></div>
       <div class="chain" style="font-size:12px"><span class="ar">→</span><span style="color:var(--muted);font-family:var(--sans)">a wire you add</span><span class="in" style="margin-left:14px">═</span><span style="color:var(--muted);font-family:var(--sans)">already joined inside the part. Skip any part you don't have and join its neighbours.</span></div>
     </div>
   </section>
@@ -497,14 +510,14 @@
           <tr><td class="pad-cell">D1 <span class="gpio">GPIO2</span></td><td><span class="dot" style="background:var(--wire-data)"></span>Data</td><td>LED bar <b>DIN</b> (IN)</td><td>LED bar</td></tr>
           <tr><td class="pad-cell">D2 <span class="gpio">GPIO3</span></td><td><span class="dot" style="background:var(--wire-sig)"></span>Signal</td><td>buzzer <b>+</b></td><td>buzzer</td></tr>
           <tr class="reserved"><td class="pad-cell">D3 <span class="gpio">GPIO4</span></td><td><span class="dot ring"></span>SPI CS</td><td>SD <b>CS</b></td><td>SD (reserved)</td></tr>
-          <tr><td class="pad-cell">D4 <span class="gpio">GPIO5</span></td><td><span class="dot" style="background:var(--wire-sda)"></span>I²C SDA</td><td>RTC <b>SDA</b> (4-pin end)</td><td>RTC</td></tr>
-          <tr><td class="pad-cell">D5 <span class="gpio">GPIO6</span></td><td><span class="dot" style="background:var(--wire-scl)"></span>I²C SCL</td><td>RTC <b>SCL</b> (4-pin end)</td><td>RTC</td></tr>
+          <tr><td class="pad-cell">D4 <span class="gpio">GPIO5</span></td><td><span class="dot" style="background:var(--wire-sda)"></span>I²C SDA</td><td>RTC <b>D</b> (SDA)</td><td>RTC</td></tr>
+          <tr><td class="pad-cell">D5 <span class="gpio">GPIO6</span></td><td><span class="dot" style="background:var(--wire-scl)"></span>I²C SCL</td><td>RTC <b>C</b> (SCL)</td><td>RTC</td></tr>
           <tr class="reserved"><td class="pad-cell">D8 <span class="gpio">GPIO7</span></td><td><span class="dot ring"></span>SPI SCK</td><td>SD <b>SCK</b></td><td>SD (reserved)</td></tr>
           <tr class="reserved"><td class="pad-cell">D9 <span class="gpio">GPIO8</span></td><td><span class="dot ring"></span>SPI MISO</td><td>SD <b>MISO</b> (into the XIAO)</td><td>SD (reserved)</td></tr>
           <tr class="reserved"><td class="pad-cell">D10 <span class="gpio">GPIO9</span></td><td><span class="dot ring"></span>SPI MOSI</td><td>SD <b>MOSI</b></td><td>SD (reserved)</td></tr>
           <tr><td class="pad-cell">5V <span class="gpio">VUSB</span></td><td><span class="dot" style="background:var(--wire-5v)"></span>Power</td><td>LED bar <b>VCC</b></td><td>power</td></tr>
-          <tr><td class="pad-cell">3V3</td><td><span class="dot" style="background:var(--wire-3v3)"></span>Power</td><td>RTC <b>VCC</b> (and a 3.3 V SD module, through the RTC)</td><td>power</td></tr>
-          <tr><td class="pad-cell">GND</td><td><span class="dot" style="background:var(--wire-gnd)"></span>Ground</td><td>LED bar <b>GND</b>, then the ground chain</td><td>power</td></tr>
+          <tr><td class="pad-cell">3V3</td><td><span class="dot" style="background:var(--wire-3v3)"></span>Power</td><td>RTC <b>+</b> (VCC), the only 3V3 load</td><td>power</td></tr>
+          <tr><td class="pad-cell">GND</td><td><span class="dot" style="background:var(--wire-gnd)"></span>Ground</td><td>LED bar <b>GND</b>, then the ground chain to RTC <b>−</b></td><td>power</td></tr>
           <tr><td class="pad-cell">BOOT <span class="gpio">GPIO0</span></td><td class="muted">built in</td><td>tap = 2-minute advertising window · hold 5 s = factory reset</td><td class="muted">on the board</td></tr>
         </tbody>
       </table>
@@ -514,11 +527,11 @@
   <section>
     <h2>Assembly</h2>
     <ol class="steps">
-      <li class="key"><b>One wire per pad — chain the rest.</b> The XIAO has one GND, one 3V3 and one 5V, each a tiny through-hole, and with every part fitted there are four grounds. Two wires shoved into one hole is how a joint cracks. So each XIAO pad gets exactly <b>one</b> wire, and power and ground hop from part to part (see <i>Power chains</i>). Any doubling up happens on a part's bigger pad or header pin.</li>
-      <li><b>LED bar.</b> XIAO <code>5V</code> → bar <code>VCC</code>, XIAO <code>GND</code> → one bar <code>GND</code> pad, XIAO <code>D1 (GPIO2)</code> → bar <code>DIN</code>. Wire the <b>input</b> end (the silkscreen arrows point into the LEDs). Optional 330–470 Ω resistor in series right at DIN.</li>
-      <li><b>Buzzer.</b> XIAO <code>D2 (GPIO3)</code> → buzzer <b>+</b>, buzzer <b>−</b> → the bar's other GND pad. A small passive buzzer (&lt;30 mA) drives straight off the pin. <i>3-pin module?</i> VCC → the 3V3 chain, GND → the ground chain, I/O → D2.</li>
-      <li><b>DS3231 clock.</b> On its <b>4-pin end</b>: <code>SDA</code> ← <code>D4 (GPIO5)</code>, <code>SCL</code> ← <code>D5 (GPIO6)</code>, <code>VCC</code> ← XIAO <code>3V3</code>, <code>GND</code> ← the bar's 2nd GND pad. The ZS-042 joins same-named pins across both headers, so its <b>6-pin end</b> passes VCC and GND on. It already has pull-ups on SDA/SCL; add none.</li>
-      <li><b>microSD (reserved — skip it for now).</b> If you build it into the harness anyway: <code>CS</code> ← <code>D3 (GPIO4)</code>, <code>SCK</code> ← <code>D8 (GPIO7)</code>, <code>MISO</code> → <code>D9 (GPIO8)</code>, <code>MOSI</code> ← <code>D10 (GPIO9)</code>, VCC and GND from the RTC's 6-pin end (a <b>VCC 5V</b> module: from the bar's VCC pad instead). Pin order varies by module; match by label. The firmware does not drive it yet.</li>
+      <li class="key"><b>One wire per pad — chain the rest.</b> The XIAO has one GND, one 3V3 and one 5V, each a tiny through-hole, and with every part fitted there are four grounds. Two wires shoved into one hole is how a joint cracks. So each XIAO pad gets exactly <b>one</b> wire, and ground hops from part to part (see <i>Power chains</i>). Any doubling up happens on a bar pad, never on the XIAO.</li>
+      <li><b>LED bar.</b> XIAO <code>5V</code> → bar <code>VCC</code>, XIAO <code>GND</code> → the bar's first <code>GND</code> pad, XIAO <code>D1 (GPIO2)</code> → bar <code>DIN</code>. Wire the <b>input</b> end (the silkscreen arrows point into the LEDs). Optional 330–470 Ω resistor in series right at DIN.</li>
+      <li><b>Buzzer.</b> XIAO <code>D2 (GPIO3)</code> → buzzer <b>+</b>, buzzer <b>−</b> → that same first GND pad, next to the XIAO wire. A small passive buzzer (&lt;30 mA) drives straight off the pin. <i>3-pin module?</i> I/O → D2, GND → that same pad. Its VCC needs a supply: 3V3 is taken by the clock, so use the bar's VCC pad (5 V) only if the module is rated for 5 V.</li>
+      <li><b>DS3231 clock.</b> The small <b>"DS3231 For Pi"</b> module: one 5-pin female header, silkscreen <code>+ D C NC −</code>. <code>+</code> ← XIAO <code>3V3</code>, <code>D</code> ← <code>D4 (GPIO5)</code>, <code>C</code> ← <code>D5 (GPIO6)</code>, <code>NC</code>: no wire, <code>−</code> ← the bar's 2nd GND pad. With one header it passes nothing on, so it is the end of the chain. A ZS-042 works too: same pin names, and its second header can pass power through.</li>
+      <li><b>microSD (reserved — skip it for now).</b> If you build it into the harness anyway: <code>CS</code> ← <code>D3 (GPIO4)</code>, <code>SCK</code> ← <code>D8 (GPIO7)</code>, <code>MISO</code> → <code>D9 (GPIO8)</code>, <code>MOSI</code> ← <code>D10 (GPIO9)</code>, <code>GND</code> ← the bar's 2nd GND pad, next to the RTC wire. <code>VCC</code>: a <b>VCC 5V</b> module (the common kind, with a regulator) takes it from the bar's VCC pad. A bare 3.3 V module has no clean 3V3 source here, since the clock can't pass power on; that gets settled when SD firmware support lands. Pin order varies by module; match by label. The firmware does not drive it yet.</li>
       <li><b>Verify.</b> Flash from the web flasher, or <code>python flash.py --tier 1 --port COM3</code>. On boot you get a short jingle and an LED blink (if fitted). The serial log says <code>[RTC] DS3231 ok, clock set</code>, <code>[RTC] DS3231 lost power, waiting for a host</code>, or <code>[RTC] none fitted, waiting for a host</code>. Connect the app: <b>Settings › Device identity › Clock</b> shows whether an RTC was found and that the phone synced it. Then trigger a match (an AirTag near it, or edit a signature): the bar flashes and the buzzer plays that category's pattern — ALPR / camera two long beeps, body cam long-short-short, drone a rising trill, tracker fast ticking.</li>
     </ol>
   </section>
@@ -537,7 +550,9 @@
       <div class="callout">
         <h3>Gotchas <span class="k">clones</span></h3>
         <ul>
-          <li><b>ZS-042 + a CR2032:</b> the board has a trickle-charge circuit (a resistor and diode near the header) meant for a rechargeable <b>LIR2032</b>. Fed from 3V3 — which is how this guide wires it — the charge voltage through the diode (~2.7&nbsp;V) is below a CR2032's own 3.0&nbsp;V, so no charge current flows: a plain CR2032 here is harmless. The hazard is feeding the module <b>5&nbsp;V</b> with a plain CR2032 fitted. If you must run it at 5&nbsp;V, fit an LIR2032, or remove the diode or resistor.</li>
+          <li><b>I²C pull-ups:</b> many "For Pi" DS3231 boards leave out the SDA/SCL pull-up resistors, because a Raspberry Pi has its own. The XIAO's internal pull-ups usually do on short wires. If the serial log says <code>[RTC] none fitted</code> with the module attached, add <b>4.7&nbsp;kΩ</b> from D4 to 3V3 and from D5 to 3V3.</li>
+          <li><b>"For Pi" module cell:</b> check whether the coin cell is marked <b>LIR2032</b> (rechargeable) or <b>CR2032</b>, and keep a replacement of the same kind.</li>
+          <li><b>ZS-042 + a CR2032:</b> the board has a trickle-charge circuit (a resistor and diode near the header) meant for a rechargeable <b>LIR2032</b>. Fed from 3V3 — as the ZS-042 note above wires it — the charge voltage through the diode (~2.7&nbsp;V) is below a CR2032's own 3.0&nbsp;V, so no charge current flows: a plain CR2032 here is harmless. The hazard is feeding the module <b>5&nbsp;V</b> with a plain CR2032 fitted. If you must run it at 5&nbsp;V, fit an LIR2032, or remove the diode or resistor.</li>
           <li><b>3.3 V data</b> into a 5 V-powered clone bar usually works; if LED 1 flickers, add the series resistor or power the bar from <b>3V3</b> instead.</li>
           <li><b>Wrong end</b> (wiring DOUT) lights nothing — flip to DIN.</li>
           <li><b>Active buzzer</b> = one fixed pitch: you'll hear each pattern's rhythm but not its tones. Passive is the intended part.</li>
