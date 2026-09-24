@@ -148,10 +148,12 @@ peaks on SD writes. If you run it off a weak battery, budget for those numbers.
 ## Gotchas
 
 - **ZS-042 + a CR2032:** that board has a trickle-charge circuit (a resistor
-  and diode near the header) meant for a rechargeable LIR2032. It tries to
-  charge a plain CR2032, which it must not. Either fit an LIR2032, or remove
-  the diode or resistor. Fed from 3V3 the charge current is small, but
-  a CR2032 is not designed to take any.
+  and diode near the header) meant for a rechargeable LIR2032. Fed from 3V3 —
+  which is how this guide wires it — the charge voltage through the diode
+  (~2.7 V) is below a CR2032's own 3.0 V, so no charge current flows: a plain
+  CR2032 here is harmless. The hazard is feeding the module **5 V** with a
+  plain CR2032 fitted — that does charge it, which it is not built for. If you
+  must run the module at 5 V, fit an LIR2032, or remove the diode or resistor.
 - **3.3 V data into a 5 V-powered LED bar:** clones almost always accept it
   over the short run on a bar. If the first LED flickers or shows the wrong
   colours, add the series resistor, or power the bar from 3V3 (dimmer, but the

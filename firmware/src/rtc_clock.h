@@ -12,11 +12,18 @@
 //
 // The host is the authority: the app sends {"time":N} on every connect and it
 // overwrites the system clock and the RTC, no comparison. The one exception is
-// a clock that is plainly unset (outside 2026..2100), which must not stamp 1970
+// a clock that is plainly unset (outside 2026..2038), which must not stamp 1970
 // over a good RTC. The board keeps UTC only; it never sets TZ.
+//
+// The upper bound is 2038, not 2100: the S3 Arduino toolchain (newlib) builds
+// with a 32-bit time_t, so settimeofday/mktime/gmtime_r all wrap at
+// 2^31 seconds (2038-01-19T03:14:07Z) regardless of what a uint32_t epoch can
+// hold on the wire. Accepting a value past that would store something that
+// reads back negative. Raise this only once the S3 toolchain moves to a
+// 64-bit time_t.
 
 #define RTC_EPOCH_MIN 1767225600UL   // 2026-01-01T00:00:00Z
-#define RTC_EPOCH_MAX 4102444800UL   // 2100-01-01T00:00:00Z
+#define RTC_EPOCH_MAX 2147483647UL   // 2038-01-19T03:14:07Z (32-bit time_t wrap)
 
 enum RtcState : uint8_t { RTC_ABSENT = 0, RTC_OK = 1, RTC_LOST = 2 };
 

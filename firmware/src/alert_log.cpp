@@ -68,9 +68,13 @@ static void writeAnchor() {
     std::vector<uint8_t> keep;
     if (f && n > 0) {
         uint8_t last[EPOCH_REC];
+        memset(last, 0xFF, sizeof(last));
         f.seek((n - 1) * EPOCH_REC);
-        f.read(last, EPOCH_REC);
-        replaceLast = (uint16_t)(last[0] | (last[1] << 8)) == bootCount;
+        // A short read (torn write, power cut mid-append) must not be trusted
+        // as a boot number -- 0xFF/0xFF never matches a real bootCount, so a
+        // short read just falls through to appending a fresh entry.
+        bool gotLast = f.read(last, EPOCH_REC) == EPOCH_REC;
+        replaceLast = gotLast && (uint16_t)(last[0] | (last[1] << 8)) == bootCount;
         if (!replaceLast && n >= EPOCH_MAX_BOOTS) {
             size_t from = n / 2;
             keep.resize((n - from) * EPOCH_REC);

@@ -16,8 +16,11 @@ All notable changes to SignalSweep are recorded here.
 - **The host is always the authority.** The app sends `{"time":<unix seconds>}`
   on every connect, and the board simply overwrites its system clock and the
   RTC — no comparison, no "whichever is newer." The one guard is a range
-  check (2026-01-01..2100-01-01 UTC): a phone with a dead clock must not
-  stamp 1970 over a good RTC. `rtcSetEpoch()` rejects anything outside that
+  check (2026-01-01..2038-01-19 UTC): a phone with a dead clock must not
+  stamp 1970 over a good RTC. The upper bound is 2038, not some later year —
+  the S3 Arduino toolchain builds with a 32-bit `time_t`, so anything past
+  2038-01-19T03:14:07Z wraps in `settimeofday`/`mktime`/`gmtime_r` regardless
+  of what the wire epoch holds. `rtcSetEpoch()` rejects anything outside that
   window and leaves the clock untouched.
 - **Trap: the time push rides every `CMD:CFG` retry, not just the first.**
   Opening a USB port resets the board, so a single `{"time"}` sent once can
@@ -48,13 +51,18 @@ All notable changes to SignalSweep are recorded here.
   entry per boot present on that page) alongside `names`, so a boot the
   connected phone never witnessed still comes back dated.
   `firmware/tools/read-log.py` prints a `when (local)` column from it.
-  `app.js`'s log-to-file path prefers the board's `epochs` over its own
-  per-session `logBootEpochs` guesses, falling back to the guess only for
-  boots recorded before this firmware.
+  `app.js`'s log-to-file path prefers the *current read's* board anchors over
+  its own `logBootEpochs` guesses, falling back to the guess only for a boot
+  this read has no anchor for (older firmware with no `epochs` header, or a
+  boot the board itself never dated either). The board anchors are kept only
+  in memory, per read, and never merged into `logBootEpochs` — that map is
+  global and keyed on boot number alone, so persisting one board's anchors
+  into it would silently mis-date the next board's records sharing a boot
+  number.
 - Settings › device identity gets a **Clock** line ("RTC fitted · synced" /
-  "RTC fitted, lost power · time from the phone until power off" / "No RTC ·
-  time from the phone until power off"), painted from `rtc`/`epoch` in
-  `CMD:CFG`.
+  "RTC fitted, lost power · synced · time from the phone until power off" /
+  "No RTC · synced · time from the phone until power off"), painted from
+  `rtc`/`epoch` in `CMD:CFG`.
 
 ### Added — the board says why it last restarted
 

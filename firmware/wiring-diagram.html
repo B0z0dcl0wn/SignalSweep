@@ -537,7 +537,7 @@
       <div class="callout">
         <h3>Gotchas <span class="k">clones</span></h3>
         <ul>
-          <li><b>ZS-042 + a CR2032:</b> the board has a trickle-charge circuit (a resistor and diode near the header) meant for a rechargeable <b>LIR2032</b>, and it will try to charge a plain CR2032, which it must not. Fit an LIR2032, or remove the diode or resistor. Fed from 3V3 the current is small, but a CR2032 is not designed to take any.</li>
+          <li><b>ZS-042 + a CR2032:</b> the board has a trickle-charge circuit (a resistor and diode near the header) meant for a rechargeable <b>LIR2032</b>. Fed from 3V3 — which is how this guide wires it — the charge voltage through the diode (~2.7&nbsp;V) is below a CR2032's own 3.0&nbsp;V, so no charge current flows: a plain CR2032 here is harmless. The hazard is feeding the module <b>5&nbsp;V</b> with a plain CR2032 fitted. If you must run it at 5&nbsp;V, fit an LIR2032, or remove the diode or resistor.</li>
           <li><b>3.3 V data</b> into a 5 V-powered clone bar usually works; if LED 1 flickers, add the series resistor or power the bar from <b>3V3</b> instead.</li>
           <li><b>Wrong end</b> (wiring DOUT) lights nothing — flip to DIN.</li>
           <li><b>Active buzzer</b> = one fixed pitch: you'll hear each pattern's rhythm but not its tones. Passive is the intended part.</li>

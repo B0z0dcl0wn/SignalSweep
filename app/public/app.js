@@ -2361,7 +2361,20 @@
             setBandUi(cfg.band);
             devName = (typeof cfg.ble_name === 'string' && cfg.ble_name) || 'SignalSweep';
             if (typeof cfg.uptime === 'number') bootAt = Date.now() - cfg.uptime * 1000;
-            if (typeof cfg.rtc === 'number') setClockUi(cfg.rtc, cfg.epoch);
+            setClockUi(cfg.rtc, cfg.epoch);
+            // F2 pairing hole: if the {time} push queued ahead of this CFG
+            // request was dropped (a USB-open reset can land between the two),
+            // the reply still arrives and stops the retry loop above with the
+            // board's epoch never actually set. Catch that here, once per
+            // connection, and only for firmware that reports epoch at all --
+            // older firmware omits the field, which must never trigger a resend.
+            if (typeof cfg.epoch === 'number' && !timeResyncSent) {
+                const now = Math.floor(Date.now() / 1000);
+                if (cfg.epoch === 0 || Math.abs(cfg.epoch - now) > 5) {
+                    timeResyncSent = true;
+                    sendCommand({ time: now });
+                }
+            }
             // A board that crashed says so once per boot (CMD:CFG arrives three
             // times on connect). Codes are esp_reset_reason().
             const crash = { 4: 'crashed (panic)', 5: 'hit a watchdog', 6: 'hit a watchdog',
@@ -2372,9 +2385,13 @@
                 showToast(devName + ' restarted: it ' + crash, '⚠');
             }
             // Alert log. log_boot/log_secs are the board's current ordering key:
-            // the bookmark a session starts from, and the only way to date
-            // records later -- the board has no clock, so this is the one moment
-            // a boot can be tied to real time.
+            // the bookmark a session starts from. They also feed this phone's
+            // own fallback guess (noteBootEpoch/logBootEpochs) for dating
+            // records from a boot the board itself never anchored -- no RTC
+            // fitted, and no host connected before power was lost. A board
+            // with an RTC, or one any phone reached while running, anchors its
+            // own boots (rtc_clock.h / alert_log.cpp epochs.bin) and that wins;
+            // this is only the "nobody else dated it" case.
             if (typeof cfg.log_n === 'number') logHeld = cfg.log_n;
             if (typeof cfg.log_boot === 'number') logBootNow = cfg.log_boot;
             if (typeof cfg.log_secs === 'number') logSecsNow = cfg.log_secs;
@@ -2603,11 +2620,20 @@
         // Anchors the board stored itself (its DS3231 at boot, or a host push).
         // They win over this phone's own guesses: the board saw the boot, while
         // the phone may never have. Seconds on the wire, ms here.
-        function adoptBoardEpochs(map) {
+        //
+        // NOT persisted, and NOT merged into the global logBootEpochs: those
+        // anchors come back on every readback keyed only by boot number, with
+        // no board identity attached, so reading board A then board B would
+        // silently date B's boots with A's anchors (and the collision would
+        // never surface -- both boards can reuse boot 7). Each read gets its
+        // own map (logRx.epochs); logWallClock checks that map first and only
+        // falls back to logBootEpochs (this phone's own per-boot guesses,
+        // still global, still the right thing for a board this phone has
+        // watched continuously) when the current read has nothing for a boot.
+        function adoptBoardEpochs(map, into) {
             Object.keys(map).forEach(function (b) {
-                if (typeof map[b] === 'number' && map[b] > 0) logBootEpochs[b] = map[b] * 1000;
+                if (typeof map[b] === 'number' && map[b] > 0) into[b] = map[b] * 1000;
             });
-            saveBootEpochs();
         }
 
         function setLogUi(on) {
@@ -2738,11 +2764,15 @@
         // cursor would force the app to de-duplicate.
         let logRx = null;
         const LOG_RX_TIMEOUT_MS = 12000;
+        // The board-supplied anchors from the most recent readback -- see the
+        // comment on adoptBoardEpochs for why this is separate from
+        // logBootEpochs and lives only in memory, one board at a time.
+        let lastReadEpochs = {};
 
         function handleLogFrame(o) {
             if (!logRx) return;
             if (o.names) logRx.names = String(o.names).split('\n').filter(Boolean);
-            if (o.epochs) adoptBoardEpochs(o.epochs);
+            if (o.epochs) adoptBoardEpochs(o.epochs, logRx.epochs);
             if (o.err) { logRx.fail('device: ' + o.err); return; }
             if ('more' in o) logRx.more = !!o.more;
             if (o.done) logRx.page();
@@ -2752,7 +2782,7 @@
             return new Promise(function (resolve, reject) {
                 if (logRx) { reject(new Error('a readback is already running')); return; }
                 const st = {
-                    recs: [], names: [], more: false, skip: 0, timer: null,
+                    recs: [], names: [], epochs: {}, more: false, skip: 0, timer: null,
                     fail: function (msg) { clearTimeout(st.timer); logRx = null; reject(new Error(msg)); },
                     arm: function () {
                         clearTimeout(st.timer);
@@ -2764,7 +2794,8 @@
                         if (onProgress) onProgress(st.recs.length);
                         if (!st.more) {
                             clearTimeout(st.timer); logRx = null;
-                            resolve({ recs: st.recs, names: st.names });
+                            lastReadEpochs = st.epochs;
+                            resolve({ recs: st.recs, names: st.names, epochs: st.epochs });
                             return;
                         }
                         st.skip = st.recs.length;
@@ -2810,7 +2841,11 @@
         const LOG_CATS = ['ALPR / Camera', 'Body Cam', 'Drone', 'Tracker', 'Other'];
 
         function logWallClock(rec) {
-            const epoch = logBootEpochs[rec.boot];
+            // The current read's board anchors win -- they name the board that
+            // was just asked. Only when this read has nothing for that boot
+            // (older firmware with no epochs header, or a boot the board never
+            // dated either) does this fall back to this phone's own guesses.
+            const epoch = lastReadEpochs[rec.boot] || logBootEpochs[rec.boot];
             return epoch ? new Date(epoch + rec.secs * 1000) : null;
         }
 
@@ -3015,9 +3050,16 @@
         // ask again until one lands, then stop.
         let cfgSeen = false;
         const CFG_RETRY_MS = [400, 1500, 4000];
+        // F2: the {time} push and CMD:CFG are queued together, but a USB-open
+        // reset can land between them and eat only the push -- the CFG reply
+        // still arrives, satisfies cfgSeen, and the retry loop above stops
+        // asking. One extra resend per connection, gated on the reply itself
+        // (applyConfigToSettings), catches that without retrying forever.
+        let timeResyncSent = false;
 
         function requestConfig() {
             cfgSeen = false;
+            timeResyncSent = false;
             CFG_RETRY_MS.forEach(ms => setTimeout(() => {
                 if (!cfgSeen && connectionType) {
                     // The phone's clock is the authority. Sent with every
@@ -3036,6 +3078,9 @@
         function setClockUi(rtc, epoch) {
             const el = document.getElementById('cfg-clock');
             if (!el) return;
+            // Older firmware has no `rtc` field at all, which reads as
+            // "Not connected" forever if this bails -- say why instead.
+            if (typeof rtc !== 'number') { el.textContent = 'Clock not reported by this firmware'; return; }
             const src = rtc === 1 ? 'RTC fitted' : rtc === 2 ? 'RTC fitted, lost power' : 'No RTC';
             const off = epoch ? Math.round(epoch - Date.now() / 1000) : null;
             const sync = off === null ? 'not set' : Math.abs(off) <= 5 ? 'synced' : ('off by ' + off + ' s');
