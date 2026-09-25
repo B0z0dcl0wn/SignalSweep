@@ -4,6 +4,20 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Fixed — Disconnect over Web Serial releases the port
+
+- **Disconnect on the desktop Serial transport left the COM port open until the
+  tab closed.** Nothing else could open the board (`read-log.py`, a flash, a
+  second app) — `Access is denied` — and the board's goodbye chirp only came
+  when the tab went away. Two faults. The port's streams are locked by the two
+  `pipeTo()` pipes until they settle, and `port.close()` was called without
+  waiting for them, so it threw "locked streams" into an empty `catch`. And
+  cancelling the reader ends `readSerialLoop()`, whose `finally` nulls
+  `serialPort` — racing the close line into a no-op. `disconnectDevice()` now
+  takes its own references first, cancels the reader, closes the writer, awaits
+  both pipes (kept in `serialPipes`), then closes the port. Verified on the
+  bench: Disconnect with the tab still open, and COM3 opened from Python.
+
 ### Added — the board says why it last restarted
 
 - **`CMD:CFG` carries `reset`, the chip's `esp_reset_reason()`** (4 panic,
