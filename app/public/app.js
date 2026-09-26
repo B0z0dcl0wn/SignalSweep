@@ -3131,7 +3131,7 @@
             sdFiles = (o.files || []).slice().sort(function (a, b) { return a.n < b.n ? 1 : -1; });
             const box = document.getElementById('sd-files');
             if (!box) return;
-            if (!sdFiles.length) { box.innerHTML = '<p class="set-note">' + (o.state === 1 ? 'No files on the card yet.' : '') + '</p>'; return; }
+            if (!sdFiles.length) { box.innerHTML = '<p class="set-note">' + (o.state === 1 ? 'No files on the card yet.' : 'Card unavailable') + '</p>'; return; }
             const note = (typeof o.total === 'number' && o.total > sdFiles.length)
                 ? '<p class="set-note">Showing the newest ' + sdFiles.length + ' of ' + o.total + ' files.</p>' : '';
             box.innerHTML = note + sdFiles.map(function (f) {
@@ -3149,12 +3149,13 @@
         });
 
         function sdDelete(name) {
+            if (!connectionType) { showToast('Not connected', '✕'); return; }
             if (!confirm('Delete ' + name + ' from the card? This cannot be undone.')) return;
             sendCommand({ raw: 'CMD:SD:RM:' + name });   // the board answers with a fresh list
         }
 
         function handleSdGet(o) {
-            if (!sdRx) return;
+            if (!sdRx) { if (o.err) showToast('Card: ' + o.err, '✕'); return; }
             if (o.err) { sdRx.fail('device: ' + o.err); return; }
             if ('size' in o) { sdRx.size = o.size; sdRx.arm(); return; }
             if (o.done) {
@@ -3177,9 +3178,13 @@
                 const st = {
                     name: name, parts: [], size: f.s, next: 0, timer: null,
                     arm: function () { clearTimeout(st.timer); st.timer = setTimeout(function () { st.fail('the board stopped replying'); }, 12000); },
-                    fail: function (m) { clearTimeout(st.timer); sdRx = null; reject(new Error(m)); },
+                    // Only clear sdRx if it's still THIS attempt: a disconnect
+                    // (or a later attempt) may already have replaced/nulled it,
+                    // and a stale timer firing after that must not stomp on a
+                    // new download that started in the meantime.
+                    fail: function (m) { clearTimeout(st.timer); if (sdRx === st) sdRx = null; reject(new Error(m)); },
                     progress: function () { const el = document.getElementById('sd-status'); if (el) el.textContent = 'Downloading ' + name + ' · ' + Math.round(100 * st.next / Math.max(1, st.size)) + '%'; },
-                    finish: function () { clearTimeout(st.timer); sdRx = null; resolve(st.parts); }
+                    finish: function () { clearTimeout(st.timer); if (sdRx === st) sdRx = null; resolve(st.parts); }
                 };
                 sdRx = st;
                 st.arm();
@@ -3647,6 +3652,11 @@
                 sdState = null; sdFree = null;
                 const sdEl = document.getElementById('sd-status');
                 if (sdEl) sdEl.textContent = 'Not connected';
+                // Fail any in-flight download's own promise (clears its timer
+                // and nulls sdRx itself via the st===sdRx guard) rather than
+                // just dropping the reference here, which would leave the
+                // timer to fire later and reject a promise nothing awaits.
+                if (sdRx) sdRx.fail('disconnected');
                 sdFiles = []; sdRx = null;
                 const sdBox = document.getElementById('sd-files');
                 if (sdBox) sdBox.innerHTML = '';
