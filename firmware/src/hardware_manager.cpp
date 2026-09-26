@@ -926,7 +926,8 @@ AlertCategory alertCategoryFromName(const char* category) {
     if (c.indexOf("flock") >= 0 || c.indexOf("alpr") >= 0 || c.indexOf("plate") >= 0 ||
         c.indexOf("surveil") >= 0 || c.indexOf("soundthinking") >= 0 || c.indexOf("shotspotter") >= 0)
         return ALERT_ALPR;
-    if (c.indexOf("body") >= 0 || c.indexOf("axon") >= 0 || c.indexOf("cam") >= 0)
+    if (c.indexOf("body") >= 0 || c.indexOf("axon") >= 0 || c.indexOf("cam") >= 0 ||
+        c.indexOf("glasses") >= 0)
         return ALERT_BODYCAM;
     return ALERT_GENERIC;
 }

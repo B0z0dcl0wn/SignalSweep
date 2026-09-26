@@ -623,6 +623,50 @@ if (!/foundSsid\.startsWith\(sig\.ssidPrefix\)/.test(wwSrc)) sigFail.push('SSID 
 if (sigFail.length) { console.log('FAIL: signature schema:', sigFail); process.exit(1); }
 console.log('[signalsweep self-test] signature schema (weight, ssid_prefix): ok');
 
+// ---------------------------------------------------------------------------
+// Registry pin. Every default OUI rule written as a literal addRule() must be
+// registered by the IEEE to the company its name claims. SquachWatch-CYD
+// shipped Sonos as "Vigilant" for eleven releases; we shipped Fiberblaze and
+// Bitworks as "Sierra Wireless". A re-import from someone else's table fails
+// here. The Flock community list (flockOuis[], added in a loop) is exempt on
+// purpose: it is the module makers Flock builds on, gated by the wildcard probe.
+const regFail = [];
+const ouiReg = new Map(readFileSync(new URL('./public/oui.txt', import.meta.url), 'utf8')
+    .split(/\r?\n/).map(l => l.split('\t')).filter(p => p.length >= 2)
+    .map(([k, v]) => [k.trim().toUpperCase(), v.trim()]));
+const OUI_OWNER = {
+    'Flock Safety MAC (registered block)': 'Flock Safety',
+    'SoundThinking': 'ShotSpotter',
+    'Axon Enterprise device': 'Axon Enterprise',
+    'Cradlepoint Router': 'CradlePoint',
+    'Peplink Router': 'PePWave',
+    'Sierra Wireless Infrastructure': 'Sierra Wireless',
+    'Genetec (AutoVu / Sharp)': 'Genetec',
+    'Ubicquia (streetlight node)': 'Ubicquia',
+    'Motorola Solutions device': 'Motorola Solutions',
+    'Verkada camera': 'Verkada',
+    'Avigilon Alta device': 'Avigilon Alta',
+    'Axis Communications camera': 'Axis Communications'
+};
+const defaults = (wwSrc.match(/auto addRule = [\s\S]*?serializeJsonPretty\(doc, file\)/) || [''])[0];
+let ouiRules = 0;
+for (const [, name, oui] of defaults.matchAll(/addRule\("([^"]+)",\s*"[^"]*",\s*"([0-9a-fA-F:]{8})"/g)) {
+    ouiRules++;
+    const owner = ouiReg.get(oui.replace(/:/g, '').toUpperCase());
+    const want = OUI_OWNER[name];
+    if (!want) regFail.push(`OUI rule "${name}" (${oui}) has no registrant pinned in OUI_OWNER`);
+    else if (!owner || !owner.toLowerCase().includes(want.toLowerCase()))
+        regFail.push(`"${name}" ${oui} is registered to "${owner || 'nobody'}", not ${want}`);
+}
+if (ouiRules < 20) regFail.push(`only ${ouiRules} literal OUI rules parsed -- the regex drifted`);
+// Meta's company IDs are on Quest headsets too; they must never name a row "Smart glasses".
+if (/0x01AB|0x058E/i.test(defaults)) regFail.push('Meta company ID 0x01AB/0x058E added as a default rule');
+if (!/#define SIG_SCHEMA_VERSION 9\b/.test(wwSrc)) regFail.push('SIG_SCHEMA_VERSION not bumped to 9');
+const hwCpp = readFileSync(new URL('../firmware/src/hardware_manager.cpp', import.meta.url), 'utf8');
+if (!/c\.indexOf\("glasses"\)[^;]*\)\s*return ALERT_BODYCAM;/.test(hwCpp)) regFail.push('firmware does not route "glasses" to ALERT_BODYCAM');
+if (regFail.length) { console.log('FAIL: registry:', regFail); process.exit(1); }
+console.log(`[signalsweep self-test] ${ouiRules} default OUI rules match the IEEE registry: ok`);
+
 const results = await global.__signalsweepSelfTest();
 const failed = Object.entries(results).filter(([, v]) => !v).map(([k]) => k);
 console.log('[signalsweep self-test]', results);

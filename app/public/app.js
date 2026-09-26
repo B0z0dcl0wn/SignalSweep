@@ -46,6 +46,10 @@
             if (c.indexOf('flock') >= 0 || c.indexOf('alpr') >= 0 || c.indexOf('plate') >= 0 || c.indexOf('surveil') >= 0 ||
                 c.indexOf('soundthinking') >= 0 || c.indexOf('shotspotter') >= 0)
                 return { key: 'alpr',    label: 'ALPR / Camera', color: '#ef4444', icon: '📷' };
+            // Smart glasses count as a body cam (same tab, same beep, same
+            // toggle), but the chip says what the device is.
+            if (c.indexOf('glasses') >= 0)
+                return { key: 'bodycam', label: 'Smart glasses', color: '#ff5a1a', icon: '🕶️' };
             if (c.indexOf('body') >= 0 || c.indexOf('axon') >= 0 || c.indexOf('cam') >= 0)
                 return { key: 'bodycam', label: 'Body Cam',   color: '#ff5a1a', icon: '🎥' };
             return { key: 'other', label: (type || 'Match'), color: '#f59e0b', icon: '⚠️' };
@@ -2067,7 +2071,7 @@
         // probe + the IE. The IE alone rides consumer WiFi (a China Dragon
         // module at the bench), so on any other MAC it says nothing.
         const FLOCK_OUIS = [
-            "b4:1e:52", "70:c9:4e", "3c:91:80", "d8:f3:bc", "80:30:49", "b8:35:32",
+            "70:c9:4e", "3c:91:80", "d8:f3:bc", "80:30:49", "b8:35:32",
             "14:5a:fc", "74:4c:a1", "08:3a:88", "9c:2f:9d", "c0:35:32", "94:08:53",
             "e4:aa:ea", "f4:6a:dd", "24:b2:b9", "00:f4:8d", "d0:39:57",
             "e8:d0:fc", "e0:4f:43", "b8:1e:a4", "70:08:94", "58:8e:81", "ec:1b:bd",
@@ -4510,6 +4514,8 @@
                 results.catBodycam = categoryOf('Axon').key === 'bodycam';
                 results.catAlpr    = categoryOf('Flock Safety').key === 'alpr';
                 results.catSoundThinking = categoryOf('SoundThinking').key === 'alpr';
+                const glasses = categoryOf('Smart glasses');
+                results.catGlasses = glasses.key === 'bodycam' && glasses.label === 'Smart glasses';
 
                 // Lens filtering. The lens must never be able to hide a match
                 // from its own tab, and 'all' must never hide anything -- the
@@ -5034,7 +5040,7 @@
                         const hdr = [0, 1,0,0,0, 0,0,0,0, 6, (-30)&0xff, frame.length & 0xff, (frame.length>>8)&0xff, frame.length & 0xff, (frame.length>>8)&0xff];
                         return analyzeCaptureText('#SSCAP\n' + b64(new Uint8Array(hdr.concat(frame))) + '\n');
                     };
-                    const flock = probe([0xb4, 0x1e, 0x52, 0x53, 0x53, 0x01]);
+                    const flock = probe([0x70, 0xc9, 0x4e, 0x53, 0x53, 0x01]);
                     const chinaDragon = probe([0x1c, 0x79, 0x2d, 0xe5, 0x93, 0x25]);
                     const randomMac = probe([0x6a, 0x03, 0xca, 0x5b, 0x77, 0x77]);
                     results.analyzerFlock = flock.flockDetected && flock.flockMacs === 1 && flock.signature.type === 'flock-ie' &&

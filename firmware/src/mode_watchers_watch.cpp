@@ -77,7 +77,14 @@ static const char *SIG_FILE_PATH = "/data/signatures.json";
 //       PLUS a serial, or the full "Penguin-<10 digits>" name.
 //   v8: label-only OUI hints for Genetec (AutoVu/Sharp ALPR) and Ubicquia
 //       (streetlight camera/sensor nodes). OUI-only, so they never beep.
-#define SIG_SCHEMA_VERSION 8
+//   v9: SquachWatch-CYD extraction (registry-checked). Registered-maker OUIs
+//       (b4:1e:52 Flock, d4:11:d6 ShotSpotter, 00:25:df Axon) list at 60
+//       without beeping; Axon body-cam pairing SSIDs; smart glasses (Ray-Ban
+//       Meta fd5f, Luxottica 0x0D53, Snap 0x03C2) route to body cam; label-only
+//       Motorola Solutions / Verkada / Avigilon Alta / Axis; the three
+//       "Sierra" OUIs were Fiberblaze, Bitworks and unregistered -- replaced
+//       with the six blocks the IEEE gives Sierra Wireless.
+#define SIG_SCHEMA_VERSION 9
 
 static SemaphoreHandle_t watchersMutex = NULL;
 static bool watchersRunning = false;
@@ -229,8 +236,10 @@ static void ensureSignaturesFileExists() {
             // f8:a2:d6 was dropped at v6 — upstream field-demoted it in the
             // 2026-07-16 revision after it was observed hitting a Sony Media
             // Player. 14:b5:cd was added in that same revision.
+            // Annotated, not removed (it is the community's published list):
+            // b8:35:32 is not in the IEEE registry; 48:27:ea is Samsung.
             const char* flockOuis[] = {
-                "b4:1e:52", "70:c9:4e", "3c:91:80", "d8:f3:bc", "80:30:49", "b8:35:32",
+                "70:c9:4e", "3c:91:80", "d8:f3:bc", "80:30:49", "b8:35:32",
                 "14:5a:fc", "74:4c:a1", "08:3a:88", "9c:2f:9d", "c0:35:32", "94:08:53",
                 "e4:aa:ea", "f4:6a:dd", "24:b2:b9", "00:f4:8d", "d0:39:57",
                 "e8:d0:fc", "e0:4f:43", "b8:1e:a4", "70:08:94", "58:8e:81", "ec:1b:bd",
@@ -241,9 +250,13 @@ static void ensureSignaturesFileExists() {
             for (const char* oui : flockOuis) {
                 addRule("Flock Safety MAC", "Flock Safety", oui, "", "", "");
             }
+            // The one block the IEEE registers to Flock Safety itself. Listed on
+            // its own (60) rather than only through the wildcard probe; the
+            // category keeps flockOui true, so the probe path still sees it.
+            addRule("Flock Safety MAC (registered block)", "Flock Safety", "b4:1e:52", "", "", "", 60);
 
             // SoundThinking / ShotSpotter
-            addRule("SoundThinking", "SoundThinking", "d4:11:d6", "", "", "");
+            addRule("SoundThinking", "SoundThinking", "d4:11:d6", "", "", "", 60);
 
             // NOTE: the Raven service-UUID rules (3100/3200/3300/3400/3500)
             // were removed at v5. service_uuid is substring-matched against
@@ -267,14 +280,29 @@ static void ensureSignaturesFileExists() {
             // class of junk as the Espressif OUIs above.
 
             // Pre-existing SignalSweep Rules
-            addRule("Axon Body Camera / Taser", "Axon", "00:25:df", "", "", "");
+            // 00:25:df is registered to Axon Enterprise, but Axon makes more
+            // than body cams (Tasers, docks, Signal units): the name says
+            // "device", and it lists (60) without beeping on the OUI alone.
+            addRule("Axon Enterprise device", "Axon", "00:25:df", "", "", "", 60);
+            // Body cams broadcast these while pairing (Axon's own admin docs).
+            // Vendor-documented, so they beep at the default W_WIFI_SSID (80).
+            addRule("Axon Body 2 camera (pairing)", "Axon", "", "", "", "", 0, "AB2-");
+            addRule("Axon Body 3 camera (pairing)", "Axon", "", "", "", "", 0, "AB3-");
+            addRule("Axon Body 4 camera (pairing)", "Axon", "", "", "", "", 0, "AB4-");
+            addRule("Axon device hotspot", "Axon", "", "", "", "", 0, "AXON-");
             addRule("Axon Signal System", "Axon", "", "", "", "fe6c");
             addRule("Axon Signal System", "Axon", "", "", "", "fe6d");
             addRule("Cradlepoint Router", "Fleet / Infrastructure", "00:30:44", "", "", "");
             addRule("Peplink Router", "Fleet / Infrastructure", "00:1a:dd", "", "", "");
-            addRule("Sierra Wireless Infrastructure", "Fleet / Infrastructure", "00:21:b2", "", "", "");
-            addRule("Sierra Wireless Infrastructure", "Fleet / Infrastructure", "00:f0:8a", "", "", "");
-            addRule("Sierra Wireless Infrastructure", "Fleet / Infrastructure", "00:07:e2", "", "", "");
+            // The six MA-L blocks the IEEE registers to "Sierra Wireless, ULC".
+            // The old three were Fiberblaze (00:21:b2), Bitworks (00:07:e2) and
+            // an unregistered prefix (00:f0:8a).
+            addRule("Sierra Wireless Infrastructure", "Fleet / Infrastructure", "00:a0:d5", "", "", "");
+            addRule("Sierra Wireless Infrastructure", "Fleet / Infrastructure", "28:a3:31", "", "", "");
+            addRule("Sierra Wireless Infrastructure", "Fleet / Infrastructure", "50:13:9d", "", "", "");
+            addRule("Sierra Wireless Infrastructure", "Fleet / Infrastructure", "64:ce:6e", "", "", "");
+            addRule("Sierra Wireless Infrastructure", "Fleet / Infrastructure", "84:db:2f", "", "", "");
+            addRule("Sierra Wireless Infrastructure", "Fleet / Infrastructure", "cc:93:4a", "", "", "");
 
             // Label-only hints for surveillance vendors we have NOT yet heard
             // on the air (IEEE registrations, not field captures). OUI alone is
@@ -287,6 +315,30 @@ static void ensureSignaturesFileExists() {
             addRule("Genetec (AutoVu / Sharp)", "Genetec", "00:bf:15", "", "", "");
             addRule("Genetec (AutoVu / Sharp)", "Genetec", "0c:bf:15", "", "", "");
             addRule("Ubicquia (streetlight node)", "Ubicquia", "94:7b:be", "", "", "");
+
+            // More label-only hints, same rule as Genetec: registry-true, never
+            // heard on the air by us, so W_OUI (30), All tab, never beep.
+            // Motorola Solutions owns Vigilant ALPR but also makes police radios
+            // and in-car video, so the name says "device". The categories avoid
+            // every routing keyword ("cam" would file Verkada under body cams).
+            addRule("Motorola Solutions device", "Motorola Solutions", "00:04:7d", "", "", "");
+            addRule("Motorola Solutions device", "Motorola Solutions", "00:18:85", "", "", "");
+            addRule("Motorola Solutions device", "Motorola Solutions", "00:1f:92", "", "", "");
+            addRule("Motorola Solutions device", "Motorola Solutions", "4c:cc:34", "", "", "");
+            addRule("Motorola Solutions device", "Motorola Solutions", "b8:e2:8c", "", "", "");
+            addRule("Verkada camera", "Verkada", "e0:a7:00", "", "", "");
+            addRule("Avigilon Alta device", "Avigilon Alta", "70:1a:d5", "", "", "");
+            addRule("Axis Communications camera", "Axis Communications", "00:40:8c", "", "", "");
+            addRule("Axis Communications camera", "Axis Communications", "b8:a4:4f", "", "", "");
+
+            // Smart glasses: a camera on someone's face, counted like a body
+            // cam (category keyword "glasses" routes to it on both sides).
+            // Meta Platforms' own company IDs are deliberately absent: Quest
+            // headsets carry them too. (Don't write their hex values here:
+            // selftest.js fails on them anywhere in this block.)
+            addRule("Ray-Ban Meta glasses", "Smart glasses", "", "", "", "fd5f", 70);
+            addRule("Luxottica smart glasses (Ray-Ban / Oakley Meta)", "Smart glasses", "", "0x0D53", "", "", 70);
+            addRule("Snap Spectacles", "Smart glasses", "", "0x03C2", "", "", 70);
 
             // Trackers (planted-on-you category). Keyed on service UUID, which
             // the matcher already handles. AirTag is matched in code (its Find
