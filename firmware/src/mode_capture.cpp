@@ -41,10 +41,14 @@
 #include <WiFi.h>
 #include <esp_wifi.h>
 #include <NimBLEDevice.h>
+#include <time.h>
 #include "mbedtls/base64.h"
 #include "mode_capture.h"
 #include "mode_watchers_watch.h"
 #include "c5_radio.h"
+#include "sd_store.h"
+#include "rtc_clock.h"
+#include "ble_serial.h"
 
 static const char* TAG = "Capture";
 
@@ -84,6 +88,41 @@ static volatile bool needDetectorRestart = false;
 static uint32_t      capEndMs           = 0;
 static TaskHandle_t  drainTaskHandle    = NULL;
 static TaskHandle_t  hopTaskHandle      = NULL;
+
+static volatile bool     capStartPending = false;
+static volatile uint32_t capStartSecs    = 0;
+static volatile bool     capStartSd      = false;
+static bool   capToSd = false;          // this capture writes to the card
+static const char* capSdError = NULL;   // set when the card fails mid-capture
+static uint8_t sdBuf[4096];             // batch lines into card-sized writes
+static size_t  sdBufLen = 0;
+
+// Status/ack frames: USB as always, and BLE too (small, 1 Hz), so a capture
+// started from the phone over Bluetooth can show progress.
+static void capReply(const char* s) {
+    Serial.println(s);
+    sendBleSerial(String(s));
+}
+
+static void sdFlushBuf() {
+    if (!sdBufLen || capSdError) { sdBufLen = 0; return; }
+    if (!sdStreamWrite(sdBuf, sdBufLen))
+        capSdError = sdState() == SD_FULL ? "card full" : "card lost";
+    sdBufLen = 0;
+}
+
+static void sdLine(const uint8_t* b64, size_t olen) {
+    if (sdBufLen + olen + 1 > sizeof(sdBuf)) sdFlushBuf();
+    memcpy(sdBuf + sdBufLen, b64, olen);
+    sdBufLen += olen;
+    sdBuf[sdBufLen++] = '\n';
+}
+
+void requestCapture(uint32_t durationSecs, bool toSd) {
+    capStartSecs = durationSecs;
+    capStartSd = toSd;
+    capStartPending = true;
+}
 
 static bool ringAlloc(CapRing* r, uint32_t n) {
     r->slots = (CapSlot*)ps_malloc((size_t)n * sizeof(CapSlot));
@@ -189,6 +228,7 @@ static void emitSlot(const CapSlot* s) {
     uint8_t b64[((CAP_HDR_BYTES + CAP_MAX_BYTES) * 4) / 3 + 8];
     size_t olen = 0;
     if (mbedtls_base64_encode(b64, sizeof(b64), &olen, rec, reclen) != 0) return;
+    if (capToSd) { sdLine(b64, olen); return; }
     Serial.print("CAP:");
     Serial.write(b64, olen);
     Serial.print('\n');
@@ -221,7 +261,7 @@ static void emitStat(bool done) {
              (unsigned)(wifiRing.drops + bleRing.drops),
              (unsigned)remain, done ? "true" : "false");
 #endif
-    Serial.println(buf);
+    capReply(buf);
 }
 
 static void captureHopTask(void*) {
@@ -260,7 +300,7 @@ static void captureDrainTask(void*) {
         uint32_t now = millis();
         if (now - lastStat >= 1000) { lastStat = now; emitStat(false); }
 
-        if (stopRequested || (capEndMs != 0 && now >= capEndMs)) {
+        if (stopRequested || capSdError || (capEndMs != 0 && now >= capEndMs)) {
             capturing = false;                       // stop producers
             esp_wifi_set_promiscuous(false);
             esp_wifi_set_promiscuous_rx_cb(NULL);
@@ -269,6 +309,15 @@ static void captureDrainTask(void*) {
             // Flush whatever is still queued before freeing.
             while (wifiRing.tail != wifiRing.head) drainRing(&wifiRing, 512);
             while (bleRing.tail  != bleRing.head)  drainRing(&bleRing, 512);
+            if (capToSd) {
+                sdFlushBuf();
+                sdStreamClose();
+                if (capSdError) {
+                    char e[64];
+                    snprintf(e, sizeof(e), "{\"cap\":{\"error\":\"%s\"}}", capSdError);
+                    capReply(e);
+                }
+            }
             emitStat(true);
             ringFree(&wifiRing);
             ringFree(&bleRing);
@@ -280,15 +329,35 @@ static void captureDrainTask(void*) {
     }
 }
 
-void startCapture(uint32_t durationSecs) {
+static void startCapture(uint32_t durationSecs, bool toSd) {
     if (capturing) return;
+
+    capToSd = toSd;
+    capSdError = NULL;
+    sdBufLen = 0;
+    char sdName[13] = "";
+    if (toSd) {
+        // Open the file before stopping the detector, so "no card" costs nothing.
+        if (sdState() != SD_OK) sdProbe();
+        if (sdState() != SD_OK || !sdNextCaptureName(sdName) || !sdStreamOpen(sdName)) {
+            capReply(sdState() == SD_FULL ? "{\"cap\":{\"error\":\"card full\"}}" : "{\"cap\":{\"error\":\"no card\"}}");
+            return;
+        }
+        // Same header the phone writes, so both analyzers read card captures as-is.
+        char hdr[96], t[24] = "-";
+        uint32_t now = rtcNow();
+        if (now) { time_t tt = now; struct tm tmv; gmtime_r(&tt, &tmv); strftime(t, sizeof(t), "%Y-%m-%dT%H:%M:%SZ", &tmv); }
+        int n = snprintf(hdr, sizeof(hdr), "#SSCAP v1 secs=%u src=sd t=%s\n", (unsigned)durationSecs, t);
+        if (!sdStreamWrite((const uint8_t*)hdr, n)) { sdStreamClose(); capReply("{\"cap\":{\"error\":\"card lost\"}}"); return; }
+    }
 
     stopWatchersWatch();   // capture owns the single promiscuous callback
 
     if (!ringAlloc(&wifiRing, WIFI_SLOTS) || !ringAlloc(&bleRing, BLE_SLOTS)) {
         ringFree(&wifiRing);
         ringFree(&bleRing);
-        Serial.println("{\"cap\":{\"error\":\"psram alloc failed\"}}");
+        if (toSd) sdStreamClose();
+        capReply("{\"cap\":{\"error\":\"psram alloc failed\"}}");
         startWatchersWatch();
         return;
     }
@@ -357,7 +426,10 @@ void startCapture(uint32_t durationSecs) {
     xTaskCreatePinnedToCore(captureDrainTask, "CapDrain", 8192, NULL, 2, &drainTaskHandle, 1);
 #endif
 
-    Serial.printf("{\"cap\":{\"started\":true,\"secs\":%u}}\n", (unsigned)durationSecs);
+    char ack[96];
+    if (toSd) snprintf(ack, sizeof(ack), "{\"cap\":{\"started\":true,\"secs\":%u,\"file\":\"%s\"}}", (unsigned)durationSecs, sdName);
+    else      snprintf(ack, sizeof(ack), "{\"cap\":{\"started\":true,\"secs\":%u}}", (unsigned)durationSecs);
+    capReply(ack);
     ESP_LOGI(TAG, "Capture started for %u s", (unsigned)durationSecs);
 }
 
@@ -370,6 +442,10 @@ bool isCapturing() {
 }
 
 void captureTick() {
+    if (capStartPending) {
+        capStartPending = false;
+        startCapture(capStartSecs, capStartSd);
+    }
     if (needDetectorRestart) {
         needDetectorRestart = false;
         startWatchersWatch();

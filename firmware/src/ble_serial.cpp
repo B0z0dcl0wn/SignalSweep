@@ -838,10 +838,11 @@ void processIncomingCommand(const String& rawCommand) {
             setRxOnly(false, true);
             sendConfigReply();
         } else if (rawStr.startsWith("CMD:CAP:START:")) {
-            // Stationary diagnostic capture (USB only -- the raw stream is far
-            // too much for BLE NUS). Pauses the detector for the duration.
-            uint32_t secs = (uint32_t)rawStr.substring(14).toInt();  // 14 = len("CMD:CAP:START:")
-            startCapture(secs);
+            // CMD:CAP:START:<secs>[:SD]. USB streams the raw capture; ":SD" writes
+            // it to the card instead (the only way over BLE). Deferred to loop().
+            String rest = rawStr.substring(14);   // 14 = len("CMD:CAP:START:")
+            bool toSd = rest.endsWith(":SD");
+            requestCapture((uint32_t)rest.toInt(), toSd);
         } else if (rawStr == "CMD:CAP:STOP") {
             stopCapture();
         } else if (rawStr == "CMD:LOG:ON") {
