@@ -92,6 +92,7 @@ static TaskHandle_t  hopTaskHandle      = NULL;
 static volatile bool     capStartPending = false;
 static volatile uint32_t capStartSecs    = 0;
 static volatile bool     capStartSd      = false;
+static portMUX_TYPE capStartMux = portMUX_INITIALIZER_UNLOCKED;   // guards the three above as one unit (m1)
 static bool   capToSd = false;          // this capture writes to the card
 static const char* capSdError = NULL;   // set when the card fails mid-capture
 static uint8_t sdBuf[4096];             // batch lines into card-sized writes
@@ -119,9 +120,16 @@ static void sdLine(const uint8_t* b64, size_t olen) {
 }
 
 void requestCapture(uint32_t durationSecs, bool toSd) {
+    // A capture is actively running: reject outright rather than queue behind
+    // it silently. This runs on the NimBLE host task for a BLE-issued START;
+    // capReply() is the same single-small-notification pattern sendConfigReply()
+    // already uses from this task throughout the router, so it is safe here.
+    if (capturing) { capReply("{\"cap\":{\"error\":\"busy\"}}"); return; }
+    portENTER_CRITICAL(&capStartMux);
     capStartSecs = durationSecs;
     capStartSd = toSd;
     capStartPending = true;
+    portEXIT_CRITICAL(&capStartMux);
 }
 
 static bool ringAlloc(CapRing* r, uint32_t n) {
@@ -318,7 +326,10 @@ static void captureDrainTask(void*) {
                     capReply(e);
                 }
             }
-            emitStat(true);
+            // On a card failure the error frame above already told the story;
+            // a trailing done:true with fresh counters reads as "it finished
+            // fine" right under the error that says it didn't (I2).
+            if (!capSdError) emitStat(true);
             ringFree(&wifiRing);
             ringFree(&bleRing);
             needDetectorRestart = true;              // loop() resumes the detector
@@ -330,7 +341,10 @@ static void captureDrainTask(void*) {
 }
 
 static void startCapture(uint32_t durationSecs, bool toSd) {
-    if (capturing) return;
+    // Defense in depth: captureTick() already holds off calling this while
+    // either is true (I1). A capture started on top of a drain task still
+    // flushing/closing its SD stream and freeing its rings is a use-after-free.
+    if (capturing || drainTaskHandle != NULL) return;
 
     capToSd = toSd;
     capSdError = NULL;
@@ -340,7 +354,11 @@ static void startCapture(uint32_t durationSecs, bool toSd) {
         // Open the file before stopping the detector, so "no card" costs nothing.
         if (sdState() != SD_OK) sdProbe();
         if (sdState() != SD_OK || !sdNextCaptureName(sdName) || !sdStreamOpen(sdName)) {
-            capReply(sdState() == SD_FULL ? "{\"cap\":{\"error\":\"card full\"}}" : "{\"cap\":{\"error\":\"no card\"}}");
+            uint8_t st = sdState();
+            const char* err = st == SD_NONE ? "no card" : st == SD_FULL ? "card full" : "card error";
+            char e[48];
+            snprintf(e, sizeof(e), "{\"cap\":{\"error\":\"%s\"}}", err);
+            capReply(e);
             return;
         }
         // Same header the phone writes, so both analyzers read card captures as-is.
@@ -442,13 +460,32 @@ bool isCapturing() {
 }
 
 void captureTick() {
-    if (capStartPending) {
-        capStartPending = false;
-        startCapture(capStartSecs, capStartSd);
-    }
+    // Resume the detector FIRST. A START that arrived while the previous
+    // capture's drain task was still cleaning up must never race a fresh
+    // startCapture() against that cleanup (I1) -- processing the restart
+    // before the pending start keeps this tick strictly sequential: the old
+    // capture is fully torn down (drainTaskHandle is already NULL by the time
+    // needDetectorRestart is set -- see captureDrainTask's stop block) before
+    // anything new can begin.
     if (needDetectorRestart) {
         needDetectorRestart = false;
         startWatchersWatch();
         ESP_LOGI(TAG, "Capture done, detector resumed");
+    }
+    if (capStartPending) {
+        if (capturing || drainTaskHandle != NULL) {
+            // Still running, or its drain task hasn't finished flushing/
+            // freeing yet -- leave the request queued and retry next tick.
+            // This is NOT the same as "busy": that reply already happened (or
+            // didn't need to) at requestCapture() time, on the host task.
+            return;
+        }
+        uint32_t secs; bool toSd;
+        portENTER_CRITICAL(&capStartMux);
+        capStartPending = false;
+        secs = capStartSecs;
+        toSd = capStartSd;
+        portEXIT_CRITICAL(&capStartMux);
+        startCapture(secs, toSd);
     }
 }

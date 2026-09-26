@@ -11,6 +11,7 @@ static SemaphoreHandle_t sdMutex = NULL;
 static uint8_t  state   = SD_NONE;
 static uint32_t freeMB  = 0;
 static File     stream;
+static char     streamName[13] = "";   // name of the file `stream` has open, "" if none
 #ifdef SD_FAKE_LIMIT_BYTES
 static uint32_t fakeWritten = 0;   // bench only: simulate a full card
 #endif
@@ -35,6 +36,7 @@ static void refreshFree() {
 // Give up on the card until the next successful probe.
 static void fail() {
     if (stream) stream.close();
+    streamName[0] = 0;
     refreshFree();
     state = (freeMB == 0) ? SD_FULL : SD_ERROR;
     SD.end();
@@ -43,6 +45,7 @@ static void fail() {
 bool sdProbe() {
     SdLock l;
     if (stream) stream.close();
+    streamName[0] = 0;
     SD.end();
     SPI.end();
     SPI.begin(D8, D9, D10, D3);   // SCK, MISO, MOSI, SS
@@ -181,6 +184,7 @@ size_t sdList(SdEntry* out, size_t max, size_t* totalOut) {
 int32_t sdRead(const char* name, uint32_t off, uint8_t* buf, size_t n, uint32_t* sizeOut) {
     SdLock l;
     if (state != SD_OK || !sdValidName(name)) return -1;
+    if (streamName[0] && strcmp(name, streamName) == 0) return -1;   // being written right now
     char path[32];
     pathOf(name, path);
     File f = SD.open(path, FILE_READ);
@@ -196,6 +200,7 @@ int32_t sdRead(const char* name, uint32_t off, uint8_t* buf, size_t n, uint32_t*
 bool sdRemove(const char* name) {
     SdLock l;
     if (state != SD_OK || !sdValidName(name)) return false;
+    if (streamName[0] && strcmp(name, streamName) == 0) return false;   // being written right now
     char path[32];
     pathOf(name, path);
     return SD.remove(path);
@@ -220,6 +225,8 @@ bool sdStreamOpen(const char* name) {
     pathOf(name, path);
     stream = SD.open(path, FILE_WRITE);
     if (!stream) { fail(); return false; }
+    strncpy(streamName, name, 12);
+    streamName[12] = 0;
     return true;
 }
 
@@ -234,4 +241,5 @@ bool sdStreamWrite(const uint8_t* data, size_t len) {
 void sdStreamClose() {
     SdLock l;
     if (stream) stream.close();
+    streamName[0] = 0;
 }
