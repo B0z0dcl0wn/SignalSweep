@@ -137,6 +137,21 @@ console.log('[signalsweep self-test] app reads every CMD:CFG field: ok');
     console.log('[signalsweep self-test] host time push + log anchors wired both sides: ok');
 }
 
+// SD card: commands exist on both sides, and the router only sets flags --
+// card I/O on the NimBLE host task is the stack-canary reboot again.
+{
+    const bsrc = readFileSync(new URL('../firmware/src/ble_serial.cpp', import.meta.url), 'utf8');
+    const fail = [];
+    for (const c of ['CMD:SD:LS', 'CMD:SD:GET:', 'CMD:SD:RM:']) {
+        if (!bsrc.includes('"' + c)) fail.push('firmware lacks ' + c);
+    }
+    const router = (bsrc.match(/void processIncomingCommand\(const String& rawCommand\) \{[\s\S]*?\n\}/) || [''])[0];
+    if (/\bsd(List|Read|Remove|Probe|Append|Stream\w*)\s*\(/.test(router)) fail.push('processIncomingCommand touches the card');
+    if (/\bstartCapture\s*\(/.test(router)) fail.push('processIncomingCommand starts a capture on the host task');
+    if (fail.length) { console.log('FAIL:', fail.join('; ')); process.exit(1); }
+    console.log('[signalsweep self-test] SD commands wired, router stays off the card: ok');
+}
+
 // C5 port: the bench-measured radio settings must stay behind the C5 guard, and
 // the S3 path must keep its own values (the S3 build is byte-identical by contract).
 {

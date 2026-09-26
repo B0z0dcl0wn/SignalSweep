@@ -14,7 +14,10 @@
 // Threading: every call takes one recursive mutex, so the capture drain task,
 // the detector's 1 Hz task and loop() can share the card. NEVER call from the
 // NimBLE host task (processIncomingCommand) or a radio callback: card I/O is
-// tens of ms and the host task's stack is small.
+// tens of ms and the host task's stack is small. Exceptions: sdState() and
+// sdFreeMB() are deliberately lock-free -- they read single aligned words, and
+// CMD:CFG reads them on the NimBLE host task, where waiting behind a slow card
+// write must never happen. Do not add a lock to either.
 //
 // A failed write marks the card SD_ERROR (or SD_FULL), unmounts it, and every
 // later call returns false until sdProbe() succeeds again. No retry loop, no

@@ -2362,6 +2362,7 @@
             devName = (typeof cfg.ble_name === 'string' && cfg.ble_name) || 'SignalSweep';
             if (typeof cfg.uptime === 'number') bootAt = Date.now() - cfg.uptime * 1000;
             setClockUi(cfg.rtc, cfg.epoch);
+            setSdUi(cfg.sd, cfg.sd_free);
             // F2 pairing hole: if the {time} push queued ahead of this CFG
             // request was dropped (a USB-open reset can land between the two),
             // the reply still arrives and stops the retry loop above with the
@@ -3088,6 +3089,20 @@
                 (rtc === 1 ? '' : ' · time from the phone until power off');
         }
 
+        // Optional microSD card. Painted only from the device (CMD:CFG / sdls).
+        let sdState = null, sdFree = null;
+        function setSdUi(state, free) {
+            const el = document.getElementById('sd-status');
+            if (typeof state !== 'number') { sdState = null; if (el) el.textContent = 'Card not reported by this firmware'; return; }
+            sdState = state; sdFree = typeof free === 'number' ? free : null;
+            if (!el) return;
+            const gb = sdFree !== null ? (sdFree / 1024).toFixed(1) + ' GB free' : '';
+            el.textContent = state === 1 ? 'SD card · ' + gb
+                           : state === 3 ? 'Card full: download and delete files to make room'
+                           : state === 2 ? 'Card error: check it is FAT32 and seated'
+                           : 'No card';
+        }
+
         function saveIdentity() {
             const nameEl = document.getElementById('cfg-name');
             const rndEl  = document.getElementById('cfg-randmac');
@@ -3521,6 +3536,9 @@
                 devName = ''; bootAt = null; alertCount = null;
                 const clk = document.getElementById('cfg-clock');
                 if (clk) clk.textContent = 'Not connected';
+                sdState = null;
+                const sdEl = document.getElementById('sd-status');
+                if (sdEl) sdEl.textContent = 'Not connected';
                 renderStatusStrip();
                 showToast('Device disconnected', '✕');
             }

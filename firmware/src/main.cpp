@@ -11,6 +11,7 @@
 #include <LittleFS.h>
 #include "alert_log.h"
 #include "rtc_clock.h"
+#include "sd_store.h"
 
 #if CONFIG_IDF_TARGET_ESP32C5
 #define BOOT_BUTTON_PIN BOOT_PIN   // GPIO28 on the XIAO ESP32-C5 (esp32-hal.h)
@@ -62,6 +63,10 @@ void setup() {
     Serial.printf("[RTC] %s\n", rtcState() == RTC_OK ? "DS3231 ok, clock set"
                               : rtcState() == RTC_LOST ? "DS3231 lost power, waiting for a host"
                               : "none fitted, waiting for a host");
+
+    // Optional microSD card (sd_store.h). No card = no change anywhere.
+    sdProbe();
+    Serial.printf("[SD] %s\n", sdState() == SD_OK ? "card ok" : sdState() == SD_NONE ? "none fitted" : "card error");
 
     // Initialize BLE stack under whatever identity is stored. Both the name
     // and the address have to be settled before init/advertising, which is why

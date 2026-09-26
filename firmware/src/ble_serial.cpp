@@ -6,6 +6,7 @@
 #include "mode_watchers_watch.h"
 #include "alert_log.h"
 #include "rtc_clock.h"
+#include "sd_store.h"
 #include "mbedtls/base64.h"
 #include "mode_capture.h"
 #include <NimBLEDevice.h>
@@ -132,6 +133,16 @@ static volatile uint16_t logReadBoot = 0;
 static volatile uint32_t logReadSecs = 0;
 static volatile uint32_t logReadSkip = 0;
 
+// CMD:SD:* are answered from bleSerialTick(), never the router: card I/O is tens
+// of ms and a listing/file is a bulk reply (see the CMD:SIGS trap).
+static volatile bool sdLsPending = false;
+static volatile bool sdGetPending = false;
+static volatile bool sdRmPending = false;
+static char     sdArgName[13] = "";
+static uint32_t sdArgOff = 0;
+#define SD_GET_MAX    16384   // bytes per CMD:SD:GET request
+#define SD_GET_BATCH  768     // raw bytes per SDF: line (1024 base64 chars)
+
 String getBleConfigJson() {
     JsonDocument doc;
     doc["cfg"] = true;
@@ -176,6 +187,9 @@ String getBleConfigJson() {
     // epoch is the board's UTC now, 0 until a host or the RTC has set it.
     doc["rtc"] = rtcState();
     doc["epoch"] = rtcNow();
+    // Optional microSD (sd_store.h): 0 none, 1 ok, 2 error, 3 full; free in MB.
+    doc["sd"] = sdState();
+    doc["sd_free"] = sdFreeMB();
     String out;
     serializeJson(doc, out);
     return out;
@@ -212,6 +226,62 @@ static void sendConfigReply() {
 // ---------------------------------------------------------------------------
 #define LOG_READ_MAX   512    // records per request, 8 KB
 #define LOG_READ_BATCH 48     // records per base64 line (768 B -> 1024 chars)
+
+// ---------------------------------------------------------------------------
+// Optional microSD (sd_store.h) readback. Same shape as the alert log above:
+// a JSON header, then base64 payload lines, then a done frame. Deferred to
+// bleSerialTick() -- see the CMD:SD:* flags above.
+// ---------------------------------------------------------------------------
+static void sendSdList() {
+    sdProbe();   // re-probe: a card inserted after boot works without a reboot
+    static SdEntry files[128];
+    size_t n = sdList(files, 128);
+    JsonDocument doc;
+    JsonObject o = doc["sdls"].to<JsonObject>();
+    o["state"] = sdState();
+    o["free"] = sdFreeMB();
+    JsonArray a = o["files"].to<JsonArray>();
+    for (size_t i = 0; i < n; i++) {
+        JsonObject f = a.add<JsonObject>();
+        f["n"] = files[i].name;
+        f["s"] = files[i].size;
+    }
+    String out;
+    serializeJson(doc, out);
+    sendReply(out);
+}
+
+static void sendSdFile(const char* name, uint32_t off) {
+    uint8_t* buf = (uint8_t*)malloc(SD_GET_BATCH);
+    uint8_t* b64 = (uint8_t*)malloc((SD_GET_BATCH * 4) / 3 + 8);
+    if (!buf || !b64) { free(buf); free(b64); sendReply("{\"sdget\":{\"err\":\"mem\"}}"); return; }
+    uint32_t size = 0;
+    int32_t got = sdRead(name, off, buf, SD_GET_BATCH, &size);
+    if (got < 0) { free(buf); free(b64); sendReply("{\"sdget\":{\"err\":\"no such file\"}}"); return; }
+    {
+        JsonDocument h;
+        JsonObject o = h["sdget"].to<JsonObject>();
+        o["n"] = name; o["size"] = size; o["off"] = off;
+        String out; serializeJson(h, out); sendReply(out);
+    }
+    uint32_t pos = off, sent = 0;
+    while (got > 0) {
+        size_t olen = 0;
+        if (mbedtls_base64_encode(b64, (SD_GET_BATCH * 4) / 3 + 8, &olen, buf, (size_t)got) != 0) break;
+        String line = "SDF:";
+        line.concat((const char*)b64, olen);
+        sendReply(line);
+        vTaskDelay(pdMS_TO_TICKS(2));
+        pos += got; sent += got;
+        if (sent >= SD_GET_MAX || pos >= size) break;
+        got = sdRead(name, pos, buf, SD_GET_BATCH, &size);
+    }
+    free(buf); free(b64);
+    char done[96];
+    snprintf(done, sizeof(done), "{\"sdget\":{\"done\":true,\"next\":%u,\"more\":%s}}",
+             (unsigned)pos, pos < size ? "true" : "false");
+    sendReply(done);
+}
 
 static void sendAlertLog(uint16_t fromBoot, uint32_t fromSecs, size_t skip) {
     uint8_t* buf = (uint8_t*)malloc(LOG_READ_MAX * ALERT_LOG_REC_SIZE);
@@ -500,6 +570,10 @@ void bleSerialTick() {
         sendAlertLog(logReadBoot, logReadSecs, (size_t)logReadSkip);
     }
 
+    if (sdLsPending) { sdLsPending = false; sendSdList(); }
+    if (sdGetPending) { sdGetPending = false; sendSdFile(sdArgName, sdArgOff); }
+    if (sdRmPending) { sdRmPending = false; sdRemove(sdArgName); sendSdList(); }
+
     // Close the window. A press in the field must not leave the device
     // broadcasting for the rest of the day — that would silently defeat the
     // only reason receive-only exists. A client that connected in time already
@@ -758,6 +832,26 @@ void processIncomingCommand(const String& rawCommand) {
                 logReadSecs = fs;
                 logReadSkip = skip;
                 logReadPending = true;
+            }
+        } else if (rawStr == "CMD:SD:LS") {
+            sdLsPending = true;
+        } else if (rawStr.startsWith("CMD:SD:GET:")) {
+            // CMD:SD:GET:<name>:<offset>. Validated here; the read is deferred.
+            String rest = rawStr.substring(11);
+            int c = rest.indexOf(':');
+            String nm = c > 0 ? rest.substring(0, c) : rest;
+            if (nm.length() <= 12 && sdValidName(nm.c_str())) {
+                strncpy(sdArgName, nm.c_str(), sizeof(sdArgName) - 1);
+                sdArgOff = c > 0 ? (uint32_t)rest.substring(c + 1).toInt() : 0;
+                sdGetPending = true;
+            } else {
+                sendReply("{\"sdget\":{\"err\":\"bad name\"}}");
+            }
+        } else if (rawStr.startsWith("CMD:SD:RM:")) {
+            String nm = rawStr.substring(10);
+            if (nm.length() <= 12 && sdValidName(nm.c_str())) {
+                strncpy(sdArgName, nm.c_str(), sizeof(sdArgName) - 1);
+                sdRmPending = true;
             }
         }
     }
