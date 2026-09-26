@@ -1208,6 +1208,8 @@
         let capBuf = '';              // accumulates CAP lines between file flushes
         let capFlushTimer = null;
         let capReqSecs = 300;
+        let capToSd = false;          // this capture is being written to the board's SD card
+        let capSdFile = null;         // the card file name, from the started ack
         let capStat = { wifi: 0, ble: 0, drops: 0, remain: 0 };
         let capWriteFailed = false;
         let capWakeLock = null;       // keep the screen on during a capture
@@ -1274,7 +1276,10 @@
             const warn = document.getElementById('cap-usb-warn');
             const start = document.getElementById('cap-start-btn');
             const usbOk = capIsUsb() && capNativeFs();
-            if (warn) warn.style.display = usbOk ? 'none' : 'block';
+            const cardOk = sdState === 1;
+            if (warn) warn.style.display = (usbOk || cardOk) ? 'none' : 'block';
+            const sdRow = document.getElementById('cap-to-sd-row');
+            if (sdRow) sdRow.style.display = (usbOk && cardOk) ? 'block' : 'none';
             // Never disable Start: a disabled button swallows the tap, and then
             // nothing says why. startCapture() explains instead.
             if (capturing) {
@@ -1289,8 +1294,12 @@
         }
 
         async function startCapture() {
-            if (!capIsUsb()) { showToast('Not connected — plug the board in by USB cable', '✕'); return; }
-            if (!capNativeFs()) { showToast('File storage unavailable', '✕'); return; }
+            const usb = capIsUsb();
+            const box = document.getElementById('cap-to-sd');
+            // Over Bluetooth the card is the only place a capture can go.
+            capToSd = sdState === 1 && (!usb || (box && box.checked));
+            if (!usb && !capToSd) { showToast('Plug the board in by USB cable, or fit an SD card', '✕'); return; }
+            if (!capToSd && !capNativeFs()) { showToast('File storage unavailable', '✕'); return; }
             // A phone hunting for WiFi keeps sending random-MAC probe requests
             // from right beside the board: the strongest random-MAC device in
             // the capture, which is exactly what a camera at the pole looks
@@ -1307,6 +1316,17 @@
                 "Phones broadcast nonstop and drown out what you're looking for. " +
                 "Mobile data is fine.\n\n" +
                 "OK: start capturing\nCancel: not yet")) return;
+            if (capToSd) {
+                capFileName = null;
+                capSdFile = null;
+                capStat = { wifi: 0, ble: 0, drops: 0, remain: capReqSecs };
+                capturing = true;
+                sendCommand({ raw: 'CMD:CAP:START:' + capReqSecs + (capToSd ? ':SD' : '') });
+                capArmAck(false);
+                showToast('Capturing to the card. You can walk away', '◉');
+                paintCapture();
+                return;
+            }
             capFileName = 'signalsweep-capture-' + capStamp() + '.sscap';
             capBuf = '';
             capWriteFailed = false;
@@ -1324,7 +1344,7 @@
             }
             capturing = true;
             capAcquireWake();   // keep the screen on so the OS can't kill the capture
-            sendCommand({ raw: 'CMD:CAP:START:' + capReqSecs });
+            sendCommand({ raw: 'CMD:CAP:START:' + capReqSecs + (capToSd ? ':SD' : '') });
             capArmAck(false);
             capFlushTimer = setInterval(capFlush, 1000);
             showToast('Capturing — keep the board still', '◉');
@@ -1367,7 +1387,7 @@
             capAckTimer = setTimeout(() => {
                 if (!capturing) return;
                 if (retried) { capAbort("The board didn't start the capture — reconnect and try again", true); return; }
-                sendCommand({ raw: 'CMD:CAP:START:' + capReqSecs });
+                sendCommand({ raw: 'CMD:CAP:START:' + capReqSecs + (capToSd ? ':SD' : '') });
                 capArmAck(true);
             }, 5000);
         }
@@ -1375,6 +1395,17 @@
         // End a capture that did not finish normally. deleteFile: the file holds
         // only its header, so keeping it would just add an empty survey.
         async function capAbort(msg, deleteFile) {
+            // A card capture has no capFileName -- there is nothing on the phone
+            // to delete or flush, and deleteFile:true here must not be handed to
+            // CapFilesystem with a null path.
+            if (capToSd) {
+                capturing = false;
+                clearTimeout(capAckTimer); capAckTimer = null;
+                capReleaseWake();
+                showToast(msg, '✕');
+                paintCapture();
+                return;
+            }
             capturing = false;
             clearTimeout(capAckTimer); capAckTimer = null;
             capReleaseWake();
@@ -1390,16 +1421,40 @@
             renderFinds();
         }
 
+        // Capture frames now ride BLE too: a phone that did not start this
+        // capture (e.g. one begun over USB from a PC) can receive an unsolicited
+        // frame, including a terminal error -- acting on it would delete a file
+        // this session never opened. Only react while WE are capturing.
         function handleCapStat(cap) {
+            if (!capturing) return;
             clearTimeout(capAckTimer); capAckTimer = null;
-            if (cap.error) { capAbort('Capture: ' + cap.error, true); return; }
-            if ('started' in cap) return;   // ack only
+            if (cap.error) { capAbort('Capture: ' + cap.error, !capToSd); return; }
+            if ('started' in cap) { if (cap.file) capSdFile = cap.file; return; }
             capStat.wifi = cap.wifi || 0;
             capStat.ble = cap.ble || 0;
             capStat.drops = cap.drops || 0;
             capStat.remain = cap.remain || 0;
-            if (cap.done) { capFinish(); return; }
+            if (cap.done) { if (capToSd) capFinishSd(); else capFinish(); return; }
             paintCapture();
+        }
+
+        // A card capture never touches the phone's storage: say where it is and
+        // how to get it.
+        function capFinishSd() {
+            capturing = false;
+            capReleaseWake();
+            const total = capStat.wifi + capStat.ble;
+            document.getElementById('cap-summary').textContent =
+                total + ' packets saved on the card' + (capSdFile ? ' as ' + capSdFile : '') +
+                (capStat.drops > 0 ? ', ' + capStat.drops + ' dropped' : ', none dropped') +
+                '. Download it from Settings › Recording › SD card.';
+            document.getElementById('cap-path').textContent = '';
+            lastAnalysis = null;
+            paintAnalysis();
+            document.getElementById('cap-idle').style.display = 'none';
+            document.getElementById('cap-running').style.display = 'none';
+            document.getElementById('cap-done').style.display = 'block';
+            showToast('Capture saved on the card', '✓');
         }
 
         async function capFinish() {

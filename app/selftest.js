@@ -157,6 +157,14 @@ console.log('[signalsweep self-test] app reads every CMD:CFG field: ok');
     console.log('[signalsweep self-test] SD commands wired, router stays off the card: ok');
 }
 
+// Survey capture must be able to ask the board to write straight to the card.
+{
+    const fail = [];
+    if (!/'CMD:CAP:START:' \+ capReqSecs \+ \(capToSd \? ':SD' : ''\)/.test(appSrc)) fail.push('Survey never asks the board to capture to the card');
+    if (fail.length) { console.log('FAIL:', fail.join('; ')); process.exit(1); }
+    console.log('[signalsweep self-test] Survey card-capture wired: ok');
+}
+
 // C5 port: the bench-measured radio settings must stay behind the C5 guard, and
 // the S3 path must keep its own values (the S3 build is byte-identical by contract).
 {
@@ -423,8 +431,8 @@ const usbFail = [];
 if (/const \{ granted \} = await window\.UsbSerial\.requestPermission/.test(appSrc)) usbFail.push("trusts requestPermission's granted flag again");
 if (!/UsbSerial\.hasPermission\(/.test(appSrc)) usbFail.push('connect no longer re-checks hasPermission');
 if (!/addListener\('error'[\s\S]{0,400}?onDeviceDisconnected\(\)/.test(appSrc)) usbFail.push('USB stream error no longer disconnects');
-if (!/sendCommand\(\{ raw: 'CMD:CAP:START:' \+ capReqSecs \}\);\s*capArmAck\(false\)/.test(appSrc)) usbFail.push('capture start watchdog not armed');
-if (!/function handleCapStat\(cap\) \{\s*clearTimeout\(capAckTimer\)/.test(appSrc)) usbFail.push('cap frames no longer disarm the watchdog');
+if (!/sendCommand\(\{ raw: 'CMD:CAP:START:' \+ capReqSecs \+ \(capToSd \? ':SD' : ''\) \}\);\s*capArmAck\(false\)/.test(appSrc)) usbFail.push('capture start watchdog not armed');
+if (!/function handleCapStat\(cap\) \{[\s\S]{0,400}?clearTimeout\(capAckTimer\)/.test(appSrc)) usbFail.push('cap frames no longer disarm the watchdog');
 if (!/function onDeviceDisconnected\(\)[\s\S]{0,800}?if \(capturing\) capAbort\(/.test(appSrc)) usbFail.push('disconnect no longer ends a running capture');
 // Back used to exitApp(): the page died, the BLE link and USB port did not, and
 // the reopened app could not re-adopt them (reconcile queried before initialize).
