@@ -1404,9 +1404,12 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
                     // "flock-" as a PREFIX: the Falcon's own hotspot is "Flock-" +
                     // the MAC's last 6 chars (WifiApService, 2026-09-21 firmware
                     // dump), and a bare substring matched home routers named
-                    // "FlockNation" (TP-Link, in our own captures).
-                    if (!ssidHit &&
-                        (ssidStr.startsWith("flock-") || ssidStr.indexOf("fs_") >= 0 || ssidStr.indexOf("pigvision") >= 0)) {
+                    // "FlockNation" (TP-Link, in our own captures). Exactly 12
+                    // chars because the suffix's colon format is unconfirmed but
+                    // its length is not. "fs_" / "pigvision" were BLE *name*
+                    // patterns, never SSIDs: as substrings they matched
+                    // "Chiefs_Guest" and logged a Ubiquiti AP as an ALPR.
+                    if (!ssidHit && ssidStr.length() == 12 && ssidStr.startsWith("flock-")) {
                         ssidHit = true;
                         wifiConfidence += W_WIFI_SSID;
                         if (W_WIFI_SSID > bestWeight) {

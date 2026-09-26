@@ -341,6 +341,13 @@ if (!/if\s*\(sig\.category == "Flock Safety"\) flockOui = true;/.test(fw)) flock
 // The Lite-On IE fingerprint bytes, in order: 50 6f 9a 16 03 01 03 at elen 7.
 if (!/elen == 7[\s\S]{0,200}0x50[\s\S]{0,60}0x6F[\s\S]{0,60}0x9A[\s\S]{0,60}0x16[\s\S]{0,40}0x03[\s\S]{0,40}0x01[\s\S]{0,40}0x03/.test(fw))
     flockFail.push('Lite-On IE-sig bytes (50 6f 9a 16 03 01 03 / elen 7) not found in order');
+// The only SSID Flock firmware builds is "Flock-" + 6 chars (WifiApService,
+// 2026-09-21 dump). A substring rule ("fs_", "pigvision") beeps at "Chiefs_Guest":
+// a Ubiquiti AP logged as ALPR on a 2026-09-25 drive.
+const ssidRule = (fw.match(/if \(!ssidHit &&[\s\S]{0,200}?\)\) \{/) || [''])[0];
+if (!/startsWith\("flock-"\)/.test(ssidRule) || !/length\(\) == 12/.test(ssidRule))
+    flockFail.push('Flock SSID rule must be the "flock-" prefix at exactly 12 chars');
+if (/indexOf\(/.test(ssidRule)) flockFail.push('Flock SSID rule matches a substring again (fs_/pigvision) -- false positives on ordinary networks');
 
 // BLE Remote ID is UUID 0xFFFA, app code 0x0D, a message counter, then the
 // message. Decoding from offset+5 (the counter) shifted every field a byte.
