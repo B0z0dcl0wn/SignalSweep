@@ -306,7 +306,15 @@ static void captureDrainTask(void*) {
         drainRing(&bleRing, 100);
 
         uint32_t now = millis();
-        if (now - lastStat >= 1000) { lastStat = now; emitStat(false); }
+        if (now - lastStat >= 1000) {
+            lastStat = now;
+            // FatFs writes the file's size to the directory only on sync or
+            // close, so an unsynced capture is 0 bytes after a power cut or a
+            // pulled card. Once a second costs one directory write; the data
+            // itself stays batched in sdBuf between syncs.
+            if (capToSd && !capSdError) { sdFlushBuf(); sdStreamSync(); }
+            emitStat(false);
+        }
 
         if (stopRequested || capSdError || (capEndMs != 0 && now >= capEndMs)) {
             capturing = false;                       // stop producers
@@ -453,6 +461,11 @@ static void startCapture(uint32_t durationSecs, bool toSd) {
 
 void stopCapture() {
     if (capturing) stopRequested = true;
+    // A START still queued for captureTick() is cancelled too, or a STOP sent
+    // straight after it would be followed by a capture nobody wants.
+    portENTER_CRITICAL(&capStartMux);
+    capStartPending = false;
+    portEXIT_CRITICAL(&capStartMux);
 }
 
 bool isCapturing() {
@@ -463,10 +476,11 @@ void captureTick() {
     // Resume the detector FIRST. A START that arrived while the previous
     // capture's drain task was still cleaning up must never race a fresh
     // startCapture() against that cleanup (I1) -- processing the restart
-    // before the pending start keeps this tick strictly sequential: the old
-    // capture is fully torn down (drainTaskHandle is already NULL by the time
-    // needDetectorRestart is set -- see captureDrainTask's stop block) before
-    // anything new can begin.
+    // before the pending start keeps this tick strictly sequential. The drain
+    // task sets needDetectorRestart BEFORE it clears drainTaskHandle (see its
+    // stop block), so this tick can resume the detector while the handle is
+    // still set; the pending-start branch below then sees the handle and waits
+    // a tick, which is what keeps a new capture off the old one's teardown.
     if (needDetectorRestart) {
         needDetectorRestart = false;
         startWatchersWatch();

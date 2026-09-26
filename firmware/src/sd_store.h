@@ -56,13 +56,21 @@ size_t sdList(SdEntry* out, size_t max, size_t* totalOut);
 /** @brief Read up to n bytes at off. Returns bytes read (0 at EOF), -1 if missing/invalid. */
 int32_t sdRead(const char* name, uint32_t off, uint8_t* buf, size_t n, uint32_t* sizeOut);
 bool sdRemove(const char* name);
+/** @brief True if `name` is the capture stream being written right now. */
+bool sdIsOpen(const char* name);
 
-/** @brief First CAPnnnnn.SSC that does not exist yet. */
+/** @brief One past the highest CAPnnnnn.SSC on the card. */
 bool sdNextCaptureName(char out[13]);
 
 /** @brief One long-lived write stream (captures). Only one open at a time. */
 bool sdStreamOpen(const char* name);
 bool sdStreamWrite(const uint8_t* data, size_t len);
+/**
+ * @brief Commit the stream's size to the directory entry. FatFs only writes
+ * that on sync/close, so without this a power cut or a pulled card leaves a
+ * 0-byte capture however much was written. Call about once a second.
+ */
+bool sdStreamSync();
 void sdStreamClose();
 
 #endif // SD_STORE_H

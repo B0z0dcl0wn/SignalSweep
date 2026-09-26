@@ -33,12 +33,23 @@ static void refreshFree() {
     freeMB = total > used ? (uint32_t)((total - used) >> 20) : 0;
 }
 
-// Give up on the card until the next successful probe.
+// Give up on the card until the next successful probe. FULL only if the card
+// still answers with a real size and no room: a pulled card reads total 0, and
+// calling that "full" sent people hunting for space on a card that was gone.
+// Anything else is ERROR, and sd_free keeps the last value the card reported.
 static void fail() {
+    uint32_t lastKnown = freeMB;
     if (stream) stream.close();
     streamName[0] = 0;
-    refreshFree();
-    state = (freeMB == 0) ? SD_FULL : SD_ERROR;
+    uint64_t total = SD.totalBytes(), used = SD.usedBytes();
+    uint64_t freeB = total > used ? total - used : 0;
+    if (total > 0 && (freeB >> 20) == 0) {
+        freeMB = 0;
+        state = SD_FULL;
+    } else {
+        freeMB = lastKnown;
+        state = SD_ERROR;
+    }
     SD.end();
 }
 
@@ -197,6 +208,11 @@ int32_t sdRead(const char* name, uint32_t off, uint8_t* buf, size_t n, uint32_t*
     return got;
 }
 
+bool sdIsOpen(const char* name) {
+    SdLock l;
+    return name && streamName[0] && strcmp(name, streamName) == 0;
+}
+
 bool sdRemove(const char* name) {
     SdLock l;
     if (state != SD_OK || !sdValidName(name)) return false;
@@ -206,16 +222,28 @@ bool sdRemove(const char* name) {
     return SD.remove(path);
 }
 
+// One directory pass for the highest CAPnnnnn.SSC, then one past it. The old
+// probe-each-number loop was an exists() per capture already on the card.
 bool sdNextCaptureName(char out[13]) {
     SdLock l;
     if (state != SD_OK) return false;
-    char path[32];
-    for (uint32_t i = 1; i <= 99999; i++) {
-        snprintf(out, 13, "CAP%05u.SSC", (unsigned)i);
-        pathOf(out, path);
-        if (!SD.exists(path)) return true;
+    File dir = SD.open(SD_DIR);
+    if (!dir) return false;
+    uint32_t maxN = 0;
+    for (File e = dir.openNextFile(); e; e = dir.openNextFile()) {
+        if (e.isDirectory()) continue;
+        const char* full = e.name();
+        const char* base = strrchr(full, '/');
+        base = base ? base + 1 : full;
+        if (!sdValidName(base) || !hasPrefixExt(base, "CAP", "SSC")) continue;
+        uint32_t n = 0;
+        const char* p = base + 3;
+        for (; *p >= '0' && *p <= '9'; p++) n = n * 10 + (uint32_t)(*p - '0');
+        if (*p == '.' && n > maxN) maxN = n;
     }
-    return false;
+    if (maxN >= 99999) return false;
+    snprintf(out, 13, "CAP%05u.SSC", (unsigned)(maxN + 1));
+    return true;
 }
 
 bool sdStreamOpen(const char* name) {
@@ -235,6 +263,13 @@ bool sdStreamWrite(const uint8_t* data, size_t len) {
     if (state != SD_OK || !stream) return false;
     if (!writeGuard(len)) return false;
     if (stream.write(data, len) != len) { fail(); return false; }
+    return true;
+}
+
+bool sdStreamSync() {
+    SdLock l;
+    if (state != SD_OK || !stream) return false;
+    stream.flush();
     return true;
 }
 

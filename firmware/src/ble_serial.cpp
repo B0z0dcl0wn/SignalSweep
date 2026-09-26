@@ -269,6 +269,9 @@ static void sendSdFile(const char* name, uint32_t off) {
     uint8_t* buf = (uint8_t*)malloc(SD_GET_BATCH);
     uint8_t* b64 = (uint8_t*)malloc((SD_GET_BATCH * 4) / 3 + 8);
     if (!buf || !b64) { free(buf); free(b64); sendReply("{\"sdget\":{\"err\":\"mem\"}}"); return; }
+    // The capture being written right now is not readable yet (sdRead()
+    // refuses it); say so, rather than "no such file" for a file in the list.
+    if (sdIsOpen(name)) { free(buf); free(b64); sendReply("{\"sdget\":{\"err\":\"busy\"}}"); return; }
     uint32_t size = 0;
     int32_t got = sdRead(name, off, buf, SD_GET_BATCH, &size);
     if (got < 0) { free(buf); free(b64); sendReply("{\"sdget\":{\"err\":\"no such file\"}}"); return; }
@@ -615,8 +618,12 @@ void bleSerialTick() {
         char nm[13];
         strncpy(nm, (const char*)sdRmName, sizeof(nm) - 1);
         nm[sizeof(nm) - 1] = 0;
-        sdRemove(nm);
-        sendSdList();
+        // Failures answer on their own key, one small line; success answers
+        // with the fresh listing, which is what the app repaints from.
+        if (sdIsOpen(nm))          sendReply("{\"sdrm\":{\"err\":\"busy\"}}");
+        else if (sdState() == SD_OK && !sdExists(nm)) sendReply("{\"sdrm\":{\"err\":\"no such file\"}}");
+        else if (!sdRemove(nm))    sendReply("{\"sdrm\":{\"err\":\"card error\"}}");
+        else                       sendSdList();
     }
 
     // Close the window. A press in the field must not leave the device
@@ -899,7 +906,7 @@ void processIncomingCommand(const String& rawCommand) {
                 strncpy((char*)sdRmName, nm.c_str(), sizeof(sdRmName) - 1);
                 sdRmPending = true;
             } else {
-                sendReply("{\"sdget\":{\"err\":\"bad name\"}}");
+                sendReply("{\"sdrm\":{\"err\":\"bad name\"}}");
             }
         }
     }

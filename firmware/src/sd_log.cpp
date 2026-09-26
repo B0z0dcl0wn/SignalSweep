@@ -11,6 +11,10 @@
 static const char* CAT_NAMES[] = {"ALPR/Camera", "Body cam", "Drone", "Tracker", "Other"};
 
 static uint32_t anchorOnCard = 0;   // anchor last written into this boot's file
+// This boot's CSV has been seen or created. Only sdLogWrite() makes it, so
+// until it has there is nothing for sdLogTick() to anchor -- and no reason to
+// ask the card every second.
+static bool     logFileSeen  = false;
 
 String sdLogFileName(uint16_t boot) {
     char n[13];
@@ -82,13 +86,16 @@ void sdLogWrite(const SdLogFields& f) {
         uint32_t anchor = alertLogAnchorEpoch();
         if (anchor) writeAnchorLine(name.c_str(), anchor);
     }
+    logFileSeen = true;
     String line = sdLogCsvLine(boot, f, rtcNow());
     sdAppend(name.c_str(), (const uint8_t*)line.c_str(), line.length());
 }
 
 void sdLogTick() {
     uint32_t anchor = alertLogAnchorEpoch();
-    if (!anchor || anchor == anchorOnCard || sdState() != SD_OK) return;
+    if (!logFileSeen || !anchor || anchor == anchorOnCard || sdState() != SD_OK) return;
+    // Still checked: a card swapped since would otherwise get a headerless
+    // file that starts with the anchor. Reached only when the anchor moves.
     String name = sdLogFileName(alertLogBoot());
     if (sdExists(name.c_str())) writeAnchorLine(name.c_str(), anchor);
 }
