@@ -3243,8 +3243,19 @@
             const st = sdRx;
             if (!st) return;
             if (o.err) { st.fail('device: ' + o.err); return; }
-            if ('size' in o) { st.size = o.size; st.arm(); return; }
+            // The header and the done frame both echo the request's offset. A
+            // retry re-asks the same offset, so the header for it also clears
+            // any stragglers from the attempt it replaced; a done frame that
+            // arrives before this attempt's header (or for another offset)
+            // belongs to a request we already gave up on and is ignored.
+            if ('size' in o) {
+                if (o.off !== st.pageOff) return;
+                st.size = o.size; st.hdr = true;
+                st.parts.length = st.pageStart; st.pageBytes = 0; st.bad = 0;
+                st.arm(); return;
+            }
             if (!o.done) return;
+            if (('off' in o && o.off !== st.pageOff) || !st.hdr) return;
             if (st.bad || st.pageBytes !== o.next - st.pageOff) {
                 st.retry('transfer kept dropping data — try USB');
                 return;
@@ -3270,9 +3281,9 @@
             const parts = await new Promise(function (resolve, reject) {
                 const st = {
                     name: name, parts: [], size: f.s, next: 0, timer: null,
-                    got: 0, pageOff: 0, pageStart: 0, pageBytes: 0, bad: 0, retries: 0,
+                    got: 0, pageOff: 0, pageStart: 0, pageBytes: 0, bad: 0, retries: 0, hdr: false,
                     get: function (off) {
-                        st.pageOff = off; st.pageStart = st.parts.length; st.pageBytes = 0; st.bad = 0;
+                        st.pageOff = off; st.pageStart = st.parts.length; st.pageBytes = 0; st.bad = 0; st.hdr = false;
                         st.arm();
                         sendCommand({ raw: 'CMD:SD:GET:' + name + ':' + off });
                     },
@@ -3284,7 +3295,7 @@
                         st.parts.length = st.pageStart;
                         st.get(st.pageOff);
                     },
-                    // Pages are 6 KB now (SD_GET_MAX), well under a second
+                    // A page is 8 lines (SD_GET_LINES), well under a second
                     // over BLE, so 5 s of silence means the page was lost.
                     arm: function () { clearTimeout(st.timer); st.timer = setTimeout(function () { st.retry('the board stopped replying'); }, SD_PAGE_TIMEOUT_MS); },
                     // Only clear sdRx if it's still THIS attempt: a disconnect

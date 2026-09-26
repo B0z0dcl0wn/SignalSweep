@@ -541,13 +541,48 @@ console.log('[signalsweep self-test] alert log record + write path: ok');
     const bs = readFileSync(new URL('../firmware/src/ble_serial.cpp', import.meta.url), 'utf8');
     const ww = readFileSync(new URL('../firmware/src/mode_watchers_watch.cpp', import.meta.url), 'utf8');
     if ((bs.match(/vTaskDelay\(pdMS_TO_TICKS\(BULK_LINE_PACE_MS\)\)/g) || []).length !== 2) rs.push('sendSdFile/sendAlertLog no longer pause BULK_LINE_PACE_MS per line');
-    const getMax = +((bs.match(/#define SD_GET_MAX\s+(\d+)/) || [])[1]);
-    const getBatch = +((bs.match(/#define SD_GET_BATCH\s+(\d+)/) || [])[1]);
-    if (!(getMax <= 8 * getBatch && getMax % getBatch === 0)) rs.push('SD_GET_MAX must be a multiple of SD_GET_BATCH and at most 8 lines');
+    const getLines = +((bs.match(/#define SD_GET_LINES\s+(\d+)/) || [])[1]);
+    if (!(getLines >= 1 && getLines <= 8)) rs.push('SD_GET_LINES (lines per CMD:SD:GET page) must be 1..8');
+    if (!/sent >= SD_GET_LINES \* batch/.test(bs)) rs.push('the SD page no longer scales with the line size');
     if (!/static void sendReply[\s\S]{0,120}?sendUsbLine\(payload\)/.test(bs)) rs.push('sendReply bypasses the USB line mutex');
     if (!/sendBleSerial\(jsonStr\);\s*sendUsbLine\(jsonStr\)/.test(ww)) rs.push('the 1 Hz push bypasses the USB line mutex');
     if (rs.length) { console.log('FAIL: rx resync:', rs); process.exit(1); }
     console.log('[signalsweep self-test] BLE-only reassembler resync: ok');
+}
+
+// BLE backpressure, the root cause of the torn/lost messages. notify() in both
+// NimBLE-Arduino versions drops a notification silently when the mbuf pool is
+// full; sendBleSerial() must go through notifyChunk(), which sees the result
+// and resends the same chunk on a full queue, bounded.
+{
+    const rs = [];
+    const bs = readFileSync(new URL('../firmware/src/ble_serial.cpp', import.meta.url), 'utf8');
+    const cap = readFileSync(new URL('../firmware/src/mode_capture.cpp', import.meta.url), 'utf8');
+    const ww = readFileSync(new URL('../firmware/src/mode_watchers_watch.cpp', import.meta.url), 'utf8');
+    const appSrc = readFileSync(new URL('./public/app.js', import.meta.url), 'utf8');
+    const nc = (bs.match(/static bool notifyChunk\([\s\S]*?\n\}/) || [''])[0];
+    if (!/ble_hs_mbuf_from_flat\(/.test(nc) || !/ble_gattc_notify_custom\(/.test(nc)) rs.push('notifyChunk no longer calls the host API where the result is visible');
+    if (!/rc != BLE_HS_ENOMEM && rc != BLE_HS_EBUSY\) return false/.test(nc)) rs.push('notifyChunk no longer retries only on a full queue');
+    if (!/for \(;;\)[\s\S]*vTaskDelay\(pdMS_TO_TICKS\(NOTIFY_RETRY_MS\)\)/.test(nc)) rs.push('notifyChunk no longer waits and resends the same chunk');
+    if (!/NOTIFY_GIVEUP_MS\) return false/.test(nc)) rs.push('notifyChunk retry is no longer bounded');
+    const sbs = (bs.match(/void sendBleSerial\([\s\S]*?\n\}/) || [''])[0];
+    if (!/notifyChunk\(/.test(sbs)) rs.push('sendBleSerial bypasses notifyChunk');
+    if (/->notify\(/.test(bs)) rs.push('a bare notify() is back (it drops silently on a full pool)');
+    if (!/while \(ok && offset < length\)/.test(sbs)) rs.push('sendBleSerial keeps sending a message after a chunk was given up on');
+    if (!/\(negotiatedMtu - 3 - 5\) \/ 4\) \* 3/.test(bs) || !/if \(n < 48\) n = 48;/.test(bs)) rs.push('bulkLineBytes no longer sizes a BLE line to one notification');
+    if (!/perLine = bulkLineBytes\(viaBle\) \/ ALERT_LOG_REC_SIZE/.test(bs)) rs.push('LOG: lines no longer carry whole 16-byte records');
+    if (!/\\"done\\":true,\\"off\\":%u,\\"next\\":%u/.test(bs)) rs.push('the sdget done frame no longer echoes its request offset');
+    if (!/'off' in o && o\.off !== st\.pageOff/.test(appSrc) || !/if \(o\.off !== st\.pageOff\) return;/.test(appSrc)) rs.push('the app no longer ignores a stale sdget header/done');
+    if (!/if \(isCapturingToUsb\(\)\) \{ sendReply\("\{\\"sdget\\":\{\\"err\\":\\"busy\\"\}\}"\)/.test(bs)) rs.push('CMD:SD:GET is no longer refused during a USB capture');
+    if (/Serial\.print\("CAP:"\)/.test(cap) || !/sendUsbLine\("CAP:", b64, olen\)/.test(cap)) rs.push('CAP: lines bypass the USB line mutex');
+    if (!/static void capReply[\s\S]{0,80}?sendUsbLine\(/.test(cap)) rs.push('capReply bypasses the USB line mutex');
+    if (/Serial\.printf\("\[ALERT\]/.test(ww)) rs.push('[ALERT] bypasses the USB line mutex');
+    // A pulled card must not list as a healthy empty one (bench, 2026-09-26).
+    const sd = readFileSync(new URL('../firmware/src/sd_store.cpp', import.meta.url), 'utf8');
+    if (!/if \(!dir\) \{ fail\(\); return 0; \}/.test(sd)) rs.push('sdList no longer treats a failed directory open as a card failure');
+    if (!/if \(wasOk && sdState\(\) != SD_OK && sdProbe\(\)\)/.test(bs)) rs.push('sendSdList no longer re-probes a card that failed during the listing');
+    if (rs.length) { console.log('FAIL: BLE backpressure:', rs); process.exit(1); }
+    console.log('[signalsweep self-test] BLE backpressure + page checks: ok');
 }
 
 const results = await global.__signalsweepSelfTest();
