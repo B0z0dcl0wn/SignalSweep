@@ -146,8 +146,15 @@ static volatile bool     sdRmPending  = false;
 static volatile char     sdGetName[13] = "";
 static volatile uint32_t sdGetOff      = 0;
 static volatile char     sdRmName[13]  = "";
-#define SD_GET_MAX    16384   // bytes per CMD:SD:GET request
+#define SD_GET_MAX    6144    // bytes per CMD:SD:GET request (8 lines; a multiple of SD_GET_BATCH)
 #define SD_GET_BATCH  768     // raw bytes per SDF: line (1024 base64 chars)
+// Pause after each bulk base64 line (SDF:, LOG:). The per-notification 2 ms
+// yield in sendBleSerial() is not enough for a bulk reply, even from loop():
+// on the bench (S3 + OnePlus, 2026-09-26) a 3673 B CMD:SD:GET over BLE lost
+// its last two lines AND the done frame -- ~3 notifications per line, back to
+// back, alongside the 1 Hz push, overflow NimBLE's notify buffers and the tail
+// is dropped silently. 25 ms per 768 B line is ~30 KB/s, fine on USB too.
+#define BULK_LINE_PACE_MS 25
 
 String getBleConfigJson() {
     JsonDocument doc;
@@ -211,7 +218,7 @@ String getBleConfigJson() {
 // app supports, and the one used on the bench.
 static void sendReply(const String& payload) {
     sendBleSerial(payload);
-    if (Serial) Serial.println(payload);
+    sendUsbLine(payload);
 }
 
 static void sendConfigReply() {
@@ -289,7 +296,7 @@ static void sendSdFile(const char* name, uint32_t off) {
         String line = "SDF:";
         line.concat((const char*)b64, olen);
         sendReply(line);
-        vTaskDelay(pdMS_TO_TICKS(2));
+        vTaskDelay(pdMS_TO_TICKS(BULK_LINE_PACE_MS));
         pos += got; sent += got;
         if (sent >= SD_GET_MAX || pos >= size) break;
         got = sdRead(name, pos, buf, SD_GET_BATCH, &size);
@@ -367,9 +374,8 @@ static void sendAlertLog(uint16_t fromBoot, uint32_t fromSecs, size_t skip) {
         String line = "LOG:";
         line.concat((const char*)b64, olen);
         sendReply(line);
-        // Same courtesy the 1 Hz push pays: let the notify queue drain rather
-        // than stacking chunks faster than the link carries them.
-        vTaskDelay(pdMS_TO_TICKS(2));
+        // Let the notify queue drain between lines -- see BULK_LINE_PACE_MS.
+        vTaskDelay(pdMS_TO_TICKS(BULK_LINE_PACE_MS));
     }
     free(b64);
     free(buf);
@@ -405,6 +411,21 @@ static uint16_t negotiatedMtu = 23;
 // from loop() (CMD:SIGS is ~20 chunks), the app sees two half-JSONs and throws
 // both away. Created lazily on first use; a null mutex just means "send".
 static SemaphoreHandle_t txMutex = NULL;
+
+// Same rule on the USB mirror. Serial.println() of a 1 KB line is not atomic
+// across tasks: the detector's 1 Hz push landed in the middle of an SDF: line
+// on the bench, and a USB download came back 72 bytes long with the push's
+// letters decoded as file data. Created in bleSerialInit() (before the
+// detector task exists), lazily as a fallback.
+static SemaphoreHandle_t usbTxMutex = NULL;
+
+void sendUsbLine(const String& line) {
+    if (!Serial) return;   // skip the USB mirror when no host is attached
+    if (usbTxMutex == NULL) usbTxMutex = xSemaphoreCreateMutex();
+    if (usbTxMutex) xSemaphoreTake(usbTxMutex, portMAX_DELAY);
+    Serial.println(line);
+    if (usbTxMutex) xSemaphoreGive(usbTxMutex);
+}
 
 /**
  * @brief (Re)start advertising the Nordic UART Service.
@@ -603,7 +624,7 @@ void bleSerialTick() {
     if (sdGetPending) {
         sdGetPending = false;
         // Copy the name/offset into locals before calling: sendSdFile()'s
-        // send loop runs for a while (up to SD_GET_MAX, one vTaskDelay(2) per
+        // send loop runs for a while (up to SD_GET_MAX, one BULK_LINE_PACE_MS pause per
         // batch), and reading the volatile globals again partway through
         // would let a later CMD:SD:GET on this same tick's queue -- or a
         // torn write from the router mid-copy -- switch files under it.
@@ -930,6 +951,7 @@ static RxCallbacks rxCallbacks;
 
 void bleSerialInit() {
     ESP_LOGI(TAG, "Initializing BLE Serial Service (Nordic UART Service)...");
+    if (usbTxMutex == NULL) usbTxMutex = xSemaphoreCreateMutex();
 
     pServer = NimBLEDevice::createServer();
 #if CONFIG_IDF_TARGET_ESP32C5
