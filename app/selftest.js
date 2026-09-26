@@ -153,6 +153,13 @@ console.log('[signalsweep self-test] app reads every CMD:CFG field: ok');
     if (!/data-sd-dl/.test(appSrc) || /onclick="sdDownload\('/.test(appSrc + htmlSrc))
         fail.push('card file names must ride data- attributes, never an onclick string');
     if (!/signalsweep-capture-' \+/.test(appSrc.slice(appSrc.indexOf('function sdSaveDownload')))) fail.push('card captures must save under the Survey list name pattern');
+    // RM answers on its own key; the app must show the failure.
+    if (!/\\"sdrm\\"/.test(bsrc) || !/data\.sdrm/.test(appSrc)) fail.push('RM failures must ride {"sdrm"} and the app must handle it');
+    // A capture file that is never synced is 0 bytes after a power cut.
+    const msrc = readFileSync(new URL('../firmware/src/mode_capture.cpp', import.meta.url), 'utf8');
+    if (!/sdStreamSync\(/.test(msrc)) fail.push('the capture drain loop never syncs the card stream');
+    // A download page is trusted only if its decoded bytes add up to `next`.
+    if (!/pageBytes !== o\.next - st\.pageOff/.test(appSrc)) fail.push('SD download no longer checks each page for holes');
     if (fail.length) { console.log('FAIL:', fail.join('; ')); process.exit(1); }
     console.log('[signalsweep self-test] SD commands wired, router stays off the card: ok');
 }
@@ -433,7 +440,7 @@ if (!/UsbSerial\.hasPermission\(/.test(appSrc)) usbFail.push('connect no longer 
 if (!/addListener\('error'[\s\S]{0,400}?onDeviceDisconnected\(\)/.test(appSrc)) usbFail.push('USB stream error no longer disconnects');
 if (!/sendCommand\(\{ raw: 'CMD:CAP:START:' \+ capReqSecs \+ \(capToSd \? ':SD' : ''\) \}\);\s*capArmAck\(false\)/.test(appSrc)) usbFail.push('capture start watchdog not armed');
 if (!/function handleCapStat\(cap\) \{\s*(\/\/[^\n]*\n\s*)*if \(!capturing\) return;\s*clearTimeout\(capAckTimer\)/.test(appSrc)) usbFail.push('cap frames no longer disarm the watchdog');
-if (!/function onDeviceDisconnected\(\)[\s\S]{0,800}?if \(capturing\) capAbort\(/.test(appSrc)) usbFail.push('disconnect no longer ends a running capture');
+if (!/function onDeviceDisconnected\(\)[\s\S]{0,1200}?if \(capturing\) capAbort\(/.test(appSrc)) usbFail.push('disconnect no longer ends a running capture');
 // Back used to exitApp(): the page died, the BLE link and USB port did not, and
 // the reopened app could not re-adopt them (reconcile queried before initialize).
 if (/addListener\('backButton'[^\n]*exitApp/.test(appSrc)) usbFail.push('back button finishes the Activity again (exitApp)');

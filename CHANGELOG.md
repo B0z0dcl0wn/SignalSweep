@@ -53,17 +53,39 @@ All notable changes to SignalSweep are recorded here.
   router. A card pulled or filled mid-capture stops the capture, keeps what
   was written and resumes the detector; the error frame is terminal (no
   trailing `done`), so an app watching for the finish doesn't quietly delete
-  a good partial file.
+  a good partial file. **Trap: FatFs writes a file's size to its directory
+  entry only on sync or close,** so an unsynced capture read back as 0 bytes
+  after a power cut or a pull however much had been written; the drain task
+  now calls `sdStreamSync()` once a second (the data itself stays batched),
+  which is what makes "keeps the partial file" true. The file being written
+  is not readable or deletable until it closes: `CMD:SD:GET` answers
+  `{"sdget":{"err":"busy"}}` and `CMD:SD:RM` `{"sdrm":{"err":"busy"}}`.
+  A link lost mid card-capture tells you the board is still capturing,
+  rather than claiming the capture stopped.
 - **Never format a card, never delete a file on its own, never retry a
   failing card in a loop.** A write failure marks the card errored (or full)
-  and every later call is refused until the next probe. Getting a card back
+  and every later call is refused until the next probe. It is "full" only
+  if the card still reports a real size with no room left: a pulled card
+  reads a total of 0, and calling that full sent people looking for space
+  on a card that was gone, so it reports an error and `sd_free` keeps the
+  last value the card gave. Getting a card back
   after an error is a deliberate re-probe (a fresh `CMD:SD:LS`, or a capture
   about to start), never automatic background retrying.
 - Settings > Recording gets an SD card block: status, a file list (newest
   first), download (a BLE download of a large capture warns first — USB is
   fast, BLE is not) and delete. Downloaded captures land in the Survey list
-  like any other `.sscap`. Site Survey's Investigate offers "save to card
-  instead" on USB when a card is present.
+  like any other `.sscap`; a downloaded log keeps the card's boot number in
+  its name. Site Survey's Investigate offers "save to card instead" on USB
+  when a card is present. A delete that fails answers on its own key,
+  `{"sdrm":{"err":...}}` (bad name, busy, no such file, card error), and
+  the app says so; a successful one answers with a fresh listing.
+- **Trap: a card download trusts no page it can't add up.** BLE
+  notifications are unacknowledged, so one `SDF:` line lost or garbled left
+  a silent hole while the `next` offset carried on. Each `CMD:SD:GET` page
+  now counts the bytes that actually decoded; if they don't equal
+  `next - offset` the page is thrown away and asked for again (three tries,
+  then "try USB"), and the file is saved only when the total equals the
+  size the board reported.
 - **Bench-measured, not yet proven with a real phone in hand:** a 30 GB
   FAT32 card mounts in ~13 ms; SPI at 4 MHz writes ~360 KB/s; the capture
   drain task (8192-byte stack) had 5764 bytes free at the SD stop path. The

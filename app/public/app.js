@@ -1123,7 +1123,10 @@
             }
             // Card download payload (SDF: base64), only while a download runs.
             if (sdRx && dataStr.charCodeAt(0) === 83 /* 'S' */ && dataStr.startsWith('SDF:')) {
-                try { sdRx.parts.push(unb64(dataStr.slice(4))); } catch (e) {}
+                // A line that will not decode is counted, never dropped quietly:
+                // the page's done frame checks the byte count and re-asks.
+                try { const b = unb64(dataStr.slice(4)); sdRx.parts.push(b); sdRx.pageBytes += b.length; }
+                catch (e) { sdRx.bad++; }
                 sdRx.arm();
                 return;
             }
@@ -1136,6 +1139,7 @@
                 if (data.logrd) { handleLogFrame(data.logrd); return; }
                 if (data.sdls) { handleSdList(data.sdls); return; }
                 if (data.sdget) { handleSdGet(data.sdget); return; }
+                if (data.sdrm) { if (data.sdrm.err) showToast('Delete failed: ' + data.sdrm.err, '✕'); return; }
                 // Ring result: the firmware reports whether the write landed.
                 if (typeof data.ring === 'string' && 'ok' in data) {
                     showToast(data.ok ? 'Ring landed — listen for it'
@@ -3160,10 +3164,13 @@
             sdState = state; sdFree = typeof free === 'number' ? free : null;
             if (!el) return;
             const gb = sdFree !== null ? (sdFree / 1024).toFixed(1) + ' GB free' : '';
+            // A card pushed in while the board is powered often does not answer
+            // until a power cycle, and nothing on the board can tell you that.
+            const replug = ' If a card is fitted, unplug and replug the board — a card inserted while it\'s powered may not answer until a power cycle.';
             el.textContent = state === 1 ? 'SD card' + (gb ? ' · ' + gb : '')
                            : state === 3 ? 'Card full: download and delete files to make room'
-                           : state === 2 ? 'Card error: check it is FAT32 and seated'
-                           : 'No card';
+                           : state === 2 ? 'Card error: check it is FAT32 and seated.' + replug
+                           : 'No card.' + replug;
         }
 
         // Card file list, download and delete. `sdls` carries at most the
@@ -3206,17 +3213,31 @@
         function sdDelete(name) {
             if (!connectionType) { showToast('Not connected', '✕'); return; }
             if (!confirm('Delete ' + name + ' from the card? This cannot be undone.')) return;
-            sendCommand({ raw: 'CMD:SD:RM:' + name });   // the board answers with a fresh list
+            sendCommand({ raw: 'CMD:SD:RM:' + name });   // a fresh list, or {"sdrm":{"err"}}
         }
 
+        // Each GET is one page. BLE notifications are unacknowledged, so the
+        // done frame's `next` is only trusted if the bytes that actually
+        // decoded add up to it; otherwise the page is thrown away and asked
+        // for again -- a hole in a capture would be silent corruption.
         function handleSdGet(o) {
-            if (!sdRx) { if (o.err) showToast('Card: ' + o.err, '✕'); return; }
-            if (o.err) { sdRx.fail('device: ' + o.err); return; }
-            if ('size' in o) { sdRx.size = o.size; sdRx.arm(); return; }
-            if (o.done) {
-                if (o.more) { sdRx.next = o.next; sdRx.progress(); sdRx.arm(); sendCommand({ raw: 'CMD:SD:GET:' + sdRx.name + ':' + o.next }); }
-                else sdRx.finish();
+            const st = sdRx;
+            if (!st) return;
+            if (o.err) { st.fail('device: ' + o.err); return; }
+            if ('size' in o) { st.size = o.size; st.arm(); return; }
+            if (!o.done) return;
+            if (st.bad || st.pageBytes !== o.next - st.pageOff) {
+                if (++st.retries > 3) { st.fail('transfer kept dropping data — try USB'); return; }
+                st.parts.length = st.pageStart;
+                st.get(st.pageOff);
+                return;
             }
+            st.retries = 0;
+            st.got += st.pageBytes;
+            st.next = o.next;
+            if (o.more) { st.progress(); st.get(o.next); return; }
+            if (st.got === st.size) st.finish();
+            else st.fail('got ' + st.got + ' of ' + st.size + ' bytes');
         }
 
         async function sdDownload(name) {
@@ -3232,6 +3253,12 @@
             const parts = await new Promise(function (resolve, reject) {
                 const st = {
                     name: name, parts: [], size: f.s, next: 0, timer: null,
+                    got: 0, pageOff: 0, pageStart: 0, pageBytes: 0, bad: 0, retries: 0,
+                    get: function (off) {
+                        st.pageOff = off; st.pageStart = st.parts.length; st.pageBytes = 0; st.bad = 0;
+                        st.arm();
+                        sendCommand({ raw: 'CMD:SD:GET:' + name + ':' + off });
+                    },
                     arm: function () { clearTimeout(st.timer); st.timer = setTimeout(function () { st.fail('the board stopped replying'); }, 12000); },
                     // Only clear sdRx if it's still THIS attempt: a disconnect
                     // (or a later attempt) may already have replaced/nulled it,
@@ -3242,10 +3269,11 @@
                     finish: function () { clearTimeout(st.timer); if (sdRx === st) sdRx = null; resolve(st.parts); }
                 };
                 sdRx = st;
-                st.arm();
-                sendCommand({ raw: 'CMD:SD:GET:' + name + ':0' });
+                st.get(0);
             }).catch(function (e) { showToast('Download failed: ' + e.message, '✕'); return null; });
-            setSdUi(sdState, sdFree);
+            // Disconnected mid-download: the status line was already repainted
+            // for no board, and sdState is the last board's, not this moment's.
+            if (connectionType) setSdUi(sdState, sdFree);
             if (!parts) return;
             await sdSaveDownload(name, parts);
         }
@@ -3259,7 +3287,7 @@
             const text = new TextDecoder().decode(all);
             const out = sdKind(name) === 'Capture'
                 ? 'signalsweep-capture-' + capStamp() + '.sscap'
-                : 'signalsweep-log-' + capStamp() + '.csv';
+                : 'signalsweep-log-' + capStamp() + '-' + name.replace(/\.CSV$/, '') + '.csv';   // keeps the card's boot number
             try {
                 await window.CapFilesystem.writeFile({
                     path: out, data: text,
@@ -4317,7 +4345,11 @@
             if (usbPortId || usbListeners.length) teardownUsb();
             // capturing used to survive the link, leaving the page stuck on a
             // countdown no frame would ever move.
-            if (capturing) capAbort('Board disconnected — capture stopped, partial file kept', false);
+            // A card capture carries on without the link: the board is writing
+            // it, not the phone. capAbort's card branch ends only the app's view.
+            if (capturing) capAbort(capToSd
+                ? 'Link lost — the board keeps capturing to the card. Download it from Settings › Recording › SD card when it\'s done.'
+                : 'Board disconnected — capture stopped, partial file kept', false);
             clearLiveState();
             updateConnectionUI(false);
             if (wantConnection) scheduleReconnect();
