@@ -121,6 +121,9 @@ void alertLogAnchorSoon();
 /** @brief UTC epoch at secs==0 of that boot, or 0 if no anchor is held. */
 uint32_t alertLogEpochFor(uint16_t boot);
 
+/** @brief This boot's anchor (UTC epoch at secs 0) as last written, or 0 if none yet. */
+uint32_t alertLogAnchorEpoch();
+
 /**
  * @brief Parse "aa:bb:cc:dd:ee:ff" into 6 bytes. Returns false if malformed.
  */

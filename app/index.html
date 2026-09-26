@@ -1437,7 +1437,8 @@
 
                 <div id="cap-idle">
                     <p class="set-note">Logs every WiFi frame and BLE advert on all channels. Longer is better — one full sweep takes a few minutes, so give it time to catch a rare transmitter. The detector's beeper is paused while capturing.</p>
-                    <div id="cap-usb-warn" class="set-note" style="color:var(--accent-red);display:none;">Connect the board by USB cable first — this is far too much data for Bluetooth.</div>
+                    <div id="cap-usb-warn" class="set-note" style="color:var(--accent-red);display:none;">Connect the board by USB cable, or fit an SD card &mdash; a capture is far too much data for Bluetooth.</div>
+                    <label class="set-check" id="cap-to-sd-row" style="display:none;"><input type="checkbox" id="cap-to-sd"><span>Save to the board's SD card instead of this phone</span></label>
                     <h3 class="set-label">Duration</h3>
                     <div style="display:flex;gap:8px;">
                         <button class="ctrl-btn cap-dur" data-secs="120" onclick="pickCapDuration(120)">2 min</button>
@@ -1662,6 +1663,10 @@
                     <button class="ctrl-btn" onclick="saveAlertLog(true)">Save the whole log</button>
                     <button class="ctrl-btn" style="border-color:var(--accent-red,#ef4444);color:var(--accent-red,#ef4444)" onclick="clearAlertLogConfirm()">Clear log</button>
                 </div>
+                <h3 class="set-label">SD card</h3>
+                <p class="set-note" id="sd-status">Not connected</p>
+                <div class="btn-row"><button class="ctrl-btn" id="sd-refresh" onclick="sdRefresh()">Show card files</button></div>
+                <div id="sd-files"></div>
                 </section>
 
                 <section class="set-page" id="setp-radios" data-title="Radios" hidden>

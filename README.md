@@ -109,8 +109,10 @@ chip which board it is; `--board c5` forces it.
 
 The bare board works. A **passive buzzer**, a **WS2812 LED bar**, and an
 optional **DS3231 clock** (so the alert log keeps real dates across power
-cuts with no phone around) are all add-ons — none of them required. Parts,
-pads and pictures are in the **[Wiring Guide](firmware/WIRING.md)** and the
+cuts with no phone around) are all add-ons — none of them required. Add a
+**microSD card** and you get a richer drive log (names, SSIDs, channels) and
+captures started from the app over Bluetooth, no cable needed. Parts, pads
+and pictures are in the **[Wiring Guide](firmware/WIRING.md)** and the
 illustrated `firmware/wiring-diagram.html` / `wiring-diagram-c5.html` pages.
 
 | BOOT button | What it does |

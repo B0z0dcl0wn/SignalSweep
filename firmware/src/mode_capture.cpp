@@ -41,10 +41,14 @@
 #include <WiFi.h>
 #include <esp_wifi.h>
 #include <NimBLEDevice.h>
+#include <time.h>
 #include "mbedtls/base64.h"
 #include "mode_capture.h"
 #include "mode_watchers_watch.h"
 #include "c5_radio.h"
+#include "sd_store.h"
+#include "rtc_clock.h"
+#include "ble_serial.h"
 
 static const char* TAG = "Capture";
 
@@ -84,6 +88,49 @@ static volatile bool needDetectorRestart = false;
 static uint32_t      capEndMs           = 0;
 static TaskHandle_t  drainTaskHandle    = NULL;
 static TaskHandle_t  hopTaskHandle      = NULL;
+
+static volatile bool     capStartPending = false;
+static volatile uint32_t capStartSecs    = 0;
+static volatile bool     capStartSd      = false;
+static portMUX_TYPE capStartMux = portMUX_INITIALIZER_UNLOCKED;   // guards the three above as one unit (m1)
+static bool   capToSd = false;          // this capture writes to the card
+static const char* capSdError = NULL;   // set when the card fails mid-capture
+static uint8_t sdBuf[4096];             // batch lines into card-sized writes
+static size_t  sdBufLen = 0;
+
+// Status/ack frames: USB as always, and BLE too (small, 1 Hz), so a capture
+// started from the phone over Bluetooth can show progress.
+static void capReply(const char* s) {
+    Serial.println(s);
+    sendBleSerial(String(s));
+}
+
+static void sdFlushBuf() {
+    if (!sdBufLen || capSdError) { sdBufLen = 0; return; }
+    if (!sdStreamWrite(sdBuf, sdBufLen))
+        capSdError = sdState() == SD_FULL ? "card full" : "card lost";
+    sdBufLen = 0;
+}
+
+static void sdLine(const uint8_t* b64, size_t olen) {
+    if (sdBufLen + olen + 1 > sizeof(sdBuf)) sdFlushBuf();
+    memcpy(sdBuf + sdBufLen, b64, olen);
+    sdBufLen += olen;
+    sdBuf[sdBufLen++] = '\n';
+}
+
+void requestCapture(uint32_t durationSecs, bool toSd) {
+    // A capture is actively running: reject outright rather than queue behind
+    // it silently. This runs on the NimBLE host task for a BLE-issued START;
+    // capReply() is the same single-small-notification pattern sendConfigReply()
+    // already uses from this task throughout the router, so it is safe here.
+    if (capturing) { capReply("{\"cap\":{\"error\":\"busy\"}}"); return; }
+    portENTER_CRITICAL(&capStartMux);
+    capStartSecs = durationSecs;
+    capStartSd = toSd;
+    capStartPending = true;
+    portEXIT_CRITICAL(&capStartMux);
+}
 
 static bool ringAlloc(CapRing* r, uint32_t n) {
     r->slots = (CapSlot*)ps_malloc((size_t)n * sizeof(CapSlot));
@@ -189,6 +236,7 @@ static void emitSlot(const CapSlot* s) {
     uint8_t b64[((CAP_HDR_BYTES + CAP_MAX_BYTES) * 4) / 3 + 8];
     size_t olen = 0;
     if (mbedtls_base64_encode(b64, sizeof(b64), &olen, rec, reclen) != 0) return;
+    if (capToSd) { sdLine(b64, olen); return; }
     Serial.print("CAP:");
     Serial.write(b64, olen);
     Serial.print('\n');
@@ -221,7 +269,7 @@ static void emitStat(bool done) {
              (unsigned)(wifiRing.drops + bleRing.drops),
              (unsigned)remain, done ? "true" : "false");
 #endif
-    Serial.println(buf);
+    capReply(buf);
 }
 
 static void captureHopTask(void*) {
@@ -258,9 +306,17 @@ static void captureDrainTask(void*) {
         drainRing(&bleRing, 100);
 
         uint32_t now = millis();
-        if (now - lastStat >= 1000) { lastStat = now; emitStat(false); }
+        if (now - lastStat >= 1000) {
+            lastStat = now;
+            // FatFs writes the file's size to the directory only on sync or
+            // close, so an unsynced capture is 0 bytes after a power cut or a
+            // pulled card. Once a second costs one directory write; the data
+            // itself stays batched in sdBuf between syncs.
+            if (capToSd && !capSdError) { sdFlushBuf(); sdStreamSync(); }
+            emitStat(false);
+        }
 
-        if (stopRequested || (capEndMs != 0 && now >= capEndMs)) {
+        if (stopRequested || capSdError || (capEndMs != 0 && now >= capEndMs)) {
             capturing = false;                       // stop producers
             esp_wifi_set_promiscuous(false);
             esp_wifi_set_promiscuous_rx_cb(NULL);
@@ -269,7 +325,19 @@ static void captureDrainTask(void*) {
             // Flush whatever is still queued before freeing.
             while (wifiRing.tail != wifiRing.head) drainRing(&wifiRing, 512);
             while (bleRing.tail  != bleRing.head)  drainRing(&bleRing, 512);
-            emitStat(true);
+            if (capToSd) {
+                sdFlushBuf();
+                sdStreamClose();
+                if (capSdError) {
+                    char e[64];
+                    snprintf(e, sizeof(e), "{\"cap\":{\"error\":\"%s\"}}", capSdError);
+                    capReply(e);
+                }
+            }
+            // On a card failure the error frame above already told the story;
+            // a trailing done:true with fresh counters reads as "it finished
+            // fine" right under the error that says it didn't (I2).
+            if (!capSdError) emitStat(true);
             ringFree(&wifiRing);
             ringFree(&bleRing);
             needDetectorRestart = true;              // loop() resumes the detector
@@ -280,15 +348,42 @@ static void captureDrainTask(void*) {
     }
 }
 
-void startCapture(uint32_t durationSecs) {
-    if (capturing) return;
+static void startCapture(uint32_t durationSecs, bool toSd) {
+    // Defense in depth: captureTick() already holds off calling this while
+    // either is true (I1). A capture started on top of a drain task still
+    // flushing/closing its SD stream and freeing its rings is a use-after-free.
+    if (capturing || drainTaskHandle != NULL) return;
+
+    capToSd = toSd;
+    capSdError = NULL;
+    sdBufLen = 0;
+    char sdName[13] = "";
+    if (toSd) {
+        // Open the file before stopping the detector, so "no card" costs nothing.
+        if (sdState() != SD_OK) sdProbe();
+        if (sdState() != SD_OK || !sdNextCaptureName(sdName) || !sdStreamOpen(sdName)) {
+            uint8_t st = sdState();
+            const char* err = st == SD_NONE ? "no card" : st == SD_FULL ? "card full" : "card error";
+            char e[48];
+            snprintf(e, sizeof(e), "{\"cap\":{\"error\":\"%s\"}}", err);
+            capReply(e);
+            return;
+        }
+        // Same header the phone writes, so both analyzers read card captures as-is.
+        char hdr[96], t[24] = "-";
+        uint32_t now = rtcNow();
+        if (now) { time_t tt = now; struct tm tmv; gmtime_r(&tt, &tmv); strftime(t, sizeof(t), "%Y-%m-%dT%H:%M:%SZ", &tmv); }
+        int n = snprintf(hdr, sizeof(hdr), "#SSCAP v1 secs=%u src=sd t=%s\n", (unsigned)durationSecs, t);
+        if (!sdStreamWrite((const uint8_t*)hdr, n)) { sdStreamClose(); capReply("{\"cap\":{\"error\":\"card lost\"}}"); return; }
+    }
 
     stopWatchersWatch();   // capture owns the single promiscuous callback
 
     if (!ringAlloc(&wifiRing, WIFI_SLOTS) || !ringAlloc(&bleRing, BLE_SLOTS)) {
         ringFree(&wifiRing);
         ringFree(&bleRing);
-        Serial.println("{\"cap\":{\"error\":\"psram alloc failed\"}}");
+        if (toSd) sdStreamClose();
+        capReply("{\"cap\":{\"error\":\"psram alloc failed\"}}");
         startWatchersWatch();
         return;
     }
@@ -357,12 +452,20 @@ void startCapture(uint32_t durationSecs) {
     xTaskCreatePinnedToCore(captureDrainTask, "CapDrain", 8192, NULL, 2, &drainTaskHandle, 1);
 #endif
 
-    Serial.printf("{\"cap\":{\"started\":true,\"secs\":%u}}\n", (unsigned)durationSecs);
+    char ack[96];
+    if (toSd) snprintf(ack, sizeof(ack), "{\"cap\":{\"started\":true,\"secs\":%u,\"file\":\"%s\"}}", (unsigned)durationSecs, sdName);
+    else      snprintf(ack, sizeof(ack), "{\"cap\":{\"started\":true,\"secs\":%u}}", (unsigned)durationSecs);
+    capReply(ack);
     ESP_LOGI(TAG, "Capture started for %u s", (unsigned)durationSecs);
 }
 
 void stopCapture() {
     if (capturing) stopRequested = true;
+    // A START still queued for captureTick() is cancelled too, or a STOP sent
+    // straight after it would be followed by a capture nobody wants.
+    portENTER_CRITICAL(&capStartMux);
+    capStartPending = false;
+    portEXIT_CRITICAL(&capStartMux);
 }
 
 bool isCapturing() {
@@ -370,9 +473,33 @@ bool isCapturing() {
 }
 
 void captureTick() {
+    // Resume the detector FIRST. A START that arrived while the previous
+    // capture's drain task was still cleaning up must never race a fresh
+    // startCapture() against that cleanup (I1) -- processing the restart
+    // before the pending start keeps this tick strictly sequential. The drain
+    // task sets needDetectorRestart BEFORE it clears drainTaskHandle (see its
+    // stop block), so this tick can resume the detector while the handle is
+    // still set; the pending-start branch below then sees the handle and waits
+    // a tick, which is what keeps a new capture off the old one's teardown.
     if (needDetectorRestart) {
         needDetectorRestart = false;
         startWatchersWatch();
         ESP_LOGI(TAG, "Capture done, detector resumed");
+    }
+    if (capStartPending) {
+        if (capturing || drainTaskHandle != NULL) {
+            // Still running, or its drain task hasn't finished flushing/
+            // freeing yet -- leave the request queued and retry next tick.
+            // This is NOT the same as "busy": that reply already happened (or
+            // didn't need to) at requestCapture() time, on the host task.
+            return;
+        }
+        uint32_t secs; bool toSd;
+        portENTER_CRITICAL(&capStartMux);
+        capStartPending = false;
+        secs = capStartSecs;
+        toSd = capStartSd;
+        portEXIT_CRITICAL(&capStartMux);
+        startCapture(secs, toSd);
     }
 }

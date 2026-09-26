@@ -1121,6 +1121,15 @@
                 logRx.arm();
                 return;
             }
+            // Card download payload (SDF: base64), only while a download runs.
+            if (sdRx && dataStr.charCodeAt(0) === 83 /* 'S' */ && dataStr.startsWith('SDF:')) {
+                // A line that will not decode is counted, never dropped quietly:
+                // the page's done frame checks the byte count and re-asks.
+                try { const b = unb64(dataStr.slice(4)); sdRx.parts.push(b); sdRx.pageBytes += b.length; }
+                catch (e) { sdRx.bad++; }
+                sdRx.arm();
+                return;
+            }
             try {
                 const data = JSON.parse(dataStr);
                 rxOk++;
@@ -1128,6 +1137,9 @@
                 if (data.cap) { handleCapStat(data.cap); return; }
                 // Alert-log readback header / done frame ({"logrd":{...}}).
                 if (data.logrd) { handleLogFrame(data.logrd); return; }
+                if (data.sdls) { handleSdList(data.sdls); return; }
+                if (data.sdget) { handleSdGet(data.sdget); return; }
+                if (data.sdrm) { if (data.sdrm.err) showToast('Delete failed: ' + data.sdrm.err, '✕'); return; }
                 // Ring result: the firmware reports whether the write landed.
                 if (typeof data.ring === 'string' && 'ok' in data) {
                     showToast(data.ok ? 'Ring landed — listen for it'
@@ -1200,6 +1212,8 @@
         let capBuf = '';              // accumulates CAP lines between file flushes
         let capFlushTimer = null;
         let capReqSecs = 300;
+        let capToSd = false;          // this capture is being written to the board's SD card
+        let capSdFile = null;         // the card file name, from the started ack
         let capStat = { wifi: 0, ble: 0, drops: 0, remain: 0 };
         let capWriteFailed = false;
         let capWakeLock = null;       // keep the screen on during a capture
@@ -1266,7 +1280,10 @@
             const warn = document.getElementById('cap-usb-warn');
             const start = document.getElementById('cap-start-btn');
             const usbOk = capIsUsb() && capNativeFs();
-            if (warn) warn.style.display = usbOk ? 'none' : 'block';
+            const cardOk = sdState === 1;
+            if (warn) warn.style.display = (usbOk || cardOk) ? 'none' : 'block';
+            const sdRow = document.getElementById('cap-to-sd-row');
+            if (sdRow) sdRow.style.display = (usbOk && cardOk) ? 'block' : 'none';
             // Never disable Start: a disabled button swallows the tap, and then
             // nothing says why. startCapture() explains instead.
             if (capturing) {
@@ -1281,8 +1298,12 @@
         }
 
         async function startCapture() {
-            if (!capIsUsb()) { showToast('Not connected — plug the board in by USB cable', '✕'); return; }
-            if (!capNativeFs()) { showToast('File storage unavailable', '✕'); return; }
+            const usb = capIsUsb();
+            const box = document.getElementById('cap-to-sd');
+            // Over Bluetooth the card is the only place a capture can go.
+            capToSd = sdState === 1 && (!usb || (box && box.checked));
+            if (!usb && !capToSd) { showToast('Plug the board in by USB cable, or fit an SD card', '✕'); return; }
+            if (!capToSd && !capNativeFs()) { showToast('File storage unavailable', '✕'); return; }
             // A phone hunting for WiFi keeps sending random-MAC probe requests
             // from right beside the board: the strongest random-MAC device in
             // the capture, which is exactly what a camera at the pole looks
@@ -1299,6 +1320,17 @@
                 "Phones broadcast nonstop and drown out what you're looking for. " +
                 "Mobile data is fine.\n\n" +
                 "OK: start capturing\nCancel: not yet")) return;
+            if (capToSd) {
+                capFileName = null;
+                capSdFile = null;
+                capStat = { wifi: 0, ble: 0, drops: 0, remain: capReqSecs };
+                capturing = true;
+                sendCommand({ raw: 'CMD:CAP:START:' + capReqSecs + (capToSd ? ':SD' : '') });
+                capArmAck(false);
+                showToast('Capturing to the card. You can walk away', '◉');
+                paintCapture();
+                return;
+            }
             capFileName = 'signalsweep-capture-' + capStamp() + '.sscap';
             capBuf = '';
             capWriteFailed = false;
@@ -1316,7 +1348,7 @@
             }
             capturing = true;
             capAcquireWake();   // keep the screen on so the OS can't kill the capture
-            sendCommand({ raw: 'CMD:CAP:START:' + capReqSecs });
+            sendCommand({ raw: 'CMD:CAP:START:' + capReqSecs + (capToSd ? ':SD' : '') });
             capArmAck(false);
             capFlushTimer = setInterval(capFlush, 1000);
             showToast('Capturing — keep the board still', '◉');
@@ -1359,7 +1391,7 @@
             capAckTimer = setTimeout(() => {
                 if (!capturing) return;
                 if (retried) { capAbort("The board didn't start the capture — reconnect and try again", true); return; }
-                sendCommand({ raw: 'CMD:CAP:START:' + capReqSecs });
+                sendCommand({ raw: 'CMD:CAP:START:' + capReqSecs + (capToSd ? ':SD' : '') });
                 capArmAck(true);
             }, 5000);
         }
@@ -1367,6 +1399,17 @@
         // End a capture that did not finish normally. deleteFile: the file holds
         // only its header, so keeping it would just add an empty survey.
         async function capAbort(msg, deleteFile) {
+            // A card capture has no capFileName -- there is nothing on the phone
+            // to delete or flush, and deleteFile:true here must not be handed to
+            // CapFilesystem with a null path.
+            if (capToSd) {
+                capturing = false;
+                clearTimeout(capAckTimer); capAckTimer = null;
+                capReleaseWake();
+                showToast(msg, '✕');
+                paintCapture();
+                return;
+            }
             capturing = false;
             clearTimeout(capAckTimer); capAckTimer = null;
             capReleaseWake();
@@ -1382,16 +1425,40 @@
             renderFinds();
         }
 
+        // Capture frames now ride BLE too: a phone that did not start this
+        // capture (e.g. one begun over USB from a PC) can receive an unsolicited
+        // frame, including a terminal error -- acting on it would delete a file
+        // this session never opened. Only react while WE are capturing.
         function handleCapStat(cap) {
+            if (!capturing) return;
             clearTimeout(capAckTimer); capAckTimer = null;
-            if (cap.error) { capAbort('Capture: ' + cap.error, true); return; }
-            if ('started' in cap) return;   // ack only
+            if (cap.error) { capAbort('Capture: ' + cap.error, !capToSd); return; }
+            if ('started' in cap) { if (cap.file) capSdFile = cap.file; return; }
             capStat.wifi = cap.wifi || 0;
             capStat.ble = cap.ble || 0;
             capStat.drops = cap.drops || 0;
             capStat.remain = cap.remain || 0;
-            if (cap.done) { capFinish(); return; }
+            if (cap.done) { if (capToSd) capFinishSd(); else capFinish(); return; }
             paintCapture();
+        }
+
+        // A card capture never touches the phone's storage: say where it is and
+        // how to get it.
+        function capFinishSd() {
+            capturing = false;
+            capReleaseWake();
+            const total = capStat.wifi + capStat.ble;
+            document.getElementById('cap-summary').textContent =
+                total + ' packets saved on the card' + (capSdFile ? ' as ' + capSdFile : '') +
+                (capStat.drops > 0 ? ', ' + capStat.drops + ' dropped' : ', none dropped') +
+                '. Download it from Settings › Recording › SD card.';
+            document.getElementById('cap-path').textContent = '';
+            lastAnalysis = null;
+            paintAnalysis();
+            document.getElementById('cap-idle').style.display = 'none';
+            document.getElementById('cap-running').style.display = 'none';
+            document.getElementById('cap-done').style.display = 'block';
+            showToast('Capture saved on the card', '✓');
         }
 
         async function capFinish() {
@@ -2362,6 +2429,7 @@
             devName = (typeof cfg.ble_name === 'string' && cfg.ble_name) || 'SignalSweep';
             if (typeof cfg.uptime === 'number') bootAt = Date.now() - cfg.uptime * 1000;
             setClockUi(cfg.rtc, cfg.epoch);
+            setSdUi(cfg.sd, cfg.sd_free);
             // F2 pairing hole: if the {time} push queued ahead of this CFG
             // request was dropped (a USB-open reset can land between the two),
             // the reply still arrives and stops the retry loop above with the
@@ -3088,6 +3156,149 @@
                 (rtc === 1 ? '' : ' · time from the phone until power off');
         }
 
+        // Optional microSD card. Painted only from the device (CMD:CFG / sdls).
+        let sdState = null, sdFree = null;
+        function setSdUi(state, free) {
+            const el = document.getElementById('sd-status');
+            if (typeof state !== 'number') { sdState = null; if (el) el.textContent = 'Card not reported by this firmware'; return; }
+            sdState = state; sdFree = typeof free === 'number' ? free : null;
+            if (!el) return;
+            const gb = sdFree !== null ? (sdFree / 1024).toFixed(1) + ' GB free' : '';
+            // A card pushed in while the board is powered often does not answer
+            // until a power cycle, and nothing on the board can tell you that.
+            const replug = ' If a card is fitted, unplug and replug the board — a card inserted while it\'s powered may not answer until a power cycle.';
+            el.textContent = state === 1 ? 'SD card' + (gb ? ' · ' + gb : '')
+                           : state === 3 ? 'Card full: download and delete files to make room'
+                           : state === 2 ? 'Card error: check it is FAT32 and seated.' + replug
+                           : 'No card.' + replug;
+        }
+
+        // Card file list, download and delete. `sdls` carries at most the
+        // newest 64 LOG + newest 64 CAP files; `total` is the true count, so a
+        // fuller card gets a note rather than silently hiding files.
+        let sdFiles = [];
+        let sdRx = null;
+        const SD_BLE_BYTES_PER_SEC = 8000;   // ponytail: measured estimate, refine on the bench
+
+        function sdRefresh() {
+            if (!connectionType) { showToast('Not connected', '✕'); return; }
+            sendCommand({ raw: 'CMD:SD:LS' });
+        }
+
+        function sdKind(n) { return /^CAP\d{5}\.SSC$/.test(n) ? 'Capture' : /^LOG\d{5}\.CSV$/.test(n) ? 'Drive log' : 'File'; }
+        function sdSize(s) { return s >= 1048576 ? (s / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(s / 1024)) + ' KB'; }
+
+        function handleSdList(o) {
+            setSdUi(o.state, o.free);
+            sdFiles = (o.files || []).slice().sort(function (a, b) { return a.n < b.n ? 1 : -1; });
+            const box = document.getElementById('sd-files');
+            if (!box) return;
+            if (!sdFiles.length) { box.innerHTML = '<p class="set-note">' + (o.state === 1 ? 'No files on the card yet.' : 'Card unavailable') + '</p>'; return; }
+            const note = (typeof o.total === 'number' && o.total > sdFiles.length)
+                ? '<p class="set-note">Showing the newest ' + sdFiles.length + ' of ' + o.total + ' files.</p>' : '';
+            box.innerHTML = note + sdFiles.map(function (f) {
+                return '<div class="set-row"><span>' + esc(sdKind(f.n)) + ' · ' + esc(f.n) + ' · ' + sdSize(f.s) + '</span>' +
+                       '<span class="btn-row"><button class="ctrl-btn" data-sd-dl="' + esc(f.n) + '">Download</button>' +
+                       '<button class="ctrl-btn" data-sd-rm="' + esc(f.n) + '">Delete</button></span></div>';
+            }).join('');
+        }
+
+        document.addEventListener('click', function (e) {
+            const dl = e.target.closest && e.target.closest('[data-sd-dl]');
+            if (dl) { sdDownload(dl.getAttribute('data-sd-dl')); return; }
+            const rm = e.target.closest && e.target.closest('[data-sd-rm]');
+            if (rm) sdDelete(rm.getAttribute('data-sd-rm'));
+        });
+
+        function sdDelete(name) {
+            if (!connectionType) { showToast('Not connected', '✕'); return; }
+            if (!confirm('Delete ' + name + ' from the card? This cannot be undone.')) return;
+            sendCommand({ raw: 'CMD:SD:RM:' + name });   // a fresh list, or {"sdrm":{"err"}}
+        }
+
+        // Each GET is one page. BLE notifications are unacknowledged, so the
+        // done frame's `next` is only trusted if the bytes that actually
+        // decoded add up to it; otherwise the page is thrown away and asked
+        // for again -- a hole in a capture would be silent corruption.
+        function handleSdGet(o) {
+            const st = sdRx;
+            if (!st) return;
+            if (o.err) { st.fail('device: ' + o.err); return; }
+            if ('size' in o) { st.size = o.size; st.arm(); return; }
+            if (!o.done) return;
+            if (st.bad || st.pageBytes !== o.next - st.pageOff) {
+                if (++st.retries > 3) { st.fail('transfer kept dropping data — try USB'); return; }
+                st.parts.length = st.pageStart;
+                st.get(st.pageOff);
+                return;
+            }
+            st.retries = 0;
+            st.got += st.pageBytes;
+            st.next = o.next;
+            if (o.more) { st.progress(); st.get(o.next); return; }
+            if (st.got === st.size) st.finish();
+            else st.fail('got ' + st.got + ' of ' + st.size + ' bytes');
+        }
+
+        async function sdDownload(name) {
+            if (sdRx) { showToast('A download is already running', '✕'); return; }
+            if (!capNativeFs()) { showToast('File storage unavailable', '✕'); return; }
+            const f = sdFiles.find(function (x) { return x.n === name; });
+            if (!f) return;
+            if (!capIsUsb() && sdKind(name) === 'Capture' && f.s > 65536) {
+                const mins = Math.max(1, Math.round(f.s / SD_BLE_BYTES_PER_SEC / 60));
+                if (!confirm('This capture is ' + sdSize(f.s) + '. Over Bluetooth that takes about ' + mins +
+                             ' min; over a USB cable, seconds. Download over Bluetooth anyway?')) return;
+            }
+            const parts = await new Promise(function (resolve, reject) {
+                const st = {
+                    name: name, parts: [], size: f.s, next: 0, timer: null,
+                    got: 0, pageOff: 0, pageStart: 0, pageBytes: 0, bad: 0, retries: 0,
+                    get: function (off) {
+                        st.pageOff = off; st.pageStart = st.parts.length; st.pageBytes = 0; st.bad = 0;
+                        st.arm();
+                        sendCommand({ raw: 'CMD:SD:GET:' + name + ':' + off });
+                    },
+                    arm: function () { clearTimeout(st.timer); st.timer = setTimeout(function () { st.fail('the board stopped replying'); }, 12000); },
+                    // Only clear sdRx if it's still THIS attempt: a disconnect
+                    // (or a later attempt) may already have replaced/nulled it,
+                    // and a stale timer firing after that must not stomp on a
+                    // new download that started in the meantime.
+                    fail: function (m) { clearTimeout(st.timer); if (sdRx === st) sdRx = null; reject(new Error(m)); },
+                    progress: function () { const el = document.getElementById('sd-status'); if (el) el.textContent = 'Downloading ' + name + ' · ' + Math.round(100 * st.next / Math.max(1, st.size)) + '%'; },
+                    finish: function () { clearTimeout(st.timer); if (sdRx === st) sdRx = null; resolve(st.parts); }
+                };
+                sdRx = st;
+                st.get(0);
+            }).catch(function (e) { showToast('Download failed: ' + e.message, '✕'); return null; });
+            // Disconnected mid-download: the status line was already repainted
+            // for no board, and sdState is the last board's, not this moment's.
+            if (connectionType) setSdUi(sdState, sdFree);
+            if (!parts) return;
+            await sdSaveDownload(name, parts);
+        }
+
+        async function sdSaveDownload(name, parts) {
+            let len = 0;
+            parts.forEach(function (p) { len += p.length; });
+            const all = new Uint8Array(len);
+            let o = 0;
+            parts.forEach(function (p) { all.set(p, o); o += p.length; });
+            const text = new TextDecoder().decode(all);
+            const out = sdKind(name) === 'Capture'
+                ? 'signalsweep-capture-' + capStamp() + '.sscap'
+                : 'signalsweep-log-' + capStamp() + '-' + name.replace(/\.CSV$/, '') + '.csv';   // keeps the card's boot number
+            try {
+                await window.CapFilesystem.writeFile({
+                    path: out, data: text,
+                    directory: window.CapDirectory.Documents,
+                    encoding: window.CapEncoding.UTF8
+                });
+            } catch (e) { showToast('Could not save ' + out, '✕'); return; }
+            showToast('Saved ' + out, '✓');
+            if (sdKind(name) === 'Capture') renderFinds();   // appears in the Survey list
+        }
+
         function saveIdentity() {
             const nameEl = document.getElementById('cfg-name');
             const rndEl  = document.getElementById('cfg-randmac');
@@ -3521,6 +3732,17 @@
                 devName = ''; bootAt = null; alertCount = null;
                 const clk = document.getElementById('cfg-clock');
                 if (clk) clk.textContent = 'Not connected';
+                sdState = null; sdFree = null;
+                const sdEl = document.getElementById('sd-status');
+                if (sdEl) sdEl.textContent = 'Not connected';
+                // Fail any in-flight download's own promise (clears its timer
+                // and nulls sdRx itself via the st===sdRx guard) rather than
+                // just dropping the reference here, which would leave the
+                // timer to fire later and reject a promise nothing awaits.
+                if (sdRx) sdRx.fail('disconnected');
+                sdFiles = []; sdRx = null;
+                const sdBox = document.getElementById('sd-files');
+                if (sdBox) sdBox.innerHTML = '';
                 renderStatusStrip();
                 showToast('Device disconnected', '✕');
             }
@@ -4123,7 +4345,11 @@
             if (usbPortId || usbListeners.length) teardownUsb();
             // capturing used to survive the link, leaving the page stuck on a
             // countdown no frame would ever move.
-            if (capturing) capAbort('Board disconnected — capture stopped, partial file kept', false);
+            // A card capture carries on without the link: the board is writing
+            // it, not the phone. capAbort's card branch ends only the app's view.
+            if (capturing) capAbort(capToSd
+                ? 'Link lost — the board keeps capturing to the card. Download it from Settings › Recording › SD card when it\'s done.'
+                : 'Board disconnected — capture stopped, partial file kept', false);
             clearLiveState();
             updateConnectionUI(false);
             if (wantConnection) scheduleReconnect();

@@ -4,6 +4,102 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Added — an optional SD card: a richer log, and captures without the cable
+
+- **A microSD reader is now an optional accessory, like the buzzer, LED bar
+  and RTC.** `sd_store.{h,cpp}` probes SPI (`SPI.begin(D8, D9, D10, D3)`,
+  `SD.begin(D3, SPI, 4000000)`) once in `setup()`, after `alertLogInit()` and
+  `rtcInit()`; absent means `SD_NONE` and nothing else changes. `CMD:CFG`
+  gains `sd` (0 none, 1 ok, 2 error, 3 full) and `sd_free` (MB); neither
+  rides the 1 Hz push. Everything lives in `/SIGSWEEP/`.
+- **Trap: card files are 8.3 upper-case names, not because the core can't do
+  long names.** Long-filename support is on in both cores
+  (`CONFIG_FATFS_LFN_STACK`), but a long name silently failed to write on
+  the first card we tried (a Raspberry Pi-partitioned SDHC) — no error, the
+  file just never appeared. `LOGnnnnn.CSV` / `CAPnnnnn.SSC`, validated
+  against `^[A-Z0-9]{1,8}\.[A-Z0-9]{1,3}$` and always resolved inside
+  `/SIGSWEEP/`, sidesteps it entirely.
+- **Trap: card I/O never runs on the NimBLE host task, and capture start
+  moved off it too.** `processIncomingCommand()` already can't afford a
+  >few-hundred-byte local or a bulk reply (see the two traps below it in
+  this file); a card write is tens of milliseconds on top of that. `CMD:SD:*`
+  only set flags in the router; `bleSerialTick()` (from `loop()`) does the
+  actual mount, list, read and delete. `requestCapture()` had the same
+  problem one layer up — starting a capture stops the detector, allocates
+  PSRAM rings and spawns an 8192-byte-stack drain task, all far too heavy for
+  the host task — so `CMD:CAP:START` (BLE or USB) now only queues the
+  request, and `captureTick()` in `loop()` starts it. `sdState()`/`sdFreeMB()`
+  are the one deliberate exception: they're lock-free single-word reads so
+  `CMD:CFG` can read them from the host task without ever waiting behind a
+  slow card write.
+- **The card log is a CSV, one file per boot, with no coordinate column —
+  ever.** `boot,secs,utc,mac,category,rule,name,ssid,channel,role,vendor_id,
+  confidence,rssi`. It's the same events as the flash alert log (what the
+  buzzer sounded, respecting `beep_mask`; hunt and the easter egg suppress it
+  the same way), just with room for the fields the flash log's fixed 16
+  bytes can't hold. No user position, no drone or operator position — a
+  drone within about a kilometre is close enough to be the user's position,
+  and this device's whole point is not logging where it's been. `utc` is
+  blank until the board's clock is known, then dated from an `#anchor,<epoch>`
+  line appended when the time arrives, the same idea as the flash log's
+  epoch anchor. **The flash log is unchanged** — the card is additive only;
+  every existing behaviour with no card fitted stays exactly as it was.
+- **Captures can now be started from the app with no cable.**
+  `CMD:CAP:START:<secs>:SD` writes to `/SIGSWEEP/CAPnnnnn.SSC` in exactly
+  today's `.sscap` format (the same `#SSCAP v1 ...` header and base64 record
+  stream), so `analyze-capture.py` and the app's analyzer read a card
+  capture unchanged. A BLE-started capture needs a card — there is no BLE
+  bulk-stream fallback, the same reasoning that keeps `CMD:LOG:READ` off the
+  router. A card pulled or filled mid-capture stops the capture, keeps what
+  was written and resumes the detector; the error frame is terminal (no
+  trailing `done`), so an app watching for the finish doesn't quietly delete
+  a good partial file. **Trap: FatFs writes a file's size to its directory
+  entry only on sync or close,** so an unsynced capture read back as 0 bytes
+  after a power cut or a pull however much had been written; the drain task
+  now calls `sdStreamSync()` once a second (the data itself stays batched),
+  which is what makes "keeps the partial file" true. The file being written
+  is not readable or deletable until it closes: `CMD:SD:GET` answers
+  `{"sdget":{"err":"busy"}}` and `CMD:SD:RM` `{"sdrm":{"err":"busy"}}`.
+  A link lost mid card-capture tells you the board is still capturing,
+  rather than claiming the capture stopped.
+- **Never format a card, never delete a file on its own, never retry a
+  failing card in a loop.** A write failure marks the card errored (or full)
+  and every later call is refused until the next probe. It is "full" only
+  if the card still reports a real size with no room left: a pulled card
+  reads a total of 0, and calling that full sent people looking for space
+  on a card that was gone, so it reports an error and `sd_free` keeps the
+  last value the card gave. Getting a card back
+  after an error is a deliberate re-probe (a fresh `CMD:SD:LS`, or a capture
+  about to start), never automatic background retrying.
+- Settings > Recording gets an SD card block: status, a file list (newest
+  first), download (a BLE download of a large capture warns first — USB is
+  fast, BLE is not) and delete. Downloaded captures land in the Survey list
+  like any other `.sscap`; a downloaded log keeps the card's boot number in
+  its name. Site Survey's Investigate offers "save to card instead" on USB
+  when a card is present. A delete that fails answers on its own key,
+  `{"sdrm":{"err":...}}` (bad name, busy, no such file, card error), and
+  the app says so; a successful one answers with a fresh listing.
+- **Trap: a card download trusts no page it can't add up.** BLE
+  notifications are unacknowledged, so one `SDF:` line lost or garbled left
+  a silent hole while the `next` offset carried on. Each `CMD:SD:GET` page
+  now counts the bytes that actually decoded; if they don't equal
+  `next - offset` the page is thrown away and asked for again (three tries,
+  then "try USB"), and the file is saved only when the total equals the
+  size the board reported.
+- **Bench-measured, not yet proven with a real phone in hand:** a 30 GB
+  FAT32 card mounts in ~13 ms; SPI at 4 MHz writes ~360 KB/s; the capture
+  drain task (8192-byte stack) had 5764 bytes free at the SD stop path. The
+  BLE download-time estimate in the app is a guess pending a real timed
+  download, the C5 hasn't been bench-tested with a card yet (its CS pad is
+  D3/GPIO7, a boot-strapping pin — untested whether a reader on it changes
+  boot behaviour), and whether a BLE-started capture holds the phone's GATT
+  link on the one shared radio for the whole capture is still open.
+- **Trap found during bring-up: a card inserted or disturbed while the board
+  was already powered answered nothing to `CMD0`** (`Card Failed! cmd: 0x00`)
+  until a full power cycle — a soft reset or reflash was not enough. If a
+  freshly reinserted card doesn't mount, power-cycle the board before
+  suspecting the wiring or the card.
+
 ### Added — an optional clock, and dates on the alert log
 
 - **A DS3231 RTC is now an optional accessory, like the buzzer and LED bar.**

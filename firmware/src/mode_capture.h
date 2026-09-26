@@ -7,12 +7,12 @@
 #include <Arduino.h>
 
 /**
- * @brief Start a stationary diagnostic packet capture for durationSecs (0 = run
- * until stopCapture()). Pauses the detector, logs every WiFi frame (all types)
- * and BLE advertisement to a base64 "CAP:" line stream over USB, and auto-stops
- * when the timer expires. See the record format in mode_capture.cpp.
+ * @brief Ask for a capture; it starts on the next captureTick() (loop()), never
+ * on the caller's stack -- the router runs on the NimBLE host task, and starting
+ * a capture stops the detector, allocates PSRAM and spawns tasks.
+ * @param toSd write the .sscap to the optional card instead of streaming over USB
  */
-void startCapture(uint32_t durationSecs);
+void requestCapture(uint32_t durationSecs, bool toSd);
 
 /** @brief Request an in-progress capture to stop early and resume the detector. */
 void stopCapture();

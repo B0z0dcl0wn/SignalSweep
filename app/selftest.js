@@ -137,6 +137,41 @@ console.log('[signalsweep self-test] app reads every CMD:CFG field: ok');
     console.log('[signalsweep self-test] host time push + log anchors wired both sides: ok');
 }
 
+// SD card: commands exist on both sides, and the router only sets flags --
+// card I/O on the NimBLE host task is the stack-canary reboot again.
+{
+    const bsrc = readFileSync(new URL('../firmware/src/ble_serial.cpp', import.meta.url), 'utf8');
+    const fail = [];
+    for (const c of ['CMD:SD:LS', 'CMD:SD:GET:', 'CMD:SD:RM:']) {
+        if (!bsrc.includes('"' + c)) fail.push('firmware lacks ' + c);
+    }
+    const router = (bsrc.match(/void processIncomingCommand\(const String& rawCommand\) \{[\s\S]*?\n\}/) || [''])[0];
+    if (/\bsd(List|Read|Remove|Probe|Append|Stream\w*)\s*\(/.test(router)) fail.push('processIncomingCommand touches the card');
+    if (/\bstartCapture\s*\(/.test(router)) fail.push('processIncomingCommand starts a capture on the host task');
+    for (const c of ['CMD:SD:LS', 'CMD:SD:GET:', 'CMD:SD:RM:'])
+        if (!appSrc.includes("'" + c)) fail.push('app never sends ' + c);
+    if (!/data-sd-dl/.test(appSrc) || /onclick="sdDownload\('/.test(appSrc + htmlSrc))
+        fail.push('card file names must ride data- attributes, never an onclick string');
+    if (!/signalsweep-capture-' \+/.test(appSrc.slice(appSrc.indexOf('function sdSaveDownload')))) fail.push('card captures must save under the Survey list name pattern');
+    // RM answers on its own key; the app must show the failure.
+    if (!/\\"sdrm\\"/.test(bsrc) || !/data\.sdrm/.test(appSrc)) fail.push('RM failures must ride {"sdrm"} and the app must handle it');
+    // A capture file that is never synced is 0 bytes after a power cut.
+    const msrc = readFileSync(new URL('../firmware/src/mode_capture.cpp', import.meta.url), 'utf8');
+    if (!/sdStreamSync\(/.test(msrc)) fail.push('the capture drain loop never syncs the card stream');
+    // A download page is trusted only if its decoded bytes add up to `next`.
+    if (!/pageBytes !== o\.next - st\.pageOff/.test(appSrc)) fail.push('SD download no longer checks each page for holes');
+    if (fail.length) { console.log('FAIL:', fail.join('; ')); process.exit(1); }
+    console.log('[signalsweep self-test] SD commands wired, router stays off the card: ok');
+}
+
+// Survey capture must be able to ask the board to write straight to the card.
+{
+    const fail = [];
+    if (!/'CMD:CAP:START:' \+ capReqSecs \+ \(capToSd \? ':SD' : ''\)/.test(appSrc)) fail.push('Survey never asks the board to capture to the card');
+    if (fail.length) { console.log('FAIL:', fail.join('; ')); process.exit(1); }
+    console.log('[signalsweep self-test] Survey card-capture wired: ok');
+}
+
 // C5 port: the bench-measured radio settings must stay behind the C5 guard, and
 // the S3 path must keep its own values (the S3 build is byte-identical by contract).
 {
@@ -403,9 +438,9 @@ const usbFail = [];
 if (/const \{ granted \} = await window\.UsbSerial\.requestPermission/.test(appSrc)) usbFail.push("trusts requestPermission's granted flag again");
 if (!/UsbSerial\.hasPermission\(/.test(appSrc)) usbFail.push('connect no longer re-checks hasPermission');
 if (!/addListener\('error'[\s\S]{0,400}?onDeviceDisconnected\(\)/.test(appSrc)) usbFail.push('USB stream error no longer disconnects');
-if (!/sendCommand\(\{ raw: 'CMD:CAP:START:' \+ capReqSecs \}\);\s*capArmAck\(false\)/.test(appSrc)) usbFail.push('capture start watchdog not armed');
-if (!/function handleCapStat\(cap\) \{\s*clearTimeout\(capAckTimer\)/.test(appSrc)) usbFail.push('cap frames no longer disarm the watchdog');
-if (!/function onDeviceDisconnected\(\)[\s\S]{0,800}?if \(capturing\) capAbort\(/.test(appSrc)) usbFail.push('disconnect no longer ends a running capture');
+if (!/sendCommand\(\{ raw: 'CMD:CAP:START:' \+ capReqSecs \+ \(capToSd \? ':SD' : ''\) \}\);\s*capArmAck\(false\)/.test(appSrc)) usbFail.push('capture start watchdog not armed');
+if (!/function handleCapStat\(cap\) \{\s*(\/\/[^\n]*\n\s*)*if \(!capturing\) return;\s*clearTimeout\(capAckTimer\)/.test(appSrc)) usbFail.push('cap frames no longer disarm the watchdog');
+if (!/function onDeviceDisconnected\(\)[\s\S]{0,1200}?if \(capturing\) capAbort\(/.test(appSrc)) usbFail.push('disconnect no longer ends a running capture');
 // Back used to exitApp(): the page died, the BLE link and USB port did not, and
 // the reopened app could not re-adopt them (reconcile queried before initialize).
 if (/addListener\('backButton'[^\n]*exitApp/.test(appSrc)) usbFail.push('back button finishes the Activity again (exitApp)');
