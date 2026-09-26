@@ -1121,6 +1121,12 @@
                 logRx.arm();
                 return;
             }
+            // Card download payload (SDF: base64), only while a download runs.
+            if (sdRx && dataStr.charCodeAt(0) === 83 /* 'S' */ && dataStr.startsWith('SDF:')) {
+                try { sdRx.parts.push(unb64(dataStr.slice(4))); } catch (e) {}
+                sdRx.arm();
+                return;
+            }
             try {
                 const data = JSON.parse(dataStr);
                 rxOk++;
@@ -1128,6 +1134,8 @@
                 if (data.cap) { handleCapStat(data.cap); return; }
                 // Alert-log readback header / done frame ({"logrd":{...}}).
                 if (data.logrd) { handleLogFrame(data.logrd); return; }
+                if (data.sdls) { handleSdList(data.sdls); return; }
+                if (data.sdget) { handleSdGet(data.sdget); return; }
                 // Ring result: the firmware reports whether the write landed.
                 if (typeof data.ring === 'string' && 'ok' in data) {
                     showToast(data.ok ? 'Ring landed — listen for it'
@@ -3103,6 +3111,106 @@
                            : 'No card';
         }
 
+        // Card file list, download and delete. `sdls` carries at most the
+        // newest 64 LOG + newest 64 CAP files; `total` is the true count, so a
+        // fuller card gets a note rather than silently hiding files.
+        let sdFiles = [];
+        let sdRx = null;
+        const SD_BLE_BYTES_PER_SEC = 8000;   // ponytail: measured estimate, refine on the bench
+
+        function sdRefresh() {
+            if (!connectionType) { showToast('Not connected', '✕'); return; }
+            sendCommand({ raw: 'CMD:SD:LS' });
+        }
+
+        function sdKind(n) { return /^CAP\d{5}\.SSC$/.test(n) ? 'Capture' : /^LOG\d{5}\.CSV$/.test(n) ? 'Drive log' : 'File'; }
+        function sdSize(s) { return s >= 1048576 ? (s / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(s / 1024)) + ' KB'; }
+
+        function handleSdList(o) {
+            setSdUi(o.state, o.free);
+            sdFiles = (o.files || []).slice().sort(function (a, b) { return a.n < b.n ? 1 : -1; });
+            const box = document.getElementById('sd-files');
+            if (!box) return;
+            if (!sdFiles.length) { box.innerHTML = '<p class="set-note">' + (o.state === 1 ? 'No files on the card yet.' : '') + '</p>'; return; }
+            const note = (typeof o.total === 'number' && o.total > sdFiles.length)
+                ? '<p class="set-note">Showing the newest ' + sdFiles.length + ' of ' + o.total + ' files.</p>' : '';
+            box.innerHTML = note + sdFiles.map(function (f) {
+                return '<div class="set-row"><span>' + esc(sdKind(f.n)) + ' · ' + esc(f.n) + ' · ' + sdSize(f.s) + '</span>' +
+                       '<span class="btn-row"><button class="ctrl-btn" data-sd-dl="' + esc(f.n) + '">Download</button>' +
+                       '<button class="ctrl-btn" data-sd-rm="' + esc(f.n) + '">Delete</button></span></div>';
+            }).join('');
+        }
+
+        document.addEventListener('click', function (e) {
+            const dl = e.target.closest && e.target.closest('[data-sd-dl]');
+            if (dl) { sdDownload(dl.getAttribute('data-sd-dl')); return; }
+            const rm = e.target.closest && e.target.closest('[data-sd-rm]');
+            if (rm) sdDelete(rm.getAttribute('data-sd-rm'));
+        });
+
+        function sdDelete(name) {
+            if (!confirm('Delete ' + name + ' from the card? This cannot be undone.')) return;
+            sendCommand({ raw: 'CMD:SD:RM:' + name });   // the board answers with a fresh list
+        }
+
+        function handleSdGet(o) {
+            if (!sdRx) return;
+            if (o.err) { sdRx.fail('device: ' + o.err); return; }
+            if ('size' in o) { sdRx.size = o.size; sdRx.arm(); return; }
+            if (o.done) {
+                if (o.more) { sdRx.next = o.next; sdRx.progress(); sdRx.arm(); sendCommand({ raw: 'CMD:SD:GET:' + sdRx.name + ':' + o.next }); }
+                else sdRx.finish();
+            }
+        }
+
+        async function sdDownload(name) {
+            if (sdRx) { showToast('A download is already running', '✕'); return; }
+            if (!capNativeFs()) { showToast('File storage unavailable', '✕'); return; }
+            const f = sdFiles.find(function (x) { return x.n === name; });
+            if (!f) return;
+            if (!capIsUsb() && sdKind(name) === 'Capture' && f.s > 65536) {
+                const mins = Math.max(1, Math.round(f.s / SD_BLE_BYTES_PER_SEC / 60));
+                if (!confirm('This capture is ' + sdSize(f.s) + '. Over Bluetooth that takes about ' + mins +
+                             ' min; over a USB cable, seconds. Download over Bluetooth anyway?')) return;
+            }
+            const parts = await new Promise(function (resolve, reject) {
+                const st = {
+                    name: name, parts: [], size: f.s, next: 0, timer: null,
+                    arm: function () { clearTimeout(st.timer); st.timer = setTimeout(function () { st.fail('the board stopped replying'); }, 12000); },
+                    fail: function (m) { clearTimeout(st.timer); sdRx = null; reject(new Error(m)); },
+                    progress: function () { const el = document.getElementById('sd-status'); if (el) el.textContent = 'Downloading ' + name + ' · ' + Math.round(100 * st.next / Math.max(1, st.size)) + '%'; },
+                    finish: function () { clearTimeout(st.timer); sdRx = null; resolve(st.parts); }
+                };
+                sdRx = st;
+                st.arm();
+                sendCommand({ raw: 'CMD:SD:GET:' + name + ':0' });
+            }).catch(function (e) { showToast('Download failed: ' + e.message, '✕'); return null; });
+            setSdUi(sdState, sdFree);
+            if (!parts) return;
+            await sdSaveDownload(name, parts);
+        }
+
+        async function sdSaveDownload(name, parts) {
+            let len = 0;
+            parts.forEach(function (p) { len += p.length; });
+            const all = new Uint8Array(len);
+            let o = 0;
+            parts.forEach(function (p) { all.set(p, o); o += p.length; });
+            const text = new TextDecoder().decode(all);
+            const out = sdKind(name) === 'Capture'
+                ? 'signalsweep-capture-' + capStamp() + '.sscap'
+                : 'signalsweep-log-' + capStamp() + '.csv';
+            try {
+                await window.CapFilesystem.writeFile({
+                    path: out, data: text,
+                    directory: window.CapDirectory.Documents,
+                    encoding: window.CapEncoding.UTF8
+                });
+            } catch (e) { showToast('Could not save ' + out, '✕'); return; }
+            showToast('Saved ' + out, '✓');
+            if (sdKind(name) === 'Capture') renderFinds();   // appears in the Survey list
+        }
+
         function saveIdentity() {
             const nameEl = document.getElementById('cfg-name');
             const rndEl  = document.getElementById('cfg-randmac');
@@ -3539,6 +3647,9 @@
                 sdState = null; sdFree = null;
                 const sdEl = document.getElementById('sd-status');
                 if (sdEl) sdEl.textContent = 'Not connected';
+                sdFiles = []; sdRx = null;
+                const sdBox = document.getElementById('sd-files');
+                if (sdBox) sdBox.innerHTML = '';
                 renderStatusStrip();
                 showToast('Device disconnected', '✕');
             }

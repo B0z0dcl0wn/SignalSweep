@@ -148,6 +148,11 @@ console.log('[signalsweep self-test] app reads every CMD:CFG field: ok');
     const router = (bsrc.match(/void processIncomingCommand\(const String& rawCommand\) \{[\s\S]*?\n\}/) || [''])[0];
     if (/\bsd(List|Read|Remove|Probe|Append|Stream\w*)\s*\(/.test(router)) fail.push('processIncomingCommand touches the card');
     if (/\bstartCapture\s*\(/.test(router)) fail.push('processIncomingCommand starts a capture on the host task');
+    for (const c of ['CMD:SD:LS', 'CMD:SD:GET:', 'CMD:SD:RM:'])
+        if (!appSrc.includes("'" + c)) fail.push('app never sends ' + c);
+    if (!/data-sd-dl/.test(appSrc) || /onclick="sdDownload\('/.test(appSrc + htmlSrc))
+        fail.push('card file names must ride data- attributes, never an onclick string');
+    if (!/signalsweep-capture-' \+/.test(appSrc.slice(appSrc.indexOf('function sdSaveDownload')))) fail.push('card captures must save under the Survey list name pattern');
     if (fail.length) { console.log('FAIL:', fail.join('; ')); process.exit(1); }
     console.log('[signalsweep self-test] SD commands wired, router stays off the card: ok');
 }
