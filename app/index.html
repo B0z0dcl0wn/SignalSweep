@@ -985,6 +985,12 @@
         .set-toggle.off { background:rgba(239,68,68,0.2); border:1px solid var(--accent-red); color:var(--accent-red); }
         /* Neither on nor alarming: an off switch that is a normal choice. */
         .set-toggle:not(.on):not(.off) { background:transparent; border:1px solid var(--card-border); color:var(--text-muted); }
+        /* SD card file list: name on one line (it gives, not the buttons), two
+           small .set-toggle buttons side by side. Own classes on purpose --
+           .btn-row / .modal-actions carry layout that stretched these. */
+        .sd-file { padding:0.5rem 0.7rem; margin-top:6px; }
+        .sd-name { flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:0.82rem; }
+        .sd-acts { flex:none; display:flex; gap:6px; }
         /* Header: which board, and the pins icon lit while asking is armed. */
         .hdr-conn { flex-basis:100%; display:flex; align-items:center; gap:8px; min-width:0;
             padding-top:0.8rem; border-top:1px solid var(--card-border);
@@ -1430,7 +1436,7 @@
 
         <main id="tab-survey" class="tab">
             <div class="finder-topbar"><h2>📡 Site Survey</h2></div>
-            <p class="set-note">Stand next to a suspect device, capture the raw air, and the app tells you its signature — then log it (photo + GPS) to your encrypted database and export it for DeFlock. USB cable only.</p>
+            <p class="set-note">Stand next to a suspect device, capture the raw air, and the app tells you its signature — then log it (photo + GPS) to your encrypted database and export it for DeFlock. Captures need the USB cable, or an SD card in the board.</p>
 
             <section class="finder-card">
                 <h3 class="set-label">1 · Investigate an environment</h3>
@@ -1464,6 +1470,7 @@
                     <div style="text-align:center;font-size:1.4rem;margin:8px 0;">✓ Capture saved</div>
                     <p class="set-note" id="cap-summary"></p>
                     <div id="cap-analysis" style="margin:10px 0;"></div>
+                    <div id="cap-log-step">
                     <h3 class="set-label">2 · Log this device</h3>
                     <p class="set-note">A photo drops the device into your encrypted database with the detected signature and this capture attached. GPS fills in on its own — a slow fix won't lose the photo. (Your camera app keeps its own copy of the shot.)</p>
                     <p class="set-note">What are you photographing? Only a camera you're sure of goes on the map in the export.</p>
@@ -1473,6 +1480,7 @@
                         <button class="ctrl-btn" onclick="logDevice('Unconfirmed')">📷 Not sure</button>
                     </div>
                     <details style="margin-top:10px;"><summary class="set-note" style="cursor:pointer;">Pull the raw capture to a PC</summary><p class="set-note" style="font-family:monospace;font-size:0.8rem;word-break:break-all;" id="cap-path"></p></details>
+                    </div>
                     <button class="ctrl-btn" style="width:100%;margin-top:10px;" onclick="closeCapture()">Done — new capture</button>
                 </div>
             </section>

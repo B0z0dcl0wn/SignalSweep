@@ -101,7 +101,7 @@ static size_t  sdBufLen = 0;
 // Status/ack frames: USB as always, and BLE too (small, 1 Hz), so a capture
 // started from the phone over Bluetooth can show progress.
 static void capReply(const char* s) {
-    Serial.println(s);
+    sendUsbLine(String(s));   // locked: never lands inside a CAP: line
     sendBleSerial(String(s));
 }
 
@@ -237,9 +237,7 @@ static void emitSlot(const CapSlot* s) {
     size_t olen = 0;
     if (mbedtls_base64_encode(b64, sizeof(b64), &olen, rec, reclen) != 0) return;
     if (capToSd) { sdLine(b64, olen); return; }
-    Serial.print("CAP:");
-    Serial.write(b64, olen);
-    Serial.print('\n');
+    sendUsbLine("CAP:", b64, olen);   // one locked line: a status frame can't land inside it
 }
 
 static uint32_t drainRing(CapRing* r, uint32_t budget) {
@@ -470,6 +468,10 @@ void stopCapture() {
 
 bool isCapturing() {
     return capturing;
+}
+
+bool isCapturingToUsb() {
+    return capturing && !capToSd;
 }
 
 void captureTick() {

@@ -113,7 +113,9 @@ bool sdExists(const char* name) {
     if (state != SD_OK || !sdValidName(name)) return false;
     char path[32];
     pathOf(name, path);
-    return SD.exists(path);
+    bool e = SD.exists(path);
+    if (!e && !SD.exists(SD_DIR)) fail();   // not "no such file": the card is gone
+    return e;
 }
 
 // True iff `name` is PREFIX*.EXT (both already upper-case, since sdValidName
@@ -150,8 +152,11 @@ size_t sdList(SdEntry* out, size_t max, size_t* totalOut) {
     SdLock l;
     if (totalOut) *totalOut = 0;
     if (state != SD_OK) return 0;
+    // sdProbe() made this directory, so failing to open it means the card
+    // stopped answering (pulled, most likely). Returning a quiet 0 reported a
+    // missing card as a healthy empty one, "29.7 GB free" and all.
     File dir = SD.open(SD_DIR);
-    if (!dir) return 0;
+    if (!dir) { fail(); return 0; }
 
     static const size_t KEEP = 64;         // newest kept per rotation family
     static const size_t OTHER_MAX = 32;    // room for anything else valid
@@ -199,7 +204,7 @@ int32_t sdRead(const char* name, uint32_t off, uint8_t* buf, size_t n, uint32_t*
     char path[32];
     pathOf(name, path);
     File f = SD.open(path, FILE_READ);
-    if (!f) return -1;
+    if (!f) { if (!SD.exists(SD_DIR)) fail(); return -1; }   // missing file, or missing card
     uint32_t size = (uint32_t)f.size();
     if (sizeOut) *sizeOut = size;
     int32_t got = 0;
@@ -228,7 +233,7 @@ bool sdNextCaptureName(char out[13]) {
     SdLock l;
     if (state != SD_OK) return false;
     File dir = SD.open(SD_DIR);
-    if (!dir) return false;
+    if (!dir) { fail(); return false; }   // see sdList()
     uint32_t maxN = 0;
     for (File e = dir.openNextFile(); e; e = dir.openNextFile()) {
         if (e.isDirectory()) continue;

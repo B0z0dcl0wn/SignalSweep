@@ -421,7 +421,7 @@ console.log('[signalsweep self-test] Flock wildcard-probe signature intact: ok')
 // Band badges (Task 1): the detector must report the Wi-Fi channel per target.
 // The 4 Hz hunt frame must reach a cable host too, not only BLE: over USB the
 // meter otherwise updates at the 1 Hz push rate.
-if (!/"hunt_rssi\\":%d\}"[\s\S]{0,400}?sendBleSerial\(buf\);[\s\S]{0,300}?Serial\.println\(buf\)/.test(fw)) { console.log('FAIL: hunt frame is not mirrored to USB'); process.exit(1); }
+if (!/"hunt_rssi\\":%d\}"[\s\S]{0,400}?sendBleSerial\(buf\);[\s\S]{0,300}?sendUsbLine\(buf\)/.test(fw)) { console.log('FAIL: hunt frame is not mirrored to USB'); process.exit(1); }
 if (!/obj\["ch"\]\s*=\s*t\.wifiCh/.test(fw)) { console.log('FAIL: firmware does not emit "ch" (band badges)'); process.exit(1); }
 // Band badges (Task 2): the app must ingest the channel it was just given.
 if (!/\bch:\s*t\.ch\b/.test(appSrc)) { console.log('FAIL: app.js does not ingest "ch"'); process.exit(1); }
@@ -520,6 +520,73 @@ if (!/alertLogTick\(\);/.test(wwSrc)) logFail.push('the 1 Hz task no longer tick
 
 if (logFail.length) { console.log('FAIL: alert log:', logFail); process.exit(1); }
 console.log('[signalsweep self-test] alert log record + write path: ok');
+
+// Reassembler resync: a BLE notification that opens a known message drops a
+// stale partial (a torn push glued onto the next reply lost both on the bench).
+// BLE only -- a USB/serial byte stream splits anywhere, so resyncing there would
+// throw away good lines.
+{
+    const rs = [];
+    const chunkFn = (appSrc.match(/function processIncomingChunk\([\s\S]*?\n {8}\}/) || [''])[0];
+    if (!/RX_MSG_START\s*=\s*\/\^\(/.test(appSrc)) rs.push('RX_MSG_START pattern missing');
+    if (!/if \(isBle && rxBuffer && RX_MSG_START\.test\(chunk\)\)/.test(chunkFn)) rs.push('processIncomingChunk no longer resyncs (BLE-gated) on a message start');
+    if (!/rxDropped\+\+/.test(chunkFn)) rs.push('a resync drop is no longer counted as a dropped update');
+    const calls = appSrc.match(/processIncomingChunk\([^)]*\)/g) || [];
+    const ble = calls.filter(c => /, true\)$/.test(c)).length;
+    if (ble !== 2) rs.push(`expected 2 BLE call sites passing true, found ${ble}`);
+    if (!/processIncomingChunk\(text\)/.test(appSrc) || !/processIncomingChunk\(value\)/.test(appSrc)) rs.push('USB/serial call sites must not pass the BLE flag');
+    // Bulk card/log replies pace per line (the 2 ms per-notification yield
+    // lost the tail of a 3.6 KB SD:GET over BLE), and every high-rate USB
+    // line goes through the mutex (the push landed inside an SDF: line).
+    const bs = readFileSync(new URL('../firmware/src/ble_serial.cpp', import.meta.url), 'utf8');
+    const ww = readFileSync(new URL('../firmware/src/mode_watchers_watch.cpp', import.meta.url), 'utf8');
+    if ((bs.match(/vTaskDelay\(pdMS_TO_TICKS\(BULK_LINE_PACE_MS\)\)/g) || []).length !== 2) rs.push('sendSdFile/sendAlertLog no longer pause BULK_LINE_PACE_MS per line');
+    const getLines = +((bs.match(/#define SD_GET_LINES\s+(\d+)/) || [])[1]);
+    if (!(getLines >= 1 && getLines <= 8)) rs.push('SD_GET_LINES (lines per CMD:SD:GET page) must be 1..8');
+    if (!/sent >= SD_GET_LINES \* batch/.test(bs)) rs.push('the SD page no longer scales with the line size');
+    if (!/static void sendReply[\s\S]{0,120}?sendUsbLine\(payload\)/.test(bs)) rs.push('sendReply bypasses the USB line mutex');
+    if (!/sendBleSerial\(jsonStr\);\s*sendUsbLine\(jsonStr\)/.test(ww)) rs.push('the 1 Hz push bypasses the USB line mutex');
+    if (rs.length) { console.log('FAIL: rx resync:', rs); process.exit(1); }
+    console.log('[signalsweep self-test] BLE-only reassembler resync: ok');
+}
+
+// BLE backpressure, the root cause of the torn/lost messages. notify() in both
+// NimBLE-Arduino versions drops a notification silently when the mbuf pool is
+// full; sendBleSerial() must go through notifyChunk(), which sees the result
+// and resends the same chunk on a full queue, bounded.
+{
+    const rs = [];
+    const bs = readFileSync(new URL('../firmware/src/ble_serial.cpp', import.meta.url), 'utf8');
+    const cap = readFileSync(new URL('../firmware/src/mode_capture.cpp', import.meta.url), 'utf8');
+    const ww = readFileSync(new URL('../firmware/src/mode_watchers_watch.cpp', import.meta.url), 'utf8');
+    const appSrc = readFileSync(new URL('./public/app.js', import.meta.url), 'utf8');
+    const nc = (bs.match(/static bool notifyChunk\([\s\S]*?\n\}/) || [''])[0];
+    if (!/ble_hs_mbuf_from_flat\(/.test(nc) || !/ble_gattc_notify_custom\(/.test(nc)) rs.push('notifyChunk no longer calls the host API where the result is visible');
+    if (!/rc != BLE_HS_ENOMEM && rc != BLE_HS_EBUSY\) return false/.test(nc)) rs.push('notifyChunk no longer retries only on a full queue');
+    if (!/for \(;;\)[\s\S]*vTaskDelay\(pdMS_TO_TICKS\(NOTIFY_RETRY_MS\)\)/.test(nc)) rs.push('notifyChunk no longer waits and resends the same chunk');
+    if (!/NOTIFY_GIVEUP_MS\) return false/.test(nc)) rs.push('notifyChunk retry is no longer bounded');
+    const sbs = (bs.match(/void sendBleSerial\([\s\S]*?\n\}/) || [''])[0];
+    if (!/notifyChunk\(/.test(sbs)) rs.push('sendBleSerial bypasses notifyChunk');
+    if (/->notify\(/.test(bs)) rs.push('a bare notify() is back (it drops silently on a full pool)');
+    if (!/while \(ok && offset < length\)/.test(sbs)) rs.push('sendBleSerial keeps sending a message after a chunk was given up on');
+    if (!/static const size_t BLE_ATT_MAX_ATTR_LEN = 512;/.test(bs)) rs.push('the 512-byte BLE attribute cap is no longer a named constant');
+    if (!/if \(attrLen > BLE_ATT_MAX_ATTR_LEN\) attrLen = BLE_ATT_MAX_ATTR_LEN;/.test(bs)) rs.push('bulkLineBytes no longer clamps the attribute length to 512 before sizing a line (the 513-byte SDF: line bug)');
+    if (!/\(attrLen - 5\) \/ 4\) \* 3/.test(bs) || !/if \(n < 48\) n = 48;/.test(bs)) rs.push('bulkLineBytes no longer sizes a BLE line to one notification');
+    if (!/if \(maxChunkSize > BLE_ATT_MAX_ATTR_LEN\) maxChunkSize = BLE_ATT_MAX_ATTR_LEN;/.test(sbs)) rs.push('sendBleSerial no longer clamps its chunk size to the 512-byte attribute cap');
+    if (!/perLine = bulkLineBytes\(viaBle\) \/ ALERT_LOG_REC_SIZE/.test(bs)) rs.push('LOG: lines no longer carry whole 16-byte records');
+    if (!/\\"done\\":true,\\"off\\":%u,\\"next\\":%u/.test(bs)) rs.push('the sdget done frame no longer echoes its request offset');
+    if (!/'off' in o && o\.off !== st\.pageOff/.test(appSrc) || !/if \(o\.off !== st\.pageOff\) return;/.test(appSrc)) rs.push('the app no longer ignores a stale sdget header/done');
+    if (!/if \(isCapturingToUsb\(\)\) \{ sendReply\("\{\\"sdget\\":\{\\"err\\":\\"busy\\"\}\}"\)/.test(bs)) rs.push('CMD:SD:GET is no longer refused during a USB capture');
+    if (/Serial\.print\("CAP:"\)/.test(cap) || !/sendUsbLine\("CAP:", b64, olen\)/.test(cap)) rs.push('CAP: lines bypass the USB line mutex');
+    if (!/static void capReply[\s\S]{0,80}?sendUsbLine\(/.test(cap)) rs.push('capReply bypasses the USB line mutex');
+    if (/Serial\.printf\("\[ALERT\]/.test(ww)) rs.push('[ALERT] bypasses the USB line mutex');
+    // A pulled card must not list as a healthy empty one (bench, 2026-09-26).
+    const sd = readFileSync(new URL('../firmware/src/sd_store.cpp', import.meta.url), 'utf8');
+    if (!/if \(!dir\) \{ fail\(\); return 0; \}/.test(sd)) rs.push('sdList no longer treats a failed directory open as a card failure');
+    if (!/if \(wasOk && sdState\(\) != SD_OK && sdProbe\(\)\)/.test(bs)) rs.push('sendSdList no longer re-probes a card that failed during the listing');
+    if (rs.length) { console.log('FAIL: BLE backpressure:', rs); process.exit(1); }
+    console.log('[signalsweep self-test] BLE backpressure + page checks: ok');
+}
 
 const results = await global.__signalsweepSelfTest();
 const failed = Object.entries(results).filter(([, v]) => !v).map(([k]) => k);

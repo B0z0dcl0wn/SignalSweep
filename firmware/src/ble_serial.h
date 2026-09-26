@@ -18,6 +18,15 @@ void bleSerialInit();
 void sendBleSerial(const String& data);
 
 /**
+ * @brief Write one line to the USB mirror, whole: a mutex keeps another task's
+ * line from landing inside it. No-op when no host is attached.
+ */
+void sendUsbLine(const String& line);
+
+/** @brief sendUsbLine() for a prefix + raw bytes (a CAP: line) without building a String. */
+void sendUsbLine(const char* prefix, const uint8_t* data, size_t len);
+
+/**
  * @brief Check if a BLE client is currently connected
  * @return true if connected, false otherwise
  */

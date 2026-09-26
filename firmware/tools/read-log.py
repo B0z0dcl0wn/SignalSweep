@@ -110,9 +110,16 @@ def main():
                          "still unbearable in the same room.")
     a = ap.parse_args()
 
-    # Opening the port resets the board; wait for it to come back up.
-    with serial.Serial(a.port, a.baud, timeout=0.2) as ser:
-        time.sleep(2.0)
+    # DTR/RTS low BEFORE open: with them raised, the board reset when this
+    # script exited (Windows drops them as the process closes the port), so
+    # every readback rebooted the board it had just read.
+    ser = serial.Serial()
+    ser.port, ser.baudrate, ser.timeout = a.port, a.baud, 0.2
+    ser.dtr = False
+    ser.rts = False
+    ser.open()
+    with ser:
+        time.sleep(0.5)
 
         if a.on:
             send(ser, "CMD:LOG:ON")
