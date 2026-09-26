@@ -3335,6 +3335,9 @@
         let serialPort = null;
         let serialReader = null;
         let serialWriter = null;
+        // The pipeTo() promises: the port's streams stay locked until both
+        // settle, and port.close() on a locked port throws.
+        let serialPipes = [];
         let rxBuffer = '';
 
         function checkApiSupport() {
@@ -3814,10 +3817,12 @@
                 await serialPort.open({ baudRate: 115200 });
                 serialPort.addEventListener('disconnect', onDeviceDisconnected);
                 const textDecoder = new TextDecoderStream();
-                serialPort.readable.pipeTo(textDecoder.writable);
-                serialReader = textDecoder.readable.getReader();
                 const textEncoder = new TextEncoderStream();
-                textEncoder.readable.pipeTo(serialPort.writable);
+                serialPipes = [
+                    serialPort.readable.pipeTo(textDecoder.writable).catch(() => {}),
+                    textEncoder.readable.pipeTo(serialPort.writable).catch(() => {}),
+                ];
+                serialReader = textDecoder.readable.getReader();
                 serialWriter = textEncoder.writable.getWriter();
                 updateConnectionUI(true, 'SERIAL');
                 readSerialLoop();
@@ -3961,9 +3966,17 @@
                 try { await sendCommand({ raw: 'CMD:HOST:BYE' }); } catch (e) {}
             }
             await teardownUsb();
-            if (serialReader) { try { await serialReader.cancel(); } catch (e) {} serialReader = null; }
-            if (serialWriter) { try { await serialWriter.close(); } catch (e) {} serialWriter = null; }
-            if (serialPort)   { try { await serialPort.close(); } catch (e) {} serialPort = null; }
+            // Take locals first: cancelling the reader ends readSerialLoop, whose
+            // finally nulls serialPort -- that race is how Disconnect left the
+            // port open until the tab closed. Close only once both pipes have
+            // settled and unlocked the port's streams.
+            const port = serialPort, reader = serialReader, writer = serialWriter, pipes = serialPipes;
+            serialReader = null; serialWriter = null; serialPipes = [];
+            if (reader) { try { await reader.cancel(); } catch (e) {} }
+            if (writer) { try { await writer.close(); } catch (e) {} }
+            await Promise.all(pipes);
+            if (port) { try { await port.close(); } catch (e) { console.warn('serial close failed', e); } }
+            serialPort = null;
             onDeviceDisconnected();
         }
 
