@@ -109,6 +109,12 @@ All notable changes to SignalSweep are recorded here.
   Measured so far: USB only (60 of 60 pushes in 60 s, a USB capture
   streams). BLE delivery with the fix is not yet measured on a phone, so
   that limitation stands until it is.
+- **Fixed: the line size must also cap at the BLE attribute maximum (512
+  bytes), not just the MTU.** At MTU 517 the raw formula produced a 513-byte
+  `SDF:` line, one byte over what a single notification can ever carry, so
+  the trailing `\n` went out as its own bare notification and a push landing
+  in that gap tore the page; the line size now clamps to `min(MTU-3, 512)`
+  before deriving the base64 length.
 - `CMD:SD:GET` answers `{"sdget":{"err":"busy"}}` while a USB capture runs,
   because that stream owns the port. The capture's `CAP:` lines, its
   status frames and the `[ALERT]` line now go through the USB line mutex

@@ -3194,7 +3194,7 @@
         // fuller card gets a note rather than silently hiding files.
         let sdFiles = [];
         let sdRx = null;
-        const SD_BLE_BYTES_PER_SEC = 8000;
+        const SD_BLE_BYTES_PER_SEC = 1300; // measured 2026-09-26, OnePlus 7T
         const SD_PAGE_TIMEOUT_MS = 5000;   // ponytail: measured estimate, refine on the bench
 
         function sdRefresh() {

@@ -434,15 +434,28 @@ static bool deviceConnected = false;
 // worth roughly 3x fewer notifications for the same payload.
 static uint16_t negotiatedMtu = 23;
 
+// BLE ATT attribute value maximum. A notification's payload can never exceed
+// this many bytes, no matter how large the negotiated MTU is (MTU 517 leaves
+// 514 usable, but the attribute value itself is still capped at 512) -- this
+// is what bit us: bulkLineBytes() used mtu-3 straight through and produced a
+// 513-byte line (4 "SDF:" + 508 base64) at MTU 517, one byte over the cap,
+// which the stack cannot send as one notification. The trailing "\n" then
+// went out as its own 1-byte notification, and a push landing in that gap
+// made the app discard the line as torn. Always run the payload through this
+// cap before deriving a line size from it.
+static const size_t BLE_ATT_MAX_ATTR_LEN = 512;
+
 // Raw bytes per bulk base64 line (SDF:, LOG:). Over BLE the whole line --
-// 4 prefix + base64 + "\n" -- fits ONE notification (MTU-3 bytes), so a
-// notification the stack gives up on loses one whole line, which the app's
-// page check catches, rather than tearing it. Clamped to [48, 768]: below 48
-// (a peer stuck at MTU 23) a line spans notifications again, which still
-// works with the backpressure in notifyChunk(). USB takes the full 768.
+// 4 prefix + base64 + "\n" -- fits ONE notification (min(MTU-3, 512) bytes),
+// so a notification the stack gives up on loses one whole line, which the
+// app's page check catches, rather than tearing it. Clamped to [48, 768]:
+// below 48 (a peer stuck at MTU 23) a line spans notifications again, which
+// still works with the backpressure in notifyChunk(). USB takes the full 768.
 static size_t bulkLineBytes(bool viaBle) {
     if (!viaBle) return SD_GET_BATCH;
-    size_t n = (negotiatedMtu > 8) ? ((size_t)(negotiatedMtu - 3 - 5) / 4) * 3 : 0;
+    size_t attrLen = (negotiatedMtu > 3) ? (size_t)(negotiatedMtu - 3) : 0;
+    if (attrLen > BLE_ATT_MAX_ATTR_LEN) attrLen = BLE_ATT_MAX_ATTR_LEN;
+    size_t n = (attrLen > 5) ? ((attrLen - 5) / 4) * 3 : 0;
     if (n < 48) n = 48;
     if (n > SD_GET_BATCH) n = SD_GET_BATCH;
     return n;
@@ -1127,7 +1140,7 @@ void sendBleSerial(const String& data) {
     // than ~23. Falls back to a conservative 20 (23-3) if the peer never
     // negotiated, which is correct rather than merely lucky.
     size_t maxChunkSize = (negotiatedMtu > 3) ? (size_t)(negotiatedMtu - 3) : 20;
-    if (maxChunkSize > 512) maxChunkSize = 512;
+    if (maxChunkSize > BLE_ATT_MAX_ATTR_LEN) maxChunkSize = BLE_ATT_MAX_ATTR_LEN;
     size_t offset = 0;
     bool ok = true;
     while (ok && offset < length) {
