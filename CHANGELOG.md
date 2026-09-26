@@ -15,7 +15,14 @@ All notable changes to SignalSweep are recorded here.
   without ever beeping (`CONF_ALERT_MIN` is above it), while a rule the
   operator trusts can be set to beep on the OUI alone. Both `weight` and the
   new `ssid_prefix` (below) survive a rule set pushed from the app
-  (`updateWatchersSignaturesJson()`).
+  (`updateWatchersSignaturesJson()`). **On Wi-Fi, a rule's own `weight` only
+  ever replaces the OUI/SSID-prefix weight when the rule has no other
+  condition** (`mfg_id`/`device_name`/`service_uuid` are BLE-only fields the
+  Wi-Fi callback cannot evaluate) — a rule stating one of those got its full
+  `weight` from an OUI or SSID-prefix hit alone for a while, which is a
+  partial match scoring as if every condition had matched; a rule with an
+  `oui` is also now required to match on the SSID-prefix pass, not just the
+  prefix.
 - **`ssid_prefix` matches the start of a beacon or probe-response SSID, is
   case-sensitive, and is Wi-Fi only.** A rule that sets it is never checked
   against BLE. Default weight is `W_WIFI_SSID` (80) unless the rule overrides
@@ -65,9 +72,13 @@ All notable changes to SignalSweep are recorded here.
   unregistered, one a module maker's block) as well as our own Sierra
   mistake.
 - Settings > Signatures now shows both new fields per rule: "SSID starts
-  `<prefix>`" in place of the old exact-SSID line, and "strength N (beeps)"
-  or "strength N (listed, no beep)" so the 60-vs-80 distinction above is
-  readable on the phone instead of only in the JSON.
+  `<prefix>`" in place of the old exact-SSID line, and a strength readable on
+  every rule, not only ones with an explicit `weight` — `ruleStrength()`
+  computes it the same way the firmware would (explicit `weight`, else 80 for
+  `ssid_prefix`, else the summed per-condition weights, capped 100), labelled
+  "strength N (beeps)" / "(listed, no beep)" / "(label only)" for the
+  70/60/below-60 bands, so the 60-vs-80 distinction above is readable on the
+  phone instead of only in the JSON.
 - `#beep-bodycam` in Settings > Alerts is relabelled "Body cam & smart
   glasses" to match the new category routing.
 

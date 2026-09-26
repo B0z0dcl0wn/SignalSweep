@@ -621,9 +621,20 @@ if (!/uuidMatches\(/.test(matchFn)) sigFail.push('matchDeviceAgainstRule() does 
 if (!/sig\.ssidPrefix\.length\(\)\s*>\s*0\)\s*return 0;/.test(matchFn)) sigFail.push('SSID rules can match on BLE');
 if (!/if \(sig\.weight > 0\) weight = sig\.weight;/.test(matchFn)) sigFail.push('BLE matcher ignores rule weight');
 
-if (!/sig\.weight > 0 \? sig\.weight : W_WIFI_OUI/.test(wwSrc)) sigFail.push('Wi-Fi OUI path ignores rule weight');
-if (!/sig\.weight > 0 \? sig\.weight : W_WIFI_SSID/.test(wwSrc)) sigFail.push('no SSID-prefix pass scored at W_WIFI_SSID');
+if (!/\(ouiOnly && sig\.weight > 0\) \? sig\.weight : W_WIFI_OUI/.test(wwSrc)) sigFail.push('Wi-Fi OUI path awards rule weight on a partial match (mfg_id/device_name/service_uuid unchecked on Wi-Fi)');
+if (!/\(ouiOnly && sig\.weight > 0\) \? sig\.weight : W_WIFI_SSID/.test(wwSrc)) sigFail.push('SSID-prefix pass awards rule weight on a partial match (mfg_id/device_name/service_uuid unchecked on Wi-Fi)');
 if (!/foundSsid\.startsWith\(sig\.ssidPrefix\)/.test(wwSrc)) sigFail.push('SSID prefix not matched as a case-sensitive prefix of the broadcast SSID');
+
+// Fix: a rule's OUI/mfg_id/device_name/service_uuid conditions are an AND. On
+// Wi-Fi only the OUI (or SSID prefix) can actually be checked, so a rule that
+// also states a BLE-only condition must never get its own `weight` from a
+// Wi-Fi partial match -- and the SSID-prefix pass must not skip a rule's OUI
+// condition either. Both passes need the same "no BLE-only condition" guard.
+const ouiOnlyGuards = (wwSrc.match(/sig\.mfgId\.length\(\)\s*==\s*0\s*&&\s*sig\.deviceName\.length\(\)\s*==\s*0\s*&&\s*sig\.serviceUuid\.length\(\)\s*==\s*0/g) || []).length;
+if (ouiOnlyGuards < 2) sigFail.push('Wi-Fi OUI and SSID-prefix passes must each require a rule to have no BLE-only conditions before applying its own weight');
+const ouiChecks = (wwSrc.match(/cleanMac\.startsWith\(cleanOui\)/g) || []).length;
+if (ouiChecks < 2) sigFail.push('SSID-prefix pass does not also require the frame source MAC to match the rule\'s OUI');
+if (!/matchedRule = sig\.name\.length\(\) > 0 \? sig\.name : "SSID prefix match"/.test(wwSrc)) sigFail.push('SSID-prefix pass has no fallback rule name (falls back to an empty String)');
 
 if (sigFail.length) { console.log('FAIL: signature schema:', sigFail); process.exit(1); }
 console.log('[signalsweep self-test] signature schema (weight, ssid_prefix): ok');

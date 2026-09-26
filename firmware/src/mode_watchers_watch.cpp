@@ -259,11 +259,12 @@ static void ensureSignaturesFileExists() {
             addRule("SoundThinking", "SoundThinking", "d4:11:d6", "", "", "", 60);
 
             // NOTE: the Raven service-UUID rules (3100/3200/3300/3400/3500)
-            // were removed at v5. service_uuid is substring-matched against
-            // every UUID a device advertises, so a four-hex-digit needle hits
-            // constantly — and at W_UUID (70) a single hit is enough to beep.
-            // A UUID rule has to be specific enough to stand alone, because
-            // that is exactly what CONF_ALERT_MIN lets it do.
+            // were removed at v5, when service_uuid was substring-matched
+            // against every UUID a device advertises, so a four-hex-digit
+            // needle hit constantly — and at W_UUID (70) a single hit was
+            // enough to beep. service_uuid is exact-matched now (uuidMatches),
+            // but a UUID rule still has to be specific enough to stand alone,
+            // because that is exactly what CONF_ALERT_MIN lets it do.
 
             // Device Name Keywords. "raven" and "penguin" were dropped at v5:
             // ordinary words, matched as substrings, scoring W_NAME (70) — i.e.
@@ -546,11 +547,6 @@ static void noteAlertForTarget(WatcherTargetInfo& t, int bestWeight, const Strin
     }
 }
 
-/**
- * @brief Match a device against one signature rule. Returns an accumulated
- * confidence weight (0 = no match). A rule ANDs its non-empty conditions; the
- * returned weight is the sum of the matched conditions' weights (capped 100).
- */
 // Exact service-UUID match. A 4-hex-digit rule is a 16-bit SIG UUID: it
 // matches that 16-bit UUID, or its 128-bit expansion on the Bluetooth base
 // (0000xxxx-0000-1000-8000-00805f9b34fb), and nothing else. A longer rule must
@@ -573,6 +569,12 @@ static bool uuidMatches(const NimBLEUUID& u, const String& ruleUuid) {
     return have == want;
 }
 
+/**
+ * @brief Match a device against one signature rule. Returns an accumulated
+ * confidence weight (0 = no match). A rule ANDs its non-empty conditions; the
+ * returned weight is the sum of the matched conditions' weights (capped 100).
+ * A rule's own `weight`, when set, replaces that sum outright.
+ */
 static int matchDeviceAgainstRule(SWEEP_ADV* dev, const WatcherSignature& sig, String& outMatchedRule, String& outCategory) {
     // SSID rules are Wi-Fi-only; the promiscuous callback scores them.
     if (sig.ssidPrefix.length() > 0) return 0;
@@ -1359,7 +1361,15 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
                         if (c != ':' && c != '-') cleanOui += (char)toupper(c);
                     }
                     if (cleanMac.startsWith(cleanOui)) {
-                        int w = sig.weight > 0 ? sig.weight : W_WIFI_OUI;
+                        // Wi-Fi only ever evaluates the OUI here -- a rule that
+                        // also states mfg_id/device_name/service_uuid has
+                        // conditions this callback cannot check (those are
+                        // BLE-only fields), so its own weight can only replace
+                        // the sum when the OUI is the rule's whole condition.
+                        // Otherwise this is a partial match and stays at the
+                        // generic Wi-Fi OUI weight, same as an unweighted rule.
+                        bool ouiOnly = sig.mfgId.length() == 0 && sig.deviceName.length() == 0 && sig.serviceUuid.length() == 0;
+                        int w = (ouiOnly && sig.weight > 0) ? sig.weight : W_WIFI_OUI;
                         wifiConfidence += w;
                         if (sig.category == "Flock Safety") flockOui = true;
                         if (w > bestWeight) {
@@ -1587,11 +1597,27 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
             xSemaphoreTake(watchersMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
             for (const auto& sig : loadedSignatures) {
                 if (sig.ssidPrefix.length() == 0 || !foundSsid.startsWith(sig.ssidPrefix)) continue;
-                int w = sig.weight > 0 ? sig.weight : W_WIFI_SSID;
+                // A rule with an OUI is still an AND: the SSID prefix alone
+                // isn't enough, the frame's own source MAC must also start
+                // with it. Reuses the cleanMac built above for the OUI loop.
+                if (sig.oui.length() > 0) {
+                    String cleanOui = "";
+                    for (size_t i = 0; i < sig.oui.length(); i++) {
+                        char c = sig.oui[i];
+                        if (c != ':' && c != '-') cleanOui += (char)toupper(c);
+                    }
+                    if (!cleanMac.startsWith(cleanOui)) continue;
+                }
+                // Same principle as the OUI loop: mfg_id/device_name/
+                // service_uuid are BLE-only conditions this callback can't
+                // check, so a rule that states any of them can't have its own
+                // weight applied here -- fall back to the generic SSID weight.
+                bool ouiOnly = sig.mfgId.length() == 0 && sig.deviceName.length() == 0 && sig.serviceUuid.length() == 0;
+                int w = (ouiOnly && sig.weight > 0) ? sig.weight : W_WIFI_SSID;
                 wifiConfidence += w;
                 if (w > bestWeight) {
                     bestWeight = w;
-                    matchedRule = sig.name;
+                    matchedRule = sig.name.length() > 0 ? sig.name : "SSID prefix match";
                     matchedCategory = sig.category;
                 }
                 break;

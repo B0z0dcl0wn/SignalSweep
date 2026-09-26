@@ -3624,16 +3624,35 @@
                 const cat = categoryOf(r.category || r.name);
                 const on = MATCH.filter(([k]) => r[k] !== undefined && String(r[k]).trim() !== '')
                                 .map(([k, lbl]) => lbl + ' <code>' + esc(String(r[k])) + '</code>');
+                const strength = ruleStrength(r);
+                const strengthNote = strength >= 70 ? ' (beeps)'
+                                    : strength >= 60 ? ' (listed, no beep)'
+                                    : ' (label only)';
                 return '<div class="sig-row">'
                     + '<span class="sig-i">' + cat.icon + '</span>'
                     + '<span class="sig-t">'
                     + '<span class="sig-cat" style="color:' + cat.color + '">' + esc(cat.label) + '</span>'
                     + '<strong>' + esc(r.name || '(unnamed rule)') + '</strong>'
                     + '<em>' + (on.length ? on.join(' &middot; ') : 'matches nothing — every field is empty')
-                    + (r.weight ? ' &middot; strength ' + esc(String(r.weight)) + (r.weight >= 70 ? ' (beeps)' : ' (listed, no beep)') : '')
+                    + (on.length ? ' &middot; strength ' + esc(String(strength)) + strengthNote : '')
                     + '</em>'
                     + '</span></div>';
             }).join('');
+        }
+
+        // Effective strength of a rule for display only -- the device is the
+        // one that actually scores a match. Mirrors the firmware's per-signal
+        // weights (mode_watchers_watch.cpp's W_OUI/W_MFG/W_NAME/W_UUID); keep
+        // both in sync if either changes.
+        const SIG_STRENGTH_WEIGHTS = { oui: 30, mfg_id: 45, device_name: 70, service_uuid: 70 };
+        function ruleStrength(r) {
+            if (r.weight) return r.weight;
+            if (r.ssid_prefix) return 80;
+            let sum = 0;
+            for (const k in SIG_STRENGTH_WEIGHTS) {
+                if (r[k] !== undefined && String(r[k]).trim() !== '') sum += SIG_STRENGTH_WEIGHTS[k];
+            }
+            return Math.min(sum, 100);
         }
 
         function requestSignatures() {
@@ -4513,6 +4532,13 @@
         if (typeof window !== 'undefined') {
             window.__signalsweepSelfTest = async function () {
                 const results = {};
+                // Signatures page: effective strength shown for every rule,
+                // not just ones with an explicit weight.
+                results.ruleStrengthOui      = ruleStrength({ oui: 'x' }) === 30;
+                results.ruleStrengthSsid     = ruleStrength({ ssid_prefix: 'AB3-' }) === 80;
+                results.ruleStrengthWeightOui = ruleStrength({ oui: 'x', weight: 60 }) === 60;
+                results.ruleStrengthWeightMfg = ruleStrength({ mfg_id: '0x0D53', weight: 70 }) === 70;
+
                 // Category routing
                 results.catDrone   = categoryOf('Remote ID Drone').key === 'drone';
                 results.catTracker = categoryOf('Apple Find My Tracker').key === 'tracker';
