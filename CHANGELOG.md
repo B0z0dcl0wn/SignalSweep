@@ -4,6 +4,17 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Fixed — a Flock SSID rule that beeped at ordinary networks
+
+- **The Flock SSID rule is now exactly `Flock-` + 6 characters** (12 in all,
+  case-insensitive). That is the only network name Flock's firmware builds
+  (`WifiApService`: `"Flock-"` + the last 6 characters of the MAC). The rule
+  also matched `fs_` and `pigvision` anywhere in a name. Those were Bluetooth
+  *device-name* patterns, never network names, and as substrings they fire on
+  ordinary SSIDs: lowercased, "Chiefs_Guest" contains `fs_`. On a real drive a
+  Ubiquiti access point broadcasting three networks was logged as an ALPR.
+  `app/selftest.js` fails if the rule matches a substring again.
+
 ### Fixed — Disconnect over Web Serial releases the port
 
 - **Disconnect on the desktop Serial transport left the COM port open until the
