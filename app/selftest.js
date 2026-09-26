@@ -616,6 +616,10 @@ if (!/uuidMatches\(/.test(matchFn)) sigFail.push('matchDeviceAgainstRule() does 
 if (!/sig\.ssidPrefix\.length\(\)\s*>\s*0\)\s*return 0;/.test(matchFn)) sigFail.push('SSID rules can match on BLE');
 if (!/if \(sig\.weight > 0\) weight = sig\.weight;/.test(matchFn)) sigFail.push('BLE matcher ignores rule weight');
 
+if (!/sig\.weight > 0 \? sig\.weight : W_WIFI_OUI/.test(wwSrc)) sigFail.push('Wi-Fi OUI path ignores rule weight');
+if (!/sig\.weight > 0 \? sig\.weight : W_WIFI_SSID/.test(wwSrc)) sigFail.push('no SSID-prefix pass scored at W_WIFI_SSID');
+if (!/foundSsid\.startsWith\(sig\.ssidPrefix\)/.test(wwSrc)) sigFail.push('SSID prefix not matched as a case-sensitive prefix of the broadcast SSID');
+
 if (sigFail.length) { console.log('FAIL: signature schema:', sigFail); process.exit(1); }
 console.log('[signalsweep self-test] signature schema (weight, ssid_prefix): ok');
 

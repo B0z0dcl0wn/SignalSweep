@@ -1300,17 +1300,18 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
 
         if (xSemaphoreTake(watchersMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
             for (const auto& sig : loadedSignatures) {
-                if (sig.oui.length() > 0) {
+                if (sig.oui.length() > 0 && sig.ssidPrefix.length() == 0) {
                     String cleanOui = "";
                     for (size_t i = 0; i < sig.oui.length(); i++) {
                         char c = sig.oui[i];
                         if (c != ':' && c != '-') cleanOui += (char)toupper(c);
                     }
                     if (cleanMac.startsWith(cleanOui)) {
-                        wifiConfidence += W_WIFI_OUI;
+                        int w = sig.weight > 0 ? sig.weight : W_WIFI_OUI;
+                        wifiConfidence += w;
                         if (sig.category == "Flock Safety") flockOui = true;
-                        if (W_WIFI_OUI > bestWeight) {
-                            bestWeight = W_WIFI_OUI;
+                        if (w > bestWeight) {
+                            bestWeight = w;
                             matchedRule = sig.name.length() > 0 ? sig.name : "WiFi OUI Match";
                             matchedCategory = sig.category;
                         }
@@ -1524,6 +1525,26 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
                     }
                 }
             }
+        }
+
+        // SSID-prefix rules (Axon body cams broadcast AB3-... while pairing).
+        // foundSsid is set only for beacons and probe responses: a probe
+        // request names the network a client wants, not the sender. Same
+        // bounded lock as the OUI loop above; first matching rule wins.
+        if (foundSsid.length() > 0 &&
+            xSemaphoreTake(watchersMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+            for (const auto& sig : loadedSignatures) {
+                if (sig.ssidPrefix.length() == 0 || !foundSsid.startsWith(sig.ssidPrefix)) continue;
+                int w = sig.weight > 0 ? sig.weight : W_WIFI_SSID;
+                wifiConfidence += w;
+                if (w > bestWeight) {
+                    bestWeight = w;
+                    matchedRule = sig.name;
+                    matchedCategory = sig.category;
+                }
+                break;
+            }
+            xSemaphoreGive(watchersMutex);
         }
 
         if (wifiConfidence > 100) wifiConfidence = 100;
