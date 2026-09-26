@@ -79,8 +79,10 @@ static const char *SIG_FILE_PATH = "/data/signatures.json";
 //       (streetlight camera/sensor nodes). OUI-only, so they never beep.
 //   v9: SquachWatch-CYD extraction (registry-checked). Registered-maker OUIs
 //       (b4:1e:52 Flock, d4:11:d6 ShotSpotter, 00:25:df Axon) list at 60
-//       without beeping; Axon body-cam pairing SSIDs; smart glasses (Ray-Ban
-//       Meta fd5f, Luxottica 0x0D53, Snap 0x03C2) route to body cam; label-only
+//       without beeping; Axon body-cam pairing SSIDs; smart glasses route to
+//       body cam -- Ray-Ban/Oakley Meta requires Luxottica 0x0D53 AND fd5f
+//       together (either alone also appears on other hardware), Snap 0x03C2
+//       alone is fine; label-only
 //       Motorola Solutions / Verkada / Avigilon Alta / Axis; the three
 //       "Sierra" OUIs were Fiberblaze, Bitworks and unregistered -- replaced
 //       with the six blocks the IEEE gives Sierra Wireless.
@@ -337,8 +339,13 @@ static void ensureSignaturesFileExists() {
             // Meta Platforms' own company IDs are deliberately absent: Quest
             // headsets carry them too. (Don't write their hex values here:
             // selftest.js fails on them anywhere in this block.)
-            addRule("Ray-Ban Meta glasses", "Smart glasses", "", "", "", "fd5f", 70);
-            addRule("Luxottica smart glasses (Ray-Ban / Oakley Meta)", "Smart glasses", "", "0x0D53", "", "", 70);
+            // Ray-Ban/Oakley Meta requires BOTH signals, not either alone: an
+            // upstream detector found each one is a false-positive magnet on
+            // its own (Meta's fd5f service UUID is plausibly on Quest headsets
+            // too; the Luxottica company ID alone is weak). A rule ANDs every
+            // condition it states, so this scores W_MFG+W_UUID (capped) then
+            // the rule's own weight 70 -- only when both are present.
+            addRule("Ray-Ban / Oakley Meta glasses", "Smart glasses", "", "0x0D53", "", "fd5f", 70);
             addRule("Snap Spectacles", "Smart glasses", "", "0x03C2", "", "", 70);
 
             // Trackers (planted-on-you category). Keyed on service UUID, which

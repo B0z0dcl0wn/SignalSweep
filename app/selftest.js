@@ -677,6 +677,15 @@ for (const [, name, oui] of defaults.matchAll(/addRule\("([^"]+)",\s*"[^"]*",\s*
 if (ouiRules < 20) regFail.push(`only ${ouiRules} literal OUI rules parsed -- the regex drifted`);
 // Meta's company IDs are on Quest headsets too; they must never name a row "Smart glasses".
 if (/0x01AB|0x058E/i.test(defaults)) regFail.push('Meta company ID 0x01AB/0x058E added as a default rule');
+// Ray-Ban/Oakley Meta glasses: each signal alone is a false-positive magnet
+// (fd5f is plausibly on Meta's own Quest headsets too; the Luxottica company
+// ID alone is weak), so the combined rule must carry BOTH in the same
+// addRule call -- no default rule may state either one without the other.
+for (const call of defaults.match(/addRule\([^;]*\);/g) || []) {
+    const hasFd5f = /fd5f/i.test(call);
+    const hasLux = /0x0D53/i.test(call);
+    if (hasFd5f !== hasLux) regFail.push(`glasses rule states fd5f/0x0D53 without the other: ${call.replace(/\s+/g, ' ')}`);
+}
 if (!/#define SIG_SCHEMA_VERSION 9\b/.test(wwSrc)) regFail.push('SIG_SCHEMA_VERSION not bumped to 9');
 const hwCpp = readFileSync(new URL('../firmware/src/hardware_manager.cpp', import.meta.url), 'utf8');
 if (!/c\.indexOf\("glasses"\)[^;]*\)\s*return ALERT_BODYCAM;/.test(hwCpp)) regFail.push('firmware does not route "glasses" to ALERT_BODYCAM');

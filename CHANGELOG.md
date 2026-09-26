@@ -42,9 +42,12 @@ All notable changes to SignalSweep are recorded here.
   selftest parity pin covers literal "Flock Safety" rules as well),
   `d4:11:d6` (ShotSpotter/SoundThinking) and `00:25:df` ("Axon Enterprise
   device") list at weight 60 without beeping; the four Axon pairing SSID
-  prefixes beep at 80; smart glasses (Ray-Ban Meta service UUID `fd5f`,
-  Luxottica company ID `0x0D53`, Snap `0x03C2`) score 70 under a new "Smart
-  glasses" category, routed to the body-cam alert pattern through the
+  prefixes beep at 80; smart glasses score 70 under a new "Smart glasses"
+  category — Ray-Ban/Oakley Meta requires Luxottica company ID `0x0D53` AND
+  Meta's service UUID `fd5f` together (an upstream detector found either
+  signal alone is a false-positive magnet: `fd5f` is plausibly on Meta's own
+  Quest headsets too), Snap `0x03C2` alone stays as-is — routed to the
+  body-cam alert pattern through the
   `glasses` keyword in both `alertCategoryFromName()` (firmware) and
   `categoryOf()` (app) — Meta's own `0x01AB`/`0x058E` are deliberately left
   out, because those are Quest headsets, not glasses anyone is wearing while
