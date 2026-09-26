@@ -3618,7 +3618,7 @@
                 ['mfg_id',       'BLE company'],
                 ['device_name',  'Name'],
                 ['service_uuid', 'Service UUID'],
-                ['ssid',         'SSID']
+                ['ssid_prefix',  'SSID starts']
             ];
             el.innerHTML = rules.map(r => {
                 const cat = categoryOf(r.category || r.name);
@@ -3629,7 +3629,9 @@
                     + '<span class="sig-t">'
                     + '<span class="sig-cat" style="color:' + cat.color + '">' + esc(cat.label) + '</span>'
                     + '<strong>' + esc(r.name || '(unnamed rule)') + '</strong>'
-                    + '<em>' + (on.length ? on.join(' &middot; ') : 'matches nothing — every field is empty') + '</em>'
+                    + '<em>' + (on.length ? on.join(' &middot; ') : 'matches nothing — every field is empty')
+                    + (r.weight ? ' &middot; strength ' + esc(String(r.weight)) + (r.weight >= 70 ? ' (beeps)' : ' (listed, no beep)') : '')
+                    + '</em>'
                     + '</span></div>';
             }).join('');
         }

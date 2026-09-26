@@ -53,6 +53,12 @@ patterns, which is the shape the signature rules here took.
 the open. This detector finds cameras; DeFlock is where knowing about them
 turns into something useful. Verify with your own eyes before you submit.
 
+- **[SquachWatch-CYD](https://github.com/skizzophrenic/SquachWatch-CYD)** (GPL-3.0) by skizzophrenic —
+  the idea of grading each signature by who the IEEE says owns it, the Axon body-cam pairing SSIDs,
+  and the smart-glasses company IDs. No code taken; every value re-checked against the IEEE and
+  Bluetooth SIG registries, which is how we also caught two of their Axon OUIs (one unregistered,
+  one a module maker) and three of our own mislabelled "Sierra Wireless" prefixes.
+
 ## Tile
 
 **[lesleyxyz/node-tile](https://github.com/lesleyxyz/node-tile)**: reverse-engineered

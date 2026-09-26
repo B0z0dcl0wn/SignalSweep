@@ -4,6 +4,73 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Changed — signatures v9: per-rule strength, SSID prefixes, exact UUID matching
+
+- **A rule can now carry its own `weight` (1-100), replacing the per-condition
+  sum for that rule on both the BLE and Wi-Fi OUI paths.** Before this, every
+  condition on a rule added its own fixed weight (`W_OUI`, `W_NAME`, etc.), so
+  a rule that matched on OUI *and* name scored higher than one that only had
+  an OUI to go on, with no way to say "this OUI alone is enough" or "this OUI
+  alone is not." A registered-maker OUI with no other tell now lists at 60
+  without ever beeping (`CONF_ALERT_MIN` is above it), while a rule the
+  operator trusts can be set to beep on the OUI alone. Both `weight` and the
+  new `ssid_prefix` (below) survive a rule set pushed from the app
+  (`updateWatchersSignaturesJson()`).
+- **`ssid_prefix` matches the start of a beacon or probe-response SSID, is
+  case-sensitive, and is Wi-Fi only.** A rule that sets it is never checked
+  against BLE. Default weight is `W_WIFI_SSID` (80) unless the rule overrides
+  it. This is how the Axon body-cam pairing SSIDs (`AB2-`/`AB3-`/`AB4-`/
+  `AXON-`) are detected — they're prefixes on a name that includes a random
+  suffix, which a plain `device_name`/`ssid` exact match can't express.
+- **Service UUIDs match exactly, never as a substring — the v5 Raven "3100"
+  lesson.** `uuidMatches()` accepts a 4-hex rule against that 16-bit UUID or
+  its Bluetooth SIG base 128-bit expansion, and a longer rule only against an
+  equal full UUID. The old substring match meant a short UUID rule could fire
+  on any longer UUID that happened to contain those hex digits anywhere in
+  it — a false-positive class that looked like "this rule sometimes fires
+  on the wrong device" with nothing wrong in the rule itself.
+- **`SIG_SCHEMA_VERSION` bumped to 9.** New default rules: `b4:1e:52` (Flock
+  Safety, now its own named rule rather than living only in the community
+  `flockOuis[]` loop — it stays in the app's `FLOCK_OUIS` too, so the
+  selftest parity pin covers literal "Flock Safety" rules as well),
+  `d4:11:d6` (ShotSpotter/SoundThinking) and `00:25:df` ("Axon Enterprise
+  device") list at weight 60 without beeping; the four Axon pairing SSID
+  prefixes beep at 80; smart glasses (Ray-Ban Meta service UUID `fd5f`,
+  Luxottica company ID `0x0D53`, Snap `0x03C2`) score 70 under a new "Smart
+  glasses" category, routed to the body-cam alert pattern through the
+  `glasses` keyword in both `alertCategoryFromName()` (firmware) and
+  `categoryOf()` (app) — Meta's own `0x01AB`/`0x058E` are deliberately left
+  out, because those are Quest headsets, not glasses anyone is wearing while
+  walking around recording. Label-only (30, never beeps) additions: Motorola
+  Solutions (five blocks), Verkada, Avigilon Alta, Axis (two blocks).
+- **Trap: three of our own "Sierra Wireless" OUIs were never Sierra
+  Wireless.** A registry check (below) turned up that the three prefixes
+  filed under that name actually belong to Fiberblaze, Bitworks and an
+  unregistered block; replaced with the six IEEE-registered "Sierra
+  Wireless, ULC" blocks. Also annotated in the community list: `b8:35:32`
+  is unregistered and `48:27:ea` is Samsung, not whatever it was assumed to
+  be — both are now labelled honestly rather than silently wrong.
+- **Every literal default OUI rule is now checked against the IEEE registry
+  at build/test time.** `app/selftest.js` resolves each default rule's OUI in
+  `app/public/oui.txt` and fails if the registrant doesn't match the rule's
+  own name (24 rules covered, `OUI_OWNER`). This is what caught the Sierra
+  Wireless mislabelling above, and it's the mechanism intended to keep the
+  next hand-added rule from drifting the same way — a wrong vendor name on
+  a real OUI is worse than no name, because it tells the operator the wrong
+  thing about hardware they're standing next to.
+- Credit: the idea of grading a signature by its registered owner, the Axon
+  pairing SSIDs and the smart-glasses IDs came from SquachWatch-CYD (see
+  `CREDITS.md`) — re-verified against the registries rather than taken as
+  code, which is what surfaced two of *their* Axon OUIs being wrong (one
+  unregistered, one a module maker's block) as well as our own Sierra
+  mistake.
+- Settings > Signatures now shows both new fields per rule: "SSID starts
+  `<prefix>`" in place of the old exact-SSID line, and "strength N (beeps)"
+  or "strength N (listed, no beep)" so the 60-vs-80 distinction above is
+  readable on the phone instead of only in the JSON.
+- `#beep-bodycam` in Settings > Alerts is relabelled "Body cam & smart
+  glasses" to match the new category routing.
+
 ### Added — an optional SD card: a richer log, and captures without the cable
 
 - **A microSD reader is now an optional accessory, like the buzzer, LED bar
