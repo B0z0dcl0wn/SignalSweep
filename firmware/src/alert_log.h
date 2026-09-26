@@ -110,6 +110,18 @@ String alertLogNames();
 void alertLogClear();
 
 /**
+ * @brief Ask for this boot's time anchor to be (re)written on the next
+ * alertLogTick(). Just sets a flag, so it is safe from the NimBLE host task
+ * and from setup(). The anchor is epoch_at_secs0 = time(nullptr) - secs, one
+ * 8-byte entry per boot in /log/epochs.bin (boot u16 LE, pad u16, epoch u32 LE).
+ * It dates every record of that boot without touching the 16-byte record.
+ */
+void alertLogAnchorSoon();
+
+/** @brief UTC epoch at secs==0 of that boot, or 0 if no anchor is held. */
+uint32_t alertLogEpochFor(uint16_t boot);
+
+/**
  * @brief Parse "aa:bb:cc:dd:ee:ff" into 6 bytes. Returns false if malformed.
  */
 bool alertLogParseMac(const char* mac, uint8_t out[6]);

@@ -10,6 +10,7 @@
 #include <nvs_flash.h>
 #include <LittleFS.h>
 #include "alert_log.h"
+#include "rtc_clock.h"
 
 #if CONFIG_IDF_TARGET_ESP32C5
 #define BOOT_BUTTON_PIN BOOT_PIN   // GPIO28 on the XIAO ESP32-C5 (esp32-hal.h)
@@ -54,6 +55,13 @@ void setup() {
     // log's ordering key monotonic across power cycles, and derives the ring's
     // write head from the data rather than from a stored pointer.
     alertLogInit();
+
+    // Optional DS3231. After alertLogInit() because a good RTC anchors this
+    // boot in the log; the anchor is written on the first alertLogTick().
+    rtcInit();
+    Serial.printf("[RTC] %s\n", rtcState() == RTC_OK ? "DS3231 ok, clock set"
+                              : rtcState() == RTC_LOST ? "DS3231 lost power, waiting for a host"
+                              : "none fitted, waiting for a host");
 
     // Initialize BLE stack under whatever identity is stored. Both the name
     // and the address have to be settled before init/advertising, which is why

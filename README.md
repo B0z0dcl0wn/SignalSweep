@@ -107,9 +107,11 @@ chip which board it is; `--board c5` forces it.
 
 ## Hardware and controls
 
-The bare board works. Add a **passive buzzer** and a **WS2812 LED bar** and it
-gets loud and bright. Parts and wiring are in the
-**[Wiring Guide](firmware/WIRING.md)**.
+The bare board works. A **passive buzzer**, a **WS2812 LED bar**, and an
+optional **DS3231 clock** (so the alert log keeps real dates across power
+cuts with no phone around) are all add-ons — none of them required. Parts,
+pads and pictures are in the **[Wiring Guide](firmware/WIRING.md)** and the
+illustrated `firmware/wiring-diagram.html` / `wiring-diagram-c5.html` pages.
 
 | BOOT button | What it does |
 |---|---|

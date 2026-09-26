@@ -5,6 +5,7 @@
 #include "mode_manager.h"
 #include "mode_watchers_watch.h"
 #include "alert_log.h"
+#include "rtc_clock.h"
 #include "mbedtls/base64.h"
 #include "mode_capture.h"
 #include <NimBLEDevice.h>
@@ -171,6 +172,10 @@ String getBleConfigJson() {
     // Why the board last booted (esp_reset_reason(): 4 panic, 5-7 watchdog,
     // 9 brownout). Nothing else survives a crash with no host logging.
     doc["reset"] = (int)esp_reset_reason();
+    // Optional DS3231 (rtc_clock.h): 0 absent, 1 ok, 2 fitted but lost power.
+    // epoch is the board's UTC now, 0 until a host or the RTC has set it.
+    doc["rtc"] = rtcState();
+    doc["epoch"] = rtcNow();
     String out;
     serializeJson(doc, out);
     return out;
@@ -226,6 +231,22 @@ static void sendAlertLog(uint16_t fromBoot, uint32_t fromSecs, size_t skip) {
         o["skip"] = (uint32_t)skip;
         o["more"] = more;
         if (skip == 0) o["names"] = alertLogNames();
+
+        // One anchor per boot present in this page (records are key-ordered,
+        // so each boot is a contiguous run). Every page, not just the first:
+        // a later page can start a boot the first one never reached.
+        JsonObject ep = o["epochs"].to<JsonObject>();
+        bool any = false;
+        uint16_t lastBoot = 0;
+        for (size_t i = 0; i < n; i++) {
+            const uint8_t* r = buf + i * ALERT_LOG_REC_SIZE;
+            uint16_t b = (uint16_t)(r[0] | (r[1] << 8));
+            if (any && b == lastBoot) continue;
+            any = true;
+            lastBoot = b;
+            uint32_t e = alertLogEpochFor(b);
+            if (e) ep[String(b)] = e;
+        }
         String out;
         serializeJson(hdr, out);
         sendReply(out);
@@ -599,6 +620,15 @@ void processIncomingCommand(const String& rawCommand) {
         // from the device.
         if (doc["log"].is<bool>()) {
             setAlertLogEnabled(doc["log"].as<bool>());
+            sendConfigReply();
+        }
+
+        // 3c'''. Host clock: {"time":<unix seconds, UTC>}, sent by the app on
+        // every connect. The host is always right, except for a plainly unset
+        // clock (rtcSetEpoch rejects it). Small on purpose: this is the NimBLE
+        // host task. The log anchor it triggers is written later, from the tick.
+        if (doc["time"].is<uint32_t>()) {
+            rtcSetEpoch(doc["time"].as<uint32_t>());
             sendConfigReply();
         }
 

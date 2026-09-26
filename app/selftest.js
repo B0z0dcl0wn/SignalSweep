@@ -122,6 +122,21 @@ if (cfgKeys.length < 5 || cfgUnread.length) {
 }
 console.log('[signalsweep self-test] app reads every CMD:CFG field: ok');
 
+// Host time push: the app must send {"time"} paired with each CMD:CFG attempt
+// (USB opens reset the board, so a lone push can land mid-boot and vanish),
+// the firmware must parse it, and both sides must agree on the anchors key.
+{
+    const bsrc = readFileSync(new URL('../firmware/src/ble_serial.cpp', import.meta.url), 'utf8');
+    const fail = [];
+    if (!/doc\["time"\]\.is<uint32_t>\(\)/.test(bsrc)) fail.push('firmware does not parse {"time"}');
+    const rc = (appSrc.match(/function requestConfig\(\) \{[\s\S]*?\n        \}/) || [''])[0];
+    if (!/time:\s*Math\.floor\(Date\.now\(\)\s*\/\s*1000\)/.test(rc)) fail.push('requestConfig does not push time');
+    if (!/o\["epochs"\]/.test(bsrc)) fail.push('logrd header has no epochs');
+    if (!/o\.epochs/.test(appSrc)) fail.push('app ignores logrd epochs');
+    if (fail.length) { console.log('FAIL:', fail.join('; ')); process.exit(1); }
+    console.log('[signalsweep self-test] host time push + log anchors wired both sides: ok');
+}
+
 // C5 port: the bench-measured radio settings must stay behind the C5 guard, and
 // the S3 path must keep its own values (the S3 build is byte-identical by contract).
 {
