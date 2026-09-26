@@ -405,12 +405,17 @@ if (!/payload\[offset \+ 4\] == 0x0D\)[\s\S]{0,80}&payload\[offset \+ 6\]/.test(
     flockFail.push('BLE Remote ID must decode from offset+6 (after app code 0x0D and the counter)');
 
 // The phone analyzer calls a capture Flock only under the detector's own rule
-// (listed OUI + wildcard + IE), so its OUI list must be exactly the firmware's.
+// (listed OUI + wildcard + IE), so its OUI list must be exactly the firmware's:
+// the community flockOuis[] loop plus every literal addRule(..., "Flock
+// Safety", "<oui>", ...) (the IEEE-registered b4:1e:52 block lives as its own
+// rule, not in the loop, but still sets flockOui -- see line ~1364).
 const ouiRe = /[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}/g;
-const fwOuis = ((fw.match(/const char\* flockOuis\[\] = \{([^}]*)\}/) || [])[1] || '').match(ouiRe) || [];
+const fwLoopOuis = ((fw.match(/const char\* flockOuis\[\] = \{([^}]*)\}/) || [])[1] || '').match(ouiRe) || [];
+const fwRuleOuis = [...fw.matchAll(/addRule\("[^"]+",\s*"Flock Safety",\s*"([0-9a-fA-F:]{8})"/g)].map(m => m[1]);
+const fwOuis = [...new Set([...fwLoopOuis, ...fwRuleOuis])];
 const appOuis = ((appSrc.match(/const FLOCK_OUIS = \[([^\]]*)\]/) || [])[1] || '').match(ouiRe) || [];
 if (!fwOuis.length || fwOuis.slice().sort().join() !== appOuis.slice().sort().join())
-    flockFail.push('app.js FLOCK_OUIS (' + appOuis.length + ') does not match firmware flockOuis[] (' + fwOuis.length + ')');
+    flockFail.push('app.js FLOCK_OUIS (' + appOuis.length + ') does not match firmware flockOuis[] + registered Flock Safety rules (' + fwOuis.length + ')');
 
 if (flockFail.length) {
     console.log('FAIL: Flock wildcard-probe signature:', flockFail);
@@ -587,6 +592,105 @@ console.log('[signalsweep self-test] alert log record + write path: ok');
     if (rs.length) { console.log('FAIL: BLE backpressure:', rs); process.exit(1); }
     console.log('[signalsweep self-test] BLE backpressure + page checks: ok');
 }
+
+// ---------------------------------------------------------------------------
+// Signature schema (SquachWatch extraction, Phase 1). A rule may carry its own
+// weight (registered-maker OUIs list at 60 without beeping) and an SSID prefix
+// (Axon body cams in pairing mode). Both must survive every path a rule takes:
+// the struct, the loader, and the writer a pushed rule set goes through --
+// updateWatchersSignaturesJson() rebuilds each rule field by field, so a field
+// it forgets is silently dropped the first time the app saves.
+const sigFail = [];
+const wwHdr = readFileSync(new URL('../firmware/src/mode_watchers_watch.h', import.meta.url), 'utf8');
+if (!/int\s+weight\s*=\s*0;/.test(wwHdr)) sigFail.push('WatcherSignature has no `int weight = 0;`');
+if (!/String\s+ssidPrefix;/.test(wwHdr)) sigFail.push('WatcherSignature has no `String ssidPrefix;`');
+if (!/sig\.weight\s*=\s*s\["weight"\]/.test(wwSrc)) sigFail.push('loader never reads "weight"');
+if (!/sig\.ssidPrefix\s*=\s*s\["ssid_prefix"\]/.test(wwSrc)) sigFail.push('loader never reads "ssid_prefix"');
+if (!/ns\["weight"\]\s*=/.test(wwSrc)) sigFail.push('updateWatchersSignaturesJson drops "weight" from pushed rules');
+if (!/ns\["ssid_prefix"\]\s*=/.test(wwSrc)) sigFail.push('updateWatchersSignaturesJson drops "ssid_prefix" from pushed rules');
+
+const matchFn = (wwSrc.match(/static int matchDeviceAgainstRule\([\s\S]*?\r?\n\}/) || [''])[0];
+const uuidFn  = (wwSrc.match(/static bool uuidMatches\([\s\S]*?\r?\n\}/) || [''])[0];
+// The v5 Raven removal: a 4-digit needle matched as a substring hits random
+// 128-bit UUIDs, and at W_UUID (70) one hit beeps.
+if (!uuidFn) sigFail.push('no uuidMatches() helper');
+if (/indexOf/.test(uuidFn) || /Check Service UUID[\s\S]*?indexOf[\s\S]*?W_UUID/.test(matchFn))
+    sigFail.push('service UUID matched as a substring again');
+if (!/bitSize\(\)\s*==\s*16/.test(uuidFn)) sigFail.push('uuidMatches() has no exact 16-bit arm');
+if (!/uuidMatches\(/.test(matchFn)) sigFail.push('matchDeviceAgainstRule() does not use uuidMatches()');
+if (!/sig\.ssidPrefix\.length\(\)\s*>\s*0\)\s*return 0;/.test(matchFn)) sigFail.push('SSID rules can match on BLE');
+if (!/if \(sig\.weight > 0\) weight = sig\.weight;/.test(matchFn)) sigFail.push('BLE matcher ignores rule weight');
+
+if (!/\(ouiOnly && sig\.weight > 0\) \? sig\.weight : W_WIFI_OUI/.test(wwSrc)) sigFail.push('Wi-Fi OUI path awards rule weight on a partial match (mfg_id/device_name/service_uuid unchecked on Wi-Fi)');
+if (!/\(ouiOnly && sig\.weight > 0\) \? sig\.weight : W_WIFI_SSID/.test(wwSrc)) sigFail.push('SSID-prefix pass awards rule weight on a partial match (mfg_id/device_name/service_uuid unchecked on Wi-Fi)');
+if (!/foundSsid\.startsWith\(sig\.ssidPrefix\)/.test(wwSrc)) sigFail.push('SSID prefix not matched as a case-sensitive prefix of the broadcast SSID');
+
+// Fix: a rule's OUI/mfg_id/device_name/service_uuid conditions are an AND. On
+// Wi-Fi only the OUI (or SSID prefix) can actually be checked, so a rule that
+// also states a BLE-only condition must never get its own `weight` from a
+// Wi-Fi partial match -- and the SSID-prefix pass must not skip a rule's OUI
+// condition either. Both passes need the same "no BLE-only condition" guard.
+const ouiOnlyGuards = (wwSrc.match(/sig\.mfgId\.length\(\)\s*==\s*0\s*&&\s*sig\.deviceName\.length\(\)\s*==\s*0\s*&&\s*sig\.serviceUuid\.length\(\)\s*==\s*0/g) || []).length;
+if (ouiOnlyGuards < 2) sigFail.push('Wi-Fi OUI and SSID-prefix passes must each require a rule to have no BLE-only conditions before applying its own weight');
+const ouiChecks = (wwSrc.match(/cleanMac\.startsWith\(cleanOui\)/g) || []).length;
+if (ouiChecks < 2) sigFail.push('SSID-prefix pass does not also require the frame source MAC to match the rule\'s OUI');
+if (!/matchedRule = sig\.name\.length\(\) > 0 \? sig\.name : "SSID prefix match"/.test(wwSrc)) sigFail.push('SSID-prefix pass has no fallback rule name (falls back to an empty String)');
+
+if (sigFail.length) { console.log('FAIL: signature schema:', sigFail); process.exit(1); }
+console.log('[signalsweep self-test] signature schema (weight, ssid_prefix): ok');
+
+// ---------------------------------------------------------------------------
+// Registry pin. Every default OUI rule written as a literal addRule() must be
+// registered by the IEEE to the company its name claims. SquachWatch-CYD
+// shipped Sonos as "Vigilant" for eleven releases; we shipped Fiberblaze and
+// Bitworks as "Sierra Wireless". A re-import from someone else's table fails
+// here. The Flock community list (flockOuis[], added in a loop) is exempt on
+// purpose: it is the module makers Flock builds on, gated by the wildcard probe.
+const regFail = [];
+const ouiReg = new Map(readFileSync(new URL('./public/oui.txt', import.meta.url), 'utf8')
+    .split(/\r?\n/).map(l => l.split('\t')).filter(p => p.length >= 2)
+    .map(([k, v]) => [k.trim().toUpperCase(), v.trim()]));
+const OUI_OWNER = {
+    'Flock Safety MAC (registered block)': 'Flock Safety',
+    'SoundThinking': 'ShotSpotter',
+    'Axon Enterprise device': 'Axon Enterprise',
+    'Cradlepoint Router': 'CradlePoint',
+    'Peplink Router': 'PePWave',
+    'Sierra Wireless Infrastructure': 'Sierra Wireless',
+    'Genetec (AutoVu / Sharp)': 'Genetec',
+    'Ubicquia (streetlight node)': 'Ubicquia',
+    'Motorola Solutions device': 'Motorola Solutions',
+    'Verkada camera': 'Verkada',
+    'Avigilon Alta device': 'Avigilon Alta',
+    'Axis Communications camera': 'Axis Communications'
+};
+const defaults = (wwSrc.match(/auto addRule = [\s\S]*?serializeJsonPretty\(doc, file\)/) || [''])[0];
+let ouiRules = 0;
+for (const [, name, oui] of defaults.matchAll(/addRule\("([^"]+)",\s*"[^"]*",\s*"([0-9a-fA-F:]{8})"/g)) {
+    ouiRules++;
+    const owner = ouiReg.get(oui.replace(/:/g, '').toUpperCase());
+    const want = OUI_OWNER[name];
+    if (!want) regFail.push(`OUI rule "${name}" (${oui}) has no registrant pinned in OUI_OWNER`);
+    else if (!owner || !owner.toLowerCase().includes(want.toLowerCase()))
+        regFail.push(`"${name}" ${oui} is registered to "${owner || 'nobody'}", not ${want}`);
+}
+if (ouiRules < 20) regFail.push(`only ${ouiRules} literal OUI rules parsed -- the regex drifted`);
+// Meta's company IDs are on Quest headsets too; they must never name a row "Smart glasses".
+if (/0x01AB|0x058E/i.test(defaults)) regFail.push('Meta company ID 0x01AB/0x058E added as a default rule');
+// Ray-Ban/Oakley Meta glasses: each signal alone is a false-positive magnet
+// (fd5f is plausibly on Meta's own Quest headsets too; the Luxottica company
+// ID alone is weak), so the combined rule must carry BOTH in the same
+// addRule call -- no default rule may state either one without the other.
+for (const call of defaults.match(/addRule\([^;]*\);/g) || []) {
+    const hasFd5f = /fd5f/i.test(call);
+    const hasLux = /0x0D53/i.test(call);
+    if (hasFd5f !== hasLux) regFail.push(`glasses rule states fd5f/0x0D53 without the other: ${call.replace(/\s+/g, ' ')}`);
+}
+if (!/#define SIG_SCHEMA_VERSION 9\b/.test(wwSrc)) regFail.push('SIG_SCHEMA_VERSION not bumped to 9');
+const hwCpp = readFileSync(new URL('../firmware/src/hardware_manager.cpp', import.meta.url), 'utf8');
+if (!/c\.indexOf\("glasses"\)[^;]*\)\s*return ALERT_BODYCAM;/.test(hwCpp)) regFail.push('firmware does not route "glasses" to ALERT_BODYCAM');
+if (regFail.length) { console.log('FAIL: registry:', regFail); process.exit(1); }
+console.log(`[signalsweep self-test] ${ouiRules} default OUI rules match the IEEE registry: ok`);
 
 const results = await global.__signalsweepSelfTest();
 const failed = Object.entries(results).filter(([, v]) => !v).map(([k]) => k);

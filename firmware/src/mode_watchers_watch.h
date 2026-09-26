@@ -17,6 +17,13 @@ struct WatcherSignature {
     String mfgId;
     String deviceName;
     String serviceUuid;
+    // Optional. 0 = use the per-condition weights (W_OUI, W_UUID...). Set on
+    // rules whose OUI the IEEE registers to the product's own maker, so they
+    // list (60) without beeping on the OUI alone.
+    int weight = 0;
+    // Optional. Case-sensitive SSID prefix, matched on beacons and probe
+    // responses only. A rule with one is Wi-Fi-only.
+    String ssidPrefix;
 };
 
 /**

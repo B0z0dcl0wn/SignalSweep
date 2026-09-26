@@ -77,7 +77,16 @@ static const char *SIG_FILE_PATH = "/data/signatures.json";
 //       PLUS a serial, or the full "Penguin-<10 digits>" name.
 //   v8: label-only OUI hints for Genetec (AutoVu/Sharp ALPR) and Ubicquia
 //       (streetlight camera/sensor nodes). OUI-only, so they never beep.
-#define SIG_SCHEMA_VERSION 8
+//   v9: SquachWatch-CYD extraction (registry-checked). Registered-maker OUIs
+//       (b4:1e:52 Flock, d4:11:d6 ShotSpotter, 00:25:df Axon) list at 60
+//       without beeping; Axon body-cam pairing SSIDs; smart glasses route to
+//       body cam -- Ray-Ban/Oakley Meta requires Luxottica 0x0D53 AND fd5f
+//       together (either alone also appears on other hardware), Snap 0x03C2
+//       alone is fine; label-only
+//       Motorola Solutions / Verkada / Avigilon Alta / Axis; the three
+//       "Sierra" OUIs were Fiberblaze, Bitworks and unregistered -- replaced
+//       with the six blocks the IEEE gives Sierra Wireless.
+#define SIG_SCHEMA_VERSION 9
 
 static SemaphoreHandle_t watchersMutex = NULL;
 static bool watchersRunning = false;
@@ -187,7 +196,8 @@ static void ensureSignaturesFileExists() {
             doc["version"] = SIG_SCHEMA_VERSION;
             JsonArray sigs = doc["signatures"].to<JsonArray>();
 
-            auto addRule = [&](const char* name, const char* cat, const char* oui, const char* mfg, const char* dev, const char* uuid) {
+            auto addRule = [&](const char* name, const char* cat, const char* oui, const char* mfg,
+                               const char* dev, const char* uuid, int weight = 0, const char* ssid = "") {
                 JsonObject s = sigs.add<JsonObject>();
                 s["name"] = name;
                 s["category"] = cat;
@@ -195,6 +205,8 @@ static void ensureSignaturesFileExists() {
                 s["mfg_id"] = mfg;
                 s["device_name"] = dev;
                 s["service_uuid"] = uuid;
+                if (weight > 0) s["weight"] = weight;
+                if (ssid[0]) s["ssid_prefix"] = ssid;
             };
 
             // Flock Safety OUI prefixes.
@@ -226,8 +238,10 @@ static void ensureSignaturesFileExists() {
             // f8:a2:d6 was dropped at v6 — upstream field-demoted it in the
             // 2026-07-16 revision after it was observed hitting a Sony Media
             // Player. 14:b5:cd was added in that same revision.
+            // Annotated, not removed (it is the community's published list):
+            // b8:35:32 is not in the IEEE registry; 48:27:ea is Samsung.
             const char* flockOuis[] = {
-                "b4:1e:52", "70:c9:4e", "3c:91:80", "d8:f3:bc", "80:30:49", "b8:35:32",
+                "70:c9:4e", "3c:91:80", "d8:f3:bc", "80:30:49", "b8:35:32",
                 "14:5a:fc", "74:4c:a1", "08:3a:88", "9c:2f:9d", "c0:35:32", "94:08:53",
                 "e4:aa:ea", "f4:6a:dd", "24:b2:b9", "00:f4:8d", "d0:39:57",
                 "e8:d0:fc", "e0:4f:43", "b8:1e:a4", "70:08:94", "58:8e:81", "ec:1b:bd",
@@ -238,16 +252,21 @@ static void ensureSignaturesFileExists() {
             for (const char* oui : flockOuis) {
                 addRule("Flock Safety MAC", "Flock Safety", oui, "", "", "");
             }
+            // The one block the IEEE registers to Flock Safety itself. Listed on
+            // its own (60) rather than only through the wildcard probe; the
+            // category keeps flockOui true, so the probe path still sees it.
+            addRule("Flock Safety MAC (registered block)", "Flock Safety", "b4:1e:52", "", "", "", 60);
 
             // SoundThinking / ShotSpotter
-            addRule("SoundThinking", "SoundThinking", "d4:11:d6", "", "", "");
+            addRule("SoundThinking", "SoundThinking", "d4:11:d6", "", "", "", 60);
 
             // NOTE: the Raven service-UUID rules (3100/3200/3300/3400/3500)
-            // were removed at v5. service_uuid is substring-matched against
-            // every UUID a device advertises, so a four-hex-digit needle hits
-            // constantly — and at W_UUID (70) a single hit is enough to beep.
-            // A UUID rule has to be specific enough to stand alone, because
-            // that is exactly what CONF_ALERT_MIN lets it do.
+            // were removed at v5, when service_uuid was substring-matched
+            // against every UUID a device advertises, so a four-hex-digit
+            // needle hit constantly — and at W_UUID (70) a single hit was
+            // enough to beep. service_uuid is exact-matched now (uuidMatches),
+            // but a UUID rule still has to be specific enough to stand alone,
+            // because that is exactly what CONF_ALERT_MIN lets it do.
 
             // Device Name Keywords. "raven" and "penguin" were dropped at v5:
             // ordinary words, matched as substrings, scoring W_NAME (70) — i.e.
@@ -264,14 +283,29 @@ static void ensureSignaturesFileExists() {
             // class of junk as the Espressif OUIs above.
 
             // Pre-existing SignalSweep Rules
-            addRule("Axon Body Camera / Taser", "Axon", "00:25:df", "", "", "");
+            // 00:25:df is registered to Axon Enterprise, but Axon makes more
+            // than body cams (Tasers, docks, Signal units): the name says
+            // "device", and it lists (60) without beeping on the OUI alone.
+            addRule("Axon Enterprise device", "Axon", "00:25:df", "", "", "", 60);
+            // Body cams broadcast these while pairing (Axon's own admin docs).
+            // Vendor-documented, so they beep at the default W_WIFI_SSID (80).
+            addRule("Axon Body 2 camera (pairing)", "Axon", "", "", "", "", 0, "AB2-");
+            addRule("Axon Body 3 camera (pairing)", "Axon", "", "", "", "", 0, "AB3-");
+            addRule("Axon Body 4 camera (pairing)", "Axon", "", "", "", "", 0, "AB4-");
+            addRule("Axon device hotspot", "Axon", "", "", "", "", 0, "AXON-");
             addRule("Axon Signal System", "Axon", "", "", "", "fe6c");
             addRule("Axon Signal System", "Axon", "", "", "", "fe6d");
             addRule("Cradlepoint Router", "Fleet / Infrastructure", "00:30:44", "", "", "");
             addRule("Peplink Router", "Fleet / Infrastructure", "00:1a:dd", "", "", "");
-            addRule("Sierra Wireless Infrastructure", "Fleet / Infrastructure", "00:21:b2", "", "", "");
-            addRule("Sierra Wireless Infrastructure", "Fleet / Infrastructure", "00:f0:8a", "", "", "");
-            addRule("Sierra Wireless Infrastructure", "Fleet / Infrastructure", "00:07:e2", "", "", "");
+            // The six MA-L blocks the IEEE registers to "Sierra Wireless, ULC".
+            // The old three were Fiberblaze (00:21:b2), Bitworks (00:07:e2) and
+            // an unregistered prefix (00:f0:8a).
+            addRule("Sierra Wireless Infrastructure", "Fleet / Infrastructure", "00:a0:d5", "", "", "");
+            addRule("Sierra Wireless Infrastructure", "Fleet / Infrastructure", "28:a3:31", "", "", "");
+            addRule("Sierra Wireless Infrastructure", "Fleet / Infrastructure", "50:13:9d", "", "", "");
+            addRule("Sierra Wireless Infrastructure", "Fleet / Infrastructure", "64:ce:6e", "", "", "");
+            addRule("Sierra Wireless Infrastructure", "Fleet / Infrastructure", "84:db:2f", "", "", "");
+            addRule("Sierra Wireless Infrastructure", "Fleet / Infrastructure", "cc:93:4a", "", "", "");
 
             // Label-only hints for surveillance vendors we have NOT yet heard
             // on the air (IEEE registrations, not field captures). OUI alone is
@@ -284,6 +318,35 @@ static void ensureSignaturesFileExists() {
             addRule("Genetec (AutoVu / Sharp)", "Genetec", "00:bf:15", "", "", "");
             addRule("Genetec (AutoVu / Sharp)", "Genetec", "0c:bf:15", "", "", "");
             addRule("Ubicquia (streetlight node)", "Ubicquia", "94:7b:be", "", "", "");
+
+            // More label-only hints, same rule as Genetec: registry-true, never
+            // heard on the air by us, so W_OUI (30), All tab, never beep.
+            // Motorola Solutions owns Vigilant ALPR but also makes police radios
+            // and in-car video, so the name says "device". The categories avoid
+            // every routing keyword ("cam" would file Verkada under body cams).
+            addRule("Motorola Solutions device", "Motorola Solutions", "00:04:7d", "", "", "");
+            addRule("Motorola Solutions device", "Motorola Solutions", "00:18:85", "", "", "");
+            addRule("Motorola Solutions device", "Motorola Solutions", "00:1f:92", "", "", "");
+            addRule("Motorola Solutions device", "Motorola Solutions", "4c:cc:34", "", "", "");
+            addRule("Motorola Solutions device", "Motorola Solutions", "b8:e2:8c", "", "", "");
+            addRule("Verkada camera", "Verkada", "e0:a7:00", "", "", "");
+            addRule("Avigilon Alta device", "Avigilon Alta", "70:1a:d5", "", "", "");
+            addRule("Axis Communications camera", "Axis Communications", "00:40:8c", "", "", "");
+            addRule("Axis Communications camera", "Axis Communications", "b8:a4:4f", "", "", "");
+
+            // Smart glasses: a camera on someone's face, counted like a body
+            // cam (category keyword "glasses" routes to it on both sides).
+            // Meta Platforms' own company IDs are deliberately absent: Quest
+            // headsets carry them too. (Don't write their hex values here:
+            // selftest.js fails on them anywhere in this block.)
+            // Ray-Ban/Oakley Meta requires BOTH signals, not either alone: an
+            // upstream detector found each one is a false-positive magnet on
+            // its own (Meta's fd5f service UUID is plausibly on Quest headsets
+            // too; the Luxottica company ID alone is weak). A rule ANDs every
+            // condition it states, so this scores W_MFG+W_UUID (capped) then
+            // the rule's own weight 70 -- only when both are present.
+            addRule("Ray-Ban / Oakley Meta glasses", "Smart glasses", "", "0x0D53", "", "fd5f", 70);
+            addRule("Snap Spectacles", "Smart glasses", "", "0x03C2", "", "", 70);
 
             // Trackers (planted-on-you category). Keyed on service UUID, which
             // the matcher already handles. AirTag is matched in code (its Find
@@ -491,12 +554,38 @@ static void noteAlertForTarget(WatcherTargetInfo& t, int bestWeight, const Strin
     }
 }
 
+// Exact service-UUID match. A 4-hex-digit rule is a 16-bit SIG UUID: it
+// matches that 16-bit UUID, or its 128-bit expansion on the Bluetooth base
+// (0000xxxx-0000-1000-8000-00805f9b34fb), and nothing else. A longer rule must
+// equal the whole UUID. Never a substring: that is how "3100" once matched
+// every UUID with those digits in it and beeped (v5, the Raven rules).
+static bool uuidMatches(const NimBLEUUID& u, const String& ruleUuid) {
+    String want = ruleUuid;
+    want.trim();
+    want.toLowerCase();
+    if (want.startsWith("0x")) want = want.substring(2);
+    if (want.length() == 4) {
+        uint16_t v = (uint16_t)strtoul(want.c_str(), NULL, 16);
+        if (u.bitSize() == 16) return u == NimBLEUUID(v);
+        String full = String(u.toString().c_str());
+        full.toLowerCase();
+        return full == ("0000" + want + "-0000-1000-8000-00805f9b34fb");
+    }
+    String have = String(u.toString().c_str());
+    have.toLowerCase();
+    return have == want;
+}
+
 /**
  * @brief Match a device against one signature rule. Returns an accumulated
  * confidence weight (0 = no match). A rule ANDs its non-empty conditions; the
  * returned weight is the sum of the matched conditions' weights (capped 100).
+ * A rule's own `weight`, when set, replaces that sum outright.
  */
 static int matchDeviceAgainstRule(SWEEP_ADV* dev, const WatcherSignature& sig, String& outMatchedRule, String& outCategory) {
+    // SSID rules are Wi-Fi-only; the promiscuous callback scores them.
+    if (sig.ssidPrefix.length() > 0) return 0;
+
     int weight = 0;
 
     // 1. Check OUI (MAC Prefix)
@@ -568,13 +657,8 @@ static int matchDeviceAgainstRule(SWEEP_ADV* dev, const WatcherSignature& sig, S
         }
         bool uuidMatched = false;
         size_t count = dev->getServiceUUIDCount();
-        String targetUuid = sig.serviceUuid;
-        targetUuid.toLowerCase();
-
         for (size_t i = 0; i < count; i++) {
-            String uuidStr = String(dev->getServiceUUID(i).toString().c_str());
-            uuidStr.toLowerCase();
-            if (uuidStr.indexOf(targetUuid) >= 0) {
+            if (uuidMatches(dev->getServiceUUID(i), sig.serviceUuid)) {
                 uuidMatched = true;
                 break;
             }
@@ -588,6 +672,8 @@ static int matchDeviceAgainstRule(SWEEP_ADV* dev, const WatcherSignature& sig, S
     if (weight == 0) {
         return 0;  // rule had no conditions
     }
+    // A rule that states its own strength replaces the per-condition sum.
+    if (sig.weight > 0) weight = sig.weight;
 
     outMatchedRule = sig.name.length() > 0 ? sig.name : "Matched Signature";
     outCategory = sig.category.length() > 0 ? sig.category : "Surveillance";
@@ -1275,17 +1361,26 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
 
         if (xSemaphoreTake(watchersMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
             for (const auto& sig : loadedSignatures) {
-                if (sig.oui.length() > 0) {
+                if (sig.oui.length() > 0 && sig.ssidPrefix.length() == 0) {
                     String cleanOui = "";
                     for (size_t i = 0; i < sig.oui.length(); i++) {
                         char c = sig.oui[i];
                         if (c != ':' && c != '-') cleanOui += (char)toupper(c);
                     }
                     if (cleanMac.startsWith(cleanOui)) {
-                        wifiConfidence += W_WIFI_OUI;
+                        // Wi-Fi only ever evaluates the OUI here -- a rule that
+                        // also states mfg_id/device_name/service_uuid has
+                        // conditions this callback cannot check (those are
+                        // BLE-only fields), so its own weight can only replace
+                        // the sum when the OUI is the rule's whole condition.
+                        // Otherwise this is a partial match and stays at the
+                        // generic Wi-Fi OUI weight, same as an unweighted rule.
+                        bool ouiOnly = sig.mfgId.length() == 0 && sig.deviceName.length() == 0 && sig.serviceUuid.length() == 0;
+                        int w = (ouiOnly && sig.weight > 0) ? sig.weight : W_WIFI_OUI;
+                        wifiConfidence += w;
                         if (sig.category == "Flock Safety") flockOui = true;
-                        if (W_WIFI_OUI > bestWeight) {
-                            bestWeight = W_WIFI_OUI;
+                        if (w > bestWeight) {
+                            bestWeight = w;
                             matchedRule = sig.name.length() > 0 ? sig.name : "WiFi OUI Match";
                             matchedCategory = sig.category;
                         }
@@ -1499,6 +1594,42 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
                     }
                 }
             }
+        }
+
+        // SSID-prefix rules (Axon body cams broadcast AB3-... while pairing).
+        // foundSsid is set only for beacons and probe responses: a probe
+        // request names the network a client wants, not the sender. Same
+        // bounded lock as the OUI loop above; first matching rule wins.
+        if (foundSsid.length() > 0 &&
+            xSemaphoreTake(watchersMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+            for (const auto& sig : loadedSignatures) {
+                if (sig.ssidPrefix.length() == 0 || !foundSsid.startsWith(sig.ssidPrefix)) continue;
+                // A rule with an OUI is still an AND: the SSID prefix alone
+                // isn't enough, the frame's own source MAC must also start
+                // with it. Reuses the cleanMac built above for the OUI loop.
+                if (sig.oui.length() > 0) {
+                    String cleanOui = "";
+                    for (size_t i = 0; i < sig.oui.length(); i++) {
+                        char c = sig.oui[i];
+                        if (c != ':' && c != '-') cleanOui += (char)toupper(c);
+                    }
+                    if (!cleanMac.startsWith(cleanOui)) continue;
+                }
+                // Same principle as the OUI loop: mfg_id/device_name/
+                // service_uuid are BLE-only conditions this callback can't
+                // check, so a rule that states any of them can't have its own
+                // weight applied here -- fall back to the generic SSID weight.
+                bool ouiOnly = sig.mfgId.length() == 0 && sig.deviceName.length() == 0 && sig.serviceUuid.length() == 0;
+                int w = (ouiOnly && sig.weight > 0) ? sig.weight : W_WIFI_SSID;
+                wifiConfidence += w;
+                if (w > bestWeight) {
+                    bestWeight = w;
+                    matchedRule = sig.name.length() > 0 ? sig.name : "SSID prefix match";
+                    matchedCategory = sig.category;
+                }
+                break;
+            }
+            xSemaphoreGive(watchersMutex);
         }
 
         if (wifiConfidence > 100) wifiConfidence = 100;
@@ -1968,6 +2099,9 @@ void loadWatchersSignatures() {
             sig.mfgId = s["mfg_id"] | "";
             sig.deviceName = s["device_name"] | "";
             sig.serviceUuid = s["service_uuid"] | "";
+            sig.weight = s["weight"] | 0;
+            if (sig.weight < 0 || sig.weight > 100) sig.weight = 0;   // pushed junk = default
+            sig.ssidPrefix = s["ssid_prefix"] | "";
 
             // A prefix with the locally-administered bit (0x02) set is not a
             // vendor OUI at all — it is the signature of a *randomized* MAC, so
@@ -2398,6 +2532,10 @@ bool updateWatchersSignaturesJson(const String& jsonContent) {
         ns["mfg_id"] = s["mfg_id"] | "";
         ns["device_name"] = s["device_name"] | "";
         ns["service_uuid"] = s["service_uuid"] | "";
+        // Both optional; written only when set so the file stays readable.
+        if (s["weight"].is<int>() && s["weight"].as<int>() > 0) ns["weight"] = s["weight"].as<int>();
+        if (s["ssid_prefix"].is<const char*>() && strlen(s["ssid_prefix"].as<const char*>()) > 0)
+            ns["ssid_prefix"] = s["ssid_prefix"].as<const char*>();
     }
 
     serializeJsonPretty(outDoc, file);

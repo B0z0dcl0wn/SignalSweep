@@ -46,6 +46,10 @@
             if (c.indexOf('flock') >= 0 || c.indexOf('alpr') >= 0 || c.indexOf('plate') >= 0 || c.indexOf('surveil') >= 0 ||
                 c.indexOf('soundthinking') >= 0 || c.indexOf('shotspotter') >= 0)
                 return { key: 'alpr',    label: 'ALPR / Camera', color: '#ef4444', icon: '📷' };
+            // Smart glasses count as a body cam (same tab, same beep, same
+            // toggle), but the chip says what the device is.
+            if (c.indexOf('glasses') >= 0)
+                return { key: 'bodycam', label: 'Smart glasses', color: '#ff5a1a', icon: '🕶️' };
             if (c.indexOf('body') >= 0 || c.indexOf('axon') >= 0 || c.indexOf('cam') >= 0)
                 return { key: 'bodycam', label: 'Body Cam',   color: '#ff5a1a', icon: '🎥' };
             return { key: 'other', label: (type || 'Match'), color: '#f59e0b', icon: '⚠️' };
@@ -2061,11 +2065,14 @@
         // On-phone port of analyze-capture.py's core: parse the .sscap records,
         // walk 802.11 IEs, and find devices carrying the exact Flock fingerprint
         // 50:6f:9a:16:03:01:03. Returns a suspect + a signature to attach.
-        // The firmware's Flock OUI list (mode_watchers_watch.cpp flockOuis[]).
-        // selftest.js fails if the two drift. The analyzer calls a capture Flock
-        // only under the detector's own rule: one of these OUIs + a wildcard
-        // probe + the IE. The IE alone rides consumer WiFi (a China Dragon
-        // module at the bench), so on any other MAC it says nothing.
+        // The firmware's Flock OUI set: mode_watchers_watch.cpp's community
+        // flockOuis[] loop PLUS the standalone IEEE-registered "Flock Safety
+        // MAC (registered block)" rule (b4:1e:52) -- both set flockOui=true on
+        // the firmware side, so both belong here. selftest.js fails if the two
+        // drift. The analyzer calls a capture Flock only under the detector's
+        // own rule: one of these OUIs + a wildcard probe + the IE. The IE alone
+        // rides consumer WiFi (a China Dragon module at the bench), so on any
+        // other MAC it says nothing.
         const FLOCK_OUIS = [
             "b4:1e:52", "70:c9:4e", "3c:91:80", "d8:f3:bc", "80:30:49", "b8:35:32",
             "14:5a:fc", "74:4c:a1", "08:3a:88", "9c:2f:9d", "c0:35:32", "94:08:53",
@@ -3611,20 +3618,41 @@
                 ['mfg_id',       'BLE company'],
                 ['device_name',  'Name'],
                 ['service_uuid', 'Service UUID'],
-                ['ssid',         'SSID']
+                ['ssid_prefix',  'SSID starts']
             ];
             el.innerHTML = rules.map(r => {
                 const cat = categoryOf(r.category || r.name);
                 const on = MATCH.filter(([k]) => r[k] !== undefined && String(r[k]).trim() !== '')
                                 .map(([k, lbl]) => lbl + ' <code>' + esc(String(r[k])) + '</code>');
+                const strength = ruleStrength(r);
+                const strengthNote = strength >= 70 ? ' (beeps)'
+                                    : strength >= 60 ? ' (listed, no beep)'
+                                    : ' (label only)';
                 return '<div class="sig-row">'
                     + '<span class="sig-i">' + cat.icon + '</span>'
                     + '<span class="sig-t">'
                     + '<span class="sig-cat" style="color:' + cat.color + '">' + esc(cat.label) + '</span>'
                     + '<strong>' + esc(r.name || '(unnamed rule)') + '</strong>'
-                    + '<em>' + (on.length ? on.join(' &middot; ') : 'matches nothing — every field is empty') + '</em>'
+                    + '<em>' + (on.length ? on.join(' &middot; ') : 'matches nothing — every field is empty')
+                    + (on.length ? ' &middot; strength ' + esc(String(strength)) + strengthNote : '')
+                    + '</em>'
                     + '</span></div>';
             }).join('');
+        }
+
+        // Effective strength of a rule for display only -- the device is the
+        // one that actually scores a match. Mirrors the firmware's per-signal
+        // weights (mode_watchers_watch.cpp's W_OUI/W_MFG/W_NAME/W_UUID); keep
+        // both in sync if either changes.
+        const SIG_STRENGTH_WEIGHTS = { oui: 30, mfg_id: 45, device_name: 70, service_uuid: 70 };
+        function ruleStrength(r) {
+            if (r.weight) return r.weight;
+            if (r.ssid_prefix) return 80;
+            let sum = 0;
+            for (const k in SIG_STRENGTH_WEIGHTS) {
+                if (r[k] !== undefined && String(r[k]).trim() !== '') sum += SIG_STRENGTH_WEIGHTS[k];
+            }
+            return Math.min(sum, 100);
         }
 
         function requestSignatures() {
@@ -4504,12 +4532,21 @@
         if (typeof window !== 'undefined') {
             window.__signalsweepSelfTest = async function () {
                 const results = {};
+                // Signatures page: effective strength shown for every rule,
+                // not just ones with an explicit weight.
+                results.ruleStrengthOui      = ruleStrength({ oui: 'x' }) === 30;
+                results.ruleStrengthSsid     = ruleStrength({ ssid_prefix: 'AB3-' }) === 80;
+                results.ruleStrengthWeightOui = ruleStrength({ oui: 'x', weight: 60 }) === 60;
+                results.ruleStrengthWeightMfg = ruleStrength({ mfg_id: '0x0D53', weight: 70 }) === 70;
+
                 // Category routing
                 results.catDrone   = categoryOf('Remote ID Drone').key === 'drone';
                 results.catTracker = categoryOf('Apple Find My Tracker').key === 'tracker';
                 results.catBodycam = categoryOf('Axon').key === 'bodycam';
                 results.catAlpr    = categoryOf('Flock Safety').key === 'alpr';
                 results.catSoundThinking = categoryOf('SoundThinking').key === 'alpr';
+                const glasses = categoryOf('Smart glasses');
+                results.catGlasses = glasses.key === 'bodycam' && glasses.label === 'Smart glasses';
 
                 // Lens filtering. The lens must never be able to hide a match
                 // from its own tab, and 'all' must never hide anything -- the
