@@ -17,6 +17,7 @@
   #define PWN_HAS_GUNZIP 1
 #endif
 #include "alert_log.h"
+#include "sd_log.h"
 #include <ArduinoJson.h>
 #include <LittleFS.h>
 #include <Preferences.h>
@@ -1825,12 +1826,15 @@ static void watchersPeriodicTask(void *pvParameters) {
         // it accumulates deltas, so it must be ticked more often than millis()
         // rolls over (49.7 days) on a board wired to a car battery.
         alertLogTick();
+        sdLogTick();
 
         // Alerts waiting to go to flash. Collected under the mutex but WRITTEN
         // outside it: a LittleFS write is tens of milliseconds and the BLE scan
         // callback takes this same mutex, so holding it across the I/O would
         // stall detection for exactly as long as the flash took.
-        struct PendingLog { uint8_t mac[6]; uint8_t cat; int8_t rssi; String rule; };
+        struct PendingLog { uint8_t mac[6]; uint8_t cat; int8_t rssi; String rule;
+                            String name; String ssid; uint8_t ch; uint8_t role;
+                            int32_t company; int confidence; };
         std::vector<PendingLog> toLog;
 
         // Prune stale targets. This mode used to be the only one that never
@@ -1848,6 +1852,14 @@ static void watchersPeriodicTask(void *pvParameters) {
                 p.cat  = (uint8_t)alertCategoryFromName(t.type.c_str());
                 p.rssi = (int8_t)t.rssi;
                 p.rule = t.matchedRule;
+                // The card copy's extra detail (sd_log.h). Deliberately no drone
+                // or operator coordinates: that is the user's position.
+                p.name = t.name;
+                p.ssid = t.ssid;
+                p.ch   = t.wifiCh;
+                p.role = t.wifiRole;
+                p.company = t.bleCompany;
+                p.confidence = t.confidence;
                 toLog.push_back(p);
             }
             for (size_t i = 0; i < trackedTargets.size(); ) {
@@ -1891,10 +1903,17 @@ static void watchersPeriodicTask(void *pvParameters) {
             xSemaphoreGive(watchersMutex);
         }
 
-        // Flash I/O, deliberately outside the mutex and off both radio
-        // callbacks. Typically zero or one record per second.
+        // Flash, then the optional card, deliberately outside the mutex and off
+        // both radio callbacks. Typically zero or one record per second.
         for (const auto& p : toLog) {
             alertLogWrite(p.mac, p.cat, p.rule.c_str(), p.rssi);
+            SdLogFields f;
+            f.secs = alertLogSecs();
+            memcpy(f.mac, p.mac, 6);
+            f.cat = p.cat; f.rssi = p.rssi; f.rule = p.rule;
+            f.name = p.name; f.ssid = p.ssid; f.ch = p.ch; f.role = p.role;
+            f.company = p.company; f.confidence = p.confidence;
+            sdLogWrite(f);
         }
 
         String jsonStr = getWatchersTargetsJson();

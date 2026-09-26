@@ -52,6 +52,7 @@ static uint32_t remMs = 0;
 
 static volatile bool anchorPending = false;
 void alertLogAnchorSoon() { anchorPending = true; }
+static uint32_t anchorEpochNow = 0;   // this boot's anchor as last written, 0 = none yet
 
 static void writeAnchor() {
     if (!fsReady) return;
@@ -97,6 +98,7 @@ static void writeAnchor() {
     if (!w) return;
     w.write(rec, EPOCH_REC);
     w.close();
+    anchorEpochNow = epoch;
     ESP_LOGI(TAG, "Boot %u anchored at epoch %u", (unsigned)bootCount, (unsigned)epoch);
 }
 
@@ -367,10 +369,13 @@ void alertLogClear() {
     headIdx = 0;
     wrapped = false;
     LittleFS.remove(EPOCH_FILE);
+    anchorEpochNow = 0;
     // Records written after the clear still belong to this boot; keep them datable.
     if ((uint32_t)time(nullptr) > TIME_SET_FLOOR) anchorPending = true;
     ESP_LOGI(TAG, "Log cleared");
 }
+
+uint32_t alertLogAnchorEpoch() { return anchorEpochNow; }
 
 bool alertLogParseMac(const char* mac, uint8_t out[6]) {
     if (mac == NULL) return false;
