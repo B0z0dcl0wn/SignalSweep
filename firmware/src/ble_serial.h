@@ -23,6 +23,9 @@ void sendBleSerial(const String& data);
  */
 void sendUsbLine(const String& line);
 
+/** @brief sendUsbLine() for a prefix + raw bytes (a CAP: line) without building a String. */
+void sendUsbLine(const char* prefix, const uint8_t* data, size_t len);
+
 /**
  * @brief Check if a BLE client is currently connected
  * @return true if connected, false otherwise

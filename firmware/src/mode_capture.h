@@ -20,6 +20,9 @@ void stopCapture();
 /** @brief True while a capture is running. */
 bool isCapturing();
 
+/** @brief True while a capture is streaming CAP: lines over USB (not to the card). */
+bool isCapturingToUsb();
+
 /**
  * @brief Poll from loop(): completes the detector restart after a capture ends.
  * The restart must not run inside the capture task (which deletes itself), so

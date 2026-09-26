@@ -1811,7 +1811,11 @@ static void watchersPeriodicTask(void *pvParameters) {
             // standing next to it. ESP_LOGI is compiled out at
             // CORE_DEBUG_LEVEL=0, so this is a plain print, and it costs
             // nothing when no USB host is attached.
-            if (Serial) Serial.printf("[ALERT] category=%d weight=%d\n", (int)alertCat, alert);
+            // Through the USB line lock, like the push: a bare printf here
+            // could land inside a bulk SDF:/LOG: line from loop().
+            char alertLine[48];
+            snprintf(alertLine, sizeof(alertLine), "[ALERT] category=%d weight=%d", (int)alertCat, alert);
+            sendUsbLine(alertLine);
         }
 
         // Ring runs here, on a real task with a real stack, never on the BLE

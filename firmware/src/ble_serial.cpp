@@ -146,15 +146,25 @@ static volatile bool     sdRmPending  = false;
 static volatile char     sdGetName[13] = "";
 static volatile uint32_t sdGetOff      = 0;
 static volatile char     sdRmName[13]  = "";
-#define SD_GET_MAX    6144    // bytes per CMD:SD:GET request (8 lines; a multiple of SD_GET_BATCH)
-#define SD_GET_BATCH  768     // raw bytes per SDF: line (1024 base64 chars)
-// Pause after each bulk base64 line (SDF:, LOG:). The per-notification 2 ms
-// yield in sendBleSerial() is not enough for a bulk reply, even from loop():
-// on the bench (S3 + OnePlus, 2026-09-26) a 3673 B CMD:SD:GET over BLE lost
-// its last two lines AND the done frame -- ~3 notifications per line, back to
-// back, alongside the 1 Hz push, overflow NimBLE's notify buffers and the tail
-// is dropped silently. 25 ms per 768 B line is ~30 KB/s, fine on USB too.
-#define BULK_LINE_PACE_MS 25
+#define SD_GET_LINES  8       // SDF: lines per CMD:SD:GET page (the page scales with the line)
+#define SD_GET_BATCH  768     // max raw bytes per SDF:/LOG: line (1024 base64 chars); USB always uses it
+// A short yield after each bulk base64 line (SDF:, LOG:), so the 1 Hz push
+// and the host task get a look in. It is NOT flow control any more: it was
+// 25 ms, and that was not enough -- on the bench (S3 + OnePlus, 2026-09-26)
+// a 3915 B CMD:SD:GET still lost lines and every done frame. The real cause
+// was that notify() dropped a notification silently whenever NimBLE's mbuf
+// pool (12 blocks on the S3) was full; sendBleSerial() now waits for room
+// (notifyChunk()), and that is the flow control.
+#define BULK_LINE_PACE_MS 5
+
+// Which transport the command being routed arrived on. Set by the BLE onWrite
+// callback around processIncomingCommand(); USB commands run on loop() with it
+// clear. Only used to size bulk lines, so a rare mix-up (a USB command routed
+// while a BLE write is in flight) just picks a different line size.
+static volatile bool cmdViaBle = false;
+static volatile bool sdGetViaBle = false;
+static volatile bool logReadViaBle = false;
+static size_t bulkLineBytes(bool viaBle);   // defined beside negotiatedMtu
 
 String getBleConfigJson() {
     JsonDocument doc;
@@ -253,9 +263,14 @@ static void sendSdList() {
     // probe, so this still adopts it; it just never re-probes a card that's
     // already working.
     if (sdState() != SD_OK) sdProbe();
+    const bool wasOk = sdState() == SD_OK;
     static SdEntry files[128];
     size_t total = 0;
     size_t n = sdList(files, 128, &total);
+    // The card was OK going in and the listing found it gone (sdList() calls
+    // fail()): probe once, so a card that was pulled reports SD_NONE and one
+    // that was swapped and answers is listed, rather than an empty "OK".
+    if (wasOk && sdState() != SD_OK && sdProbe()) n = sdList(files, 128, &total);
     JsonDocument doc;
     JsonObject o = doc["sdls"].to<JsonObject>();
     o["state"] = sdState();
@@ -272,7 +287,14 @@ static void sendSdList() {
     sendReply(out);
 }
 
-static void sendSdFile(const char* name, uint32_t off) {
+static void sendSdFile(const char* name, uint32_t off, bool viaBle) {
+    // A USB (not card) capture owns the serial port: its CAP: stream is the
+    // whole of the USB traffic, and a download interleaved with it would
+    // corrupt both. Say busy; the app can ask again when it ends.
+    if (isCapturingToUsb()) { sendReply("{\"sdget\":{\"err\":\"busy\"}}"); return; }
+    // Over BLE each SDF: line must fit ONE notification (bulkLineBytes()), so
+    // a lost notification loses a whole line cleanly, never half of one.
+    const size_t batch = bulkLineBytes(viaBle);
     uint8_t* buf = (uint8_t*)malloc(SD_GET_BATCH);
     uint8_t* b64 = (uint8_t*)malloc((SD_GET_BATCH * 4) / 3 + 8);
     if (!buf || !b64) { free(buf); free(b64); sendReply("{\"sdget\":{\"err\":\"mem\"}}"); return; }
@@ -280,7 +302,7 @@ static void sendSdFile(const char* name, uint32_t off) {
     // refuses it); say so, rather than "no such file" for a file in the list.
     if (sdIsOpen(name)) { free(buf); free(b64); sendReply("{\"sdget\":{\"err\":\"busy\"}}"); return; }
     uint32_t size = 0;
-    int32_t got = sdRead(name, off, buf, SD_GET_BATCH, &size);
+    int32_t got = sdRead(name, off, buf, batch, &size);
     if (got < 0) { free(buf); free(b64); sendReply("{\"sdget\":{\"err\":\"no such file\"}}"); return; }
     {
         JsonDocument h;
@@ -298,8 +320,8 @@ static void sendSdFile(const char* name, uint32_t off) {
         sendReply(line);
         vTaskDelay(pdMS_TO_TICKS(BULK_LINE_PACE_MS));
         pos += got; sent += got;
-        if (sent >= SD_GET_MAX || pos >= size) break;
-        got = sdRead(name, pos, buf, SD_GET_BATCH, &size);
+        if (sent >= SD_GET_LINES * batch || pos >= size) break;
+        got = sdRead(name, pos, buf, batch, &size);
         // pos < size here (the break above already caught pos >= size), so a
         // non-positive read is a genuine failure, not real EOF -- the file
         // shrank, the card dropped out, whatever. Never tell a client "more"
@@ -313,13 +335,19 @@ static void sendSdFile(const char* name, uint32_t off) {
         sendReply(err);
         return;
     }
-    char done[96];
-    snprintf(done, sizeof(done), "{\"sdget\":{\"done\":true,\"next\":%u,\"more\":%s}}",
-             (unsigned)pos, pos < size ? "true" : "false");
+    // "off" echoes the request, so the app can tell this page's done frame
+    // from a stale one belonging to a request it has already replaced.
+    char done[112];
+    snprintf(done, sizeof(done), "{\"sdget\":{\"done\":true,\"off\":%u,\"next\":%u,\"more\":%s}}",
+             (unsigned)off, (unsigned)pos, pos < size ? "true" : "false");
     sendReply(done);
 }
 
-static void sendAlertLog(uint16_t fromBoot, uint32_t fromSecs, size_t skip) {
+static void sendAlertLog(uint16_t fromBoot, uint32_t fromSecs, size_t skip, bool viaBle) {
+    // Whole records per line (the app decodes each LOG: line on its own and
+    // walks it 16 bytes at a time), sized so a BLE line is one notification.
+    size_t perLine = bulkLineBytes(viaBle) / ALERT_LOG_REC_SIZE;
+    if (perLine > LOG_READ_BATCH) perLine = LOG_READ_BATCH;
     uint8_t* buf = (uint8_t*)malloc(LOG_READ_MAX * ALERT_LOG_REC_SIZE);
     if (buf == NULL) {
         sendReply("{\"logrd\":{\"err\":\"mem\"}}");
@@ -365,8 +393,8 @@ static void sendAlertLog(uint16_t fromBoot, uint32_t fromSecs, size_t skip) {
     const size_t b64cap = ((LOG_READ_BATCH * ALERT_LOG_REC_SIZE) * 4) / 3 + 8;
     uint8_t* b64 = (uint8_t*)malloc(b64cap);
     if (b64 == NULL) { free(buf); sendReply("{\"logrd\":{\"done\":true}}"); return; }
-    for (size_t off = 0; off < n; off += LOG_READ_BATCH) {
-        size_t take = (n - off < LOG_READ_BATCH) ? (n - off) : LOG_READ_BATCH;
+    for (size_t off = 0; off < n; off += perLine) {
+        size_t take = (n - off < perLine) ? (n - off) : perLine;
         size_t olen = 0;
         if (mbedtls_base64_encode(b64, b64cap, &olen,
                                   buf + off * ALERT_LOG_REC_SIZE,
@@ -406,6 +434,20 @@ static bool deviceConnected = false;
 // worth roughly 3x fewer notifications for the same payload.
 static uint16_t negotiatedMtu = 23;
 
+// Raw bytes per bulk base64 line (SDF:, LOG:). Over BLE the whole line --
+// 4 prefix + base64 + "\n" -- fits ONE notification (MTU-3 bytes), so a
+// notification the stack gives up on loses one whole line, which the app's
+// page check catches, rather than tearing it. Clamped to [48, 768]: below 48
+// (a peer stuck at MTU 23) a line spans notifications again, which still
+// works with the backpressure in notifyChunk(). USB takes the full 768.
+static size_t bulkLineBytes(bool viaBle) {
+    if (!viaBle) return SD_GET_BATCH;
+    size_t n = (negotiatedMtu > 8) ? ((size_t)(negotiatedMtu - 3 - 5) / 4) * 3 : 0;
+    if (n < 48) n = 48;
+    if (n > SD_GET_BATCH) n = SD_GET_BATCH;
+    return n;
+}
+
 // One writer at a time. A push is reassembled by the app on newlines, so if the
 // detector's 1 Hz push interleaves its notifications with a multi-chunk reply
 // from loop() (CMD:SIGS is ~20 chunks), the app sees two half-JSONs and throws
@@ -424,6 +466,16 @@ void sendUsbLine(const String& line) {
     if (usbTxMutex == NULL) usbTxMutex = xSemaphoreCreateMutex();
     if (usbTxMutex) xSemaphoreTake(usbTxMutex, portMAX_DELAY);
     Serial.println(line);
+    if (usbTxMutex) xSemaphoreGive(usbTxMutex);
+}
+
+void sendUsbLine(const char* prefix, const uint8_t* data, size_t len) {
+    if (!Serial) return;
+    if (usbTxMutex == NULL) usbTxMutex = xSemaphoreCreateMutex();
+    if (usbTxMutex) xSemaphoreTake(usbTxMutex, portMAX_DELAY);
+    Serial.print(prefix);
+    Serial.write(data, len);
+    Serial.print('\n');
     if (usbTxMutex) xSemaphoreGive(usbTxMutex);
 }
 
@@ -617,22 +669,22 @@ void bleSerialTick() {
 
     if (logReadPending) {
         logReadPending = false;
-        sendAlertLog(logReadBoot, logReadSecs, (size_t)logReadSkip);
+        sendAlertLog(logReadBoot, logReadSecs, (size_t)logReadSkip, logReadViaBle);
     }
 
     if (sdLsPending) { sdLsPending = false; sendSdList(); }
     if (sdGetPending) {
         sdGetPending = false;
         // Copy the name/offset into locals before calling: sendSdFile()'s
-        // send loop runs for a while (up to SD_GET_MAX, one BULK_LINE_PACE_MS pause per
-        // batch), and reading the volatile globals again partway through
+        // send loop runs for a while (up to SD_GET_LINES lines, one BULK_LINE_PACE_MS pause per
+        // line), and reading the volatile globals again partway through
         // would let a later CMD:SD:GET on this same tick's queue -- or a
         // torn write from the router mid-copy -- switch files under it.
         char nm[13];
         strncpy(nm, (const char*)sdGetName, sizeof(nm) - 1);
         nm[sizeof(nm) - 1] = 0;
         uint32_t off = sdGetOff;
-        sendSdFile(nm, off);
+        sendSdFile(nm, off, sdGetViaBle);
     }
     if (sdRmPending) {
         sdRmPending = false;
@@ -905,6 +957,7 @@ void processIncomingCommand(const String& rawCommand) {
                 logReadBoot = fb;
                 logReadSecs = fs;
                 logReadSkip = skip;
+                logReadViaBle = cmdViaBle;
                 logReadPending = true;
             }
         } else if (rawStr == "CMD:SD:LS") {
@@ -917,6 +970,7 @@ void processIncomingCommand(const String& rawCommand) {
             if (nm.length() <= 12 && sdValidName(nm.c_str())) {
                 strncpy((char*)sdGetName, nm.c_str(), sizeof(sdGetName) - 1);
                 sdGetOff = c > 0 ? (uint32_t)rest.substring(c + 1).toInt() : 0;
+                sdGetViaBle = cmdViaBle;
                 sdGetPending = true;
             } else {
                 sendReply("{\"sdget\":{\"err\":\"bad name\"}}");
@@ -941,7 +995,9 @@ class RxCallbacks : public NimBLECharacteristicCallbacks {
 #endif
         std::string rxValue = pCharacteristic->getValue();
         if (rxValue.length() > 0) {
+            cmdViaBle = true;
             processIncomingCommand(String(rxValue.c_str()));
+            cmdViaBle = false;
         }
     }
 };
@@ -1005,6 +1061,37 @@ bool isBleSerialConnected() {
     return deviceConnected;
 }
 
+// One notification, with backpressure. THE root cause of BLE message loss:
+// NimBLECharacteristic::notify() (1.4.3 and 2.5.1 alike) builds the mbuf with
+// ble_hs_mbuf_from_flat() and calls ble_gattc_notify_custom(), and the S3's
+// 1.4 ignores both failures -- a NULL mbuf even falls through to "read the
+// attribute value", which allocates from the same empty pool. The pool is 12
+// blocks, and a notification the controller cannot take yet sits in the
+// connection's tx queue holding its block, so a bulk reply plus the 1 Hz push
+// exhausted it and the rest of the burst vanished with no error anywhere.
+// Here the result is visible: out of mbufs (NULL, or BLE_HS_ENOMEM from the
+// ATT/L2CAP header prepends) or BLE_HS_EBUSY means "no room yet", so wait and
+// resend the SAME chunk; anything else (not connected, ...) is final.
+// ble_gattc_notify_custom() consumes the mbuf on every path, success or not.
+//
+// Bounded, because this can run on the NimBLE host task (a router reply), and
+// that task is the one that frees the pool when the controller reports
+// packets sent -- a wait there cannot be satisfied, so it must give up. No
+// locals beyond a few words: see the host-task stack trap.
+#define NOTIFY_RETRY_MS  5
+#define NOTIFY_GIVEUP_MS 300
+static bool notifyChunk(uint16_t conn, uint16_t attr, const uint8_t* p, size_t n) {
+    uint32_t start = millis();
+    for (;;) {
+        os_mbuf* om = ble_hs_mbuf_from_flat(p, n);
+        int rc = om ? ble_gattc_notify_custom(conn, attr, om) : BLE_HS_ENOMEM;
+        if (rc == 0) return true;
+        if (rc != BLE_HS_ENOMEM && rc != BLE_HS_EBUSY) return false;
+        if (millis() - start >= NOTIFY_GIVEUP_MS) return false;
+        vTaskDelay(pdMS_TO_TICKS(NOTIFY_RETRY_MS));
+    }
+}
+
 void sendBleSerial(const String& data) {
     if (pTxCharacteristic == nullptr) return;
 
@@ -1021,6 +1108,16 @@ void sendBleSerial(const String& data) {
     size_t length = payload.length();
     if (length == 0) return;
 
+#if !CONFIG_IDF_TARGET_ESP32C5
+    // NimBLE-Arduino 1.4's notify() skipped a peer that had not subscribed;
+    // 2.x keeps no subscriber list (its notify() sends to every peer), so the
+    // C5 keeps sending as it always did.
+    if (pTxCharacteristic->getSubscribedCount() == 0) return;
+#endif
+    const uint16_t attr = pTxCharacteristic->getHandle();
+    const std::vector<uint16_t> peers = pServer->getPeerDevices();
+    if (peers.empty()) return;
+
     if (txMutex == NULL) txMutex = xSemaphoreCreateMutex();
     if (txMutex) xSemaphoreTake(txMutex, portMAX_DELAY);
 
@@ -1031,26 +1128,20 @@ void sendBleSerial(const String& data) {
     // negotiated, which is correct rather than merely lucky.
     size_t maxChunkSize = (negotiatedMtu > 3) ? (size_t)(negotiatedMtu - 3) : 20;
     if (maxChunkSize > 512) maxChunkSize = 512;
-    if (length <= maxChunkSize) {
-        pTxCharacteristic->setValue((const uint8_t*)payload.c_str(), length);
-        pTxCharacteristic->notify();
-    } else {
-        size_t offset = 0;
-        while (offset < length) {
-            size_t chunkSize = (length - offset > maxChunkSize) ? maxChunkSize : (length - offset);
-            pTxCharacteristic->setValue((const uint8_t*)(payload.c_str() + offset), chunkSize);
-            pTxCharacteristic->notify();
-            offset += chunkSize;
-            if (offset < length) {
-                // Was 10 ms. At ~32 chunks that was 320 ms of pure sleeping in
-                // every 1 s telemetry cycle -- the single largest cost in the
-                // loop, and why the "1 Hz" push was measured at 0.77 Hz. 2 ms is
-                // still a yield between notifications without dominating the
-                // period. ponytail: if notifications start dropping on some
-                // phone, raise this before blaming anything else.
-                vTaskDelay(pdMS_TO_TICKS(2));
-            }
+    size_t offset = 0;
+    bool ok = true;
+    while (ok && offset < length) {
+        size_t chunkSize = (length - offset > maxChunkSize) ? maxChunkSize : (length - offset);
+        // A chunk the stack gives up on ends THIS message: the app reassembles
+        // on newlines, so the rest would only be glued to a torn head.
+        for (uint16_t conn : peers) {
+            if (!notifyChunk(conn, attr, (const uint8_t*)payload.c_str() + offset, chunkSize)) ok = false;
         }
+        offset += chunkSize;
+        // Was 10 ms, then 2 ms "so notifications don't drop" -- they dropped
+        // anyway, because the loss was notify() ignoring a full mbuf pool, not
+        // timing. notifyChunk() waits for room now; this is just a yield.
+        if (ok && offset < length) vTaskDelay(pdMS_TO_TICKS(2));
     }
 
     if (txMutex) xSemaphoreGive(txMutex);

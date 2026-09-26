@@ -87,13 +87,37 @@ All notable changes to SignalSweep are recorded here.
   then "try USB"), and the file is saved only when the total equals the
   size the board reported. A page whose done frame never arrives is the
   same case: after 5 s the page is asked for again, not failed.
-- **Trap: a bulk reply from `loop()` still overflows BLE without per-line
-  pacing.** Moving `CMD:SD:GET` off the NimBLE host task was not enough: a
-  3.6 KB log over BLE lost its last two lines and the done frame, because
-  ~3 notifications per line back to back, beside the 1 Hz push, fill
-  NimBLE's notify buffers and the tail is dropped with no error. Card and
-  alert-log readback now pause 25 ms after every base64 line
-  (`BULK_LINE_PACE_MS`, ~30 KB/s) and a card page is 6 KB (8 lines).
+- **Root cause: BLE notifications were dropped silently in our own host,
+  and sending now waits for room.** Link-layer delivery is reliable once a
+  notification is queued; the loss was before that. `notify()` in
+  NimBLE-Arduino (1.4.3 on the S3, 2.5.1 on the C5) ignores a failed mbuf
+  allocation, and the S3's pool is 12 blocks, held by anything the
+  controller can't take yet. A bulk reply beside the 1 Hz push emptied it
+  and the rest of the burst vanished with no error. Pacing did not fix it:
+  at 25 ms per line, a 3.9 KB log download on the phone still lost lines
+  and every done frame. `sendBleSerial()` now sends each chunk with
+  `ble_hs_mbuf_from_flat()` + `ble_gattc_notify_custom()`. On a full pool
+  (`BLE_HS_ENOMEM`/`BLE_HS_EBUSY`) it waits 5 ms and resends the same
+  chunk, for up to 300 ms. If it gives up, it drops the rest of that
+  message, because a torn message is useless. Over BLE, a card or log line
+  is sized to fit one notification (`(MTU-8)/4*3` raw bytes, clamped to
+  48–768; whole 16-byte records for the log), so a lost line is lost whole.
+  A card page is 8 lines, and USB lines stay 768 B. The done frame echoes
+  its request offset (`"off"`), and the app ignores a header or done frame
+  that belongs to a request it has already replaced. This is also the
+  likely cause of the long-standing "an oversized push is lost" limitation.
+  Measured so far: USB only (60 of 60 pushes in 60 s, a USB capture
+  streams). BLE delivery with the fix is not yet measured on a phone, so
+  that limitation stands until it is.
+- `CMD:SD:GET` answers `{"sdget":{"err":"busy"}}` while a USB capture runs,
+  because that stream owns the port. The capture's `CAP:` lines, its
+  status frames and the `[ALERT]` line now go through the USB line mutex
+  too.
+- **Fixed: a pulled card listed as a healthy empty one** ("29.7 GB free,
+  no files"). A failed open of the card's own directory (or of a file when
+  the directory has gone too) now marks the card failed, and `CMD:SD:LS`
+  re-probes once after a listing that failed, so a missing card reports
+  "no card".
 - **Trap: a torn message glues onto the next one unless the reassembler
   resyncs.** A push that lost a chunk had no newline, so the app's line
   buffer joined it to the reply after it and threw both away. Over BLE every
