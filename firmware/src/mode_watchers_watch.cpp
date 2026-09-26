@@ -187,7 +187,8 @@ static void ensureSignaturesFileExists() {
             doc["version"] = SIG_SCHEMA_VERSION;
             JsonArray sigs = doc["signatures"].to<JsonArray>();
 
-            auto addRule = [&](const char* name, const char* cat, const char* oui, const char* mfg, const char* dev, const char* uuid) {
+            auto addRule = [&](const char* name, const char* cat, const char* oui, const char* mfg,
+                               const char* dev, const char* uuid, int weight = 0, const char* ssid = "") {
                 JsonObject s = sigs.add<JsonObject>();
                 s["name"] = name;
                 s["category"] = cat;
@@ -195,6 +196,8 @@ static void ensureSignaturesFileExists() {
                 s["mfg_id"] = mfg;
                 s["device_name"] = dev;
                 s["service_uuid"] = uuid;
+                if (weight > 0) s["weight"] = weight;
+                if (ssid[0]) s["ssid_prefix"] = ssid;
             };
 
             // Flock Safety OUI prefixes.
@@ -1968,6 +1971,9 @@ void loadWatchersSignatures() {
             sig.mfgId = s["mfg_id"] | "";
             sig.deviceName = s["device_name"] | "";
             sig.serviceUuid = s["service_uuid"] | "";
+            sig.weight = s["weight"] | 0;
+            if (sig.weight < 0 || sig.weight > 100) sig.weight = 0;   // pushed junk = default
+            sig.ssidPrefix = s["ssid_prefix"] | "";
 
             // A prefix with the locally-administered bit (0x02) set is not a
             // vendor OUI at all — it is the signature of a *randomized* MAC, so
@@ -2398,6 +2404,10 @@ bool updateWatchersSignaturesJson(const String& jsonContent) {
         ns["mfg_id"] = s["mfg_id"] | "";
         ns["device_name"] = s["device_name"] | "";
         ns["service_uuid"] = s["service_uuid"] | "";
+        // Both optional; written only when set so the file stays readable.
+        if (s["weight"].is<int>() && s["weight"].as<int>() > 0) ns["weight"] = s["weight"].as<int>();
+        if (s["ssid_prefix"].is<const char*>() && strlen(s["ssid_prefix"].as<const char*>()) > 0)
+            ns["ssid_prefix"] = s["ssid_prefix"].as<const char*>();
     }
 
     serializeJsonPretty(outDoc, file);

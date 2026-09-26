@@ -588,6 +588,24 @@ console.log('[signalsweep self-test] alert log record + write path: ok');
     console.log('[signalsweep self-test] BLE backpressure + page checks: ok');
 }
 
+// ---------------------------------------------------------------------------
+// Signature schema (SquachWatch extraction, Phase 1). A rule may carry its own
+// weight (registered-maker OUIs list at 60 without beeping) and an SSID prefix
+// (Axon body cams in pairing mode). Both must survive every path a rule takes:
+// the struct, the loader, and the writer a pushed rule set goes through --
+// updateWatchersSignaturesJson() rebuilds each rule field by field, so a field
+// it forgets is silently dropped the first time the app saves.
+const sigFail = [];
+const wwHdr = readFileSync(new URL('../firmware/src/mode_watchers_watch.h', import.meta.url), 'utf8');
+if (!/int\s+weight\s*=\s*0;/.test(wwHdr)) sigFail.push('WatcherSignature has no `int weight = 0;`');
+if (!/String\s+ssidPrefix;/.test(wwHdr)) sigFail.push('WatcherSignature has no `String ssidPrefix;`');
+if (!/sig\.weight\s*=\s*s\["weight"\]/.test(wwSrc)) sigFail.push('loader never reads "weight"');
+if (!/sig\.ssidPrefix\s*=\s*s\["ssid_prefix"\]/.test(wwSrc)) sigFail.push('loader never reads "ssid_prefix"');
+if (!/ns\["weight"\]\s*=/.test(wwSrc)) sigFail.push('updateWatchersSignaturesJson drops "weight" from pushed rules');
+if (!/ns\["ssid_prefix"\]\s*=/.test(wwSrc)) sigFail.push('updateWatchersSignaturesJson drops "ssid_prefix" from pushed rules');
+if (sigFail.length) { console.log('FAIL: signature schema:', sigFail); process.exit(1); }
+console.log('[signalsweep self-test] signature schema (weight, ssid_prefix): ok');
+
 const results = await global.__signalsweepSelfTest();
 const failed = Object.entries(results).filter(([, v]) => !v).map(([k]) => k);
 console.log('[signalsweep self-test]', results);
