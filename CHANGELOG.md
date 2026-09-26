@@ -85,7 +85,26 @@ All notable changes to SignalSweep are recorded here.
   now counts the bytes that actually decoded; if they don't equal
   `next - offset` the page is thrown away and asked for again (three tries,
   then "try USB"), and the file is saved only when the total equals the
-  size the board reported.
+  size the board reported. A page whose done frame never arrives is the
+  same case: after 5 s the page is asked for again, not failed.
+- **Trap: a bulk reply from `loop()` still overflows BLE without per-line
+  pacing.** Moving `CMD:SD:GET` off the NimBLE host task was not enough: a
+  3.6 KB log over BLE lost its last two lines and the done frame, because
+  ~3 notifications per line back to back, beside the 1 Hz push, fill
+  NimBLE's notify buffers and the tail is dropped with no error. Card and
+  alert-log readback now pause 25 ms after every base64 line
+  (`BULK_LINE_PACE_MS`, ~30 KB/s) and a card page is 6 KB (8 lines).
+- **Trap: a torn message glues onto the next one unless the reassembler
+  resyncs.** A push that lost a chunk had no newline, so the app's line
+  buffer joined it to the reply after it and threw both away. Over BLE every
+  message starts on a fresh notification, so a notification that opens a
+  known message now drops the stale partial first (counted as a lost
+  update). BLE only: a USB byte stream splits anywhere.
+- **Trap: the USB mirror interleaved lines across tasks.** The 1 Hz push
+  landed inside a 1 KB `SDF:` line, and a USB download came back 72 bytes
+  long with the push's letters decoded as file data. Replies, the push and
+  the hunt frame now write the USB mirror through one mutex
+  (`sendUsbLine()`).
 - **Bench-measured, not yet proven with a real phone in hand:** a 30 GB
   FAT32 card mounts in ~13 ms; SPI at 4 MHz writes ~360 KB/s; the capture
   drain task (8192-byte stack) had 5764 bytes free at the SD stop path. The

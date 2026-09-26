@@ -1314,12 +1314,23 @@
             // Bluetooth is asked every time: the phones' own BLE adverts (Google
             // FEF3/FCF1 service data) land in every capture, WiFi connected or not.
             const phoneNet = (navigator.connection && navigator.connection.type) || 'unknown';
-            const radios = phoneNet === 'wifi' ? 'Bluetooth' : 'WiFi and Bluetooth';
-            if (!confirm(
-                "Are " + radios + " off on every phone you're carrying?\n\n" +
-                "Phones broadcast nonstop and drown out what you're looking for. " +
-                "Mobile data is fine.\n\n" +
-                "OK: start capturing\nCancel: not yet")) return;
+            // A card capture started over Bluetooth: that Bluetooth IS the
+            // link, so asking for it off first would cut the start command.
+            // The board keeps capturing to the card without the phone.
+            const bleCard = capToSd && !usb;
+            const radios = bleCard ? (phoneNet === 'wifi' ? '' : 'WiFi')
+                         : phoneNet === 'wifi' ? 'Bluetooth' : 'WiFi and Bluetooth';
+            const ask = radios
+                ? (radios.indexOf(' and ') > 0 ? "Are " : "Is ") + radios + " off on every phone you're carrying?\n\n" +
+                  "Phones broadcast nonstop and drown out what you're looking for. " +
+                  "Mobile data is fine.\n\n"
+                : "Phones broadcast nonstop and drown out what you're looking for.\n\n";
+            const bleNote = bleCard
+                ? "This phone's own Bluetooth will show up in the capture. For the cleanest " +
+                  "capture, start it, then turn this phone's Bluetooth off or walk away: the " +
+                  "board keeps capturing to the card.\n\n"
+                : '';
+            if (!confirm(ask + bleNote + "OK: start capturing\nCancel: not yet")) return;
             if (capToSd) {
                 capFileName = null;
                 capSdFile = null;
@@ -1453,6 +1464,9 @@
                 (capStat.drops > 0 ? ', ' + capStat.drops + ' dropped' : ', none dropped') +
                 '. Download it from Settings › Recording › SD card.';
             document.getElementById('cap-path').textContent = '';
+            // Step 2 and the adb pull both need a file on the phone; this one
+            // is on the card. capFinish()/openSurvey() show them again.
+            document.getElementById('cap-log-step').style.display = 'none';
             lastAnalysis = null;
             paintAnalysis();
             document.getElementById('cap-idle').style.display = 'none';
@@ -1478,6 +1492,7 @@
                 total + ' packets (' + capStat.wifi + ' WiFi, ' + capStat.ble + ' BLE)' +
                 (capStat.drops > 0 ? ', ' + capStat.drops + ' dropped — the air was busier than USB could carry' : ', none dropped');
             document.getElementById('cap-path').textContent = 'adb pull "' + path + '"';
+            document.getElementById('cap-log-step').style.display = '';
             // Analyze the capture we just wrote, on the phone, and surface the
             // suspect signature. This is the "signature finder".
             lastAnalysis = null;
@@ -2368,6 +2383,7 @@
             document.getElementById('cap-summary').textContent = surveyWhen(name) + ' · ' +
                 (lastAnalysis.wifi + lastAnalysis.ble) + ' packets (' + lastAnalysis.wifi + ' WiFi, ' + lastAnalysis.ble + ' BLE)';
             document.getElementById('cap-path').textContent = 'adb pull "/sdcard/Documents/' + name + '"';
+            document.getElementById('cap-log-step').style.display = '';
             paintAnalysis();
             document.getElementById('cap-idle').style.display = 'none';
             document.getElementById('cap-running').style.display = 'none';
@@ -3178,7 +3194,8 @@
         // fuller card gets a note rather than silently hiding files.
         let sdFiles = [];
         let sdRx = null;
-        const SD_BLE_BYTES_PER_SEC = 8000;   // ponytail: measured estimate, refine on the bench
+        const SD_BLE_BYTES_PER_SEC = 8000;
+        const SD_PAGE_TIMEOUT_MS = 5000;   // ponytail: measured estimate, refine on the bench
 
         function sdRefresh() {
             if (!connectionType) { showToast('Not connected', '✕'); return; }
@@ -3197,9 +3214,9 @@
             const note = (typeof o.total === 'number' && o.total > sdFiles.length)
                 ? '<p class="set-note">Showing the newest ' + sdFiles.length + ' of ' + o.total + ' files.</p>' : '';
             box.innerHTML = note + sdFiles.map(function (f) {
-                return '<div class="set-row"><span>' + esc(sdKind(f.n)) + ' · ' + esc(f.n) + ' · ' + sdSize(f.s) + '</span>' +
-                       '<span class="btn-row"><button class="ctrl-btn" data-sd-dl="' + esc(f.n) + '">Download</button>' +
-                       '<button class="ctrl-btn" data-sd-rm="' + esc(f.n) + '">Delete</button></span></div>';
+                return '<div class="set-row sd-file"><span class="sd-name">' + esc(f.n) + ' · ' + sdSize(f.s) + ' · ' + esc(sdKind(f.n)) + '</span>' +
+                       '<span class="sd-acts"><button class="set-toggle" data-sd-dl="' + esc(f.n) + '">Download</button>' +
+                       '<button class="set-toggle" data-sd-rm="' + esc(f.n) + '">Delete</button></span></div>';
             }).join('');
         }
 
@@ -3219,7 +3236,9 @@
         // Each GET is one page. BLE notifications are unacknowledged, so the
         // done frame's `next` is only trusted if the bytes that actually
         // decoded add up to it; otherwise the page is thrown away and asked
-        // for again -- a hole in a capture would be silent corruption.
+        // for again -- a hole in a capture would be silent corruption. A page
+        // whose done frame never arrives (the tail of a bulk reply is what BLE
+        // drops) is the same case: the timeout re-asks rather than failing.
         function handleSdGet(o) {
             const st = sdRx;
             if (!st) return;
@@ -3227,9 +3246,7 @@
             if ('size' in o) { st.size = o.size; st.arm(); return; }
             if (!o.done) return;
             if (st.bad || st.pageBytes !== o.next - st.pageOff) {
-                if (++st.retries > 3) { st.fail('transfer kept dropping data — try USB'); return; }
-                st.parts.length = st.pageStart;
-                st.get(st.pageOff);
+                st.retry('transfer kept dropping data — try USB');
                 return;
             }
             st.retries = 0;
@@ -3259,7 +3276,17 @@
                         st.arm();
                         sendCommand({ raw: 'CMD:SD:GET:' + name + ':' + off });
                     },
-                    arm: function () { clearTimeout(st.timer); st.timer = setTimeout(function () { st.fail('the board stopped replying'); }, 12000); },
+                    // Discard this page's parts and ask again from its start.
+                    // Shared by a short page and a page that timed out; only
+                    // after the cap does the download fail.
+                    retry: function (why) {
+                        if (++st.retries > 3) { st.fail(why); return; }
+                        st.parts.length = st.pageStart;
+                        st.get(st.pageOff);
+                    },
+                    // Pages are 6 KB now (SD_GET_MAX), well under a second
+                    // over BLE, so 5 s of silence means the page was lost.
+                    arm: function () { clearTimeout(st.timer); st.timer = setTimeout(function () { st.retry('the board stopped replying'); }, SD_PAGE_TIMEOUT_MS); },
                     // Only clear sdRx if it's still THIS attempt: a disconnect
                     // (or a later attempt) may already have replaced/nulled it,
                     // and a stale timer firing after that must not stomp on a
@@ -3755,7 +3782,7 @@
                 deviceId, NUS_SERVICE_UUID, NUS_TX_UUID,
                 (value) => {
                     const chunk = new TextDecoder('utf-8').decode(value.buffer);
-                    processIncomingChunk(chunk);
+                    processIncomingChunk(chunk, true);
                 }
             );
         }
@@ -3935,7 +3962,7 @@
 
         function handleBleNotification(event) {
             const chunk = new TextDecoder('utf-8').decode(event.target.value);
-            processIncomingChunk(chunk);
+            processIncomingChunk(chunk, true);
         }
 
         // =====================================================================
@@ -4155,7 +4182,19 @@
             }
         }
 
-        function processIncomingChunk(chunk) {
+        // BLE only: every message the firmware sends starts on a fresh
+        // notification (sendBleSerial chunks each one from its first byte). So a
+        // notification that opens a known message while a partial line is still
+        // pending means the partial lost its tail -- drop it, or it glues onto
+        // this message and both are discarded (bench: a torn push ate the sdls
+        // reply after it). Never on USB/serial: a byte stream splits anywhere.
+        const RX_MSG_START = /^(\{"(status|cfg|sdls|sdget|sdrm|cap|logrd|ring|hunt|signatures)"|SDF:|LOG:|CAP:)/;
+        function processIncomingChunk(chunk, isBle) {
+            if (isBle && rxBuffer && RX_MSG_START.test(chunk)) {
+                rxDropped++;
+                console.warn('Torn message dropped on resync (dropped ' + rxDropped + ' of ' + (rxDropped + rxOk) + ')');
+                rxBuffer = '';
+            }
             rxBuffer += chunk;
             let lines = rxBuffer.split('\n');
             rxBuffer = lines.pop();
