@@ -2,35 +2,38 @@
 
 **All you need is the board.** A bare XIAO with its antenna is a working
 detector: plug it into USB, connect the app, and it streams everything it
-hears. Every other part is optional. Each one adds a capability, and the
-firmware checks at boot for what is there. Leave a part off and you lose
-exactly that feature, nothing else.
+hears. Every other part is optional. Leave a part off and you lose exactly
+that feature, nothing else.
+
+Illustrated versions: [`wiring-diagram.html`](wiring-diagram.html) (S3) and
+[`wiring-diagram-c5.html`](wiring-diagram-c5.html) (C5).
 
 | Part | Required? | What it adds | Without it |
 |------|-----------|--------------|------------|
-| XIAO ESP32-S3 or ESP32-C5 + U.FL antenna | **Yes** | the detector | — |
+| XIAO ESP32-S3 or ESP32-C5 + U.FL antenna (C5: dual-band) | **Yes** | the detector | — |
 | Passive buzzer | optional | the headless "what is near" beep patterns, and Hunt's beeps | phone only |
 | WS2812 8-LED bar | optional | colour/animation per category, the hunt meter | phone only |
-| DS3231 RTC module | optional | the alert log keeps real dates across power cuts, with no phone | the time comes from the phone at each connect and is lost when the power goes |
-| microSD module | optional, **firmware support not shipped yet** | (coming) alert log and Site Survey captures on a card | — |
+| microSD reader (3.3 V, 6 pins, no regulator) | optional, **firmware support coming** | (coming) alert log and Site Survey captures on a card | — |
+| DS3231 clock module | optional, **not fitted on this build** | real dates across power cuts with no phone | the phone or PC sets the time at each connect |
 | C5 instead of S3 | optional | hears 5 GHz Wi-Fi too | 2.4 GHz only |
 
 The pads are the contract. Wire by **pad name** (D1, D2, …) and the same
-harness fits either board. Only the GPIO numbers underneath differ:
+harness fits either board. Only the GPIO numbers underneath differ. The SD
+reader's pins are named as printed on the module (`CLK` is the SPI clock):
 
 | XIAO pad | S3 GPIO | C5 GPIO | Goes to | Part |
 |----------|---------|---------|---------|------|
 | **D1** | GPIO2 | GPIO0 | LED bar **DIN** | LED bar |
 | **D2** | GPIO3 | GPIO25 | buzzer **+** | buzzer |
-| **D3** | GPIO4 | GPIO7 | SD **CS** | SD (reserved) |
-| **D4** | GPIO5 | GPIO23 | RTC **D** (SDA) | RTC |
-| **D5** | GPIO6 | GPIO24 | RTC **C** (SCL) | RTC |
-| **D8** | GPIO7 | GPIO8 | SD **SCK** | SD (reserved) |
-| **D9** | GPIO8 | GPIO9 | SD **MISO** | SD (reserved) |
-| **D10** | GPIO9 | GPIO10 | SD **MOSI** | SD (reserved) |
+| **D3** | GPIO4 | GPIO7 | SD **CS** (chip select) | SD reader |
+| **D4** | GPIO5 | GPIO23 | nothing: reserved for the clock (SDA) | not fitted |
+| **D5** | GPIO6 | GPIO24 | nothing: reserved for the clock (SCL) | not fitted |
+| **D8** | GPIO7 | GPIO8 | SD **CLK** (SPI clock) | SD reader |
+| **D9** | GPIO8 | GPIO9 | from SD **MISO** (data into the XIAO) | SD reader |
+| **D10** | GPIO9 | GPIO10 | SD **MOSI** | SD reader |
 | **5V** (VUSB) | — | — | LED bar **VCC** | power |
-| **3V3** | — | — | RTC **+** (VCC), the only 3V3 load | power |
-| **GND** | — | — | the ground chain (below) | power |
+| **3V3** | — | — | SD **3v3**, the only 3V3 load | power |
+| **GND** | — | — | LED bar **GND** pad 1 (ground continues from the bar) | power |
 | BOOT button | GPIO0 | GPIO28 | tap = 2 min advertising window; hold 5 s = factory reset | built in |
 
 Pin numbers come from `firmware/src/hardware_manager.h` (LED, buzzer) and the
@@ -38,157 +41,153 @@ board variant's `pins_arduino.h` (`SDA`/`SCL`, SPI). Change the wiring only if
 you change those.
 
 Reading the board: Seeed silk-screens the pads **D0–D10**. One long edge has
-**D0–D6**; the other has **5V, GND, 3V3, D10, D9, D8, D7**. The pad printed
-**VUSB** on the underside is the same 5V.
+**D0–D6**; the other has **5V, GND, 3V3, D10, D9, D8, D7**, with USB-C at the
+top. The pad printed **VUSB** on the underside is the same 5V.
 
-## One wire per XIAO pad: chain the ground
+## The microSD reader: 3.3 V ONLY
 
-The XIAO has one GND pad, one 3V3 and one 5V, each a tiny through-hole. With
-every accessory fitted there are four grounds, which will not all fit in one
-hole. So **each XIAO pad gets exactly one wire**. Ground then
-**daisy-chains from part to part**, and any doubling up happens on the LED
-bar's bigger pads, never on the XIAO.
+The reader drawn here is a small blue board with a bare microSD slot and **no
+regulator**: 6 pins in a row, silkscreen top to bottom
+`3v3, CS, MOSI, CLK, MISO, GND`.
 
-It works because the LED bar passes ground through: a 4-pad clone has two GND
-pads (`GND, IN, VCC, GND`), which are one net. Ground comes in on one and
-leaves on the other, and each pad is big enough for two wires.
+> **Never connect this board to 5V.** It has no regulator, and 5V can kill
+> the card. Its `3v3` pin goes to the XIAO's **3V3** pad and nothing else.
 
-The clock does **not** pass anything through. The DS3231 drawn here is the
-small **"DS3231 For Pi"** module: one 5-pin female header, silkscreen left to
-right `+  D  C  NC  −` (`+` = VCC 3.3 V, `D` = SDA, `C` = SCL, `NC` = not
-connected, `−` = GND), with a coin cell on a tab holder on top. With a single
-header it is the end of any chain.
+The wiring is final, but the firmware does not drive the card yet (support is
+coming). Other SD readers order their pins differently, and some are 5V
+modules with a regulator; with any other reader, match by label and check its
+power pin's marking.
 
-Chain order (skip any part you don't have and join its neighbours):
+## One wire per XIAO pad
+
+The XIAO's holes are tiny, and two wires shoved into one is how a joint
+cracks. So **each XIAO pad gets exactly one wire**. Where two wires have to
+meet (ground), they meet on the LED bar's bigger pads, never on the XIAO.
+
+It works because the common 4-pad bar (`GND, IN, VCC, GND`) has two GND pads
+that are one net on the bar, each big enough for two wires:
 
 ```
-GND : XIAO GND ─► LED bar GND ═► LED bar 2nd GND ─► RTC −
-                       ▲                ▲
-                       │                └── SD GND (reserved; piggybacks next to the RTC wire)
-                       └── buzzer − (piggybacks next to the wire in from the XIAO)
+GND : XIAO GND ─► bar GND pad 1 ═► bar GND pad 2 ─► SD GND
+                       ▲
+                       └── buzzer − (shares pad 1 with the wire from the XIAO)
 
-3V3 : XIAO 3V3 ─► RTC +                          (one wire: the RTC is the only 3V3 load)
+3V3 : XIAO 3V3 ─► SD 3v3          (one wire: the SD reader is the only 3V3 load)
 
-5V  : XIAO 5V  ─► LED bar VCC ─► SD VCC           (reserved; "VCC 5V" SD module only)
+5V  : XIAO 5V  ─► LED bar VCC     (one wire: nothing on the SD reader goes to 5V)
 
  ─►  a wire you add        ═►  already connected inside the part
 ```
 
-This assumes the common 4-pad bar. A 3-pad bar has one GND pad, which would
-need all four ground wires.
-
-**Which SD rail?** Check the label on your module's power pin. The common
-"Micro SD Card Adapter" boards with a regulator and level shifter on them say
-**VCC 5V**: take VCC off the LED bar's VCC pad. A bare 3.3 V breakout has no
-clean 3V3 source in this harness, because the RTC can't pass power through.
-That gets settled when SD firmware support lands. Never feed 5 V to a bare
-3.3 V card slot.
-
-**Got a ZS-042 instead?** The two-header DS3231 board also works. Its pin
-names are the same (SDA → D4, SCL → D5, VCC → 3V3, GND → ground), and it can
-pass power through its second header.
-
-The signal wires are all one-to-one (pad → part) and never share a hole.
+A 3-pad bar has one GND pad, which would need all three ground wires. No bar
+at all? Splice the buzzer − and SD GND wires together (solder + heat-shrink)
+and run one wire from the splice to the XIAO GND pad.
 
 ## Diagram
-
-Every pad carries **one** wire. The labels say where it goes; the chain block
-above says how power and ground continue from there. GPIOs are in the table
-at the top.
 
 ```
                            Seeed XIAO ESP32-S3 / C5  (top view)
                           ┌────────────────────────────┐
                           │         [ USB-C ]          │
-               (unused)   │ ● D0                  5V ● │ ──► LED bar VCC      (5V chain)
-      LED bar DIN   ◄──── │ ● D1                 GND ● │ ──► LED bar GND      (GND chain)
-      buzzer +      ◄──── │ ● D2                 3V3 ● │ ──► RTC +            (only 3V3 load)
-      SD CS         ◄ ─ ─ │ ● D3                 D10 ● │ ─ ─► SD MOSI
-      RTC D (SDA)   ◄──── │ ● D4                  D9 ● │ ─ ─► SD MISO
-      RTC C (SCL)   ◄──── │ ● D5                  D8 ● │ ─ ─► SD SCK
-               (unused)   │ ● D6                  D7 ● │      (unused)
+               (unused)   │ ○ D0                  5V ● │ ──► LED bar VCC
+      LED bar DIN   ◄──── │ ● D1                 GND ● │ ──► LED bar GND pad 1
+      buzzer +      ◄──── │ ● D2                 3V3 ● │ ──► SD 3v3 (3.3 V only)
+      SD CS         ◄──── │ ● D3                 D10 ● │ ──► SD MOSI
+      reserved: clock     │ ○ D4                  D9 ● │ ◄── SD MISO
+      reserved: clock     │ ○ D5                  D8 ● │ ──► SD CLK
+               (unused)   │ ○ D6                  D7 ○ │      (unused)
                           └────────────────────────────┘
-
-      ────  driven by the firmware today       ─ ─  reserved for the SD card (not shipped yet)
 ```
 
 What each part ends up with (skip any part you don't have):
 
 ```
-  LED bar  (DIN end)             DS3231 "For Pi"            microSD module (reserved)
-  ┌──────────────────────┐       ┌──────────────────┐       ┌───────────────────────┐
-  │ GND ◄ XIAO GND       │       │ +  ◄ XIAO 3V3    │       │ VCC ◄ bar VCC         │
-  │  └─ buzzer −         │       │ D  ◄ D4          │       │       ("VCC 5V" only) │
-  │ DIN ◄ D1             │       │ C  ◄ D5          │       │ GND ◄ bar 2nd GND     │
-  │ VCC ◄ XIAO 5V        │       │ NC   (no wire)   │       │ CS  ◄ D3              │
-  │ GND ► RTC −          │       │ −  ◄ bar 2nd GND │       │ SCK ◄ D8              │
-  │  └─ SD GND           │       └──────────────────┘       │ MISO► D9              │
-  └──────────────────────┘                                  │ MOSI◄ D10             │
-                                                            └───────────────────────┘
+  LED bar  (IN end)              microSD reader (pins top to bottom)
+  ┌──────────────────────────┐   ┌──────────────────────────────┐
+  │ GND ◄ XIAO GND           │   │ 3v3  ◄ XIAO 3V3  (never 5V)  │
+  │  └─ buzzer −             │   │ CS   ◄ D3                    │
+  │ IN  ◄ D1                 │   │ MOSI ◄ D10                   │
+  │ VCC ◄ XIAO 5V            │   │ CLK  ◄ D8                    │
+  │ GND ► SD GND             │   │ MISO ► D9                    │
+  └──────────────────────────┘   │ GND  ◄ bar GND pad 2         │
+                                 └──────────────────────────────┘
   Passive buzzer
-  ┌──────────────────────┐
-  │ +  ◄ D2              │
-  │ −  ► bar 1st GND pad │
-  └──────────────────────┘
+  ┌──────────────────────────┐
+  │ +  ◄ D2                  │
+  │ −  ► bar GND pad 1       │
+  └──────────────────────────┘
 ```
+
+## Assembly order
+
+1. **Antenna.** Press the U.FL antenna onto the XIAO's socket until it clicks
+   (C5: use a dual-band one).
+2. **LED bar.** Bar `VCC` → XIAO `5V`; bar GND pad 1 (beside IN) → XIAO
+   `GND`; bar `IN` → XIAO `D1`.
+3. **Buzzer.** Buzzer `+` → XIAO `D2`; buzzer `−` → bar GND pad 1.
+4. **SD reader power (3.3 V only).** SD `3v3` → XIAO `3V3`; SD `GND` → bar
+   GND pad 2 (beside VCC).
+5. **SD reader data.** SD `CS` → `D3`, `MOSI` → `D10`, `CLK` → `D8`,
+   `MISO` → `D9`.
+6. **Check before power:** nothing on the SD reader touches 5V, one wire per
+   XIAO pad, no strands bridging two pads, D4/D5 empty.
+7. **Verify** (below).
+
+## Optional clock (DS3231): parked
+
+Not fitted on this build. The phone or PC sets the time on every connect,
+which dates the alert log, so the clock only matters for real dates across
+power cuts with no phone. **D4 (SDA) / D5 (SCL) are reserved for it**; leave
+them empty.
+
+If you fit one later: any DS3231 breakout at I²C address 0x68. `VCC` → 3V3,
+`SDA` → D4, `SCL` → D5, `GND` → ground. The small "DS3231 For Pi" module
+labels these `+ D C NC −` (`NC` gets no wire); a ZS-042 uses the plain names.
+Two catches: 3V3 already has the SD reader on it, so the clock's power needs a
+splice rather than a second wire in the XIAO 3V3 hole; and "For Pi" boards
+often omit the I²C pull-ups (add 4.7 kΩ from D4 and from D5 to 3V3 if the
+serial log says `[RTC] none fitted` with it attached).
 
 ## Parts detail
 
 - **Buzzer:** a **passive** buzzer/piezo, since it is driven with `tone()` at
   varying pitches. An active buzzer still plays each category's rhythm, but at
-  one fixed pitch. For a 3-pin module: I/O → D2, GND → the bar's first GND
-  pad. Its VCC needs a supply: 3V3 is taken by the clock, so use the bar's
-  VCC pad (5 V) only if the module is rated for 5 V. A small passive buzzer
-  (< 30 mA) drives fine straight off the GPIO.
+  one fixed pitch. A small passive buzzer (< 30 mA) drives fine straight off
+  the GPIO.
 - **LED bar:** WS2812/SK6812 8-LED clone. Wire the **DIN** end (the arrows
   point into the LEDs), not DOUT. Optional hardening: a 330–470 Ω resistor in
   series at DIN, and a 1000 µF cap across the bar's VCC ↔ GND to absorb the
   inrush when all eight LEDs snap on.
-- **DS3231:** any breakout at I²C address 0x68 works. The one drawn is the
-  "DS3231 For Pi" module: `+` ← 3V3, `D` ← D4, `C` ← D5, `NC` gets no wire,
-  `−` ← the bar's 2nd GND pad. It keeps time on its coin cell while the board
-  is unpowered. The app sets the clock on every connect, and if the cell dies,
-  the next connect fixes it. A ZS-042 works the same way (see above).
+- **microSD reader:** see above. 3.3 V only.
 - **C5 antenna:** use a **dual-band** U.FL antenna. The stock one is 2.4 GHz only.
 
 ## Power sanity
 
 8× WS2812 at full white ≈ **480 mA**. SignalSweep only flashes the bar in
 short coloured bursts (never sustained full white), so USB 5V handles it
-easily. The DS3231 and an SD module add a few mA idle, and roughly 100 mA
-peaks on SD writes. If you run it off a weak battery, budget for those numbers.
+easily. An SD card adds a few mA idle and roughly 100 mA peaks on writes, all
+from the XIAO's 3V3. If you run it off a weak battery, budget for those.
 
 ## Gotchas
 
-- **I²C pull-ups on a "For Pi" board:** many of them leave out the SDA/SCL
-  pull-up resistors, because a Raspberry Pi has its own. The XIAO's internal
-  pull-ups usually do on short wires. If the serial log says
-  `[RTC] none fitted` with the module attached, add a 4.7 kΩ resistor from D4
-  to 3V3 and another from D5 to 3V3.
-- **"For Pi" module cell:** check whether the coin cell is marked **LIR2032**
-  (rechargeable) or **CR2032**, and keep a replacement of the same kind.
-- **ZS-042 + a CR2032:** that board has a trickle-charge circuit (a resistor
-  and diode near the header) meant for a rechargeable LIR2032. Fed from 3V3 —
-  as the ZS-042 note above wires it — the charge voltage through the diode
-  (~2.7 V) is below a CR2032's own 3.0 V, so no charge current flows: a plain
-  CR2032 here is harmless. The hazard is feeding the module **5 V** with a
-  plain CR2032 fitted — that does charge it, which it is not built for. If you
-  must run the module at 5 V, fit an LIR2032, or remove the diode or resistor.
+- **SD reader on 5V** kills the card. This one has no regulator: 3V3 only.
 - **3.3 V data into a 5 V-powered LED bar:** clones almost always accept it
   over the short run on a bar. If the first LED flickers or shows the wrong
-  colours, add the series resistor, or power the bar from 3V3 (dimmer, but the
-  data logic threshold then matches).
+  colours, add the series resistor at DIN.
 - **Wrong end of the bar** (wired to DOUT) = nothing lights. Flip to DIN.
-- **Two wires in one XIAO pad** is how a joint cracks. Chain instead (above).
+- **Two wires in one XIAO pad** is how a joint cracks. Double up on a bar pad.
+- **C5 and D3 (GPIO7):** GPIO7 may be sampled at boot, and nobody has booted a
+  C5 with the SD reader wired yet. If the C5 won't start with the SD reader
+  connected, unplug the CS wire (D3), power up, and tell us.
 
 ## Verify
 
 1. Install with the web flasher, or `python flash.py --tier 1 --port COMx`.
-2. On boot: a short jingle and an LED blink (if fitted). The serial log says
-   `[RTC] DS3231 ok, clock set`, `[RTC] DS3231 lost power, waiting for a host`,
-   or `[RTC] none fitted, waiting for a host`.
-3. Connect the app. **Settings › Device identity › Clock** shows whether an
-   RTC was found and that the phone synced it.
+2. On boot: a short jingle and an LED blink (if fitted). With no clock fitted
+   the serial log says `[RTC] none fitted, waiting for a host`, which is
+   expected.
+3. Connect the app. **Settings › Device identity › Clock** shows the phone
+   synced the time.
 4. Trigger a match (an AirTag near it, or edit a signature). The bar flashes
    and the buzzer plays that category's pattern:
    - ALPR / camera → two long beeps

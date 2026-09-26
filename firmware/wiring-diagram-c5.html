@@ -1,6 +1,6 @@
 <meta charset="utf-8">
 <title>SignalSweep C5 Wiring</title>
-<meta name="description" content="How to wire the XIAO ESP32-C5 to its optional parts: passive buzzer, 8-LED NeoPixel bar, DS3231 clock, and the reserved microSD slot, with ground daisy-chained through the bar so every XIAO pad carries one wire.">
+<meta name="description" content="How to wire the XIAO ESP32-C5 to its optional parts: passive buzzer, 8-LED NeoPixel bar and a 3.3 V microSD reader, with one wire per XIAO pad and ground doubled up on the LED bar's pads.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
@@ -15,13 +15,16 @@
     --accent: #0f9d90;
     --board: #0c3a33;
     --board-ink: #dff0ec;
+    --sd-board: #1f4f94;
+    --sd-ink: #e3ecfb;
+    --warn: #c62a2f;
+    --soon: #a86400;
     --wire-5v:   #cf363b;
     --wire-gnd:  #6c7671;
     --wire-3v3:  #7a4fd0;
     --wire-data: #b97400;
     --wire-sig:  #2f9e52;
-    --wire-sda:  #2566c8;
-    --wire-scl:  #0d8fa8;
+    --wire-cs:   #2566c8;
     --wire-spi:  #c0417f;
     --sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
     --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", monospace;
@@ -37,13 +40,16 @@
       --accent: #2ec4b6;
       --board: #0b332d;
       --board-ink: #dff0ec;
+      --sd-board: #1a3f78;
+      --sd-ink: #e3ecfb;
+      --warn: #ff6b6f;
+      --soon: #f5a623;
       --wire-5v:   #e5484d;
       --wire-gnd:  #9aa4a0;
       --wire-3v3:  #a88bff;
       --wire-data: #f5a623;
       --wire-sig:  #46c26a;
-      --wire-sda:  #5b9dff;
-      --wire-scl:  #36c6e0;
+      --wire-cs:   #5b9dff;
       --wire-spi:  #f07aae;
     }
   }
@@ -57,13 +63,16 @@
     --accent: #2ec4b6;
     --board: #0b332d;
     --board-ink: #dff0ec;
+    --sd-board: #1a3f78;
+    --sd-ink: #e3ecfb;
+    --warn: #ff6b6f;
+    --soon: #f5a623;
     --wire-5v:   #e5484d;
     --wire-gnd:  #9aa4a0;
     --wire-3v3:  #a88bff;
     --wire-data: #f5a623;
     --wire-sig:  #46c26a;
-    --wire-sda:  #5b9dff;
-    --wire-scl:  #36c6e0;
+    --wire-cs:   #5b9dff;
     --wire-spi:  #f07aae;
   }
 
@@ -115,14 +124,14 @@
   .svg-fill-surface { fill: var(--surface-2); }
   .svg-stroke-line { stroke: var(--line); }
   .svg-board { fill: var(--board); }
-  .sd-body { stroke: var(--wire-spi); stroke-width: 1.5; stroke-dasharray: 7 5; }
-  .coin { fill: var(--surface); stroke: var(--muted); stroke-width: 1.4; }
-  .tab { fill: var(--surface-2); stroke: var(--muted); stroke-width: 1.2; }
-  .hdr { fill: var(--ink); opacity: 0.82; }
-  .hdr-hole { fill: var(--surface); }
+  .sd-body { fill: var(--sd-board); }
+  .sd-slot { fill: #c9ced3; stroke: #8b939b; stroke-width: 1.2; }
+  .sd-card { fill: #3a4048; opacity: 0.18; }
   .t-ink { fill: var(--ink); font-family: var(--mono); }
   .t-muted { fill: var(--muted); font-family: var(--mono); }
+  .sd-slot + .sd-card + .t-muted { fill: #4b545c; }
   .t-board { fill: var(--board-ink); font-family: var(--mono); }
+  .t-sd { fill: var(--sd-ink); font-family: var(--mono); }
   .pad { fill: var(--surface); stroke-width: 2; }
   .w { fill: none; stroke-width: 3.5; stroke-linejoin: round; stroke-linecap: round; }
   .w-5v   { stroke: var(--wire-5v); }   .pin-5v   { stroke: var(--wire-5v); }
@@ -130,18 +139,18 @@
   .w-3v3  { stroke: var(--wire-3v3); }  .pin-3v3  { stroke: var(--wire-3v3); }
   .w-data { stroke: var(--wire-data); } .pin-data { stroke: var(--wire-data); }
   .w-sig  { stroke: var(--wire-sig); }  .pin-sig  { stroke: var(--wire-sig); }
-  .w-sda  { stroke: var(--wire-sda); }  .pin-sda  { stroke: var(--wire-sda); }
-  .w-scl  { stroke: var(--wire-scl); }  .pin-scl  { stroke: var(--wire-scl); }
-  .w-spi  { stroke: var(--wire-spi); stroke-dasharray: 9 6; stroke-linecap: butt; } .pin-spi { stroke: var(--wire-spi); }
-  .w.dash { stroke-dasharray: 9 6; stroke-linecap: butt; }
+  .w-cs   { stroke: var(--wire-cs); }   .pin-cs   { stroke: var(--wire-cs); }
+  .w-spi  { stroke: var(--wire-spi); }  .pin-spi  { stroke: var(--wire-spi); }
   .link { fill: none; stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 2 3; }
   .junction { fill: var(--wire-gnd); }
   .pill-opt { fill: none; stroke: var(--accent); stroke-width: 1.3; }
   .t-pill-opt { fill: var(--accent); font-family: var(--mono); letter-spacing: 0.06em; }
-  .pill-res { fill: none; stroke: var(--wire-spi); stroke-width: 1.3; stroke-dasharray: 4 3; }
-  .t-pill-res { fill: var(--wire-spi); font-family: var(--mono); letter-spacing: 0.06em; }
+  .pill-soon { fill: none; stroke: var(--soon); stroke-width: 1.3; }
+  .t-pill-soon { fill: var(--soon); font-family: var(--mono); letter-spacing: 0.06em; }
   .pill-req { fill: var(--accent); }
   .t-pill-req { fill: #04110e; font-family: var(--mono); letter-spacing: 0.06em; }
+  .warn-box { fill: none; stroke: var(--warn); stroke-width: 2; }
+  .t-warn { fill: var(--warn); font-family: var(--mono); letter-spacing: 0.04em; }
 
   /* Legend */
   .legend { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; margin-top: 16px; }
@@ -150,7 +159,6 @@
     background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
   }
   .swatch { width: 26px; height: 5px; border-radius: 3px; flex: none; }
-  .swatch.dashed { background: repeating-linear-gradient(90deg, var(--wire-spi) 0 8px, transparent 8px 13px) !important; }
   .leg .net { font-family: var(--mono); font-weight: 600; font-size: 14px; }
   .leg .to { color: var(--muted); font-size: 12.5px; margin-left: auto; font-family: var(--mono); text-align: right; }
 
@@ -160,7 +168,8 @@
     padding: 1px 7px; border-radius: 999px; border: 1px solid var(--accent); color: var(--accent); white-space: nowrap;
   }
   .tag.req { background: var(--accent); color: #04110e; }
-  .tag.res { border-color: var(--wire-spi); color: var(--wire-spi); border-style: dashed; }
+  .tag.soon { border-color: var(--soon); color: var(--soon); margin-top: 4px; }
+  .tag.off { border-color: var(--muted); color: var(--muted); }
 
   /* Chains */
   .chains { display: grid; gap: 10px; }
@@ -170,7 +179,6 @@
   }
   .chain .net { font-weight: 600; min-width: 44px; margin-right: 6px; display: inline-flex; align-items: center; gap: 8px; }
   .chain .hop { background: var(--surface-2); border: 1px solid var(--line); border-radius: 6px; padding: 2px 8px; white-space: nowrap; }
-  .chain .hop.res { border-style: dashed; border-color: var(--wire-spi); }
   .chain .ar { color: var(--muted); padding: 0 2px; }
   .chain .in { color: var(--accent); padding: 0 2px; font-weight: 600; }
   .chain .note { color: var(--muted); font-size: 12px; flex-basis: 100%; font-family: var(--sans); }
@@ -187,24 +195,28 @@
   td.pad-cell { font-family: var(--mono); font-weight: 600; white-space: nowrap; }
   td .gpio { color: var(--muted); font-family: var(--mono); font-size: 12.5px; }
   td.muted { color: var(--muted); }
-  tr.reserved td { color: var(--muted); }
+  tr.parked td { color: var(--muted); }
   .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 8px; vertical-align: middle; }
-  .dot.ring { background: transparent !important; border: 2px dashed var(--wire-spi); width: 10px; height: 10px; }
+  .dot.ring { background: transparent !important; border: 2px solid var(--muted); width: 10px; height: 10px; }
 
   /* Steps */
   ol.steps { list-style: none; counter-reset: s; margin: 0; padding: 0; display: grid; gap: 14px; }
-  ol.steps li {
+  ol.steps > li {
     counter-increment: s; position: relative; padding: 14px 16px 14px 56px;
     background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
   }
-  ol.steps li::before {
+  ol.steps > li::before {
     content: counter(s); position: absolute; left: 14px; top: 13px;
     width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center;
     background: var(--accent); color: #04110e; font-family: var(--mono); font-weight: 600; font-size: 14px;
   }
-  :root:not([data-theme="light"]) ol.steps li::before { color: #04110e; }
   ol.steps b { font-weight: 600; }
-  ol.steps li.key { border-color: var(--accent); }
+  ol.steps > li.key { border-color: var(--accent); }
+  ol.steps > li.warn { border-color: var(--warn); }
+  ol.steps > li.warn::before { background: var(--warn); color: #fff; }
+  ol.steps ul.wires { margin: 8px 0 0; padding-left: 18px; }
+  ol.steps ul.wires li { margin: 4px 0; }
+  .red { color: var(--warn); font-weight: 700; }
   code {
     font-family: var(--mono); font-size: 0.88em; background: var(--surface-2);
     border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px;
@@ -213,12 +225,17 @@
   .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
   @media (max-width: 680px) { .cols { grid-template-columns: 1fr; } }
   .callout { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; }
-  .callout h3 { margin: 0 0 8px; font-size: 15px; display: flex; gap: 8px; align-items: center; }
+  .callout h3 { margin: 0 0 8px; font-size: 15px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
   .callout h3 .k { font-family: var(--mono); font-size: 11px; padding: 2px 7px; border-radius: 5px; background: var(--surface-2); border: 1px solid var(--line); color: var(--muted); }
   .callout ul { margin: 0; padding-left: 18px; color: var(--muted); font-size: 13.5px; }
   .callout li { margin: 5px 0; }
   .callout li b { color: var(--ink); }
-  .callout.wide { grid-column: 1 / -1; }
+  .callout p { margin: 0; color: var(--muted); font-size: 13.5px; }
+  .callout p b { color: var(--ink); }
+  .callout.warn { border: 2px solid var(--warn); }
+  .callout.warn h3 { color: var(--warn); }
+  .callout.small { padding: 12px 16px; }
+  .callout.small h3 { font-size: 13.5px; }
 
   a { color: var(--accent); }
 </style>
@@ -227,8 +244,8 @@
   <header class="top">
     <p class="eyebrow">SignalSweep · Hardware</p>
     <h1>Wiring the C5 detector</h1>
-    <p class="lede">All you need is the board. A bare XIAO ESP32-C5 with its dual-band U.FL antenna is a working detector: plug it into USB, connect the app, and it streams everything it hears. The buzzer, LED bar and DS3231 clock are optional add-ons, and the firmware checks at boot for what is fitted. The microSD slot is <b>reserved</b>: its wiring is drawn so a harness can include it, but the firmware does not use it yet.</p>
-    <span class="board-tag">Seeed XIAO ESP32-C5 · LED <b>D1 / GPIO0</b> · Buzzer <b>D2 / GPIO25</b> · RTC <b>D4 / GPIO23</b> SDA, <b>D5 / GPIO24</b> SCL</span>
+    <p class="lede">All you need is the board. A bare XIAO ESP32-C5 with its dual-band U.FL antenna is a working detector: plug it into USB, connect the app, and it streams everything it hears. The buzzer, the LED bar and the microSD reader are optional add-ons. The microSD wiring is final, but <b>firmware support is coming</b>: the board does not use the card yet.</p>
+    <span class="board-tag">Seeed XIAO ESP32-C5 · LED <b>D1 / GPIO0</b> · Buzzer <b>D2 / GPIO25</b> · microSD CS <b>D3</b>, MOSI <b>D10</b>, CLK <b>D8</b>, MISO <b>D9</b></span>
   </header>
 
   <section>
@@ -242,8 +259,8 @@
           <tr><td>XIAO <b>ESP32-C5</b> + dual-band U.FL antenna</td><td><span class="tag req">REQUIRED</span></td><td>the detector</td><td class="muted">—</td></tr>
           <tr><td>Passive buzzer</td><td><span class="tag">OPTIONAL</span></td><td>the headless "what is near" beep patterns, and Hunt's beeps</td><td class="muted">phone only</td></tr>
           <tr><td>WS2812 8-LED bar</td><td><span class="tag">OPTIONAL</span></td><td>colour/animation per category, the hunt meter</td><td class="muted">phone only</td></tr>
-          <tr><td>DS3231 RTC module</td><td><span class="tag">OPTIONAL</span></td><td>the alert log keeps real dates across power cuts, with no phone</td><td class="muted">the time comes from the phone at each connect and is lost when the power goes</td></tr>
-          <tr class="reserved"><td>microSD module</td><td><span class="tag res">RESERVED</span></td><td><b>firmware support not shipped yet.</b> (coming) alert log and Site Survey captures on a card</td><td class="muted">—</td></tr>
+          <tr><td>microSD reader (3.3 V, 6 pins, no regulator)</td><td><span class="tag">OPTIONAL</span><br><span class="tag soon">FIRMWARE SUPPORT COMING</span></td><td>(coming) alert log and Site Survey captures on a card</td><td class="muted">—</td></tr>
+          <tr class="parked"><td>DS3231 clock module</td><td><span class="tag off">OPTIONAL</span></td><td>not fitted on this build</td><td class="muted">the phone or PC sets the time at each connect</td></tr>
           
         </tbody>
       </table>
@@ -262,74 +279,72 @@
     <figure>
       <p class="scroll-hint">← scroll the drawing sideways →</p>
       <div class="diagram">
-        <svg viewBox="95 62 945 846" role="img" aria-label="Wiring schematic, XIAO ESP32-C5 top view with USB-C at the top. Left edge D0 to D6, right edge 5V/VUSB, GND, 3V3, D10, D9, D8, D7. Every XIAO pad carries exactly one wire. Red runs from 5V to the LED bar VCC. Grey ground runs from the XIAO GND up to the bar's top GND pad, and the buzzer minus lands on that same pad from above. From the bar's bottom GND pad the ground chain runs under the bar, down the right side and over the clock to the DS3231's minus pin. Violet 3V3 runs from the XIAO 3V3 over the SD module, down the right side and under the clock to the DS3231's plus pin; it is the only 3V3 wire. Amber runs from D1 over the top to the bar DIN; green from D2 to the buzzer plus. Blue SDA from D4 and cyan SCL from D5 run down the left and under the board to the DS3231's D and C pins. The DS3231 is a small 'For Pi' module with one 5-pin female header reading plus, D, C, NC, minus, and a coin cell on top; NC has no wire and nothing passes through it. The microSD module is reserved, firmware not shipped yet, and all its wires are dashed: D3 to CS under the board, D10 to MOSI, D9 from MISO, D8 to SCK, and its GND from the bar's bottom GND pad next to the clock wire. Its VCC is left unwired: a VCC 5V module takes it from the bar VCC pad. Hops mark crossings: 5V and D1 hop the XIAO ground wire, 3V3 hops the SD ground and the clock ground, and SDA and SCL hop the dashed CS wire. Buzzer, LED bar, DS3231 and microSD are each marked optional or reserved; the XIAO is required.">
+        <svg viewBox="95 62 975 712" role="img" aria-label="Wiring schematic, XIAO ESP32-C5 top view with USB-C at the top. Left edge D0 to D6, right edge 5V/VUSB, GND, 3V3, D10, D9, D8, D7. Every XIAO pad carries exactly one wire. Red runs from 5V to the LED bar VCC. Grey ground runs from the XIAO GND up to the bar's top GND pad, and the buzzer minus lands on that same pad from above. From the bar's bottom GND pad a second ground wire runs under the bar, down the right side and under the microSD reader to its GND pin. Violet 3V3 runs straight from the XIAO 3V3 to the microSD reader's 3v3 pin; it is the only 3V3 wire. Amber runs from D1 over the top to the bar DIN; green from D2 to the buzzer plus. The microSD reader is a blue board with six pins down its left edge, top to bottom 3v3, CS, MOSI, CLK, MISO, GND. Pink wires: D10 to MOSI, D8 to CLK, and MISO back to D9. Blue CS runs from D3 down under the XIAO, up the far right and over the reader onto CS. The reader is optional, firmware support is coming, and it is 3.3 volts only: never connect it to 5V. D4 and D5 are unwired, reserved for an optional clock that is not fitted. Hops mark crossings: 5V and D1 hop the XIAO ground wire, CS hops the reader's ground wire, 3V3 hops CS, and CLK hops MISO.">
           <defs>
             <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
               <path d="M0,0 L10,5 L0,10 z" fill="context-stroke"></path>
             </marker>
           </defs>
           <!-- ===== Wires (drawn first, parts sit on top). Every XIAO pad carries exactly ONE wire. ===== -->
-          <!-- Power: 5V -> bar VCC; hops the XIAO ground wire -->
-          <path class="w w-5v" d="M590,290 H635 V205 H653 A7,7 0 0 1 667,205 H690"></path>
-          <!-- Ground chain, link 1: XIAO GND -> the bar's first GND pad (top) -->
-          <path class="w w-gnd" d="M590,325 H660 V145 H690"></path>
-          <!-- Buzzer minus piggybacks on that same pad, arriving from above -->
-          <path class="w w-gnd" d="M270,125 H690 V145"></path>
-          <!-- Ground chain, link 2: bar 2nd GND pad -> under the bar -> down the right -> over the RTC -> RTC - -->
-          <path class="w w-gnd" d="M690,235 V300 H1000 V575 H722 V615 H740"></path>
-          <!-- SD GND (reserved, dashed) piggybacks on the 2nd GND pad, next to the RTC wire -->
-          <path class="w w-gnd dash" d="M690,235 H675 V330 H908 V378"></path>
-          <!-- 3V3: the RTC is its only load. Over the SD, down the right, under the RTC, onto +. Hops SD GND and RTC ground. -->
-          <path class="w w-3v3" d="M590,360 H901 A7,7 0 0 1 915,360 H993 A7,7 0 0 1 1007,360 H1016 V808 H722 V727 H740"></path>
+          <!-- 5V -> bar VCC; hops the XIAO ground wire -->
+          <path class="w w-5v" d="M620,290 H665 V205 H683 A7,7 0 0 1 697,205 H720"></path>
+          <!-- Ground 1: XIAO GND -> the bar's first GND pad (top) -->
+          <path class="w w-gnd" d="M620,325 H690 V145 H720"></path>
+          <!-- Buzzer minus lands on that same pad, arriving from above -->
+          <path class="w w-gnd" d="M270,125 H720 V145"></path>
+          <!-- Ground 2: bar 2nd GND pad -> under the bar -> down the right -> under the SD -> SD GND -->
+          <path class="w w-gnd" d="M720,235 V300 H1030 V585 H745 V535 H770"></path>
+          <!-- 3V3 -> SD 3v3, the only 3V3 wire; hops the CS wire -->
+          <path class="w w-3v3" d="M620,360 H741 A7,7 0 0 1 755,360 H770"></path>
           <!-- D1 -> bar DIN, over the top of the board; hops the XIAO ground wire -->
-          <path class="w w-data" d="M430,325 H392 V175 H653 A7,7 0 0 1 667,175 H690" marker-end="url(#arrow)"></path>
+          <path class="w w-data" d="M420,325 H392 V175 H683 A7,7 0 0 1 697,175 H720" marker-end="url(#arrow)"></path>
           <!-- D2 -> buzzer + -->
-          <path class="w w-sig" d="M430,360 H355 V190 H270" marker-end="url(#arrow)"></path>
-          <!-- SD (reserved, dashed): D3 -> CS, under the board -->
-          <path class="w w-spi" d="M430,395 H412 V612 H705 V505 H730" marker-end="url(#arrow)"></path>
-          <path class="w w-spi" d="M590,395 H730" marker-end="url(#arrow)"></path>
-          <path class="w w-spi" d="M730,430 H590" marker-end="url(#arrow)"></path>
-          <path class="w w-spi" d="M590,465 H730" marker-end="url(#arrow)"></path>
-          <!-- I2C: D4 -> D (SDA), D5 -> C (SCL), under the board to the header. Both hop the dashed CS wire. -->
-          <path class="w w-sda" d="M430,430 H419 A7,7 0 0 0 405,430 H340 V699 H740" marker-end="url(#arrow)"></path>
-          <path class="w w-scl" d="M430,465 H419 A7,7 0 0 0 405,465 H378 V671 H740" marker-end="url(#arrow)"></path>
+          <path class="w w-sig" d="M420,360 H355 V190 H270" marker-end="url(#arrow)"></path>
+          <!-- D3 -> SD CS: under the XIAO, up the far right, over the SD; hops the SD ground -->
+          <path class="w w-cs" d="M420,395 H402 V612 H1050 V320 H1037 A7,7 0 0 0 1023,320 H748 V395 H770" marker-end="url(#arrow)"></path>
+          <!-- D10 -> SD MOSI -->
+          <path class="w w-spi" d="M620,395 H700 V430 H770" marker-end="url(#arrow)"></path>
+          <!-- D8 -> SD CLK; hops the MISO wire -->
+          <path class="w w-spi" d="M620,465 H653 A7,7 0 0 1 667,465 H770" marker-end="url(#arrow)"></path>
+          <!-- SD MISO -> D9 (data comes back to the XIAO) -->
+          <path class="w w-spi" d="M770,500 H660 V430 H620" marker-end="url(#arrow)"></path>
           <!-- ===== XIAO (top view, USB-C up, both edges as on the real board) ===== -->
-          <rect class="svg-board" x="430" y="250" width="160" height="342" rx="12"></rect>
-          <rect class="svg-board svg-stroke-line" x="491" y="242" width="38" height="12" rx="3" style="stroke-width:1.5"></rect>
-          <text class="t-muted" x="510" y="236" text-anchor="middle" font-size="10.5">USB-C</text>
-          <text class="t-board" x="510" y="530" text-anchor="middle" font-size="12" font-weight="600">seeed XIAO</text>
-          <text class="t-board" x="510" y="544" text-anchor="middle" font-size="10" opacity="0.85">ESP32-C5</text>
-          <rect class="pill-req" x="476" y="554" width="68" height="16" rx="8"></rect>
-          <text class="t-pill-req" x="510" y="565.5" text-anchor="middle" font-size="9.5" font-weight="700">REQUIRED</text>
-          <text class="t-board" x="510" y="584" text-anchor="middle" font-size="9" opacity="0.8">+ U.FL antenna</text>
-          <circle class="pad" cx="430" cy="290" r="4" style="stroke:var(--muted)"></circle>
-          <text class="t-board" x="442" y="294" text-anchor="start" font-size="10" opacity="0.55">D0</text>
-          <circle class="pad pin-data" cx="430" cy="325" r="5.5"></circle>
-          <text class="t-board" x="442" y="329" text-anchor="start" font-size="11.5" font-weight="700">D1 · G0</text>
-          <circle class="pad pin-sig" cx="430" cy="360" r="5.5"></circle>
-          <text class="t-board" x="442" y="364" text-anchor="start" font-size="11.5" font-weight="700">D2 · G25</text>
-          <circle class="pad pin-spi" cx="430" cy="395" r="5.5"></circle>
-          <text class="t-board" x="442" y="399" text-anchor="start" font-size="11.5" font-weight="700">D3 · G7</text>
-          <circle class="pad pin-sda" cx="430" cy="430" r="5.5"></circle>
-          <text class="t-board" x="442" y="434" text-anchor="start" font-size="11.5" font-weight="700">D4 · G23</text>
-          <circle class="pad pin-scl" cx="430" cy="465" r="5.5"></circle>
-          <text class="t-board" x="442" y="469" text-anchor="start" font-size="11.5" font-weight="700">D5 · G24</text>
-          <circle class="pad" cx="430" cy="500" r="4" style="stroke:var(--muted)"></circle>
-          <text class="t-board" x="442" y="504" text-anchor="start" font-size="10" opacity="0.55">D6</text>
-          <circle class="pad pin-5v" cx="590" cy="290" r="5.5"></circle>
-          <text class="t-board" x="578" y="294" text-anchor="end" font-size="11.5" font-weight="700">5V · VUSB</text>
-          <circle class="pad pin-gnd" cx="590" cy="325" r="5.5"></circle>
-          <text class="t-board" x="578" y="329" text-anchor="end" font-size="11.5" font-weight="700">GND</text>
-          <circle class="pad pin-3v3" cx="590" cy="360" r="5.5"></circle>
-          <text class="t-board" x="578" y="364" text-anchor="end" font-size="11.5" font-weight="700">3V3</text>
-          <circle class="pad pin-spi" cx="590" cy="395" r="5.5"></circle>
-          <text class="t-board" x="578" y="399" text-anchor="end" font-size="11.5" font-weight="700">D10 · G10</text>
-          <circle class="pad pin-spi" cx="590" cy="430" r="5.5"></circle>
-          <text class="t-board" x="578" y="434" text-anchor="end" font-size="11.5" font-weight="700">D9 · G9</text>
-          <circle class="pad pin-spi" cx="590" cy="465" r="5.5"></circle>
-          <text class="t-board" x="578" y="469" text-anchor="end" font-size="11.5" font-weight="700">D8 · G8</text>
-          <circle class="pad" cx="590" cy="500" r="4" style="stroke:var(--muted)"></circle>
-          <text class="t-board" x="578" y="504" text-anchor="end" font-size="10" opacity="0.55">D7</text>
+          <rect class="svg-board" x="420" y="250" width="200" height="342" rx="12"></rect>
+          <rect class="svg-board svg-stroke-line" x="501" y="242" width="38" height="12" rx="3" style="stroke-width:1.5"></rect>
+          <text class="t-muted" x="520" y="236" text-anchor="middle" font-size="10.5">USB-C</text>
+          <text class="t-board" x="520" y="530" text-anchor="middle" font-size="12" font-weight="600">seeed XIAO</text>
+          <text class="t-board" x="520" y="544" text-anchor="middle" font-size="10" opacity="0.85">ESP32-C5</text>
+          <rect class="pill-req" x="486" y="554" width="68" height="16" rx="8"></rect>
+          <text class="t-pill-req" x="520" y="565.5" text-anchor="middle" font-size="9.5" font-weight="700">REQUIRED</text>
+          <text class="t-board" x="520" y="584" text-anchor="middle" font-size="9" opacity="0.8">+ dual-band U.FL antenna</text>
+          <circle class="pad" cx="420" cy="290" r="4" style="stroke:var(--muted)"></circle>
+          <text class="t-board" x="432" y="294" text-anchor="start" font-size="10" opacity="0.55">D0</text>
+          <circle class="pad pin-data" cx="420" cy="325" r="5.5"></circle>
+          <text class="t-board" x="432" y="329" text-anchor="start" font-size="11.5" font-weight="700">D1 · G0</text>
+          <circle class="pad pin-sig" cx="420" cy="360" r="5.5"></circle>
+          <text class="t-board" x="432" y="364" text-anchor="start" font-size="11.5" font-weight="700">D2 · G25</text>
+          <circle class="pad pin-cs" cx="420" cy="395" r="5.5"></circle>
+          <text class="t-board" x="432" y="399" text-anchor="start" font-size="11.5" font-weight="700">D3 · G7</text>
+          <circle class="pad" cx="420" cy="430" r="4" style="stroke:var(--muted)"></circle>
+          <text class="t-board" x="432" y="434" text-anchor="start" font-size="9.5" opacity="0.7">D4 · reserved: clock</text>
+          <circle class="pad" cx="420" cy="465" r="4" style="stroke:var(--muted)"></circle>
+          <text class="t-board" x="432" y="469" text-anchor="start" font-size="9.5" opacity="0.7">D5 · reserved: clock</text>
+          <circle class="pad" cx="420" cy="500" r="4" style="stroke:var(--muted)"></circle>
+          <text class="t-board" x="432" y="504" text-anchor="start" font-size="10" opacity="0.55">D6</text>
+          <circle class="pad pin-5v" cx="620" cy="290" r="5.5"></circle>
+          <text class="t-board" x="608" y="294" text-anchor="end" font-size="11.5" font-weight="700">5V · VUSB</text>
+          <circle class="pad pin-gnd" cx="620" cy="325" r="5.5"></circle>
+          <text class="t-board" x="608" y="329" text-anchor="end" font-size="11.5" font-weight="700">GND</text>
+          <circle class="pad pin-3v3" cx="620" cy="360" r="5.5"></circle>
+          <text class="t-board" x="608" y="364" text-anchor="end" font-size="11.5" font-weight="700">3V3</text>
+          <circle class="pad pin-spi" cx="620" cy="395" r="5.5"></circle>
+          <text class="t-board" x="608" y="399" text-anchor="end" font-size="11.5" font-weight="700">D10 · G10</text>
+          <circle class="pad pin-spi" cx="620" cy="430" r="5.5"></circle>
+          <text class="t-board" x="608" y="434" text-anchor="end" font-size="11.5" font-weight="700">D9 · G9</text>
+          <circle class="pad pin-spi" cx="620" cy="465" r="5.5"></circle>
+          <text class="t-board" x="608" y="469" text-anchor="end" font-size="11.5" font-weight="700">D8 · G8</text>
+          <circle class="pad" cx="620" cy="500" r="4" style="stroke:var(--muted)"></circle>
+          <text class="t-board" x="608" y="504" text-anchor="end" font-size="10" opacity="0.55">D7</text>
           <!-- ===== Passive buzzer (optional) ===== -->
           <rect class="pill-opt" x="130" y="86" width="72" height="16" rx="8"></rect>
           <text class="t-pill-opt" x="166" y="97.5" text-anchor="middle" font-size="9.5" font-weight="700">OPTIONAL</text>
@@ -347,155 +362,127 @@
           <text class="t-muted" x="130" y="246" font-size="10.5"><tspan class="t-ink" font-weight="600">adds</tspan> headless beeps + Hunt</text>
           <text class="t-muted" x="130" y="261" font-size="10.5"><tspan class="t-ink" font-weight="600">without</tspan> phone only</text>
           <!-- ===== 8-LED NeoPixel bar (optional) ===== -->
-          <rect class="svg-fill-surface svg-stroke-line" x="700" y="118" width="250" height="144" rx="9" style="stroke-width:1.5"></rect>
-          <text class="t-ink" x="744" y="143" font-size="11" font-weight="600">8-LED NEOPIXEL BAR</text>
-          <rect class="pill-opt" x="868" y="131" width="72" height="16" rx="8"></rect>
-          <text class="t-pill-opt" x="904" y="142.5" text-anchor="middle" font-size="9.5" font-weight="700">OPTIONAL</text>
-          <rect x="744" y="177" width="17" height="19" rx="3" fill="#e5484d" opacity="0.85"></rect>
-          <rect x="769" y="177" width="17" height="19" rx="3" fill="#f5a623" opacity="0.85"></rect>
-          <rect x="794" y="177" width="17" height="19" rx="3" fill="#f7e05e" opacity="0.85"></rect>
-          <rect x="819" y="177" width="17" height="19" rx="3" fill="#46c26a" opacity="0.85"></rect>
-          <rect x="844" y="177" width="17" height="19" rx="3" fill="#2ec4b6" opacity="0.85"></rect>
-          <rect x="869" y="177" width="17" height="19" rx="3" fill="#3a8ee6" opacity="0.85"></rect>
-          <rect x="894" y="177" width="17" height="19" rx="3" fill="#7b6cf0" opacity="0.85"></rect>
-          <rect x="919" y="177" width="17" height="19" rx="3" fill="#c556c0" opacity="0.85"></rect>
-          <line class="svg-stroke-line" x1="690" y1="145" x2="700" y2="145" style="stroke-width:2"></line>
-          <circle class="pad pin-gnd" cx="690" cy="145" r="4.5"></circle>
-          <text class="t-ink" x="707" y="148.5" font-size="10">GND</text>
-          <line class="svg-stroke-line" x1="690" y1="175" x2="700" y2="175" style="stroke-width:2"></line>
-          <circle class="pad pin-data" cx="690" cy="175" r="4.5"></circle>
-          <text class="t-ink" x="707" y="178.5" font-size="10" font-weight="700">IN</text>
-          <line class="svg-stroke-line" x1="690" y1="205" x2="700" y2="205" style="stroke-width:2"></line>
-          <circle class="pad pin-5v" cx="690" cy="205" r="4.5"></circle>
-          <text class="t-ink" x="707" y="208.5" font-size="10">VCC</text>
-          <line class="svg-stroke-line" x1="690" y1="235" x2="700" y2="235" style="stroke-width:2"></line>
-          <circle class="pad pin-gnd" cx="690" cy="235" r="4.5"></circle>
-          <text class="t-ink" x="707" y="238.5" font-size="10">GND</text>
-          <path class="link" d="M732,145 h4 V235 h-4"></path>
-          <circle class="junction" cx="690" cy="145" r="4"></circle>
-          <circle class="junction" cx="690" cy="235" r="4"></circle>
-          <text class="t-muted" x="940" y="252" text-anchor="end" font-size="10.5">OUT →</text>
-          <text class="t-muted" x="700" y="78" font-size="10.5"><tspan class="t-ink" font-weight="600">adds</tspan> colour per category, hunt meter</text>
-          <text class="t-muted" x="700" y="93" font-size="10.5"><tspan class="t-ink" font-weight="600">without</tspan> phone only</text>
-          <text class="t-muted" x="700" y="110" font-size="10">wire the IN end · both GND pads are one net</text>
-          <!-- ===== microSD module (reserved: firmware support not shipped yet) ===== -->
-          <rect class="svg-fill-surface sd-body" x="730" y="378" width="205" height="167" rx="10"></rect>
-          <circle class="pad pin-spi" cx="730" cy="395" r="4.5"></circle>
-          <text class="t-ink" x="740" y="398.5" font-size="10">MOSI</text>
-          <circle class="pad pin-spi" cx="730" cy="430" r="4.5"></circle>
-          <text class="t-ink" x="740" y="433.5" font-size="10">MISO</text>
-          <circle class="pad pin-spi" cx="730" cy="465" r="4.5"></circle>
-          <text class="t-ink" x="740" y="468.5" font-size="10">SCK</text>
-          <circle class="pad pin-spi" cx="730" cy="505" r="4.5"></circle>
-          <text class="t-ink" x="740" y="508.5" font-size="10">CS</text>
-          <circle class="pad pin-gnd" cx="908" cy="378" r="4.5"></circle>
-          <text class="t-ink" x="908" y="394" text-anchor="middle" font-size="9.5">GND</text>
-          <circle class="pad" cx="872" cy="378" r="4" style="stroke:var(--muted)"></circle>
-          <text class="t-muted" x="872" y="394" text-anchor="middle" font-size="9.5">VCC</text>
-          <text class="t-ink" x="800" y="408" font-size="11.5" font-weight="600">microSD</text>
-          <rect class="pill-res" x="800" y="416" width="74" height="16" rx="8"></rect>
-          <text class="t-pill-res" x="837" y="427.5" text-anchor="middle" font-size="9.5" font-weight="700">RESERVED</text>
-          <text class="t-muted" x="800" y="448" font-size="10">firmware support</text>
-          <text class="t-muted" x="800" y="462" font-size="10">not shipped yet</text>
-          <text class="t-muted" x="800" y="486" font-size="9.5"><tspan class="t-ink">VCC</tspan>: "VCC 5V" module</text>
-          <text class="t-muted" x="800" y="499" font-size="9.5">→ the bar VCC pad</text>
-          <text class="t-muted" x="800" y="515" font-size="9.5">bare 3.3 V module:</text>
-          <text class="t-muted" x="800" y="528" font-size="9.5">no clean 3V3 yet</text>
-          <!-- ===== DS3231 "For Pi" module (optional): one 5-pin female header, end of every chain ===== -->
-          <rect class="svg-fill-surface svg-stroke-line" x="750" y="595" width="160" height="195" rx="8" style="stroke-width:1.5"></rect>
-          <rect class="hdr" x="754" y="602" width="16" height="138" rx="2"></rect>
-          <line class="svg-stroke-line" x1="740" y1="615" x2="754" y2="615" style="stroke-width:2"></line>
-          <rect class="hdr-hole" x="758" y="611" width="8" height="8" rx="1"></rect>
-          <circle class="pad pin-gnd" cx="740" cy="615" r="4.5"></circle>
-          <text class="t-ink" x="778" y="619.5" font-size="12" font-weight="700">−</text>
-          <text class="t-muted" x="794" y="619" font-size="9.5">GND</text>
-          <line class="svg-stroke-line" x1="740" y1="643" x2="754" y2="643" style="stroke-width:2"></line>
-          <rect class="hdr-hole" x="758" y="639" width="8" height="8" rx="1"></rect>
-          <circle class="pad" cx="740" cy="643" r="3.5" style="stroke:var(--muted)"></circle>
-          <text class="t-muted" x="778" y="647" font-size="10" font-weight="700">NC</text>
-          <text class="t-muted" x="800" y="647" font-size="9.5">no wire</text>
-          <line class="svg-stroke-line" x1="740" y1="671" x2="754" y2="671" style="stroke-width:2"></line>
-          <rect class="hdr-hole" x="758" y="667" width="8" height="8" rx="1"></rect>
-          <circle class="pad pin-scl" cx="740" cy="671" r="4.5"></circle>
-          <text class="t-ink" x="778" y="675.5" font-size="12" font-weight="700">C</text>
-          <text class="t-muted" x="794" y="675" font-size="9.5">SCL</text>
-          <line class="svg-stroke-line" x1="740" y1="699" x2="754" y2="699" style="stroke-width:2"></line>
-          <rect class="hdr-hole" x="758" y="695" width="8" height="8" rx="1"></rect>
-          <circle class="pad pin-sda" cx="740" cy="699" r="4.5"></circle>
-          <text class="t-ink" x="778" y="703.5" font-size="12" font-weight="700">D</text>
-          <text class="t-muted" x="794" y="703" font-size="9.5">SDA</text>
-          <line class="svg-stroke-line" x1="740" y1="727" x2="754" y2="727" style="stroke-width:2"></line>
-          <rect class="hdr-hole" x="758" y="723" width="8" height="8" rx="1"></rect>
-          <circle class="pad pin-3v3" cx="740" cy="727" r="4.5"></circle>
-          <text class="t-ink" x="778" y="731.5" font-size="12" font-weight="700">+</text>
-          <text class="t-muted" x="794" y="731" font-size="9.5">VCC</text>
-          <circle class="coin" cx="864" cy="677" r="38"></circle>
-          <rect class="tab" x="855" y="633" width="18" height="30" rx="3"></rect>
-          <text class="t-muted" x="864" y="683" text-anchor="middle" font-size="9.5">coin cell</text>
-          <text class="t-muted" x="864" y="696" text-anchor="middle" font-size="8.5">on top</text>
-          <text class="t-ink" x="762" y="762" font-size="12" font-weight="700">DS3231</text>
-          <text class="t-muted" x="762" y="777" font-size="9.5">"For Pi" module</text>
-          <text class="t-ink" x="702" y="739" text-anchor="end" font-size="12" font-weight="600">DS3231 clock</text>
-          <rect class="pill-opt" x="630" y="748" width="72" height="16" rx="8"></rect>
-          <text class="t-pill-opt" x="666" y="759.5" text-anchor="middle" font-size="9.5" font-weight="700">OPTIONAL</text>
-          <text class="t-muted" x="702" y="783" text-anchor="end" font-size="10.5"><tspan class="t-ink" font-weight="600">adds</tspan> the alert log keeps real</text>
-          <text class="t-muted" x="702" y="798" text-anchor="end" font-size="10.5">dates across power cuts</text>
-          <text class="t-muted" x="702" y="813" text-anchor="end" font-size="10.5"><tspan class="t-ink" font-weight="600">without</tspan> time from the phone</text>
-          <text class="t-muted" x="702" y="828" text-anchor="end" font-size="10.5">at each connect, lost</text>
-          <text class="t-muted" x="702" y="843" text-anchor="end" font-size="10.5">when the power goes</text>
-          <text class="t-muted" x="702" y="864" text-anchor="end" font-size="10">one header: end of the chain,</text>
-          <text class="t-muted" x="702" y="878" text-anchor="end" font-size="10">passes nothing on</text>
+          <rect class="svg-fill-surface svg-stroke-line" x="730" y="118" width="250" height="144" rx="9" style="stroke-width:1.5"></rect>
+          <text class="t-ink" x="774" y="143" font-size="11" font-weight="600">8-LED NEOPIXEL BAR</text>
+          <rect class="pill-opt" x="898" y="131" width="72" height="16" rx="8"></rect>
+          <text class="t-pill-opt" x="934" y="142.5" text-anchor="middle" font-size="9.5" font-weight="700">OPTIONAL</text>
+          <rect x="774" y="177" width="17" height="19" rx="3" fill="#e5484d" opacity="0.85"></rect>
+          <rect x="799" y="177" width="17" height="19" rx="3" fill="#f5a623" opacity="0.85"></rect>
+          <rect x="824" y="177" width="17" height="19" rx="3" fill="#f7e05e" opacity="0.85"></rect>
+          <rect x="849" y="177" width="17" height="19" rx="3" fill="#46c26a" opacity="0.85"></rect>
+          <rect x="874" y="177" width="17" height="19" rx="3" fill="#2ec4b6" opacity="0.85"></rect>
+          <rect x="899" y="177" width="17" height="19" rx="3" fill="#3a8ee6" opacity="0.85"></rect>
+          <rect x="924" y="177" width="17" height="19" rx="3" fill="#7b6cf0" opacity="0.85"></rect>
+          <rect x="949" y="177" width="17" height="19" rx="3" fill="#c556c0" opacity="0.85"></rect>
+          <line class="svg-stroke-line" x1="720" y1="145" x2="730" y2="145" style="stroke-width:2"></line>
+          <circle class="pad pin-gnd" cx="720" cy="145" r="4.5"></circle>
+          <text class="t-ink" x="737" y="148.5" font-size="10">GND</text>
+          <line class="svg-stroke-line" x1="720" y1="175" x2="730" y2="175" style="stroke-width:2"></line>
+          <circle class="pad pin-data" cx="720" cy="175" r="4.5"></circle>
+          <text class="t-ink" x="737" y="178.5" font-size="10" font-weight="700">IN</text>
+          <line class="svg-stroke-line" x1="720" y1="205" x2="730" y2="205" style="stroke-width:2"></line>
+          <circle class="pad pin-5v" cx="720" cy="205" r="4.5"></circle>
+          <text class="t-ink" x="737" y="208.5" font-size="10">VCC</text>
+          <line class="svg-stroke-line" x1="720" y1="235" x2="730" y2="235" style="stroke-width:2"></line>
+          <circle class="pad pin-gnd" cx="720" cy="235" r="4.5"></circle>
+          <text class="t-ink" x="737" y="238.5" font-size="10">GND</text>
+          <path class="link" d="M762,145 h4 V235 h-4"></path>
+          <circle class="junction" cx="720" cy="145" r="4"></circle>
+          <text class="t-muted" x="970" y="252" text-anchor="end" font-size="10.5">OUT →</text>
+          <text class="t-muted" x="730" y="78" font-size="10.5"><tspan class="t-ink" font-weight="600">adds</tspan> colour per category, hunt meter</text>
+          <text class="t-muted" x="730" y="93" font-size="10.5"><tspan class="t-ink" font-weight="600">without</tspan> phone only</text>
+          <text class="t-muted" x="730" y="110" font-size="10">wire the IN end · both GND pads are one net</text>
+          <!-- ===== microSD reader (optional; wiring final, firmware support coming) ===== -->
+          <rect class="sd-body" x="780" y="335" width="220" height="225" rx="8"></rect>
+          <line class="svg-stroke-line" x1="770" y1="360" x2="780" y2="360" style="stroke-width:2"></line>
+          <circle class="pad pin-3v3" cx="770" cy="360" r="4.5"></circle>
+          <text class="t-sd" x="790" y="364" font-size="11.5" font-weight="700">3v3</text>
+          <line class="svg-stroke-line" x1="770" y1="395" x2="780" y2="395" style="stroke-width:2"></line>
+          <circle class="pad pin-cs" cx="770" cy="395" r="4.5"></circle>
+          <text class="t-sd" x="790" y="399" font-size="11.5" font-weight="700">CS</text>
+          <line class="svg-stroke-line" x1="770" y1="430" x2="780" y2="430" style="stroke-width:2"></line>
+          <circle class="pad pin-spi" cx="770" cy="430" r="4.5"></circle>
+          <text class="t-sd" x="790" y="434" font-size="11.5" font-weight="700">MOSI</text>
+          <line class="svg-stroke-line" x1="770" y1="465" x2="780" y2="465" style="stroke-width:2"></line>
+          <circle class="pad pin-spi" cx="770" cy="465" r="4.5"></circle>
+          <text class="t-sd" x="790" y="469" font-size="11.5" font-weight="700">CLK</text>
+          <line class="svg-stroke-line" x1="770" y1="500" x2="780" y2="500" style="stroke-width:2"></line>
+          <circle class="pad pin-spi" cx="770" cy="500" r="4.5"></circle>
+          <text class="t-sd" x="790" y="504" font-size="11.5" font-weight="700">MISO</text>
+          <line class="svg-stroke-line" x1="770" y1="535" x2="780" y2="535" style="stroke-width:2"></line>
+          <circle class="pad pin-gnd" cx="770" cy="535" r="4.5"></circle>
+          <text class="t-sd" x="790" y="539" font-size="11.5" font-weight="700">GND</text>
+          <text class="t-sd" x="842" y="362" font-size="11.5" font-weight="700">microSD READER</text>
+          <text class="t-sd" x="842" y="378" font-size="9.5" opacity="0.8">no regulator</text>
+          <rect class="sd-slot" x="852" y="397" width="124" height="118" rx="5"></rect>
+          <path class="sd-card" d="M870,411 h62 l14,14 v76 h-76 z"></path>
+          <text class="t-muted" x="907" y="467" text-anchor="middle" font-size="9.5">card slot</text>
+          <rect class="pill-opt" x="770" y="628" width="72" height="16" rx="8"></rect>
+          <text class="t-pill-opt" x="806" y="639.5" text-anchor="middle" font-size="9.5" font-weight="700">OPTIONAL</text>
+          <rect class="pill-soon" x="850" y="628" width="200" height="16" rx="8"></rect>
+          <text class="t-pill-soon" x="950" y="639.5" text-anchor="middle" font-size="9.5" font-weight="700">FIRMWARE SUPPORT COMING</text>
+          <text class="t-muted" x="770" y="660" font-size="10">wiring is final · the firmware</text>
+          <text class="t-muted" x="770" y="673" font-size="10">does not drive the card yet</text>
+          <rect class="warn-box" x="770" y="686" width="290" height="58" rx="8"></rect>
+          <text class="t-warn" x="782" y="706" font-size="12" font-weight="700">⚠ 3.3 V ONLY</text>
+          <text class="t-ink" x="782" y="722" font-size="10">never connect this board to 5V: it has</text>
+          <text class="t-ink" x="782" y="736" font-size="10">no regulator, and 5V can kill the card</text>
           <!-- ===== Line key ===== -->
-          <text class="t-ink" x="110" y="700" font-size="10.5" font-weight="600">KEY</text>
-          <path class="w w-gnd" d="M110,720 h34"></path>
-          <text class="t-muted" x="154" y="724" font-size="10">wired today</text>
-          <path class="w w-spi" d="M110,742 h34"></path>
-          <text class="t-muted" x="154" y="746" font-size="10">SD, reserved</text>
-          <path class="w w-gnd" d="M110,764 h10 a7,7 0 0 1 14,0 h10"></path>
-          <path class="w w-sda" d="M127,754 v20"></path>
-          <path class="w w-gnd" d="M110,764 h10 a7,7 0 0 1 14,0 h10"></path>
-          <text class="t-muted" x="154" y="768" font-size="10">hop: crossing, not joined</text>
-          <circle class="pad pin-gnd" cx="127" cy="788" r="4.5"></circle>
-          <circle class="junction" cx="127" cy="788" r="4"></circle>
-          <text class="t-muted" x="154" y="792" font-size="10">two wires on a part pad</text>
-          <path class="link" d="M110,810 h34"></path>
-          <text class="t-muted" x="154" y="814" font-size="10">joined on the part itself</text>
+          <text class="t-ink" x="110" y="330" font-size="10.5" font-weight="600">KEY</text>
+          <path class="w w-gnd" d="M110,350 h34"></path>
+          <text class="t-muted" x="154" y="354" font-size="10">a wire you solder</text>
+          <path class="w w-sig" d="M110,372 h32" marker-end="url(#arrow)"></path>
+          <text class="t-muted" x="154" y="376" font-size="10">signal direction</text>
+          <path class="w w-gnd" d="M110,404 h10 a7,7 0 0 1 14,0 h10"></path>
+          <path class="w w-3v3" d="M127,394 v20"></path>
+          <path class="w w-gnd" d="M110,404 h10 a7,7 0 0 1 14,0 h10"></path>
+          <text class="t-muted" x="154" y="402" font-size="10">hop: wires cross,</text>
+          <text class="t-muted" x="154" y="415" font-size="10">not joined</text>
+          <circle class="pad pin-gnd" cx="127" cy="438" r="4.5"></circle>
+          <circle class="junction" cx="127" cy="438" r="4"></circle>
+          <text class="t-muted" x="154" y="436" font-size="10">two wires on one</text>
+          <text class="t-muted" x="154" y="449" font-size="10">bar pad</text>
+          <path class="link" d="M110,470 h34"></path>
+          <text class="t-muted" x="154" y="474" font-size="10">joined on the part</text>
         </svg>
       </div>
-      <figcaption>Top view, USB-C up. Each XIAO pad carries <b>one</b> wire; ground then hops from part to part, and any doubling up happens on a bar pad. The clock is the small "DS3231 For Pi" module, the end of the chain. Dashed pink is the microSD: reserved, not driven by the firmware yet.</figcaption>
+      <figcaption>Top view, USB-C up. Each XIAO pad carries <b>one</b> wire. Ground goes to the LED bar first; the buzzer − shares that bar pad, and the SD reader's ground comes off the bar's other GND pad. The SD reader's pins are drawn in the order printed on it.</figcaption>
     </figure>
 
     <div class="legend">
-      <div class="leg"><span class="swatch" style="background:var(--wire-5v)"></span><span class="net">5V</span><span class="to">VUSB pad → bar VCC</span></div>
-      <div class="leg"><span class="swatch" style="background:var(--wire-gnd)"></span><span class="net">GND</span><span class="to">chained: bar → RTC −</span></div>
-      <div class="leg"><span class="swatch" style="background:var(--wire-3v3)"></span><span class="net">3V3</span><span class="to">3V3 pad → RTC +, only load</span></div>
-      <div class="leg"><span class="swatch" style="background:var(--wire-data)"></span><span class="net">DATA</span><span class="to">D1/GPIO0 → bar IN</span></div>
-      <div class="leg"><span class="swatch" style="background:var(--wire-sig)"></span><span class="net">SIGNAL</span><span class="to">D2/GPIO25 → buzzer +</span></div>
-      <div class="leg"><span class="swatch" style="background:var(--wire-sda)"></span><span class="net">SDA</span><span class="to">D4/GPIO23 → RTC D</span></div>
-      <div class="leg"><span class="swatch" style="background:var(--wire-scl)"></span><span class="net">SCL</span><span class="to">D5/GPIO24 → RTC C</span></div>
-      <div class="leg"><span class="swatch dashed"></span><span class="net">SPI</span><span class="to">reserved · D3 D8 D9 D10</span></div>
+      <div class="leg"><span class="swatch" style="background:var(--wire-5v)"></span><span class="net">5V</span><span class="to">5V pad → bar VCC</span></div>
+      <div class="leg"><span class="swatch" style="background:var(--wire-gnd)"></span><span class="net">GND</span><span class="to">XIAO → bar GND → SD GND</span></div>
+      <div class="leg"><span class="swatch" style="background:var(--wire-3v3)"></span><span class="net">3V3</span><span class="to">3V3 pad → SD 3v3 only</span></div>
+      <div class="leg"><span class="swatch" style="background:var(--wire-data)"></span><span class="net">DATA</span><span class="to">D1 → bar IN</span></div>
+      <div class="leg"><span class="swatch" style="background:var(--wire-sig)"></span><span class="net">BUZZER</span><span class="to">D2 → buzzer +</span></div>
+      <div class="leg"><span class="swatch" style="background:var(--wire-cs)"></span><span class="net">CS</span><span class="to">D3 → SD CS</span></div>
+      <div class="leg"><span class="swatch" style="background:var(--wire-spi)"></span><span class="net">SPI</span><span class="to">D10 → MOSI · D8 → CLK · MISO → D9</span></div>
     </div>
-    <div class="callout" style="margin-top:16px">
-      <h3>Got a ZS-042 instead? <span class="k">two headers</span></h3>
-      <ul>
-        <li>It works too: same pin names (<b>SDA → D4</b>, <b>SCL → D5</b>, <b>VCC → 3V3</b>, <b>GND → ground</b>), and its second header can pass power and ground on to another part.</li>
-      </ul>
+    <div class="cols" style="margin-top:16px">
+      <div class="callout warn">
+        <h3>⚠ microSD reader: 3.3 V ONLY</h3>
+        <p><b>Never connect this board to 5V.</b> It has no regulator, and 5V can kill the card. Its <b>3v3</b> pin goes to the XIAO's <b>3V3</b> pad and nothing else.</p>
+      </div>
+      <div class="callout small">
+        <h3>Optional clock (DS3231), not fitted <span class="k">parked</span></h3>
+        <p>The phone or PC sets the time on every connect, which dates the log. <b>D4</b> (SDA) / <b>D5</b> (SCL) are reserved for it; leave them empty. See <code>WIRING.md</code>.</p>
+      </div>
     </div>
   </section>
 
   <section>
-    <h2>Power chains</h2>
+    <h2>Power and ground</h2>
     <div class="chains">
       <div class="chain"><span class="net"><span class="swatch" style="background:var(--wire-gnd)"></span>GND</span>
-        <span class="hop">XIAO GND</span><span class="ar">→</span><span class="hop">bar GND</span><span class="in">═</span><span class="hop">bar 2nd GND</span><span class="ar">→</span><span class="hop">RTC −</span>
-        <span class="note">The buzzer − piggybacks on the first bar GND pad, next to the wire in from the XIAO; the SD GND (reserved) piggybacks on the 2nd pad, next to the RTC wire. A bar pad is big enough for two wires, a XIAO pad is not. The RTC has one header, so it ends the chain. This assumes the common 4-pad bar: a 3-pad bar has one GND pad, which would need all four ground wires.</span></div>
+        <span class="hop">XIAO GND</span><span class="ar">→</span><span class="hop">bar GND pad 1</span><span class="in">═</span><span class="hop">bar GND pad 2</span><span class="ar">→</span><span class="hop">SD GND</span>
+        <span class="note">The buzzer − also goes on bar GND pad 1, next to the wire from the XIAO. A bar pad is big enough for two wires; a XIAO pad is not. This assumes the common 4-pad bar (<code>GND, IN, VCC, GND</code>), whose two GND pads are joined on the bar. A 3-pad bar has one GND pad, which would need all three ground wires. <b>No bar at all?</b> Splice the buzzer − and SD GND wires together (solder + heat-shrink) and run one wire from the splice to the XIAO GND pad.</span></div>
       <div class="chain"><span class="net"><span class="swatch" style="background:var(--wire-3v3)"></span>3V3</span>
-        <span class="hop">XIAO 3V3</span><span class="ar">→</span><span class="hop">RTC +</span>
-        <span class="note">One wire. The RTC is the only 3V3 load, and it cannot pass power on.</span></div>
+        <span class="hop">XIAO 3V3</span><span class="ar">→</span><span class="hop">SD 3v3</span>
+        <span class="note">One wire. The SD reader is the only thing on 3V3.</span></div>
       <div class="chain"><span class="net"><span class="swatch" style="background:var(--wire-5v)"></span>5V</span>
-        <span class="hop">XIAO 5V</span><span class="ar">→</span><span class="hop">LED bar VCC</span><span class="ar">→</span><span class="hop res">SD VCC</span>
-        <span class="note">For an SD module labelled <b>VCC 5V</b> (the common kind, with a regulator on board). A bare 3.3 V module has no clean 3V3 source in this harness, because the RTC can't pass power through; that gets settled when SD firmware support lands. Never feed 5 V to a bare 3.3 V card slot.</span></div>
-      <div class="chain" style="font-size:12px"><span class="ar">→</span><span style="color:var(--muted);font-family:var(--sans)">a wire you add</span><span class="in" style="margin-left:14px">═</span><span style="color:var(--muted);font-family:var(--sans)">already joined inside the part. Skip any part you don't have and join its neighbours.</span></div>
+        <span class="hop">XIAO 5V</span><span class="ar">→</span><span class="hop">LED bar VCC</span>
+        <span class="note">One wire. The LED bar is the only thing on 5V. <span class="red">Nothing on the SD reader goes to 5V.</span></span></div>
+      <div class="chain" style="font-size:12px"><span class="ar">→</span><span style="color:var(--muted);font-family:var(--sans)">a wire you add</span><span class="in" style="margin-left:14px">═</span><span style="color:var(--muted);font-family:var(--sans)">already joined inside the part. Skip any part you don't have.</span></div>
     </div>
   </section>
 
@@ -509,15 +496,15 @@
         <tbody>
           <tr><td class="pad-cell">D1 <span class="gpio">GPIO0</span></td><td><span class="dot" style="background:var(--wire-data)"></span>Data</td><td>LED bar <b>DIN</b> (IN)</td><td>LED bar</td></tr>
           <tr><td class="pad-cell">D2 <span class="gpio">GPIO25</span></td><td><span class="dot" style="background:var(--wire-sig)"></span>Signal</td><td>buzzer <b>+</b></td><td>buzzer</td></tr>
-          <tr class="reserved"><td class="pad-cell">D3 <span class="gpio">GPIO7</span></td><td><span class="dot ring"></span>SPI CS</td><td>SD <b>CS</b></td><td>SD (reserved)</td></tr>
-          <tr><td class="pad-cell">D4 <span class="gpio">GPIO23</span></td><td><span class="dot" style="background:var(--wire-sda)"></span>I²C SDA</td><td>RTC <b>D</b> (SDA)</td><td>RTC</td></tr>
-          <tr><td class="pad-cell">D5 <span class="gpio">GPIO24</span></td><td><span class="dot" style="background:var(--wire-scl)"></span>I²C SCL</td><td>RTC <b>C</b> (SCL)</td><td>RTC</td></tr>
-          <tr class="reserved"><td class="pad-cell">D8 <span class="gpio">GPIO8</span></td><td><span class="dot ring"></span>SPI SCK</td><td>SD <b>SCK</b></td><td>SD (reserved)</td></tr>
-          <tr class="reserved"><td class="pad-cell">D9 <span class="gpio">GPIO9</span></td><td><span class="dot ring"></span>SPI MISO</td><td>SD <b>MISO</b> (into the XIAO)</td><td>SD (reserved)</td></tr>
-          <tr class="reserved"><td class="pad-cell">D10 <span class="gpio">GPIO10</span></td><td><span class="dot ring"></span>SPI MOSI</td><td>SD <b>MOSI</b></td><td>SD (reserved)</td></tr>
+          <tr><td class="pad-cell">D3 <span class="gpio">GPIO7</span></td><td><span class="dot" style="background:var(--wire-cs)"></span>SPI chip select</td><td>SD <b>CS</b></td><td>SD reader</td></tr>
+          <tr class="parked"><td class="pad-cell">D4 <span class="gpio">GPIO23</span></td><td><span class="dot ring"></span>(I²C SDA)</td><td>nothing: reserved for the clock</td><td>not fitted</td></tr>
+          <tr class="parked"><td class="pad-cell">D5 <span class="gpio">GPIO24</span></td><td><span class="dot ring"></span>(I²C SCL)</td><td>nothing: reserved for the clock</td><td>not fitted</td></tr>
+          <tr><td class="pad-cell">D8 <span class="gpio">GPIO8</span></td><td><span class="dot" style="background:var(--wire-spi)"></span>SPI clock</td><td>SD <b>CLK</b></td><td>SD reader</td></tr>
+          <tr><td class="pad-cell">D9 <span class="gpio">GPIO9</span></td><td><span class="dot" style="background:var(--wire-spi)"></span>SPI MISO</td><td>from SD <b>MISO</b> (data into the XIAO)</td><td>SD reader</td></tr>
+          <tr><td class="pad-cell">D10 <span class="gpio">GPIO10</span></td><td><span class="dot" style="background:var(--wire-spi)"></span>SPI MOSI</td><td>SD <b>MOSI</b></td><td>SD reader</td></tr>
           <tr><td class="pad-cell">5V <span class="gpio">VUSB</span></td><td><span class="dot" style="background:var(--wire-5v)"></span>Power</td><td>LED bar <b>VCC</b></td><td>power</td></tr>
-          <tr><td class="pad-cell">3V3</td><td><span class="dot" style="background:var(--wire-3v3)"></span>Power</td><td>RTC <b>+</b> (VCC), the only 3V3 load</td><td>power</td></tr>
-          <tr><td class="pad-cell">GND</td><td><span class="dot" style="background:var(--wire-gnd)"></span>Ground</td><td>LED bar <b>GND</b>, then the ground chain to RTC <b>−</b></td><td>power</td></tr>
+          <tr><td class="pad-cell">3V3</td><td><span class="dot" style="background:var(--wire-3v3)"></span>Power</td><td>SD <b>3v3</b>, the only 3V3 load</td><td>power</td></tr>
+          <tr><td class="pad-cell">GND</td><td><span class="dot" style="background:var(--wire-gnd)"></span>Ground</td><td>LED bar <b>GND</b> pad 1 (buzzer − and SD GND continue from the bar)</td><td>power</td></tr>
           <tr><td class="pad-cell">BOOT <span class="gpio">GPIO28</span></td><td class="muted">built in</td><td>tap = 2-minute advertising window · hold 5 s = factory reset</td><td class="muted">on the board</td></tr>
         </tbody>
       </table>
@@ -527,13 +514,34 @@
   <section>
     <h2>Assembly</h2>
     <ol class="steps">
-      <li class="key"><b>One wire per pad — chain the rest.</b> The XIAO has one GND, one 3V3 and one 5V, each a tiny through-hole, and with every part fitted there are four grounds. Two wires shoved into one hole is how a joint cracks. So each XIAO pad gets exactly <b>one</b> wire, and ground hops from part to part (see <i>Power chains</i>). Any doubling up happens on a bar pad, never on the XIAO.</li>
-      <li><b>LED bar.</b> XIAO <code>5V</code> → bar <code>VCC</code>, XIAO <code>GND</code> → the bar's first <code>GND</code> pad, XIAO <code>D1 (GPIO0)</code> → bar <code>DIN</code>. Wire the <b>input</b> end (the silkscreen arrows point into the LEDs). Optional 330–470 Ω resistor in series right at DIN.</li>
-      <li><b>Buzzer.</b> XIAO <code>D2 (GPIO25)</code> → buzzer <b>+</b>, buzzer <b>−</b> → that same first GND pad, next to the XIAO wire. A small passive buzzer (&lt;30 mA) drives straight off the pin. <i>3-pin module?</i> I/O → D2, GND → that same pad. Its VCC needs a supply: 3V3 is taken by the clock, so use the bar's VCC pad (5 V) only if the module is rated for 5 V.</li>
-      <li><b>DS3231 clock.</b> The small <b>"DS3231 For Pi"</b> module: one 5-pin female header, silkscreen <code>+ D C NC −</code>. <code>+</code> ← XIAO <code>3V3</code>, <code>D</code> ← <code>D4 (GPIO23)</code>, <code>C</code> ← <code>D5 (GPIO24)</code>, <code>NC</code>: no wire, <code>−</code> ← the bar's 2nd GND pad. With one header it passes nothing on, so it is the end of the chain. A ZS-042 works too: same pin names, and its second header can pass power through.</li>
-      <li><b>microSD (reserved — skip it for now).</b> If you build it into the harness anyway: <code>CS</code> ← <code>D3 (GPIO7)</code>, <code>SCK</code> ← <code>D8 (GPIO8)</code>, <code>MISO</code> → <code>D9 (GPIO9)</code>, <code>MOSI</code> ← <code>D10 (GPIO10)</code>, <code>GND</code> ← the bar's 2nd GND pad, next to the RTC wire. <code>VCC</code>: a <b>VCC 5V</b> module (the common kind, with a regulator) takes it from the bar's VCC pad. A bare 3.3 V module has no clean 3V3 source here, since the clock can't pass power on; that gets settled when SD firmware support lands. Pin order varies by module; match by label. The firmware does not drive it yet.</li>
-      <li><b>Antenna.</b> Swap the stock 2.4 GHz antenna for a <b>dual-band</b> U.FL one. The C5's whole point is 5 GHz; the one in the box throws it away.</li>
-      <li><b>Verify.</b> Flash from the web flasher, or <code>python flash.py --board c5 --port COM5</code>. On boot you get a short jingle and an LED blink (if fitted). The serial log says <code>[RTC] DS3231 ok, clock set</code>, <code>[RTC] DS3231 lost power, waiting for a host</code>, or <code>[RTC] none fitted, waiting for a host</code>. Connect the app: <b>Settings › Device identity › Clock</b> shows whether an RTC was found and that the phone synced it. Then trigger a match (an AirTag near it, or edit a signature): the bar flashes and the buzzer plays that category's pattern — ALPR / camera two long beeps, body cam long-short-short, drone a rising trill, tracker fast ticking. BOOT (GPIO28) is the onboard button: tap for a 2-minute advertising window, hold 5 s to factory-reset.</li>
+      <li class="key"><b>One wire per XIAO pad.</b> The XIAO's holes are tiny: two wires shoved into one is how a joint cracks. So each XIAO pad gets exactly <b>one</b> wire. Where two wires have to meet (ground), they meet on a bigger LED-bar pad, never on the XIAO. Skip any part you don't have.</li>
+      <li><b>Antenna.</b> Swap the stock 2.4 GHz antenna for a <b>dual-band</b> U.FL one and press it onto the XIAO's antenna socket until it clicks. The C5's whole point is 5 GHz; the one in the box throws it away.</li>
+      <li><b>LED bar</b> (optional). Wire the <b>IN</b> end: the little arrows printed on the bar point away from it.
+        <ul class="wires">
+          <li>LED bar pad <b>VCC</b> → XIAO pad <b>5V</b></li>
+          <li>LED bar <b>GND pad 1</b> (the GND beside IN) → XIAO pad <b>GND</b></li>
+          <li>LED bar pad <b>IN</b> → XIAO pad <b>D1</b> (GPIO0). Optional: a 330–470 Ω resistor in this wire, right at the bar.</li>
+        </ul></li>
+      <li><b>Buzzer</b> (optional). A small <b>passive</b> buzzer (&lt;30 mA) runs straight off the pin.
+        <ul class="wires">
+          <li>Buzzer <b>+</b> → XIAO pad <b>D2</b> (GPIO25)</li>
+          <li>Buzzer <b>−</b> → LED bar <b>GND pad 1</b>, next to the XIAO's ground wire (a bar pad takes two wires).</li>
+        </ul></li>
+      <li class="warn"><b>SD reader power</b> (optional). <span class="red">3.3 V ONLY. Never connect this board to 5V: it has no regulator and 5V can kill the card.</span>
+        <ul class="wires">
+          <li>SD reader pin <b>3v3</b> → XIAO pad <b>3V3</b> (not 5V)</li>
+          <li>SD reader pin <b>GND</b> → LED bar <b>GND pad 2</b> (the GND at the far end, beside VCC).</li>
+        </ul></li>
+      <li><b>SD reader data</b> (optional). Four wires, each to its own XIAO pad. Match by the <b>label</b> printed on the reader.
+        <ul class="wires">
+          <li>SD reader pin <b>CS</b> → XIAO pad <b>D3</b> (GPIO7)</li>
+          <li>SD reader pin <b>MOSI</b> → XIAO pad <b>D10</b> (GPIO10)</li>
+          <li>SD reader pin <b>CLK</b> → XIAO pad <b>D8</b> (GPIO8)</li>
+          <li>SD reader pin <b>MISO</b> → XIAO pad <b>D9</b> (GPIO9): data comes back from the card on this one</li>
+        </ul>
+        The wiring is final; the firmware does not drive the card yet (support is coming), so a card in the slot does nothing for now. <b>On the C5:</b> if it won't start with the SD reader connected, unplug the CS wire (D3), power up, and tell us.</li>
+      <li class="warn"><b>Check before you power it.</b> Nothing on the SD reader touches <b>5V</b>: follow its <b>3v3</b> wire and make sure it ends on the XIAO's <b>3V3</b> pad. Then count: one wire in each XIAO pad, no stray strands bridging two pads, and <b>D4</b> / <b>D5</b> left empty.</li>
+      <li><b>Verify.</b> Flash from the web flasher, or <code>python flash.py --board c5 --port COM5</code>. On boot you get a short jingle and an LED blink (if fitted). With no clock fitted the serial log says <code>[RTC] none fitted, waiting for a host</code>, which is expected. Connect the app: <b>Settings › Device identity › Clock</b> shows the phone synced the time. Then trigger a match (an AirTag near it, or edit a signature): the bar flashes and the buzzer plays that category's pattern — ALPR / camera two long beeps, body cam long-short-short, drone a rising trill, tracker fast ticking. BOOT (GPIO28) is the onboard button: tap for a 2-minute advertising window, hold 5 s to factory-reset.</li>
     </ol>
   </section>
 
@@ -545,21 +553,20 @@
         <ul>
           <li>8× WS2812 at full white peaks near <b>480 mA</b>. SignalSweep only flashes short colored bursts, so USB 5V is fine.</li>
           <li>Add a <b>1000 µF cap</b> across the bar's 5V↔GND to absorb inrush when all eight snap on.</li>
-          <li>The DS3231 and an SD module add a few mA idle, and roughly <b>100 mA</b> peaks on SD writes. On a weak battery, budget for those.</li>
+          <li>An SD card adds a few mA idle and roughly <b>100 mA</b> peaks on writes, all from the XIAO's 3V3. On a weak battery, budget for that.</li>
         </ul>
       </div>
       <div class="callout">
         <h3>Gotchas <span class="k">clones</span></h3>
         <ul>
-          <li><b>I²C pull-ups:</b> many "For Pi" DS3231 boards leave out the SDA/SCL pull-up resistors, because a Raspberry Pi has its own. The XIAO's internal pull-ups usually do on short wires. If the serial log says <code>[RTC] none fitted</code> with the module attached, add <b>4.7&nbsp;kΩ</b> from D4 to 3V3 and from D5 to 3V3.</li>
-          <li><b>"For Pi" module cell:</b> check whether the coin cell is marked <b>LIR2032</b> (rechargeable) or <b>CR2032</b>, and keep a replacement of the same kind.</li>
-          <li><b>ZS-042 + a CR2032:</b> the board has a trickle-charge circuit (a resistor and diode near the header) meant for a rechargeable <b>LIR2032</b>. Fed from 3V3 — as the ZS-042 note above wires it — the charge voltage through the diode (~2.7&nbsp;V) is below a CR2032's own 3.0&nbsp;V, so no charge current flows: a plain CR2032 here is harmless. The hazard is feeding the module <b>5&nbsp;V</b> with a plain CR2032 fitted. If you must run it at 5&nbsp;V, fit an LIR2032, or remove the diode or resistor.</li>
-          <li><b>3.3 V data</b> into a 5 V-powered clone bar usually works; if LED 1 flickers, add the series resistor or power the bar from <b>3V3</b> instead.</li>
+          <li><b>SD reader on 5V</b> kills the card. This reader has no regulator: <b>3V3 only</b>.</li>
+          <li><b>Other SD readers</b> put their pins in a different order, and some want 5V (they have a regulator on board). The drawing is for the 6-pin <code>3v3, CS, MOSI, CLK, MISO, GND</code> reader; with any other, match by label and check its power pin's marking.</li>
+          <li><b>3.3 V data</b> into a 5 V-powered clone bar usually works; if LED 1 flickers, add the 330–470 Ω series resistor at DIN.</li>
           <li><b>Wrong end</b> (wiring DOUT) lights nothing — flip to DIN.</li>
           <li><b>Active buzzer</b> = one fixed pitch: you'll hear each pattern's rhythm but not its tones. Passive is the intended part.</li>
-          <li><b>Two wires in one XIAO pad</b> is how a joint cracks. Chain instead.</li>
+          <li><b>Two wires in one XIAO pad</b> is how a joint cracks. Double up on a bar pad instead.</li>
           <li><b>Boots fine with the buzzer on D2.</b> GPIO25 is sampled at power-up, but a passive buzzer straight to GND does not stop the XIAO C5 booting (bench-checked 2026-09-16 with the LED bar and buzzer wired as shown). If a different buzzer ever does, feed it through a small NPN transistor or a 100 Ω+ series resistor.</li>
-          <li><b>D3 (GPIO7) and an SD module: not bench-checked yet.</b> GPIO7 may be sampled at boot, and an SD module usually pulls CS high. Unlike the buzzer-on-D2 note above, nobody has booted a C5 with an SD module wired yet. If the board stops booting with the card module fitted, unplug its CS wire and tell us.</li>
+          <li><b>D3 (GPIO7) and the SD reader: not bench-checked yet.</b> GPIO7 may be sampled at boot, and nobody has booted a C5 with the SD reader wired yet. <b>If the C5 won't start with the SD reader connected, unplug the CS wire (D3), power up, and tell us.</b></li>
         </ul>
       </div>
     </div>
