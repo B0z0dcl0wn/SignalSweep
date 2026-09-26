@@ -499,7 +499,32 @@ static void noteAlertForTarget(WatcherTargetInfo& t, int bestWeight, const Strin
  * confidence weight (0 = no match). A rule ANDs its non-empty conditions; the
  * returned weight is the sum of the matched conditions' weights (capped 100).
  */
+// Exact service-UUID match. A 4-hex-digit rule is a 16-bit SIG UUID: it
+// matches that 16-bit UUID, or its 128-bit expansion on the Bluetooth base
+// (0000xxxx-0000-1000-8000-00805f9b34fb), and nothing else. A longer rule must
+// equal the whole UUID. Never a substring: that is how "3100" once matched
+// every UUID with those digits in it and beeped (v5, the Raven rules).
+static bool uuidMatches(const NimBLEUUID& u, const String& ruleUuid) {
+    String want = ruleUuid;
+    want.trim();
+    want.toLowerCase();
+    if (want.startsWith("0x")) want = want.substring(2);
+    if (want.length() == 4) {
+        uint16_t v = (uint16_t)strtoul(want.c_str(), NULL, 16);
+        if (u.bitSize() == 16) return u == NimBLEUUID(v);
+        String full = String(u.toString().c_str());
+        full.toLowerCase();
+        return full == ("0000" + want + "-0000-1000-8000-00805f9b34fb");
+    }
+    String have = String(u.toString().c_str());
+    have.toLowerCase();
+    return have == want;
+}
+
 static int matchDeviceAgainstRule(SWEEP_ADV* dev, const WatcherSignature& sig, String& outMatchedRule, String& outCategory) {
+    // SSID rules are Wi-Fi-only; the promiscuous callback scores them.
+    if (sig.ssidPrefix.length() > 0) return 0;
+
     int weight = 0;
 
     // 1. Check OUI (MAC Prefix)
@@ -571,13 +596,8 @@ static int matchDeviceAgainstRule(SWEEP_ADV* dev, const WatcherSignature& sig, S
         }
         bool uuidMatched = false;
         size_t count = dev->getServiceUUIDCount();
-        String targetUuid = sig.serviceUuid;
-        targetUuid.toLowerCase();
-
         for (size_t i = 0; i < count; i++) {
-            String uuidStr = String(dev->getServiceUUID(i).toString().c_str());
-            uuidStr.toLowerCase();
-            if (uuidStr.indexOf(targetUuid) >= 0) {
+            if (uuidMatches(dev->getServiceUUID(i), sig.serviceUuid)) {
                 uuidMatched = true;
                 break;
             }
@@ -591,6 +611,8 @@ static int matchDeviceAgainstRule(SWEEP_ADV* dev, const WatcherSignature& sig, S
     if (weight == 0) {
         return 0;  // rule had no conditions
     }
+    // A rule that states its own strength replaces the per-condition sum.
+    if (sig.weight > 0) weight = sig.weight;
 
     outMatchedRule = sig.name.length() > 0 ? sig.name : "Matched Signature";
     outCategory = sig.category.length() > 0 ? sig.category : "Surveillance";

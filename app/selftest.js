@@ -603,6 +603,19 @@ if (!/sig\.weight\s*=\s*s\["weight"\]/.test(wwSrc)) sigFail.push('loader never r
 if (!/sig\.ssidPrefix\s*=\s*s\["ssid_prefix"\]/.test(wwSrc)) sigFail.push('loader never reads "ssid_prefix"');
 if (!/ns\["weight"\]\s*=/.test(wwSrc)) sigFail.push('updateWatchersSignaturesJson drops "weight" from pushed rules');
 if (!/ns\["ssid_prefix"\]\s*=/.test(wwSrc)) sigFail.push('updateWatchersSignaturesJson drops "ssid_prefix" from pushed rules');
+
+const matchFn = (wwSrc.match(/static int matchDeviceAgainstRule\([\s\S]*?\r?\n\}/) || [''])[0];
+const uuidFn  = (wwSrc.match(/static bool uuidMatches\([\s\S]*?\r?\n\}/) || [''])[0];
+// The v5 Raven removal: a 4-digit needle matched as a substring hits random
+// 128-bit UUIDs, and at W_UUID (70) one hit beeps.
+if (!uuidFn) sigFail.push('no uuidMatches() helper');
+if (/indexOf/.test(uuidFn) || /Check Service UUID[\s\S]*?indexOf[\s\S]*?W_UUID/.test(matchFn))
+    sigFail.push('service UUID matched as a substring again');
+if (!/bitSize\(\)\s*==\s*16/.test(uuidFn)) sigFail.push('uuidMatches() has no exact 16-bit arm');
+if (!/uuidMatches\(/.test(matchFn)) sigFail.push('matchDeviceAgainstRule() does not use uuidMatches()');
+if (!/sig\.ssidPrefix\.length\(\)\s*>\s*0\)\s*return 0;/.test(matchFn)) sigFail.push('SSID rules can match on BLE');
+if (!/if \(sig\.weight > 0\) weight = sig\.weight;/.test(matchFn)) sigFail.push('BLE matcher ignores rule weight');
+
 if (sigFail.length) { console.log('FAIL: signature schema:', sigFail); process.exit(1); }
 console.log('[signalsweep self-test] signature schema (weight, ssid_prefix): ok');
 
