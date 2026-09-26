@@ -405,12 +405,17 @@ if (!/payload\[offset \+ 4\] == 0x0D\)[\s\S]{0,80}&payload\[offset \+ 6\]/.test(
     flockFail.push('BLE Remote ID must decode from offset+6 (after app code 0x0D and the counter)');
 
 // The phone analyzer calls a capture Flock only under the detector's own rule
-// (listed OUI + wildcard + IE), so its OUI list must be exactly the firmware's.
+// (listed OUI + wildcard + IE), so its OUI list must be exactly the firmware's:
+// the community flockOuis[] loop plus every literal addRule(..., "Flock
+// Safety", "<oui>", ...) (the IEEE-registered b4:1e:52 block lives as its own
+// rule, not in the loop, but still sets flockOui -- see line ~1364).
 const ouiRe = /[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}/g;
-const fwOuis = ((fw.match(/const char\* flockOuis\[\] = \{([^}]*)\}/) || [])[1] || '').match(ouiRe) || [];
+const fwLoopOuis = ((fw.match(/const char\* flockOuis\[\] = \{([^}]*)\}/) || [])[1] || '').match(ouiRe) || [];
+const fwRuleOuis = [...fw.matchAll(/addRule\("[^"]+",\s*"Flock Safety",\s*"([0-9a-fA-F:]{8})"/g)].map(m => m[1]);
+const fwOuis = [...new Set([...fwLoopOuis, ...fwRuleOuis])];
 const appOuis = ((appSrc.match(/const FLOCK_OUIS = \[([^\]]*)\]/) || [])[1] || '').match(ouiRe) || [];
 if (!fwOuis.length || fwOuis.slice().sort().join() !== appOuis.slice().sort().join())
-    flockFail.push('app.js FLOCK_OUIS (' + appOuis.length + ') does not match firmware flockOuis[] (' + fwOuis.length + ')');
+    flockFail.push('app.js FLOCK_OUIS (' + appOuis.length + ') does not match firmware flockOuis[] + registered Flock Safety rules (' + fwOuis.length + ')');
 
 if (flockFail.length) {
     console.log('FAIL: Flock wildcard-probe signature:', flockFail);
