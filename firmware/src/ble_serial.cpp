@@ -134,12 +134,18 @@ static volatile uint32_t logReadSecs = 0;
 static volatile uint32_t logReadSkip = 0;
 
 // CMD:SD:* are answered from bleSerialTick(), never the router: card I/O is tens
-// of ms and a listing/file is a bulk reply (see the CMD:SIGS trap).
-static volatile bool sdLsPending = false;
-static volatile bool sdGetPending = false;
-static volatile bool sdRmPending = false;
-static char     sdArgName[13] = "";
-static uint32_t sdArgOff = 0;
+// of ms and a listing/file is a bulk reply (see the CMD:SIGS trap). GET and RM
+// get their OWN name buffers -- they used to share one, so a GET pipelined
+// right after an RM (or a second GET arriving before the first's send loop
+// finished) could act on the wrong name, or tear a name mid-strncpy. All of
+// it is `volatile`, like logRead*'s args, since it's written on the NimBLE
+// host task and read on loop().
+static volatile bool     sdLsPending  = false;
+static volatile bool     sdGetPending = false;
+static volatile bool     sdRmPending  = false;
+static volatile char     sdGetName[13] = "";
+static volatile uint32_t sdGetOff      = 0;
+static volatile char     sdRmName[13]  = "";
 #define SD_GET_MAX    16384   // bytes per CMD:SD:GET request
 #define SD_GET_BATCH  768     // raw bytes per SDF: line (1024 base64 chars)
 
@@ -233,13 +239,21 @@ static void sendConfigReply() {
 // bleSerialTick() -- see the CMD:SD:* flags above.
 // ---------------------------------------------------------------------------
 static void sendSdList() {
-    sdProbe();   // re-probe: a card inserted after boot works without a reboot
+    // Re-probe only when not already mounted. An unconditional re-probe would
+    // tear down an in-progress capture stream (sdStreamOpen()/sdStreamWrite())
+    // out from under it -- SD.end()/SD.begin() while a File handle is open. A
+    // card inserted after boot is still SD_NONE (or SD_ERROR) until the next
+    // probe, so this still adopts it; it just never re-probes a card that's
+    // already working.
+    if (sdState() != SD_OK) sdProbe();
     static SdEntry files[128];
-    size_t n = sdList(files, 128);
+    size_t total = 0;
+    size_t n = sdList(files, 128, &total);
     JsonDocument doc;
     JsonObject o = doc["sdls"].to<JsonObject>();
     o["state"] = sdState();
     o["free"] = sdFreeMB();
+    o["total"] = total;
     JsonArray a = o["files"].to<JsonArray>();
     for (size_t i = 0; i < n; i++) {
         JsonObject f = a.add<JsonObject>();
@@ -265,6 +279,7 @@ static void sendSdFile(const char* name, uint32_t off) {
         String out; serializeJson(h, out); sendReply(out);
     }
     uint32_t pos = off, sent = 0;
+    bool readFailed = false;
     while (got > 0) {
         size_t olen = 0;
         if (mbedtls_base64_encode(b64, (SD_GET_BATCH * 4) / 3 + 8, &olen, buf, (size_t)got) != 0) break;
@@ -275,8 +290,19 @@ static void sendSdFile(const char* name, uint32_t off) {
         pos += got; sent += got;
         if (sent >= SD_GET_MAX || pos >= size) break;
         got = sdRead(name, pos, buf, SD_GET_BATCH, &size);
+        // pos < size here (the break above already caught pos >= size), so a
+        // non-positive read is a genuine failure, not real EOF -- the file
+        // shrank, the card dropped out, whatever. Never tell a client "more"
+        // is coming when nothing more was actually read.
+        if (got <= 0) readFailed = true;
     }
     free(buf); free(b64);
+    if (readFailed) {
+        char err[80];
+        snprintf(err, sizeof(err), "{\"sdget\":{\"err\":\"read failed\",\"next\":%u}}", (unsigned)pos);
+        sendReply(err);
+        return;
+    }
     char done[96];
     snprintf(done, sizeof(done), "{\"sdget\":{\"done\":true,\"next\":%u,\"more\":%s}}",
              (unsigned)pos, pos < size ? "true" : "false");
@@ -571,8 +597,27 @@ void bleSerialTick() {
     }
 
     if (sdLsPending) { sdLsPending = false; sendSdList(); }
-    if (sdGetPending) { sdGetPending = false; sendSdFile(sdArgName, sdArgOff); }
-    if (sdRmPending) { sdRmPending = false; sdRemove(sdArgName); sendSdList(); }
+    if (sdGetPending) {
+        sdGetPending = false;
+        // Copy the name/offset into locals before calling: sendSdFile()'s
+        // send loop runs for a while (up to SD_GET_MAX, one vTaskDelay(2) per
+        // batch), and reading the volatile globals again partway through
+        // would let a later CMD:SD:GET on this same tick's queue -- or a
+        // torn write from the router mid-copy -- switch files under it.
+        char nm[13];
+        strncpy(nm, (const char*)sdGetName, sizeof(nm) - 1);
+        nm[sizeof(nm) - 1] = 0;
+        uint32_t off = sdGetOff;
+        sendSdFile(nm, off);
+    }
+    if (sdRmPending) {
+        sdRmPending = false;
+        char nm[13];
+        strncpy(nm, (const char*)sdRmName, sizeof(nm) - 1);
+        nm[sizeof(nm) - 1] = 0;
+        sdRemove(nm);
+        sendSdList();
+    }
 
     // Close the window. A press in the field must not leave the device
     // broadcasting for the rest of the day — that would silently defeat the
@@ -841,8 +886,8 @@ void processIncomingCommand(const String& rawCommand) {
             int c = rest.indexOf(':');
             String nm = c > 0 ? rest.substring(0, c) : rest;
             if (nm.length() <= 12 && sdValidName(nm.c_str())) {
-                strncpy(sdArgName, nm.c_str(), sizeof(sdArgName) - 1);
-                sdArgOff = c > 0 ? (uint32_t)rest.substring(c + 1).toInt() : 0;
+                strncpy((char*)sdGetName, nm.c_str(), sizeof(sdGetName) - 1);
+                sdGetOff = c > 0 ? (uint32_t)rest.substring(c + 1).toInt() : 0;
                 sdGetPending = true;
             } else {
                 sendReply("{\"sdget\":{\"err\":\"bad name\"}}");
@@ -850,8 +895,10 @@ void processIncomingCommand(const String& rawCommand) {
         } else if (rawStr.startsWith("CMD:SD:RM:")) {
             String nm = rawStr.substring(10);
             if (nm.length() <= 12 && sdValidName(nm.c_str())) {
-                strncpy(sdArgName, nm.c_str(), sizeof(sdArgName) - 1);
+                strncpy((char*)sdRmName, nm.c_str(), sizeof(sdRmName) - 1);
                 sdRmPending = true;
+            } else {
+                sendReply("{\"sdget\":{\"err\":\"bad name\"}}");
             }
         }
     }

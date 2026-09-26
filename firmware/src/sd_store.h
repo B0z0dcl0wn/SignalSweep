@@ -39,8 +39,19 @@ bool sdAppend(const char* name, const uint8_t* data, size_t len);
 bool sdExists(const char* name);
 
 struct SdEntry { char name[13]; uint32_t size; };
-/** @brief Regular files in /SIGSWEEP with valid names, up to max. */
-size_t sdList(SdEntry* out, size_t max);
+/**
+ * @brief Regular files in /SIGSWEEP with valid names, up to max.
+ *
+ * A card can hold far more log/capture rotations than any one listing should
+ * carry over BLE, so this keeps the newest 64 LOG*.CSV and newest 64
+ * CAP*.SSC entries (by name -- the numbers are zero-padded, so string order
+ * is numeric order) rather than truncating in on-disk FAT order, which used
+ * to silently hide exactly the files you'd want to read back. Any other
+ * valid name fills whatever room is left. `totalOut`, if non-NULL, receives
+ * the true count of valid files on the card, so a caller can tell "the
+ * listing is capped" from "that's everything".
+ */
+size_t sdList(SdEntry* out, size_t max, size_t* totalOut);
 
 /** @brief Read up to n bytes at off. Returns bytes read (0 at EOF), -1 if missing/invalid. */
 int32_t sdRead(const char* name, uint32_t off, uint8_t* buf, size_t n, uint32_t* sizeOut);

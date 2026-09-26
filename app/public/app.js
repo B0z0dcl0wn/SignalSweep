@@ -3097,7 +3097,7 @@
             sdState = state; sdFree = typeof free === 'number' ? free : null;
             if (!el) return;
             const gb = sdFree !== null ? (sdFree / 1024).toFixed(1) + ' GB free' : '';
-            el.textContent = state === 1 ? 'SD card · ' + gb
+            el.textContent = state === 1 ? 'SD card' + (gb ? ' · ' + gb : '')
                            : state === 3 ? 'Card full: download and delete files to make room'
                            : state === 2 ? 'Card error: check it is FAT32 and seated'
                            : 'No card';
@@ -3536,7 +3536,7 @@
                 devName = ''; bootAt = null; alertCount = null;
                 const clk = document.getElementById('cfg-clock');
                 if (clk) clk.textContent = 'Not connected';
-                sdState = null;
+                sdState = null; sdFree = null;
                 const sdEl = document.getElementById('sd-status');
                 if (sdEl) sdEl.textContent = 'Not connected';
                 renderStatusStrip();

@@ -102,23 +102,79 @@ bool sdExists(const char* name) {
     return SD.exists(path);
 }
 
-size_t sdList(SdEntry* out, size_t max) {
+// True iff `name` is PREFIX*.EXT (both already upper-case, since sdValidName
+// rejected anything else before this is ever called).
+static bool hasPrefixExt(const char* name, const char* prefix, const char* ext) {
+    size_t pl = strlen(prefix);
+    if (strncmp(name, prefix, pl) != 0) return false;
+    const char* dot = strchr(name, '.');
+    return dot && strcmp(dot + 1, ext) == 0;
+}
+
+// Insertion-sort `name` into `arr` (descending, i.e. newest/highest-numbered
+// first), keeping at most `capMax` entries. Anything that doesn't make the
+// cut is simply not kept -- older rotations, not deleted.
+static void insertTop(SdEntry* arr, size_t& n, size_t capMax, const char* name, uint32_t size) {
+    size_t i;
+    if (n < capMax) {
+        i = n++;
+    } else if (strcmp(name, arr[capMax - 1].name) > 0) {
+        i = capMax - 1;
+    } else {
+        return;   // at capacity and not newer than the weakest kept entry
+    }
+    while (i > 0 && strcmp(arr[i - 1].name, name) < 0) {
+        arr[i] = arr[i - 1];
+        i--;
+    }
+    strncpy(arr[i].name, name, 12);
+    arr[i].name[12] = 0;
+    arr[i].size = size;
+}
+
+size_t sdList(SdEntry* out, size_t max, size_t* totalOut) {
     SdLock l;
+    if (totalOut) *totalOut = 0;
     if (state != SD_OK) return 0;
     File dir = SD.open(SD_DIR);
     if (!dir) return 0;
-    size_t n = 0;
-    for (File e = dir.openNextFile(); e && n < max; e = dir.openNextFile()) {
+
+    static const size_t KEEP = 64;         // newest kept per rotation family
+    static const size_t OTHER_MAX = 32;    // room for anything else valid
+    // static, not stack: ~2.7 KB of scratch on top of a caller's own locals
+    // (a bench harness with a 4 KB buffer of its own, or a small BLE/loop
+    // task stack) is exactly the kind of frame that tips a stack over with no
+    // warning until it does -- sdList() is already single-caller-at-a-time
+    // behind SdLock, so there's no reentrancy to protect against.
+    static SdEntry logKeep[KEEP];
+    static SdEntry capKeep[KEEP];
+    static SdEntry other[OTHER_MAX];
+    size_t logN = 0, capN = 0, otherN = 0;
+
+    for (File e = dir.openNextFile(); e; e = dir.openNextFile()) {
         if (e.isDirectory()) continue;
         const char* full = e.name();
         const char* base = strrchr(full, '/');
         base = base ? base + 1 : full;
         if (!sdValidName(base)) continue;
-        strncpy(out[n].name, base, 12);
-        out[n].name[12] = 0;
-        out[n].size = (uint32_t)e.size();
-        n++;
+        if (totalOut) (*totalOut)++;
+        uint32_t sz = (uint32_t)e.size();
+        if (hasPrefixExt(base, "LOG", "CSV")) {
+            insertTop(logKeep, logN, KEEP, base, sz);
+        } else if (hasPrefixExt(base, "CAP", "SSC")) {
+            insertTop(capKeep, capN, KEEP, base, sz);
+        } else if (otherN < OTHER_MAX) {
+            strncpy(other[otherN].name, base, 12);
+            other[otherN].name[12] = 0;
+            other[otherN].size = sz;
+            otherN++;
+        }
     }
+
+    size_t n = 0;
+    for (size_t i = 0; i < logN && n < max; i++) out[n++] = logKeep[i];
+    for (size_t i = 0; i < capN && n < max; i++) out[n++] = capKeep[i];
+    for (size_t i = 0; i < otherN && n < max; i++) out[n++] = other[i];
     return n;
 }
 
