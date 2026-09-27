@@ -25,6 +25,30 @@ global.window = global;
 await import('./public/app.js');
 
 // ---------------------------------------------------------------------------
+// Host-side C++ tests for the attack-detector window math (firmware/test).
+// Same script CI runs. Skipped only if no C++ compiler is reachable (a bare
+// checkout), with a loud note -- never silently. On Windows there is
+// typically no g++ on the native PATH even inside Git Bash, so run.sh is
+// invoked through WSL there; everywhere else (CI, macOS, Linux) plain bash
+// finds g++ directly.
+import { spawnSync } from 'node:child_process';
+{
+    const cxx = process.platform === 'win32'
+        ? spawnSync('wsl', ['bash', 'firmware/test/run.sh'], { encoding: 'utf8' })
+        : spawnSync('bash', ['firmware/test/run.sh'], { encoding: 'utf8' });
+    if (cxx.error && cxx.error.code === 'ENOENT') {
+        console.log('[signalsweep self-test] WARNING: ' +
+            (process.platform === 'win32' ? 'wsl' : 'bash/g++') +
+            ' not found, skipped firmware/test/run.sh');
+    } else if (cxx.status !== 0) {
+        console.log('FAIL: firmware/test/run.sh:\n' + (cxx.stdout || '') + (cxx.stderr || ''));
+        process.exit(1);
+    } else {
+        console.log('[signalsweep self-test] attack_detectors host tests: ok');
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Markup/selector drift check.
 //
 // The band tabs were dead for a release because the delegated click listener
