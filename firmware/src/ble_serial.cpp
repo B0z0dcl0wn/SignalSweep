@@ -222,7 +222,9 @@ String getBleConfigJson() {
     doc["sd"] = sdState();
     doc["sd_free"] = sdFreeMB();
     // Per-device Ignore list, device-owned: the app paints only from this.
-    getIgnoreJson(doc["ignore"].to<JsonArray>());
+    // getIgnoreJson() adds the "ignore" key itself, and only on success -- a
+    // timed-out lock must leave it absent, never an authoritative empty list.
+    getIgnoreJson(doc);
     if (ignoreFullOnce) { doc["ignore_full"] = true; ignoreFullOnce = false; }
     String out;
     serializeJson(doc, out);

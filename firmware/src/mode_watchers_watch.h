@@ -233,8 +233,15 @@ void setBand(uint8_t band);
 // Per-device Ignore: your own doorbell, dashcam or tag. Still detected, listed
 // and reported; never beeps, flashes, counts or logs. Persisted (sweep-st/ignore).
 #define IGNORE_MAX 16
-int  addIgnore(const String& mac);      // 0 added, 1 already there, -1 full, -2 not a MAC
+// 0 added, 1 already there, -1 full (list at IGNORE_MAX), -2 not a MAC,
+// -3 couldn't lock (mutex busy or not yet created -- distinct from -1 so a
+// momentarily busy detector doesn't toast "list full").
+int  addIgnore(const String& mac);
 bool removeIgnore(const String& mac);
-void getIgnoreJson(JsonArray out);      // [["AA:BB:..", <AlertCategory>], ...]
+// Adds an "ignore" JsonArray to doc, but ONLY if the lock was obtained; on a
+// timeout the key is left absent rather than emitting an authoritative empty
+// list (an absent CMD:CFG field means "unknown", not "no ignored devices").
+// [["AA:BB:..", <AlertCategory>], ...]. Returns false on timeout.
+bool getIgnoreJson(JsonDocument& doc);
 
 #endif // MODE_WATCHERS_WATCH_H
