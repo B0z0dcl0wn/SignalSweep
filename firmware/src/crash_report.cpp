@@ -34,6 +34,10 @@ static struct {
     uint32_t bt[4] = { 0, 0, 0, 0 };
     uint8_t  btN = 0;
     char     task[16] = { 0 };
+    // IDF 5 (C5) only: the panic message the dump carries, e.g. "assert failed:
+    // osi_assert_wrapper bt.c:562 (0)". An abort() leaves PC and ra inside
+    // panic_abort, so without this the C5 report cannot say which assert.
+    char     reason[96] = { 0 };
 } last;
 
 void crashReportInit() {
@@ -70,6 +74,10 @@ void crashReportInit() {
                 last.haveDump = true;
                 strncpy(last.task, s.exc_task, sizeof(last.task) - 1);
                 last.pc = s.exc_pc;
+#if ESP_IDF_VERSION_MAJOR >= 5
+                if (esp_core_dump_get_panic_reason(last.reason, sizeof(last.reason)) != ESP_OK) last.reason[0] = 0;
+                last.reason[sizeof(last.reason) - 1] = 0;
+#endif
 #if defined(__XTENSA__)
                 // Xtensa (S3) backtraces on device. Skip a leading frame equal
                 // to PC. A backtrace IDF flags as corrupted is not presented.
@@ -120,8 +128,10 @@ void crashReportInit() {
                           (unsigned long)last.heap, (unsigned long)last.tgt);
         else
             Serial.print(" up=? heap=? tgt=?");
-        Serial.printf(" dump=%d same_fw=%s\n", (int)last.haveDump,
+        Serial.printf(" dump=%d same_fw=%s", (int)last.haveDump,
                       last.sameKnown ? (last.same ? "1" : "0") : "?");
+        if (last.reason[0]) Serial.printf(" reason=\"%s\"", last.reason);
+        Serial.println();
     }
 }
 
@@ -161,5 +171,6 @@ void crashReportToJson(JsonObject o) {
         o["tgt"] = last.tgt;
     }
     o["dump"] = last.haveDump;
-    if (last.sameKnown) o["same"] = last.same;   // absent = unknown (older firmware's short/empty SHA)
+    if (last.sameKnown) o["same"] = last.same;
+    if (last.reason[0]) o["reason"] = last.reason;   // C5 only; absent elsewhere   // absent = unknown (older firmware's short/empty SHA)
 }

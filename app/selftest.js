@@ -786,6 +786,11 @@ if (/CMD:CRASH/.test(crashScan)) crFail.push('CMD:CRASH exists outside #ifdef SW
 const pioIni = readFileSync(new URL('../firmware/platformio.ini', import.meta.url), 'utf8');
 if (/SWEEP_CRASH_TEST/.test(pioIni)) crFail.push('platformio.ini sets SWEEP_CRASH_TEST -- the crash hook would ship');
 if (!/crashBreadcrumbTick\(/.test(wwSrc)) crFail.push('the 1 Hz task never updates the breadcrumb');
+// The C5's one saved frame lands in panic_abort on an abort() (bt.c:562 is one),
+// so the panic message is the only thing naming the cause there. IDF 5 only.
+if (!/ESP_IDF_VERSION_MAJOR >= 5[\s\S]{0,120}esp_core_dump_get_panic_reason\(last\.reason/.test(crSrc))
+    crFail.push('the C5 no longer reads the panic reason from the dump');
+if (!/o\["reason"\]/.test(crSrc) || !/c\.reason/.test(appSrc)) crFail.push('the panic reason no longer reaches CMD:CFG and the app line');
 if (crFail.length) { console.log('FAIL: crash report:', crFail); process.exit(1); }
 console.log('[signalsweep self-test] crash report wiring: ok');
 
