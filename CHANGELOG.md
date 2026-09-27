@@ -4,6 +4,75 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Added — per-device Ignore (idea from SquachWatch-CYD)
+
+- **A device can now be silenced individually, on the board, without touching
+  the shared signature rule that matched it.** Muting a whole category (the
+  beep mask) was the only lever before this — turning off Trackers to stop
+  your own Tile from beeping also silences every planted AirTag you're
+  actually looking for. Ignore is per-MAC instead: `{"ignore":mac}` /
+  `{"unignore":mac}` add or remove one entry in a fixed 16-slot NVS list
+  (`sweep-st`/`ignore`, `IGNORE_MAX` = 16, `IgnoreEntry` = 6-byte MAC + 1-byte
+  `AlertCategory`, `static_assert`'d to 7 bytes because `restoreWatchersState()`
+  uses that size to validate the stored blob's length before trusting it as a
+  whole number of entries — a mismatched length is dropped rather than read
+  as garbage MACs). An ignored device is still detected, still listed, and
+  still reported over BLE; it just never beeps, flashes, counts toward
+  `alerts`, or writes an alert-log record — the same "still watching, just not
+  telling you" shape as the beep mask and Hunt.
+- **The gate is `isIgnoredLocked()`, called from the top of
+  `noteAlertForTarget()` after the `CONF_ALERT_MIN` threshold and before
+  `noteAlert()`, and it must not set `alerted`.** A plain early return would
+  burn the once-per-appearance flag the same way a muted category must not —
+  un-ignoring a device that's still in range has to sound it immediately,
+  not wait for it to go stale and reappear. Checking after the confidence
+  threshold means a sub-threshold advert never pays for the `sscanf` MAC
+  parse. `isIgnoredLocked()` (and every add/remove/list call) runs under
+  `watchersMutex`; a 17th add is refused outright (`addIgnore()` returns -1)
+  rather than evicting the oldest entry — a device you deliberately chose to
+  silence must not silently start beeping again because something newer
+  pushed it out.
+- **`CMD:CFG`'s `ignore` array is present only when the board actually got its
+  lock, never an authoritative empty list on a timeout.** This is the same
+  rule as `buzzerEnabled`/`sdState`: a timed-out read must never be able to
+  report a false state. `getIgnoreJson()` returns `false` (and adds nothing
+  to the doc) on a 50 ms lock timeout instead of writing `"ignore":[]`, and
+  the app treats an absent key as "unknown" and keeps whatever it last
+  painted. `ignore_full:true` rides the same CFG reply, once, only on the add
+  that hit the 17th-entry refusal, and is distinct from the lock-timeout
+  code — the app must be able to tell "list is full" from "couldn't check."
+  The list itself does **not** ride the 1 Hz push (CFG-only), so unlike
+  `beep_mask`/`led`/`theme` it cannot self-heal from the next push if a reply
+  is lost — a lock timeout just leaves the phone's copy stale until the next
+  successful `CMD:CFG`.
+- **App: the Ignore/Unignore button is offered only on a stable address** —
+  `stableMac()`: a BLE public address, a Wi-Fi MAC with the locally-
+  administered bit clear, or a BLE random *static* address (top two bits
+  `11`, which a Tile keeps for days) — never a rotating private address,
+  because an ignore that silently expires when the address rotates out from
+  under it is a lie. The button lives in `actionRow()` alongside Hunt/Ring,
+  independent of the tracker/foxhunt gate that controls those (Ignore is a
+  per-device opt-out, not a foxhunt tool), and is painted only from the
+  `CMD:CFG` echo — never optimistically on the tap, the same rule as the
+  sound toggles. Tapping it goes through a deliberate `confirm()`, not a
+  bare click, and an ignored row dims (`.scope-row.ignored:not(.hunted)`,
+  ordered after the hunted-row rule so a hunted-and-ignored row still reads
+  as hunted) with an "ignored" chip beside its name. Settings > Alerts lists
+  every ignored device (`Ignored devices (n/16)`) with a one-tap Unignore
+  each, usable even while the device is out of range, and `ignore_full`
+  shows a toast.
+- **`ignoredMacs` is cleared on disconnect, unlike `beep_mask`/`led`/`theme`.**
+  Those three ride every 1 Hz push, so a lost write self-heals within a
+  second against whichever board is now connected. The ignore list is
+  `CMD:CFG`-only and may be legitimately omitted on a lock timeout, so it has
+  no such self-correction — leaving it set across a disconnect risked
+  painting board A's ignored devices onto board B the instant B's first CFG
+  reply happened to omit the key. `onDeviceDisconnected()` now resets it
+  alongside the rest of `clearLiveState()`'s live session data.
+- Idea credit: SquachWatch-CYD (already listed in `CREDITS.md` from the
+  previous branch's OUI/RTC work — this reuses that entry rather than adding
+  a second one).
+
 ### Fixed — Settings > Signatures loads over Bluetooth on the S3
 
 - **A bulk reply now waits as long as the link needs, not 300 ms.** The rule
