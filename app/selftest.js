@@ -735,7 +735,7 @@ if (mfgRules < 3) regFail.push(`only ${mfgRules} literal company-ID rules parsed
 // Scan the rule calls only: the comments above them name these values on purpose.
 const ruleCalls = (defaults.match(/addRule\([^;]*\);/g) || []).join('\n');
 if (/0x0FBA/i.test(ruleCalls)) regFail.push('0x0FBA added as Flipper -- it is a headset maker');
-if (/80:e1:2[67]/i.test(ruleCalls)) regFail.push('80:E1:26/27 added as Flipper -- not in the IEEE registry');
+if (/80:e1:2[67]/i.test(ruleCalls)) regFail.push('80:E1:26/27 added as Flipper -- that is ST\'s STM32WB address derivation, shared with other STM32WB hardware');
 // The attack-gear defaults exist, all under "Hacking gear".
 for (const want of ['"3081"', '"3082"', '"3083"', '"0x0E29"', '"0c:fa:22"', '"flipper"', '"Pineapple_"', '"pwned"'])
     if (!new RegExp(`addRule\\([^;]*HACKING_GEAR_CATEGORY[^;]*${want.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i').test(defaults))

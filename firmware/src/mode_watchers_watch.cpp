@@ -397,8 +397,11 @@ static void ensureSignaturesFileExists() {
             addRule("Flipper Zero (service UUID)", HACKING_GEAR_CATEGORY, "", "", "", "3082", 80);
             addRule("Flipper Zero (service UUID)", HACKING_GEAR_CATEGORY, "", "", "", "3083", 80);
             // Registry-checked: SIG company 0x0E29 and IEEE MA-L 0c:fa:22 are
-            // both Flipper Devices. (80:E1:26/27, copied between detectors as
-            // "Flipper", are in no registry; Marauder's 0x0FBA is a headset maker.)
+            // both Flipper Devices. 0c:fa:22 is unproven on the air: a Flipper
+            // Zero reportedly builds its BLE address from ST's STM32WB
+            // derivation (80:E1:26/27...), which is real on a Flipper but shared
+            // with other STM32WB hardware, so it is not a Flipper signal and is
+            // not a rule. Marauder's "Flipper" company ID 0x0FBA is a headset maker.
             addRule("Flipper Devices (company ID)", HACKING_GEAR_CATEGORY, "", "0x0E29", "", "", 70);
             addRule("Flipper Devices (MAC)", HACKING_GEAR_CATEGORY, "0c:fa:22", "", "", "", 70);
             // The default name, but anyone can type it: listed, never beeps

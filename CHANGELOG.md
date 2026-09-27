@@ -7,11 +7,13 @@ All notable changes to SignalSweep are recorded here.
 ### Added — attack gear: Flipper Zero and Pineapple/deauther rules, behind the Attack toggle
 
 - **Signatures v10 add eight "Hacking gear" rules, each weighted by what its
-  signal proves.** Flipper Zero's three service UUIDs (`3081`/`3082`/`3083`,
-  one per case colour — its firmware's own constants) beep at 80. Its
+  signal proves.** The Flipper Zero case-colour service UUIDs
+  (`3081`/`3082`/`3083` — its firmware's own constants) beep at 80. Its
   Bluetooth SIG company ID `0x0E29` and IEEE MA-L `0c:fa:22` — both
   registered to Flipper Devices, checked against the registries we ship —
-  beep at 70. A name containing "flipper" lists at 60 without beeping: it is
+  beep at 70; the MA-L is unproven on the air (a Flipper Zero reportedly uses
+  a different, chip-derived BLE address), so it is a registry hint until a
+  capture shows it. A name containing "flipper" lists at 60 without beeping: it is
   the default name, but anyone can type it, and a real Flipper also carries
   the UUID and beeps from that. The WiFi Pineapple's default management AP
   (`Pineapple_XXXX`) beeps at 70; the ESP deauther's default control AP
@@ -20,8 +22,9 @@ All notable changes to SignalSweep are recorded here.
   use. Values via SquachWatch-CYD, no code taken.
 - **The Attack toggle now gates every rule filed under "Hacking gear", on all
   three rule paths.** `ruleGatedOff()` skips such a rule in the BLE matcher,
-  the Wi-Fi OUI loop and the SSID-prefix pass while Attack is off, read live,
-  so flipping the toggle takes effect on the next advert. The rules still
+  the Wi-Fi OUI loop and the SSID-prefix pass while Attack is off, read live:
+  new matches start or stop on the next advert (a device already listed stays
+  listed until it goes stale, as pwnagotchi rows always have). The rules still
   load, persist and show in Settings > Signatures. One switch, one meaning —
   "tell me about attack tools" — because Flippers are common hobby gear, and
   an always-on beep would cry wolf at every conference and makerspace. The
@@ -29,8 +32,10 @@ All notable changes to SignalSweep are recorded here.
   operator who renames a rule's category makes it always-on; that is their
   call.
 - **What was deliberately left out.** The `80:E1:26`/`80:E1:27` prefixes
-  that circulate between detectors as "Flipper" are in no IEEE registration;
-  ESP32 Marauder's Flipper company ID `0x0FBA` belongs to a headset maker; and
+  that circulate between detectors as "Flipper" are ST's STM32WB address
+  derivation — reportedly what a real Flipper Zero uses, but shared with other
+  STM32WB hardware, so not a Flipper signal on their own; ESP32 Marauder's
+  Flipper company ID `0x0FBA` belongs to a headset maker; and
   Hak5's `02:13:37`/`02:C0:CA` are locally administered, so anyone can set
   them (the loader rejects such OUIs by design). `selftest.js` refuses the
   first two, and now pins every default company-ID rule to `bt-company.txt`
