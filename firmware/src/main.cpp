@@ -12,6 +12,7 @@
 #include "alert_log.h"
 #include "rtc_clock.h"
 #include "sd_store.h"
+#include "crash_report.h"
 
 #if CONFIG_IDF_TARGET_ESP32C5
 #define BOOT_BUTTON_PIN BOOT_PIN   // GPIO28 on the XIAO ESP32-C5 (esp32-hal.h)
@@ -25,6 +26,10 @@ void setup() {
     Serial.println("\n=================================");
     Serial.println("   SignalSweep Firmware Booting   ");
     Serial.println("=================================");
+
+    // Before anything allocates: read the last crash out of no-init RAM and the
+    // coredump partition, then re-arm the breadcrumb for this boot.
+    crashReportInit();
 
     pinMode(BOOT_BUTTON_PIN, INPUT_PULLUP);
 
@@ -106,6 +111,16 @@ static void factoryReset() {
     ESP.restart();
 }
 
+#ifdef SWEEP_CRASH_TEST
+// Bench only (build with PLATFORMIO_BUILD_FLAGS=-DSWEEP_CRASH_TEST). Never ships.
+__attribute__((noinline)) static void sweepCrashTest() {
+    // An illegal instruction: a clean panic whose PC addr2line resolves here.
+    // Not a store to NULL -- that traps on the S3 but is silently accepted on
+    // the C5 (nothing guards address 0 there), so the C5 never crashed.
+    __builtin_trap();
+}
+#endif
+
 void loop() {
     // BOOT button: hold 5s wipes to factory defaults (there is no selector to
     // tap back to anymore — one always-on detector). Red flash + warning tone
@@ -182,6 +197,10 @@ void loop() {
         } else if (cmd == "CMD:HOST:BYE") {
             if (serialHost) { playDisconnectionChirp(); Serial.println("[USB] host closed"); }
             serialHost = false;
+#ifdef SWEEP_CRASH_TEST
+        } else if (cmd == "CMD:CRASH") {
+            sweepCrashTest();
+#endif
         } else if (cmd.length() > 0) {
             processIncomingCommand(cmd);
         }

@@ -122,6 +122,19 @@ if (cfgKeys.length < 5 || cfgUnread.length) {
 }
 console.log('[signalsweep self-test] app reads every CMD:CFG field: ok');
 
+// `crash` is built with crashReportToJson(doc["crash"].to<JsonObject>()), not
+// a plain `doc["crash"] =`, so the generic CMD:CFG-unread scan above never
+// sees it -- assert both sides explicitly instead. (CRLF working copy: no
+// literal \n in these regexes.)
+{
+    const bsrc = readFileSync(new URL('../firmware/src/ble_serial.cpp', import.meta.url), 'utf8');
+    const fail = [];
+    if (!/crashReportToJson\(doc\["crash"\]\.to<JsonObject>\(\)\)/.test(bsrc)) fail.push('firmware does not build cfg.crash');
+    if (!/cfg\.crash/.test(appSrc)) fail.push('app never reads cfg.crash');
+    if (fail.length) { console.log('FAIL:', fail.join('; ')); process.exit(1); }
+    console.log('[signalsweep self-test] app reads cfg.crash: ok');
+}
+
 // Host time push: the app must send {"time"} paired with each CMD:CFG attempt
 // (USB opens reset the board, so a lone push can land mid-boot and vanish),
 // the firmware must parse it, and both sides must agree on the anchors key.
@@ -733,6 +746,48 @@ if (/\bsscanf\s*\(/.test(wwSrc.replace(/\r\n/g, '\n')))
     igFail.push('mode_watchers_watch.cpp uses sscanf -- the ignore MAC parse must be stdio-free (see alertLogParseMac)');
 if (igFail.length) { console.log('FAIL: ignore:', igFail); process.exit(1); }
 console.log('[signalsweep self-test] ignore list gate + wire: ok');
+
+// ---------------------------------------------------------------------------
+// Crash report. The breadcrumb must live in memory a software reset does not
+// zero (__NOINIT_ATTR: portable to the C5, unlike RTC_NOINIT_ATTR), be
+// believed only after a panic/watchdog reset, and be sanity-checked (a
+// half-surviving RAM image must not invent a crash). setup() calls init first.
+// (mainSrc and wwSrc are declared above.)
+const crFail = [];
+let crSrc = '';
+try { crSrc = readFileSync(new URL('../firmware/src/crash_report.cpp', import.meta.url), 'utf8'); } catch {}
+if (!crSrc) crFail.push('no crash_report.cpp');
+if (!/__NOINIT_ATTR/.test(crSrc)) crFail.push('breadcrumb is not __NOINIT_ATTR');
+if (!/ESP_RST_PANIC/.test(crSrc) || !/ESP_RST_TASK_WDT/.test(crSrc)) crFail.push('not gated on a panic/watchdog reset');
+if (!/CRUMB_MAGIC/.test(crSrc) || !/crumb\.up\s*</.test(crSrc)) crFail.push('breadcrumb not sanity-checked');
+if (!/esp_core_dump_get_summary/.test(crSrc)) crFail.push('core dump summary never read');
+const setupBody = (mainSrc.match(/void setup\(\) \{[\s\S]*?hardwareInit\(\);/) || [''])[0];
+if (!/crashReportInit\(\);/.test(setupBody)) crFail.push('crashReportInit() is not called before hardwareInit() in setup()');
+// An RTC-watchdog reset writes no dump: whatever is in the partition is an
+// older crash's and must not be presented as this one's. And a missing or
+// corrupt image is "no dump", checked before the summary is read.
+const crNorm = crSrc.replace(/\r\n/g, '\n');
+if (!/if \(r != ESP_RST_WDT && esp_core_dump_image_check\(\) == ESP_OK\) \{[\s\S]*?esp_core_dump_get_summary/.test(crNorm))
+    crFail.push('core dump summary is read on ESP_RST_WDT or without esp_core_dump_image_check()');
+if (!/crumb\.tgt\s*</.test(crSrc)) crFail.push('breadcrumb target count not sanity-checked');
+if (!/crumb\.magic = 0;/.test(crSrc)) crFail.push('init does not clear the breadcrumb magic (an early crash would report up=0 as real)');
+const tickFn = (crNorm.match(/void crashBreadcrumbTick\([\s\S]*?\n\}/) || [''])[0];
+if (!/crumb\.tgt = targets > 9999 \? 9999 : targets;[\s\S]*crumb\.magic = CRUMB_MAGIC;/.test(tickFn)) crFail.push('tick must set the magic after the fields');
+if (!/crumb\.tgt = targets > 9999 \? 9999 : targets;/.test(crSrc)) crFail.push('breadcrumb tgt is not clamped on write (a torn read could push it past the read-side check)');
+// CMD:CRASH must exist only inside #ifdef SWEEP_CRASH_TEST blocks, in any
+// file that could route a command. Strip those blocks and look for leftovers.
+// The lazy match ends at the FIRST #endif, so a nested #if inside such a block
+// would end it early (and leave the rest to be flagged) -- keep them flat.
+const crashScan = ['main.cpp', 'ble_serial.cpp', 'mode_watchers_watch.cpp', 'crash_report.cpp']
+    .map(f => { try { return readFileSync(new URL('../firmware/src/' + f, import.meta.url), 'utf8'); } catch { return ''; } })
+    .join('\n').replace(/\r\n/g, '\n')
+    .replace(/^[ \t]*#ifdef[ \t]+SWEEP_CRASH_TEST\b[\s\S]*?^[ \t]*#endif\b/gm, '');
+if (/CMD:CRASH/.test(crashScan)) crFail.push('CMD:CRASH exists outside #ifdef SWEEP_CRASH_TEST -- it would ship');
+const pioIni = readFileSync(new URL('../firmware/platformio.ini', import.meta.url), 'utf8');
+if (/SWEEP_CRASH_TEST/.test(pioIni)) crFail.push('platformio.ini sets SWEEP_CRASH_TEST -- the crash hook would ship');
+if (!/crashBreadcrumbTick\(/.test(wwSrc)) crFail.push('the 1 Hz task never updates the breadcrumb');
+if (crFail.length) { console.log('FAIL: crash report:', crFail); process.exit(1); }
+console.log('[signalsweep self-test] crash report wiring: ok');
 
 const results = await global.__signalsweepSelfTest();
 const failed = Object.entries(results).filter(([, v]) => !v).map(([k]) => k);

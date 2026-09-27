@@ -18,6 +18,7 @@
 #endif
 #include "alert_log.h"
 #include "sd_log.h"
+#include "crash_report.h"
 #include <ArduinoJson.h>
 #include <LittleFS.h>
 #include <Preferences.h>
@@ -2057,6 +2058,14 @@ static void watchersPeriodicTask(void *pvParameters) {
             }
             continue;
         }
+
+        // Breadcrumb for the crash report: plain word writes, no lock. The
+        // target count is read without watchersMutex: size() is (end-begin)/
+        // sizeof(T), which can tear if a radio callback reallocates the vector
+        // mid-read. Harmless for a breadcrumb (crashReportInit() range-checks
+        // it); not worth a lock on the 1 Hz path. Gap: this task is deleted
+        // during a capture, so the breadcrumb freezes at the capture start.
+        crashBreadcrumbTick((uint32_t)trackedTargets.size());
 
         // Sound anything the radios flagged since the last tick. Done here, off
         // the detection callbacks, so the Wi-Fi promiscuous handler stays fast

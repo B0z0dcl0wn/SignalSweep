@@ -9,6 +9,7 @@
 #include "sd_store.h"
 #include "mbedtls/base64.h"
 #include "mode_capture.h"
+#include "crash_report.h"
 #include <NimBLEDevice.h>
 #include <ArduinoJson.h>
 #include <esp_log.h>
@@ -214,6 +215,9 @@ String getBleConfigJson() {
     // Why the board last booted (esp_reset_reason(): 4 panic, 5-7 watchdog,
     // 9 brownout). Nothing else survives a crash with no host logging.
     doc["reset"] = (int)esp_reset_reason();
+    // Present only after a crashing boot: task, PC, backtrace addresses and
+    // the breadcrumb. Absent = the last boot was not a crash (or old firmware).
+    if (crashReportPresent()) crashReportToJson(doc["crash"].to<JsonObject>());
     // Optional DS3231 (rtc_clock.h): 0 absent, 1 ok, 2 fitted but lost power.
     // epoch is the board's UTC now, 0 until a host or the RTC has set it.
     doc["rtc"] = rtcState();

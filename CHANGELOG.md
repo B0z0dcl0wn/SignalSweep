@@ -4,6 +4,95 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Added — crash report: coredump partition, breadcrumb, CMD:CFG (idea from SquachWatch-CYD)
+
+- **A new 64 KB `coredump` partition (`0x600000`) carves out of the end of
+  `app0`, which shrinks from `0x600000` to `0x5F0000`.** `nvs`, `otadata`,
+  and the LittleFS partition (`0x610000`/`0x1F0000`) are untouched. Both
+  frameworks already build with `CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH` + ELF +
+  CRC32 and task-watchdog panic — the partition was the only missing piece,
+  so this ships the storage IDF was already trying to use. Upgrading rewrites
+  the partition table (the web flasher, `install.py`, and `pio run -t upload`
+  all write `partitions.bin` at `0x8000`); bench-measured 2026-09-26: both
+  boards kept their BLE name, beep mask, LED/theme, all 73 v9 signature
+  rules, and the S3's alert log (345 records) across the upgrade with no
+  erase needed.
+- **`crash_report.{h,cpp}` keeps two independent pictures of the last crash:
+  a no-init breadcrumb, and IDF's own core dump summary.** The breadcrumb
+  (`__NOINIT_ATTR`, not `RTC_NOINIT_ATTR` — that section can expand to
+  nothing on the C5) holds uptime, internal free heap, and target count,
+  written once a second from the detector's 1 Hz tick and re-armed at boot.
+  A magic value gates whether it's believed: a power-on leaves the section
+  random, so `crashReportInit()` only trusts it after a panic/watchdog reset
+  (`esp_reset_reason()` 4-7) and only when the fields are individually
+  plausible (a half-surviving image can carry the magic with garbage behind
+  it). The magic is written last, after a compiler barrier, so a crash
+  between the field writes and the magic write can never pass the check with
+  a torn breadcrumb; the target count is also clamped on the write side, for
+  the same reason. A crash before the first tick reports "no breadcrumb"
+  rather than fabricating up=0/heap=0 as if they'd been measured. The dump
+  summary (task, PC, backtrace, ELF SHA) is read only when
+  `esp_core_dump_image_check()` passes, and never on an RTC-watchdog reset
+  — that dump belongs to an older crash, since an RTC-watchdog reset writes
+  no new one. Known gaps: a panic whose dump write itself fails leaves the
+  previous valid image in place, which then gets reported as this crash's;
+  the breadcrumb freezes during a Site Survey capture (the 1 Hz task deletes
+  itself for the duration); and the `[CRASH]` USB line can be lost to the
+  S3's USB re-enumeration at boot (it came through cleanly on the C5) — so
+  `CMD:CFG`'s `crash` field, not the USB line, is the reliable witness.
+- **The backtrace is architecture-shaped, not padded to look symmetric.**
+  The S3 (Xtensa) gets up to 4 on-device backtrace frames (a leading frame
+  equal to PC is skipped, and the array is empty if IDF flags the backtrace
+  corrupted); the C5 (RISC-V) cannot backtrace on device at all, so it
+  reports only the return address (`ra`) as one frame. `CMD:CFG`'s `crash`
+  object carries `task`, `pc`, `bt` (frames, possibly empty), and — only
+  when the breadcrumb was trusted — `up`/`heap`/`tgt`; `dump` says whether a
+  usable core dump exists, and `same` compares the dump's stored ELF SHA
+  against the running image's, truncated to however many hex chars the dump
+  actually kept (8 on the C5, 16 on the S3 — comparing a fixed 16 would call
+  every C5 crash "different firmware"). `same` is omitted, not false, when
+  the dump carries no SHA at all. The whole `crash` key is present in
+  `CMD:CFG` only after a crashing boot, and only until the next normal boot;
+  absent means either "didn't crash" or "firmware too old to report it" —
+  the app never tries to tell those apart.
+- **App: Settings > Device identity shows "Last crash (`<reset reason>`): …"
+  with a Copy button.** The line names the reset reason in words (panic /
+  interrupt watchdog / task watchdog / RTC watchdog), then the task and a
+  human uptime/heap summary when the breadcrumb was trusted, falling back to
+  "no details" rather than printing `NaN`/`undefined` when it wasn't; it
+  flags "no core dump" or "(older firmware)" as appropriate. Copy puts the
+  full JSON — including the board name — on the clipboard for
+  `addr2line`/`esp-coredump` against the matching ELF. `lastCrash` belongs
+  to one board: it's cleared in `clearLiveState()` on disconnect, the same
+  rule as the ignore list, so a board swap can't paint board A's crash onto
+  board B's Device page.
+- **Bench trap: a store to NULL does not fault on the ESP32-C5** — nothing
+  guards address 0 there, so the first `CMD:CRASH` test on the C5 silently
+  did nothing while the identical test panicked the S3 cleanly. The bench
+  hook is `__builtin_trap()` (an illegal instruction) instead, which crashes
+  both. Bench results (2026-09-26): S3 `CMD:CRASH` → reset 4, `crash` in
+  `CMD:CFG`, PC decodes with `xtensa-esp32s3-elf-addr2line` to
+  `sweepCrashTest()` in `main.cpp`, backtrace `loop()` → `loopTask`, dump
+  27.8 KB of 64 KB. C5 → reset 4, `[CRASH]` line seen, PC → `sweepCrashTest()`,
+  `ra` → `loop()`, dump 13.4 KB of 64 KB. A normal reset (SW 3, USB 11,
+  esptool 0) clears the report, and a build without
+  `CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH` simply ignores `CMD:CRASH`.
+- **The bench hook is bench-only, deliberately: `-DSWEEP_CRASH_TEST` gates
+  `CMD:CRASH` (USB-only, routed in `loop()`), and it never ships.**
+  `selftest.js` strips the `#ifdef` blocks across the four sources that use
+  it and fails if `CMD:CRASH` survives that strip or if `platformio.ini`
+  sets the flag for a shipping env.
+- **Reading a full backtrace off a real crash needs the flash, not just
+  `CMD:CFG`.** `python -m esptool --chip esp32c5 --port COMx read-flash
+  0x600000 0x10000 cd.bin` (esptool 5 on the C5 toolchain; the S3's
+  esptool.py 4.x uses `read_flash` with an underscore), then
+  `esp-coredump info_corefile -t raw -c cd.bin firmware.elf`. Erase
+  `0x600000` (`erase-region 0x600000 0x10000`) after a bench crash test and
+  before a soak, so a failed real crash later can't be mistaken for the old
+  bench test's dump.
+- Idea credit: SquachWatch-CYD (already listed in `CREDITS.md` — this adds
+  the crash breadcrumb to that entry's list of borrowed ideas).
+
 ### Added — per-device Ignore (idea from SquachWatch-CYD)
 
 - **A device can now be silenced individually, on the board, without touching
