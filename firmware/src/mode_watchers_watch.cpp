@@ -1380,6 +1380,10 @@ static void upsertAttackTarget(const String& mac, int rssi, const char* proto,
 // callback, so it needs no lock (same rule as wifiUas/pwngridBuf).
 static DeauthState deauthState;
 
+// Karma/PineAP state: one BSSID answering probes for many SSIDs. Promiscuous
+// callback only, no lock.
+static KarmaState karmaState;
+
 static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type_t type) {
     if (!watchersRunning) return;
     if (type != WIFI_PKT_MGMT) return;
@@ -1727,6 +1731,21 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
                         matchedCategory = HACKING_GEAR_CATEGORY;
                     }
                 }
+            }
+        }
+
+        // Karma / PineAP: one BSSID (addr2) sending PROBE RESPONSES for many
+        // distinct SSIDs is "impersonate all networks". A legit multi-SSID AP
+        // uses distinct BSSIDs per SSID, so this fans out from one. Attack only.
+        if (attackDetect && fsubtype == 5 && foundSsid.length() > 0) {
+            uint64_t sh = attackHash((const uint8_t*)foundSsid.c_str(), foundSsid.length());
+            uint32_t nSsids = karmaNote(&karmaState, attackMac48(addr2), sh, millis());
+            if (nSsids >= ATTACK_KARMA_THRESHOLD) {
+                char m[18]; snprintf(m, sizeof(m), "%02X:%02X:%02X:%02X:%02X:%02X",
+                    addr2[0], addr2[1], addr2[2], addr2[3], addr2[4], addr2[5]);
+                char title[40]; snprintf(title, sizeof(title), "%s \xC2\xB7 %u SSIDs",
+                    ATTACK_TITLE_KARMA, (unsigned)nSsids);
+                upsertAttackTarget(String(m), rssi, "WiFi", String(title), packet->rx_ctrl.channel);
             }
         }
 
