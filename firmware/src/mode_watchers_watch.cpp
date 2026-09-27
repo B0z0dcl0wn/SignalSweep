@@ -2060,8 +2060,11 @@ static void watchersPeriodicTask(void *pvParameters) {
         }
 
         // Breadcrumb for the crash report: plain word writes, no lock. The
-        // target count is read without watchersMutex -- a vector's size is one
-        // word, and a count one off is fine for "how busy was it when it died".
+        // target count is read without watchersMutex: size() is (end-begin)/
+        // sizeof(T), which can tear if a radio callback reallocates the vector
+        // mid-read. Harmless for a breadcrumb (crashReportInit() range-checks
+        // it); not worth a lock on the 1 Hz path. Gap: this task is deleted
+        // during a capture, so the breadcrumb freezes at the capture start.
         crashBreadcrumbTick((uint32_t)trackedTargets.size());
 
         // Sound anything the radios flagged since the last tick. Done here, off

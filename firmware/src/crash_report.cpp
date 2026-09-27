@@ -29,7 +29,7 @@ static const uint32_t CRUMB_MAGIC = 0x53574350u;   // "SWCP"
 __NOINIT_ATTR static struct { uint32_t magic, up, heap, tgt; } crumb;
 
 static struct {
-    bool     valid = false, haveDump = false, same = false;
+    bool     valid = false, crumbOk = false, haveDump = false, same = false, btCorrupt = false;
     uint32_t up = 0, heap = 0, tgt = 0, pc = 0;
     uint32_t bt[4] = { 0, 0, 0, 0 };
     uint8_t  btN = 0;
@@ -44,54 +44,77 @@ void crashReportInit() {
                           r == ESP_RST_TASK_WDT || r == ESP_RST_WDT);
     // A power-on leaves random RAM: believe the magic only after a crash reset,
     // and only with plausible values (a half-surviving image can carry the
-    // magic with garbage behind it).
+    // magic with garbage behind it). The magic is set only by a tick, after the
+    // fields, so a crash before the first tick reports "no breadcrumb" rather
+    // than up=0 heap=0 as if they were measured.
     if (crashed) {
         last.valid = true;
-        if (crumb.magic == CRUMB_MAGIC && crumb.up < 400UL * 24 * 3600 && crumb.heap < 1024UL * 1024) {
+        if (crumb.magic == CRUMB_MAGIC && crumb.up < 400UL * 24 * 3600 &&
+            crumb.heap < 1024UL * 1024 && crumb.tgt < 10000) {
+            last.crumbOk = true;
             last.up = crumb.up; last.heap = crumb.heap; last.tgt = crumb.tgt;
         }
 #if SWEEP_HAVE_COREDUMP
-        // Static, not a local: on the C5 (RISC-V) the summary embeds a 1 KB
-        // stack dump (CONFIG_ESP_COREDUMP_SUMMARY_STACKDUMP_SIZE), too much for
-        // the loop task's stack for no reason. Read once per boot.
-        static esp_core_dump_summary_t s;
-        if (esp_core_dump_get_summary(&s) == ESP_OK) {
-            last.haveDump = true;
-            strncpy(last.task, s.exc_task, sizeof(last.task) - 1);
-            last.pc = s.exc_pc;
+        // An RTC-watchdog reset writes no dump, so whatever is in the partition
+        // is an older crash's: never present it as this one's.
+        // esp_core_dump_image_check() rejects a missing or corrupt image.
+        // Remaining gap: a panic whose dump write failed (e.g. not enough
+        // space) leaves the previous valid image, which is then reported; the
+        // bench checks a real dump fits in the 64 KB partition.
+        if (r != ESP_RST_WDT && esp_core_dump_image_check() == ESP_OK) {
+            // Static, not a local: on the C5 (RISC-V) the summary embeds a 1 KB
+            // stack dump (CONFIG_ESP_COREDUMP_SUMMARY_STACKDUMP_SIZE), too much
+            // for the loop task's stack for no reason. Read once per boot.
+            static esp_core_dump_summary_t s;
+            if (esp_core_dump_get_summary(&s) == ESP_OK) {
+                last.haveDump = true;
+                strncpy(last.task, s.exc_task, sizeof(last.task) - 1);
+                last.pc = s.exc_pc;
 #if defined(__XTENSA__)
-            // Xtensa (S3) backtraces on device. Skip a leading frame equal to PC.
-            uint32_t i = (s.exc_bt_info.depth && s.exc_bt_info.bt[0] == s.exc_pc) ? 1 : 0;
-            for (; i < s.exc_bt_info.depth && i < 16 && last.btN < 4; i++) last.bt[last.btN++] = s.exc_bt_info.bt[i];
+                // Xtensa (S3) backtraces on device. Skip a leading frame equal
+                // to PC. A backtrace IDF flags as corrupted is not presented.
+                if (s.exc_bt_info.corrupted) {
+                    last.btCorrupt = true;
+                } else {
+                    uint32_t i = (s.exc_bt_info.depth && s.exc_bt_info.bt[0] == s.exc_pc) ? 1 : 0;
+                    for (; i < s.exc_bt_info.depth && i < 16 && last.btN < 4; i++) last.bt[last.btN++] = s.exc_bt_info.bt[i];
+                }
 #else
-            // RISC-V (C5) cannot backtrace on device; the return address is the
-            // one caller we get. The full stack is in the dump for esp-coredump.
-            last.bt[0] = s.ex_info.ra;
-            last.btN = 1;
+                // RISC-V (C5) cannot backtrace on device; the return address is
+                // the one caller we get. The full stack is in the dump for
+                // esp-coredump.
+                last.bt[0] = s.ex_info.ra;
+                last.btN = 1;
 #endif
-            char running[65] = { 0 };
+                char running[65] = { 0 };
 #if ESP_IDF_VERSION_MAJOR >= 5
-            esp_app_get_elf_sha256(running, sizeof(running));
+                esp_app_get_elf_sha256(running, sizeof(running));
 #else
-            esp_ota_get_app_elf_sha256(running, sizeof(running));
+                esp_ota_get_app_elf_sha256(running, sizeof(running));
 #endif
-            // The dump stores only CONFIG_APP_RETRIEVE_LEN_ELF_SHA hex chars of
-            // the ELF hash (16 on the S3 build, 9 including the NUL on the C5),
-            // so compare exactly as many as it holds -- a fixed 16 would call
-            // every C5 crash "different firmware".
-            const size_t n = strnlen((const char*)s.app_elf_sha256, sizeof(s.app_elf_sha256));
-            last.same = n > 0 && strncmp((const char*)s.app_elf_sha256, running, n) == 0;
+                // The dump stores only CONFIG_APP_RETRIEVE_LEN_ELF_SHA hex chars
+                // of the ELF hash (16 on the S3 build, 9 including the NUL on
+                // the C5), so compare exactly as many as it holds -- a fixed 16
+                // would call every C5 crash "different firmware".
+                const size_t n = strnlen((const char*)s.app_elf_sha256, sizeof(s.app_elf_sha256));
+                last.same = n > 0 && strncmp((const char*)s.app_elf_sha256, running, n) == 0;
+            }
         }
 #endif
     }
-    crumb.magic = CRUMB_MAGIC;
+    crumb.magic = 0;   // re-armed by the first crashBreadcrumbTick()
     crumb.up = 0; crumb.heap = 0; crumb.tgt = 0;
     if (last.valid) {
         Serial.printf("[CRASH] reset=%d task=%s pc=0x%08lx bt=", (int)r, last.task[0] ? last.task : "?",
                       (unsigned long)last.pc);
+        if (last.btCorrupt) Serial.print("corrupt");
         for (uint8_t i = 0; i < last.btN; i++) Serial.printf("%s0x%08lx", i ? "," : "", (unsigned long)last.bt[i]);
-        Serial.printf(" up=%lu heap=%lu tgt=%lu dump=%d same_fw=%d\n", (unsigned long)last.up,
-                      (unsigned long)last.heap, (unsigned long)last.tgt, (int)last.haveDump, (int)last.same);
+        if (last.crumbOk)
+            Serial.printf(" up=%lu heap=%lu tgt=%lu", (unsigned long)last.up,
+                          (unsigned long)last.heap, (unsigned long)last.tgt);
+        else
+            Serial.print(" up=? heap=? tgt=?");
+        Serial.printf(" dump=%d same_fw=%d\n", (int)last.haveDump, (int)last.same);
     }
 }
 
@@ -99,6 +122,7 @@ void crashBreadcrumbTick(uint32_t targets) {
     crumb.up = millis() / 1000;
     crumb.heap = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
     crumb.tgt = targets;
+    crumb.magic = CRUMB_MAGIC;   // last, so a crash before the first tick has no breadcrumb
 }
 
 bool crashReportPresent() { return last.valid; }
@@ -108,15 +132,17 @@ void crashReportToJson(JsonObject o) {
     snprintf(pc, sizeof(pc), "0x%08lx", (unsigned long)last.pc);
     o["task"] = last.task;
     o["pc"] = pc;
-    JsonArray bt = o["bt"].to<JsonArray>();
+    JsonArray bt = o["bt"].to<JsonArray>();   // empty when IDF flagged it corrupt
     for (uint8_t i = 0; i < last.btN; i++) {
         char a[11];
         snprintf(a, sizeof(a), "0x%08lx", (unsigned long)last.bt[i]);
         bt.add(a);
     }
-    o["up"] = last.up;
-    o["heap"] = last.heap;
-    o["tgt"] = last.tgt;
+    if (last.crumbOk) {   // absent = unknown (crashed before the first 1 Hz tick)
+        o["up"] = last.up;
+        o["heap"] = last.heap;
+        o["tgt"] = last.tgt;
+    }
     o["dump"] = last.haveDump;
     o["same"] = last.same;
 }

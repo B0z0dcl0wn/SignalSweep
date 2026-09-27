@@ -750,8 +750,27 @@ if (!/CRUMB_MAGIC/.test(crSrc) || !/crumb\.up\s*</.test(crSrc)) crFail.push('bre
 if (!/esp_core_dump_get_summary/.test(crSrc)) crFail.push('core dump summary never read');
 const setupBody = (mainSrc.match(/void setup\(\) \{[\s\S]*?hardwareInit\(\);/) || [''])[0];
 if (!/crashReportInit\(\);/.test(setupBody)) crFail.push('crashReportInit() is not called before hardwareInit() in setup()');
-if (/CMD:CRASH/.test(mainSrc) && !/#ifdef SWEEP_CRASH_TEST[\s\S]*?CMD:CRASH[\s\S]*?#endif/.test(mainSrc))
-    crFail.push('CMD:CRASH exists outside #ifdef SWEEP_CRASH_TEST -- it would ship');
+// An RTC-watchdog reset writes no dump: whatever is in the partition is an
+// older crash's and must not be presented as this one's. And a missing or
+// corrupt image is "no dump", checked before the summary is read.
+const crNorm = crSrc.replace(/\r\n/g, '\n');
+if (!/if \(r != ESP_RST_WDT && esp_core_dump_image_check\(\) == ESP_OK\) \{[\s\S]*?esp_core_dump_get_summary/.test(crNorm))
+    crFail.push('core dump summary is read on ESP_RST_WDT or without esp_core_dump_image_check()');
+if (!/crumb\.tgt\s*</.test(crSrc)) crFail.push('breadcrumb target count not sanity-checked');
+if (!/crumb\.magic = 0;/.test(crSrc)) crFail.push('init does not clear the breadcrumb magic (an early crash would report up=0 as real)');
+const tickFn = (crNorm.match(/void crashBreadcrumbTick\([\s\S]*?\n\}/) || [''])[0];
+if (!/crumb\.tgt = targets;[\s\S]*crumb\.magic = CRUMB_MAGIC;/.test(tickFn)) crFail.push('tick must set the magic after the fields');
+// CMD:CRASH must exist only inside #ifdef SWEEP_CRASH_TEST blocks, in any
+// file that could route a command. Strip those blocks and look for leftovers.
+// The lazy match ends at the FIRST #endif, so a nested #if inside such a block
+// would end it early (and leave the rest to be flagged) -- keep them flat.
+const crashScan = ['main.cpp', 'ble_serial.cpp', 'mode_watchers_watch.cpp', 'crash_report.cpp']
+    .map(f => { try { return readFileSync(new URL('../firmware/src/' + f, import.meta.url), 'utf8'); } catch { return ''; } })
+    .join('\n').replace(/\r\n/g, '\n')
+    .replace(/^[ \t]*#ifdef[ \t]+SWEEP_CRASH_TEST\b[\s\S]*?^[ \t]*#endif\b/gm, '');
+if (/CMD:CRASH/.test(crashScan)) crFail.push('CMD:CRASH exists outside #ifdef SWEEP_CRASH_TEST -- it would ship');
+const pioIni = readFileSync(new URL('../firmware/platformio.ini', import.meta.url), 'utf8');
+if (/SWEEP_CRASH_TEST/.test(pioIni)) crFail.push('platformio.ini sets SWEEP_CRASH_TEST -- the crash hook would ship');
 if (!/crashBreadcrumbTick\(/.test(wwSrc)) crFail.push('the 1 Hz task never updates the breadcrumb');
 if (crFail.length) { console.log('FAIL: crash report:', crFail); process.exit(1); }
 console.log('[signalsweep self-test] crash report wiring: ok');

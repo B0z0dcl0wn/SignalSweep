@@ -10,6 +10,8 @@
 #include <ArduinoJson.h>
 
 void crashReportInit();                      // first thing in setup(), before anything allocates
-void crashBreadcrumbTick(uint32_t targets);  // once a second from the detector's 1 Hz body
+// Once a second from the detector's 1 Hz body. Gap: that task deletes itself
+// while a capture runs, so a crash mid-capture reports the capture-start values.
+void crashBreadcrumbTick(uint32_t targets);
 bool crashReportPresent();
-void crashReportToJson(JsonObject o);        // task, pc, bt[], up, heap, tgt, dump, same
+void crashReportToJson(JsonObject o);        // task, pc, bt[], up/heap/tgt (omitted if unknown), dump, same
