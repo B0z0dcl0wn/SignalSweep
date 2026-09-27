@@ -114,8 +114,10 @@ static void factoryReset() {
 #ifdef SWEEP_CRASH_TEST
 // Bench only (build with PLATFORMIO_BUILD_FLAGS=-DSWEEP_CRASH_TEST). Never ships.
 __attribute__((noinline)) static void sweepCrashTest() {
-    volatile uint32_t* p = nullptr;
-    *p = 0xDEAD;   // store to NULL: a clean panic whose PC addr2line resolves here
+    // An illegal instruction: a clean panic whose PC addr2line resolves here.
+    // Not a store to NULL -- that traps on the S3 but is silently accepted on
+    // the C5 (nothing guards address 0 there), so the C5 never crashed.
+    __builtin_trap();
 }
 #endif
 
