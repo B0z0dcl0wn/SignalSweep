@@ -832,7 +832,9 @@
             el.innerHTML = ignoredMacs.size
                 ? [...ignoredMacs].map(([mac, c]) => '<button class="ctrl-btn" data-unignore="' + esc(mac) + '">'
                     + esc(LOG_CATS[c] || 'Device') + ' ' + esc(mac) + ' ✕</button>').join('')
-                : '<p class="set-note">None. Ignore a device from its row on the Sweep screen.</p>';
+                : (connectionType
+                    ? '<p class="set-note">None. Ignore a device from its row on the Sweep screen.</p>'
+                    : '<p class="set-note">Connect the board to see its list.</p>');
         }
 
         function stopHunt() {
@@ -3827,6 +3829,7 @@
                 connectionType = type;
                 closeConnModal();
                 renderStatusStrip();
+                paintIgnoreList();   // flips "connect the board" note now that one is
                 showToast(`Connected via ${type}`, '✓');
                 // Ask the device what it is, and what it was already doing.
                 // Done here rather than at each of the five connect sites.
@@ -3864,6 +3867,7 @@
                 const sdBox = document.getElementById('sd-files');
                 if (sdBox) sdBox.innerHTML = '';
                 renderStatusStrip();
+                paintIgnoreList();   // connectionType just went null -- repaint the note
                 showToast('Device disconnected', '✕');
             }
         }

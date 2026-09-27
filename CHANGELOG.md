@@ -26,12 +26,18 @@ All notable changes to SignalSweep are recorded here.
   burn the once-per-appearance flag the same way a muted category must not —
   un-ignoring a device that's still in range has to sound it immediately,
   not wait for it to go stale and reappear. Checking after the confidence
-  threshold means a sub-threshold advert never pays for the `sscanf` MAC
-  parse. `isIgnoredLocked()` (and every add/remove/list call) runs under
-  `watchersMutex`; a 17th add is refused outright (`addIgnore()` returns -1)
-  rather than evicting the oldest entry — a device you deliberately chose to
-  silence must not silently start beeping again because something newer
-  pushed it out.
+  threshold means a sub-threshold advert never pays for the MAC parse (a
+  stdio-free hex-pair parse shared with `alert_log.cpp`'s `alertLogParseMac()`
+  — never `sscanf`, whose several-hundred-byte stack frame has no business on
+  the scan/promiscuous callback paths this runs on). Every read and mutation
+  of the list (`isIgnoredLocked()`, `addIgnore()`, `removeIgnore()`,
+  `getIgnoreJson()`) runs under `watchersMutex`; the NVS write in
+  `persistIgnore()` takes a snapshot under that same lock and writes it after
+  releasing it, so a USB command in `loop()` and a BLE command on the NimBLE
+  host task can't race each other into flash. A 17th add is refused outright
+  (`addIgnore()` returns -1) rather than evicting the oldest entry — a device
+  you deliberately chose to silence must not silently start beeping again
+  because something newer pushed it out.
 - **`CMD:CFG`'s `ignore` array is present only when the board actually got its
   lock, never an authoritative empty list on a timeout.** This is the same
   rule as `buzzerEnabled`/`sdState`: a timed-out read must never be able to
@@ -58,9 +64,9 @@ All notable changes to SignalSweep are recorded here.
   bare click, and an ignored row dims (`.scope-row.ignored:not(.hunted)`,
   ordered after the hunted-row rule so a hunted-and-ignored row still reads
   as hunted) with an "ignored" chip beside its name. Settings > Alerts lists
-  every ignored device (`Ignored devices (n/16)`) with a one-tap Unignore
-  each, usable even while the device is out of range, and `ignore_full`
-  shows a toast.
+  every ignored device (`Ignored devices (n/16)`) as one button per entry
+  (`<category> <mac> ✕`) that unignores on tap, usable even while the device
+  is out of range, and `ignore_full` shows a toast.
 - **`ignoredMacs` is cleared on disconnect, unlike `beep_mask`/`led`/`theme`.**
   Those three ride every 1 Hz push, so a lost write self-heals within a
   second against whichever board is now connected. The ignore list is
@@ -70,7 +76,7 @@ All notable changes to SignalSweep are recorded here.
   reply happened to omit the key. `onDeviceDisconnected()` now resets it
   alongside the rest of `clearLiveState()`'s live session data.
 - Idea credit: SquachWatch-CYD (already listed in `CREDITS.md` from the
-  previous branch's OUI/RTC work — this reuses that entry rather than adding
+  signatures v9 / sigs-audit work — this reuses that entry rather than adding
   a second one).
 
 ### Fixed — Settings > Signatures loads over Bluetooth on the S3

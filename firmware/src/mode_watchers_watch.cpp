@@ -138,21 +138,19 @@ static_assert(sizeof(IgnoreEntry) == 7, "IgnoreEntry must be 7 bytes -- the NVS 
 static IgnoreEntry ignoreList[IGNORE_MAX];
 static uint8_t ignoreCount = 0;
 
-static bool parseMacBytes(const String& s, uint8_t out[6]) {
-    unsigned v[6];
-    if (sscanf(s.c_str(), "%2x:%2x:%2x:%2x:%2x:%2x", &v[0], &v[1], &v[2], &v[3], &v[4], &v[5]) != 6) return false;
-    for (int i = 0; i < 6; i++) out[i] = (uint8_t)v[i];
-    return true;
+// Caller holds watchersMutex. Bytes already parsed -- no re-parse per check.
+static bool isIgnoredBytesLocked(const uint8_t m[6]) {
+    for (uint8_t i = 0; i < ignoreCount; i++)
+        if (memcmp(ignoreList[i].mac, m, 6) == 0) return true;
+    return false;
 }
 
 // Caller holds watchersMutex.
 static bool isIgnoredLocked(const String& mac) {
     if (ignoreCount == 0) return false;
     uint8_t m[6];
-    if (!parseMacBytes(mac, m)) return false;
-    for (uint8_t i = 0; i < ignoreCount; i++)
-        if (memcmp(ignoreList[i].mac, m, 6) == 0) return true;
-    return false;
+    if (!alertLogParseMac(mac.c_str(), m)) return false;
+    return isIgnoredBytesLocked(m);
 }
 
 // Whether the clicker is currently sounding. Tracked separately from huntMac so
@@ -567,7 +565,7 @@ static void noteAlertForTarget(WatcherTargetInfo& t, int bestWeight, const Strin
     if (bestWeight < CONF_ALERT_MIN) return;
     // Ignored: stay quiet, and leave alerted clear so un-ignoring a device that
     // is still here sounds it (the beep-mask contract). Checked after the
-    // weight threshold so a sub-threshold advert never pays the sscanf.
+    // weight threshold so a sub-threshold advert never pays the parse.
     if (isIgnoredLocked(t.mac)) return;
     // Only burn the once-per-appearance flag if the alert really sounded. A
     // muted category must stay un-flagged, or un-muting it mid-appearance would
@@ -1812,21 +1810,26 @@ void restoreWatchersState() {
     if (ignoreCount) ESP_LOGI(TAG, "Restored %u ignored device(s)", (unsigned)ignoreCount);
 }
 
-static void persistIgnore() {
+// Writes a snapshot taken under watchersMutex by the caller -- persistIgnore()
+// itself runs after the lock is released (USB commands in loop() and BLE
+// commands on the NimBLE host task can otherwise overlap this NVS write).
+static void persistIgnore(const IgnoreEntry* list, uint8_t count) {
     Preferences prefs;
     if (!prefs.begin(STATE_NVS_NS, false)) return;
-    if (ignoreCount) prefs.putBytes("ignore", ignoreList, ignoreCount * sizeof(IgnoreEntry));
-    else             prefs.remove("ignore");
+    if (count) prefs.putBytes("ignore", list, count * sizeof(IgnoreEntry));
+    else       prefs.remove("ignore");
     prefs.end();
 }
 
 int addIgnore(const String& mac) {
     uint8_t m[6];
-    if (!parseMacBytes(mac, m)) return -2;
+    if (!alertLogParseMac(mac.c_str(), m)) return -2;
     if (watchersMutex == NULL) return -3;
     int rc = 0;
+    IgnoreEntry snap[IGNORE_MAX];
+    uint8_t snapCount = 0;
     if (xSemaphoreTake(watchersMutex, pdMS_TO_TICKS(100)) != pdTRUE) return -3;
-    if (isIgnoredLocked(mac)) {
+    if (isIgnoredBytesLocked(m)) {
         rc = 1;
     } else if (ignoreCount >= IGNORE_MAX) {
         rc = -1;   // refused, never evicted: a device you chose to silence must not start beeping
@@ -1838,16 +1841,22 @@ int addIgnore(const String& mac) {
         ignoreList[ignoreCount].cat = cat;
         ignoreCount++;
     }
+    if (rc == 0) {
+        memcpy(snap, ignoreList, ignoreCount * sizeof(IgnoreEntry));
+        snapCount = ignoreCount;
+    }
     xSemaphoreGive(watchersMutex);
-    if (rc == 0) persistIgnore();
+    if (rc == 0) persistIgnore(snap, snapCount);
     return rc;
 }
 
 bool removeIgnore(const String& mac) {
     uint8_t m[6];
-    if (!parseMacBytes(mac, m)) return false;
+    if (!alertLogParseMac(mac.c_str(), m)) return false;
     if (watchersMutex == NULL) return false;
     bool removed = false;
+    IgnoreEntry snap[IGNORE_MAX];
+    uint8_t snapCount = 0;
     if (xSemaphoreTake(watchersMutex, pdMS_TO_TICKS(100)) != pdTRUE) return false;
     for (uint8_t i = 0; i < ignoreCount; i++) {
         if (memcmp(ignoreList[i].mac, m, 6) != 0) continue;
@@ -1855,8 +1864,12 @@ bool removeIgnore(const String& mac) {
         removed = true;
         break;
     }
+    if (removed) {
+        memcpy(snap, ignoreList, ignoreCount * sizeof(IgnoreEntry));
+        snapCount = ignoreCount;
+    }
     xSemaphoreGive(watchersMutex);
-    if (removed) persistIgnore();
+    if (removed) persistIgnore(snap, snapCount);
     return removed;
 }
 

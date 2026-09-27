@@ -724,6 +724,13 @@ if (!/getIgnoreJson\(/.test(bsSrc)) igFail.push('CMD:CFG does not carry the igno
 // false clearing the list).
 if (!/Array\.isArray\(cfg\.ignore\)/.test(appSrc.replace(/\r\n/g, '\n')))
     igFail.push('app does not read cfg.ignore guarded by Array.isArray');
+// The ignore gate runs on every above-threshold advert/beacon inside the BLE
+// scan callback and the Wi-Fi promiscuous callback -- the two tightest
+// stacks in the firmware. sscanf's several-hundred-byte frame has no business
+// there (or anywhere else in this file); the MAC parse must be the stdio-free
+// one shared with alert_log.cpp's alertLogParseMac().
+if (/\bsscanf\s*\(/.test(wwSrc.replace(/\r\n/g, '\n')))
+    igFail.push('mode_watchers_watch.cpp uses sscanf -- the ignore MAC parse must be stdio-free (see alertLogParseMac)');
 if (igFail.length) { console.log('FAIL: ignore:', igFail); process.exit(1); }
 console.log('[signalsweep self-test] ignore list gate + wire: ok');
 
