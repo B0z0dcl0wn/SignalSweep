@@ -44,7 +44,13 @@ All notable changes to SignalSweep are recorded here.
   The S3 (Xtensa) gets up to 4 on-device backtrace frames (a leading frame
   equal to PC is skipped, and the array is empty if IDF flags the backtrace
   corrupted); the C5 (RISC-V) cannot backtrace on device at all, so it
-  reports only the return address (`ra`) as one frame. `CMD:CFG`'s `crash`
+  reports only the return address (`ra`) as one frame. On an `abort()` or a
+  failed assert (the C5's `bt.c:562` Bluetooth panic is one) both PC and
+  `ra` land inside IDF's `panic_abort`, so the C5 also reports the panic
+  message the dump carries, as `reason` (IDF 5 only; absent on the S3):
+  bench-measured, `CMD:ABORT` gave "abort() was called at PC 0x4200884d",
+  and that address decodes to the calling line while the saved PC decodes
+  to `panic_abort`. An illegal instruction carries no message. `CMD:CFG`'s `crash`
   object carries `task`, `pc`, `bt` (frames, possibly empty), and — only
   when the breadcrumb was trusted — `up`/`heap`/`tgt`; `dump` says whether a
   usable core dump exists, and `same` compares the dump's stored ELF SHA

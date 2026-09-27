@@ -2500,7 +2500,10 @@
             const when = h && mem ? 'after ' + h + ', ' + mem : null;
             const body = c.task && when ? c.task + ' ' + when
                        : c.task || when || 'no details';
+            // C5 dumps carry the panic message ("assert failed: ... bt.c:562");
+            // on an abort() it names the cause the PC cannot.
             return lead + body
+                + (c.reason ? ' — ' + c.reason : '')
                 + (c.dump ? '' : ' — no core dump')
                 + (c.same === false ? ' (older firmware)' : '');
         }
@@ -5229,6 +5232,10 @@
                 // An uptime under a minute must not read "0 min".
                 results.crashUnderMinute = crashText({ reset: 4, task: 'x', pc: '0x0', bt: [], up: 5, heap: 1024, dump: true, same: true })
                                     .indexOf('<1 min') >= 0;
+                // C5 panic reason: shown when present, the whole point of it on an abort().
+                results.crashReason = crashText({ reset: 4, task: 'btController', pc: '0x0', bt: [], dump: true, same: true,
+                                                  reason: 'assert failed: osi_assert_wrapper bt.c:562 (0)' })
+                                    .indexOf('bt.c:562') >= 0;
                 return results;
             };
         }

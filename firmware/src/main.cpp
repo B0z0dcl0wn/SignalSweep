@@ -200,6 +200,10 @@ void loop() {
 #ifdef SWEEP_CRASH_TEST
         } else if (cmd == "CMD:CRASH") {
             sweepCrashTest();
+        } else if (cmd == "CMD:ABORT") {
+            // The shape of the C5's bt.c:562 panic: an abort() carries a panic
+            // message (crash "reason"); an illegal instruction does not.
+            abort();
 #endif
         } else if (cmd.length() > 0) {
             processIncomingCommand(cmd);
