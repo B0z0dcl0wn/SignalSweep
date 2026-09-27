@@ -18,6 +18,7 @@
 #endif
 #include "alert_log.h"
 #include "sd_log.h"
+#include "crash_report.h"
 #include <ArduinoJson.h>
 #include <LittleFS.h>
 #include <Preferences.h>
@@ -2057,6 +2058,11 @@ static void watchersPeriodicTask(void *pvParameters) {
             }
             continue;
         }
+
+        // Breadcrumb for the crash report: plain word writes, no lock. The
+        // target count is read without watchersMutex -- a vector's size is one
+        // word, and a count one off is fine for "how busy was it when it died".
+        crashBreadcrumbTick((uint32_t)trackedTargets.size());
 
         // Sound anything the radios flagged since the last tick. Done here, off
         // the detection callbacks, so the Wi-Fi promiscuous handler stays fast

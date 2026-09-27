@@ -734,6 +734,28 @@ if (/\bsscanf\s*\(/.test(wwSrc.replace(/\r\n/g, '\n')))
 if (igFail.length) { console.log('FAIL: ignore:', igFail); process.exit(1); }
 console.log('[signalsweep self-test] ignore list gate + wire: ok');
 
+// ---------------------------------------------------------------------------
+// Crash report. The breadcrumb must live in memory a software reset does not
+// zero (__NOINIT_ATTR: portable to the C5, unlike RTC_NOINIT_ATTR), be
+// believed only after a panic/watchdog reset, and be sanity-checked (a
+// half-surviving RAM image must not invent a crash). setup() calls init first.
+// (mainSrc and wwSrc are declared above.)
+const crFail = [];
+let crSrc = '';
+try { crSrc = readFileSync(new URL('../firmware/src/crash_report.cpp', import.meta.url), 'utf8'); } catch {}
+if (!crSrc) crFail.push('no crash_report.cpp');
+if (!/__NOINIT_ATTR/.test(crSrc)) crFail.push('breadcrumb is not __NOINIT_ATTR');
+if (!/ESP_RST_PANIC/.test(crSrc) || !/ESP_RST_TASK_WDT/.test(crSrc)) crFail.push('not gated on a panic/watchdog reset');
+if (!/CRUMB_MAGIC/.test(crSrc) || !/crumb\.up\s*</.test(crSrc)) crFail.push('breadcrumb not sanity-checked');
+if (!/esp_core_dump_get_summary/.test(crSrc)) crFail.push('core dump summary never read');
+const setupBody = (mainSrc.match(/void setup\(\) \{[\s\S]*?hardwareInit\(\);/) || [''])[0];
+if (!/crashReportInit\(\);/.test(setupBody)) crFail.push('crashReportInit() is not called before hardwareInit() in setup()');
+if (/CMD:CRASH/.test(mainSrc) && !/#ifdef SWEEP_CRASH_TEST[\s\S]*?CMD:CRASH[\s\S]*?#endif/.test(mainSrc))
+    crFail.push('CMD:CRASH exists outside #ifdef SWEEP_CRASH_TEST -- it would ship');
+if (!/crashBreadcrumbTick\(/.test(wwSrc)) crFail.push('the 1 Hz task never updates the breadcrumb');
+if (crFail.length) { console.log('FAIL: crash report:', crFail); process.exit(1); }
+console.log('[signalsweep self-test] crash report wiring: ok');
+
 const results = await global.__signalsweepSelfTest();
 const failed = Object.entries(results).filter(([, v]) => !v).map(([k]) => k);
 console.log('[signalsweep self-test]', results);
