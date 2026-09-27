@@ -31,14 +31,18 @@ All notable changes to SignalSweep are recorded here.
   pwnagotchi detector uses the same `HACKING_GEAR_CATEGORY` constant. An
   operator who renames a rule's category makes it always-on; that is their
   call.
-- **What was deliberately left out.** The `80:E1:26`/`80:E1:27` prefixes
-  that circulate between detectors as "Flipper" are ST's STM32WB address
+- **`80:E1:26`/`80:E1:27` list, but never as "Flipper".** These prefixes,
+  which circulate between detectors as Flipper's, are ST's STM32WB address
   derivation — reportedly what a real Flipper Zero uses, but shared with other
-  STM32WB hardware, so not a Flipper signal on their own; ESP32 Marauder's
-  Flipper company ID `0x0FBA` belongs to a headset maker; and
+  STM32WB hardware. They are in no IEEE registration, so they ship as
+  "STM32WB address (Flipper Zero uses this)" at 60: listed, no beep, Attack
+  on only. `selftest.js` allowlists exactly these two unregistered prefixes,
+  with the reason, and fails if either is renamed "Flipper…" or raised to beep.
+- **What was deliberately left out.** ESP32 Marauder's Flipper company ID
+  `0x0FBA` belongs to a headset maker; and
   Hak5's `02:13:37`/`02:C0:CA` are locally administered, so anyone can set
-  them (the loader rejects such OUIs by design). `selftest.js` refuses the
-  first two, and now pins every default company-ID rule to `bt-company.txt`
+  them (the loader rejects such OUIs by design). `selftest.js` refuses
+  `0x0FBA`, and now pins every default company-ID rule to `bt-company.txt`
   by name (Flipper, Luxottica, Snap) — the same guard the OUI rules already
   had against the IEEE registry.
 
