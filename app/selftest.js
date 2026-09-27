@@ -794,6 +794,31 @@ if (!/o\["reason"\]/.test(crSrc) || !/c\.reason/.test(appSrc)) crFail.push('the 
 if (crFail.length) { console.log('FAIL: crash report:', crFail); process.exit(1); }
 console.log('[signalsweep self-test] crash report wiring: ok');
 
+// ---------------------------------------------------------------------------
+// Attack-gear rules (Phase 2a). Every rule filed under "Hacking gear" is
+// matched only while the Attack toggle is on -- on ALL THREE rule paths:
+// the BLE matcher, the Wi-Fi OUI loop and the SSID-prefix pass. One switch,
+// one meaning: "tell me about attack tools". Flippers are common hobby gear;
+// an always-on beep would cry wolf at every makerspace.
+const agFail = [];
+if (!/#define HACKING_GEAR_CATEGORY "Hacking gear"/.test(wwSrc)) agFail.push('no HACKING_GEAR_CATEGORY define');
+const gateFn = (wwSrc.match(/static inline bool ruleGatedOff\([\s\S]*?\r?\n\}/) || [''])[0];
+if (!/!attackDetect/.test(gateFn) || !/HACKING_GEAR_CATEGORY/.test(gateFn)) agFail.push('ruleGatedOff() does not test attackDetect against the category');
+const bleMatch = (wwSrc.match(/static int matchDeviceAgainstRule\([\s\S]*?\r?\n\}/) || [''])[0];
+if (!/if \(ruleGatedOff\(sig\)\) return 0;/.test(bleMatch)) agFail.push('BLE matcher ignores the Attack toggle');
+const ouiLoopAt = wwSrc.indexOf('sig.oui.length() > 0 && sig.ssidPrefix.length() == 0');
+if (ouiLoopAt < 0 || !/ruleGatedOff\(sig\)/.test(wwSrc.slice(ouiLoopAt - 300, ouiLoopAt + 200)))
+    agFail.push('Wi-Fi OUI loop ignores the Attack toggle');
+const ssidAt = wwSrc.indexOf('!foundSsid.startsWith(sig.ssidPrefix)');
+if (ssidAt < 0 || !/ruleGatedOff\(sig\)/.test(wwSrc.slice(ssidAt - 300, ssidAt + 200)))
+    agFail.push('SSID-prefix pass ignores the Attack toggle');
+if (!/matchedCategory = HACKING_GEAR_CATEGORY;/.test(wwSrc)) agFail.push('pwnagotchi detector no longer uses HACKING_GEAR_CATEGORY');
+// The category must route to generic (All tab only) -- no routing keyword in it.
+for (const kw of ['tag', 'track', 'beacon', 'cam', 'surveil', 'drone', 'uas', 'body', 'axon', 'glasses', 'flock', 'alpr', 'plate', 'shotspotter', 'soundthinking'])
+    if ('hacking gear'.includes(kw)) agFail.push(`"Hacking gear" contains the routing keyword "${kw}"`);
+if (agFail.length) { console.log('FAIL: attack-gear rules:', agFail); process.exit(1); }
+console.log('[signalsweep self-test] attack-gear rules gated by the Attack toggle: ok');
+
 const results = await global.__signalsweepSelfTest();
 const failed = Object.entries(results).filter(([, v]) => !v).map(([k]) => k);
 console.log('[signalsweep self-test]', results);

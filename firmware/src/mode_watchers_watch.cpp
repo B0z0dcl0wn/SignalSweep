@@ -130,6 +130,17 @@ static bool scanAll = false;
 // are rate-based and prone to false alarms in busy places. Persisted, echoed.
 static bool attackDetect = false;
 
+// Rules filed under this category (Flipper, Pineapple, deauther SSIDs) are
+// matched only while Attack is on; the pwnagotchi detector uses it too.
+#define HACKING_GEAR_CATEGORY "Hacking gear"
+
+// True while a rule must be skipped: it is attack gear and the operator has
+// Attack off. Read live on every advert/frame, so flipping the toggle takes
+// effect immediately. A plain bool read: safe in the radio callbacks.
+static inline bool ruleGatedOff(const WatcherSignature& sig) {
+    return !attackDetect && sig.category == HACKING_GEAR_CATEGORY;
+}
+
 // Per-device Ignore (idea from SquachWatch-CYD). MAC + the AlertCategory it
 // sounded as, so the list still says what it was after the device is gone.
 // Guarded by watchersMutex: read from noteAlertForTarget() (always called with
@@ -614,6 +625,7 @@ static bool uuidMatches(const NimBLEUUID& u, const String& ruleUuid) {
 static int matchDeviceAgainstRule(SWEEP_ADV* dev, const WatcherSignature& sig, String& outMatchedRule, String& outCategory) {
     // SSID rules are Wi-Fi-only; the promiscuous callback scores them.
     if (sig.ssidPrefix.length() > 0) return 0;
+    if (ruleGatedOff(sig)) return 0;   // attack gear, Attack off
 
     int weight = 0;
 
@@ -1390,7 +1402,7 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
 
         if (xSemaphoreTake(watchersMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
             for (const auto& sig : loadedSignatures) {
-                if (sig.oui.length() > 0 && sig.ssidPrefix.length() == 0) {
+                if (sig.oui.length() > 0 && sig.ssidPrefix.length() == 0 && !ruleGatedOff(sig)) {
                     String cleanOui = "";
                     for (size_t i = 0; i < sig.oui.length(); i++) {
                         char c = sig.oui[i];
@@ -1619,7 +1631,7 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
                     if (w > bestWeight) {
                         bestWeight = w;
                         matchedRule = String(rbuf);
-                        matchedCategory = "Hacking gear";
+                        matchedCategory = HACKING_GEAR_CATEGORY;
                     }
                 }
             }
@@ -1632,7 +1644,8 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
         if (foundSsid.length() > 0 &&
             xSemaphoreTake(watchersMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
             for (const auto& sig : loadedSignatures) {
-                if (sig.ssidPrefix.length() == 0 || !foundSsid.startsWith(sig.ssidPrefix)) continue;
+                if (sig.ssidPrefix.length() == 0 || ruleGatedOff(sig) ||
+                    !foundSsid.startsWith(sig.ssidPrefix)) continue;
                 // A rule with an OUI is still an AND: the SSID prefix alone
                 // isn't enough, the frame's own source MAC must also start
                 // with it. Reuses the cleanMac built above for the OUI loop.
