@@ -4,6 +4,25 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Fixed — Settings > Signatures loads over Bluetooth on the S3
+
+- **A bulk reply now waits as long as the link needs, not 300 ms.** The rule
+  list (~10 KB, about 20 notifications) arrived as exactly its first 12 x 512
+  bytes -- the S3's mbuf pool -- and the app discarded it as torn, so the
+  Signatures page sat on "Reading the rules..." over Bluetooth while working
+  over USB and on the C5. Measured on the bench: the S3 on a phone link frees
+  roughly one 512-byte notification every 300 ms, with single waits up to
+  493 ms, so `notifyChunk()`'s 300 ms give-up fired on every bulk reply.
+- **The short bound stays where it is needed.** On the NimBLE host task (a
+  reply sent from inside the write callback) the wait can never be satisfied,
+  because that task is the one that frees the pool; there it still gives up
+  after 300 ms. Everywhere else it waits up to 2 s (about 4x the worst wait
+  measured). `onWrite` records the host task so `notifyChunk()` can tell.
+- Cost: a bulk reply holds the send lock for its whole transfer (~3 s for the
+  rule list), so the 1 Hz push waits behind it -- delayed, not lost (57 of 60
+  pushes in a 60 s soak with one rule-list load; 3 of 3 loads complete on
+  both boards).
+
 ### Changed — signatures v9: per-rule strength, SSID prefixes, exact UUID matching
 
 - **A rule can now carry its own `weight` (1-100), replacing the per-condition
