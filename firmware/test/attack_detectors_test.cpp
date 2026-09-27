@@ -54,13 +54,20 @@ static void test_deauth_wrap_safe() {
 }
 
 static void test_deauth_lru_keeps_active_burster() {
+    // Time only moves forward -- millis() never runs backward across
+    // transmitters -- so this drives the LRU with a monotonic clock and
+    // still proves an active burster survives being the least-recently-
+    // touched-by-key slot at the moment a 9th distinct tx needs a slot.
     DeauthState st; memset(&st, 0, sizeof(st));
-    // Prime an ongoing burster (tx 0) with recent frames.
+    // t=1000: seed 7 other transmitters (7 of the 8 slots), all older.
+    for (uint8_t k = 1; k <= ATTACK_LRU_SLOTS - 1; k++) deauthNote(&st, mac(k), 0, 1000);
+    // t=2000..2008: burst mac(0) into the 8th (last) slot -- newest lastSeen.
     for (int i = 0; i < ATTACK_DEAUTH_THRESHOLD - 1; i++) deauthNote(&st, mac(0), 0, 2000 + i);
-    // Fill the other 7 slots + a 9th distinct tx, all with OLDER lastSeen.
-    for (uint8_t k = 1; k <= ATTACK_LRU_SLOTS; k++) deauthNote(&st, mac(k), 0, 1000);
-    // The burster's next frame must still see its own history (not be evicted).
-    uint32_t c = deauthNote(&st, mac(0), 0, 2100);
+    // t=2009: a 9th distinct tx needs a slot; must evict one of the OLDER
+    // (t=1000) transmitters, never the just-active burster.
+    deauthNote(&st, mac(8), 0, 2009);
+    // t=2010: the burster's next frame must still see its own history.
+    uint32_t c = deauthNote(&st, mac(0), 0, 2010);
     assert(c >= ATTACK_DEAUTH_THRESHOLD);
 }
 
@@ -89,6 +96,18 @@ static void test_blespam_distinct_random_macs() {
     assert(c2 == 1);
 }
 
+static void test_blespam_distinct_set_over_capacity() {
+    // Push more distinct MACs than ATTACK_DISTINCT_CAP (16) inside one window:
+    // the set must keep overwriting its oldest entry (wrap-safe age pick) and
+    // never miscount or corrupt -- capped at ATTACK_DISTINCT_CAP, not silently
+    // wrong.
+    BleSpamState st; memset(&st, 0, sizeof(st));
+    uint32_t c = 0;
+    for (int i = 0; i < ATTACK_DISTINCT_CAP + 5; i++) c = bleSpamNote(&st, mac((uint8_t)i), 1000 + (uint32_t)i);
+    assert(c == ATTACK_DISTINCT_CAP);          // saturates at the set's capacity
+    assert(c >= ATTACK_BLESPAM_THRESHOLD);     // still well past the fire threshold
+}
+
 static void test_titles_keyword_clean() {
     const char* titles[] = {ATTACK_TITLE_DEAUTH, ATTACK_TITLE_KARMA, ATTACK_TITLE_BLESPAM};
     const char* kw[] = {"tag","track","beacon","cam","surveil","drone","uas","body","axon","glasses","flock","alpr","plate"};
@@ -105,6 +124,7 @@ int main() {
     test_deauth_lru_keeps_active_burster();
     test_karma_distinct_ssids();
     test_blespam_distinct_random_macs();
+    test_blespam_distinct_set_over_capacity();
     test_titles_keyword_clean();
     printf("attack_detectors_test: all passed\n");
     return 0;

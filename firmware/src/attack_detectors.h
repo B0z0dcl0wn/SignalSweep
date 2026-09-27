@@ -57,25 +57,14 @@ typedef struct {
 typedef struct { DeauthSlot slot[ATTACK_LRU_SLOTS]; } DeauthState;
 
 static inline DeauthSlot* attackDeauthSlot(DeauthState* st, uint64_t key, uint32_t now) {
-    (void)now; // kept in the signature for symmetry with the caller; eviction below is lastSeen-based
     for (int i = 0; i < ATTACK_LRU_SLOTS; i++)
         if (st->slot[i].used && st->slot[i].key == key) return &st->slot[i];
-    // Eviction picks the slot with the SMALLEST raw lastSeen, not the largest
-    // (now - lastSeen): that subtraction assumes `now` never precedes a stored
-    // lastSeen, which does not hold across independent transmitters -- one
-    // MAC's burst can be reported with a `now` numerically smaller than
-    // another MAC's last-seen stamp (radio callback order isn't required to
-    // match wall-clock order across different targets). Subtracting then
-    // wraps and makes the genuinely ACTIVE burster look like the oldest
-    // entry, evicting exactly the one worth keeping. Comparing raw values
-    // directly has no such inversion for any input this header ever sees in
-    // practice (millis() is monotonic within a target's own timeline); it is
-    // only imprecise once every ~49 days at the wrap instant, which merely
-    // delays evicting a truly stale slot by one cycle -- accepted tradeoff.
+    // `now` is monotonic millis(), so (now - lastSeen) is the wrap-safe age --
+    // same form as karmaNote's eviction below.
     int lru = 0;
     for (int i = 0; i < ATTACK_LRU_SLOTS; i++) {
         if (!st->slot[i].used) { lru = i; break; }
-        if (st->slot[i].lastSeen < st->slot[lru].lastSeen) lru = i;
+        if ((uint32_t)(now - st->slot[i].lastSeen) > (uint32_t)(now - st->slot[lru].lastSeen)) lru = i;
     }
     DeauthSlot* s = &st->slot[lru];
     memset(s, 0, sizeof(*s));
@@ -111,7 +100,10 @@ static inline uint32_t attackDistinctNote(DistinctSet* s, uint64_t key, uint32_t
         int empty = -1;
         for (int i = 0; i < ATTACK_DISTINCT_CAP; i++) {
             if (!s->e[i].used) { empty = i; break; }
-            if (s->e[i].ts < s->e[oldest].ts) oldest = i;
+            // Every still-used entry here is already in-window (expired above),
+            // but `now` is monotonic millis(), so use the wrap-safe age form
+            // rather than comparing raw `ts` values directly.
+            if ((uint32_t)(now - s->e[i].ts) > (uint32_t)(now - s->e[oldest].ts)) oldest = i;
         }
         int put = (empty >= 0) ? empty : oldest;
         s->e[put].used = 1; s->e[put].key = key; s->e[put].ts = now;
