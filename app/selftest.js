@@ -690,6 +690,13 @@ let ouiRules = 0;
 for (const [, name, oui] of defaults.matchAll(/addRule\("([^"]+)",\s*(?:"[^"]*"|HACKING_GEAR_CATEGORY),\s*"([0-9a-fA-F:]{8})"/g)) {
     ouiRules++;
     const owner = ouiReg.get(oui.replace(/:/g, '').toUpperCase());
+    // Deliberately unregistered prefixes, each with the reason it may exist,
+    // and never above "listed, no beep" (checked below).
+    const UNREGISTERED_OK = {
+        '80:e1:26': 'ST STM32WB derived BLE address; a Flipper Zero uses it, so do other STM32WB devices',
+        '80:e1:27': 'ST STM32WB derived BLE address; a Flipper Zero uses it, so do other STM32WB devices'
+    };
+    if (UNREGISTERED_OK[oui.toLowerCase()] && !owner) continue;
     const want = OUI_OWNER[name];
     if (!want) regFail.push(`OUI rule "${name}" (${oui}) has no registrant pinned in OUI_OWNER`);
     else if (!owner || !owner.toLowerCase().includes(want.toLowerCase()))
@@ -735,7 +742,15 @@ if (mfgRules < 3) regFail.push(`only ${mfgRules} literal company-ID rules parsed
 // Scan the rule calls only: the comments above them name these values on purpose.
 const ruleCalls = (defaults.match(/addRule\([^;]*\);/g) || []).join('\n');
 if (/0x0FBA/i.test(ruleCalls)) regFail.push('0x0FBA added as Flipper -- it is a headset maker');
-if (/80:e1:2[67]/i.test(ruleCalls)) regFail.push('80:E1:26/27 added as Flipper -- that is ST\'s STM32WB address derivation, shared with other STM32WB hardware');
+// 80:E1:26/27 is ST's STM32WB address derivation: a Flipper Zero uses it, but
+// so does other STM32WB hardware. Allowed only as a listed-no-beep (60)
+// "Hacking gear" hint whose name says what the signal proves -- never "Flipper".
+for (const oui of ['80:e1:26', '80:e1:27']) {
+    const call = (ruleCalls.match(new RegExp(`addRule\\([^;]*"${oui}"[^;]*\\);`, 'i')) || [''])[0];
+    if (!call) regFail.push(`no ${oui} STM32WB rule`);
+    else if (!/HACKING_GEAR_CATEGORY/.test(call) || !/,\s*60\)\s*;$/.test(call) || !/STM32WB/.test(call) || /"Flipper/.test(call))
+        regFail.push(`${oui} rule must be Hacking gear, weight 60, named STM32WB, not "Flipper...": ${call.replace(/\s+/g, ' ')}`);
+}
 // The attack-gear defaults exist, all under "Hacking gear".
 for (const want of ['"3081"', '"3082"', '"3083"', '"0x0E29"', '"0c:fa:22"', '"flipper"', '"Pineapple_"', '"pwned"'])
     if (!new RegExp(`addRule\\([^;]*HACKING_GEAR_CATEGORY[^;]*${want.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i').test(defaults))

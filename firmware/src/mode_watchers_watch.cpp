@@ -90,6 +90,7 @@ static const char *SIG_FILE_PATH = "/data/signatures.json";
 //   v10: Attack gear (SquachWatch-CYD values, registry-checked): Flipper Zero
 //        service UUIDs 3081/3082/3083 (80), Flipper Devices company ID
 //        0x0E29 and OUI 0c:fa:22 (70), a "flipper" name (60, listed only),
+//        the STM32WB-derived 80:e1:26/27 addresses a Flipper Zero uses (60),
 //        Pineapple_ management AP SSID (70) and the ESP deauther's "pwned"
 //        SSID (60). All "Hacking gear", matched only while Attack is on.
 #define SIG_SCHEMA_VERSION 10
@@ -400,8 +401,12 @@ static void ensureSignaturesFileExists() {
             // both Flipper Devices. 0c:fa:22 is unproven on the air: a Flipper
             // Zero reportedly builds its BLE address from ST's STM32WB
             // derivation (80:E1:26/27...), which is real on a Flipper but shared
-            // with other STM32WB hardware, so it is not a Flipper signal and is
-            // not a rule. Marauder's "Flipper" company ID 0x0FBA is a headset maker.
+            // with other STM32WB hardware -- so those two are listed-only (60)
+            // hints named for what they prove, not "Flipper". In no IEEE
+            // registry (selftest allowlists them). Marauder's "Flipper"
+            // company ID 0x0FBA is a headset maker.
+            addRule("STM32WB address (Flipper Zero uses this)", HACKING_GEAR_CATEGORY, "80:e1:26", "", "", "", 60);
+            addRule("STM32WB address (Flipper Zero uses this)", HACKING_GEAR_CATEGORY, "80:e1:27", "", "", "", 60);
             addRule("Flipper Devices (company ID)", HACKING_GEAR_CATEGORY, "", "0x0E29", "", "", 70);
             addRule("Flipper Devices (MAC)", HACKING_GEAR_CATEGORY, "0c:fa:22", "", "", "", 70);
             // The default name, but anyone can type it: listed, never beeps
