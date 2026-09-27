@@ -126,6 +126,17 @@
             if (String(m.protocol || '').indexOf('WiFi') < 0) return false;
             return (parseInt(String(m.mac).slice(0, 2), 16) & 0x02) === 0;
         }
+        const IGNORE_MAX = 16;              // firmware IGNORE_MAX; selftest pins the two
+        let ignoredMacs = new Map();        // upper MAC -> AlertCategory, from CMD:CFG only
+        // An ignore holds only while the address does. Public (BLE `pub`, or a
+        // Wi-Fi MAC with the locally-administered bit clear) or BLE random
+        // static (top two bits 11 -- a Tile keeps one for days). A rotating
+        // address gets no button: an ignore that silently expires is a lie.
+        function stableMac(m) {
+            if (publicMac(m)) return true;
+            if (String(m.protocol || '').indexOf('WiFi') >= 0) return false;
+            return (parseInt(String(m.mac).slice(0, 2), 16) & 0xC0) === 0xC0;
+        }
         // The registry wins wherever it applies. A public address's OUI was
         // assigned by the IEEE; a BLE company ID is whatever the firmware put
         // there, and cheap silicon puts junk (Govee's Telink thermometers send
@@ -244,6 +255,8 @@
             if (si) { showSetting(si.dataset.set); return; }
             const um = e.target.closest('[data-unmute]');
             if (um) unmuteCat(um.dataset.unmute);
+            const ui = e.target.closest('[data-unignore]');
+            if (ui) sendCommand({ unignore: ui.dataset.unignore });
         });
 
         // Settings is an index of short screens. One extra tap to reach a
@@ -527,10 +540,19 @@
         // Trackers get the two things you actually want when something may be
         // following you: walk it down, or make it announce itself.
         function actionRow(m, cat) {
-            // Trackers always offer it. With the filter off, anything does --
+            // Ignore is offered wherever a stable, categorised address is
+            // shown, regardless of the tracker/foxhunt gate below -- it is a
+            // per-device opt-out, not a foxhunt tool. Painted only from the
+            // device's own CMD:CFG echo, never optimistically.
+            const ignored = ignoredMacs.has(String(m.mac).toUpperCase());
+            const ign = cat.key !== 'none' && stableMac(m)
+                ? '<button class="scope-act" data-act="' + (ignored ? 'unignore' : 'ignore') +
+                  '" data-mac="' + esc(m.mac) + '">' + (ignored ? '\ud83d\udd14 Unignore' : '\ud83d\udd15 Ignore') + '</button>'
+                : '';
+            // Trackers always offer hunt. With the filter off, anything does --
             // that is the whole point of turning the filter off: find something
             // interesting that is on no list, then go and physically find it.
-            if (cat.key !== 'tracker' && !foxhuntMode) return '';
+            if (cat.key !== 'tracker' && !foxhuntMode) return ign ? '<div class="scope-actions">' + ign + '</div>' : '';
             const hunting = !!huntMac && huntMac.toUpperCase() === String(m.mac).toUpperCase();
             // Ring writes the standard Immediate Alert characteristic, which
             // only Find Me / Proximity keyfobs have. AirTags, Tiles and phones
@@ -545,6 +567,7 @@
                 (canRing
                     ? '<button class="scope-act" data-act="ring" data-mac="' + esc(m.mac) + '">\ud83d\udd14 Ring</button>'
                     : '') +
+                ign +
             '</div>';
         }
 
@@ -629,6 +652,7 @@
                 // say so rather than leave the blank unexplained.
                 const vendor = vendorOf(m) || (publicMac(m) || m.cid != null ? '' : 'random MAC');
                 return '<div class="scope-row' + (unmatched ? ' unmatched' : '') +
+                        (ignoredMacs.has(String(m.mac).toUpperCase()) ? ' ignored' : '') +
                         (isHunted ? ' hunted' : '') +
                         '" style="border-left:4px solid ' + cat.color + '">' +
                     '<div class="scope-main">' +
@@ -640,6 +664,7 @@
                                 ' <span class="scope-cat" style="color:' + cat.color + '">' + esc(cat.label) + '</span>') +
                             (unmatched ? '<span class="unmatched-tag">no match</span>' : '') +
                             (weak ? '<span class="unmatched-tag">weak hint</span>' : '') +
+                            (ignoredMacs.has(String(m.mac).toUpperCase()) ? '<span class="unmatched-tag">ignored</span>' : '') +
                             (m.tier && !unmatched && !weak ? '<span class="tier-badge" style="color:' + cat.color + '">' + esc(m.tier) + '</span>' : '') +
                         '</div>' +
                         // Don't print the address twice when it is also the title.
@@ -789,6 +814,27 @@
             // directly beneath, so both land on screen together.
             const fox = document.getElementById('fox');
             if (fox && fox.scrollIntoView) fox.scrollIntoView({ block: 'start', behavior: 'smooth' });
+        }
+
+        // A deliberate tap on a row button, never chained off a system dialog.
+        // Painted only from the CMD:CFG echo, like every device-owned setting.
+        function ignoreTarget(mac) {
+            const m = liveMatches[mac] || {};
+            const what = m.rule || m.name || 'this device';
+            if (!confirm('Ignore ' + what + ' ' + mac + '? It will still be listed, but won\'t beep.')) return;
+            sendCommand({ ignore: mac });
+        }
+        function paintIgnoreList() {
+            const n = document.getElementById('ignore-count');
+            const el = document.getElementById('ignore-list');
+            if (n) n.textContent = '(' + ignoredMacs.size + '/' + IGNORE_MAX + ')';
+            if (!el) return;
+            el.innerHTML = ignoredMacs.size
+                ? [...ignoredMacs].map(([mac, c]) => '<button class="ctrl-btn" data-unignore="' + esc(mac) + '">'
+                    + esc(LOG_CATS[c] || 'Device') + ' ' + esc(mac) + ' ✕</button>').join('')
+                : (connectionType
+                    ? '<p class="set-note">None. Ignore a device from its row on the Sweep screen.</p>'
+                    : '<p class="set-note">Connect the board to see its list.</p>');
         }
 
         function stopHunt() {
@@ -946,6 +992,8 @@
             const mac = act.getAttribute('data-mac');
             if (act.getAttribute('data-act') === 'hunt') huntTarget(mac);
             else if (act.getAttribute('data-act') === 'ring') ringTarget(mac);
+            else if (act.getAttribute('data-act') === 'ignore') ignoreTarget(mac);
+            else if (act.getAttribute('data-act') === 'unignore') sendCommand({ unignore: mac });
         });
 
         // =====================================================================
@@ -2449,6 +2497,14 @@
             setLedUi(cfg.led);
             setThemeUi(cfg.theme);
             setBandUi(cfg.band);
+            // Absent means "unknown" (the board couldn't lock its list in
+            // time), never "empty" -- keep the last list the app had.
+            if (Array.isArray(cfg.ignore)) {
+                ignoredMacs = new Map(cfg.ignore.map(([mac, c]) => [String(mac).toUpperCase(), c]));
+                paintIgnoreList();
+                renderScope();
+            }
+            if (cfg.ignore_full) showToast('Ignore list full (' + IGNORE_MAX + ')', '⚠');
             devName = (typeof cfg.ble_name === 'string' && cfg.ble_name) || 'SignalSweep';
             if (typeof cfg.uptime === 'number') bootAt = Date.now() - cfg.uptime * 1000;
             setClockUi(cfg.rtc, cfg.epoch);
@@ -3773,6 +3829,7 @@
                 connectionType = type;
                 closeConnModal();
                 renderStatusStrip();
+                paintIgnoreList();   // flips "connect the board" note now that one is
                 showToast(`Connected via ${type}`, '✓');
                 // Ask the device what it is, and what it was already doing.
                 // Done here rather than at each of the five connect sites.
@@ -3810,6 +3867,7 @@
                 const sdBox = document.getElementById('sd-files');
                 if (sdBox) sdBox.innerHTML = '';
                 renderStatusStrip();
+                paintIgnoreList();   // connectionType just went null -- repaint the note
                 showToast('Device disconnected', '✕');
             }
         }
@@ -4462,6 +4520,14 @@
             clearInterval(eggKeepalive); eggKeepalive = null;
             eggScene = 0;
             paintEgg();
+            // Unlike beep_mask/led/theme (which ride every 1 Hz push and so
+            // self-heal within a second on the next board), the ignore list
+            // is CMD:CFG-only and may be legitimately OMITTED on a lock
+            // timeout -- so it does NOT self-correct on reconnect. Left set,
+            // a board swap would paint board A's ignored devices onto board B
+            // the instant B's first CFG reply happened to omit the key.
+            ignoredMacs = new Map();
+            paintIgnoreList();
             if (liveLayer) liveLayer.clearLayers();
             if (meLayer) meLayer.clearLayers();
             renderScope();
@@ -4813,6 +4879,18 @@
                                          airtag.indexOf('data-act="hunt"') > 0;
                 results.ringOnFob = fob.indexOf('data-act="ring"') > 0;
 
+                // Ignore: offered on stable addresses only, painted from the device.
+                const savedIg = ignoredMacs;
+                ignoredMacs = new Map([['A8:BB:CC:00:00:01', 1]]);
+                const pubRow    = { mac: 'A8:BB:CC:00:00:01', type: 'Axon',    protocol: 'WiFi', rssi: -60, confidence: 80 };
+                const rotRow    = { mac: '4A:11:22:33:44:55', type: 'Tracker', protocol: 'BLE',  rssi: -60, confidence: 80 };
+                const staticRow = { mac: 'D5:95:0B:0A:22:E1', type: 'Tracker', protocol: 'BLE',  rssi: -60, confidence: 80 };
+                results.ignoreShownIgnored  = actionRow(pubRow, categoryOf('Axon')).indexOf('data-act="unignore"') > 0;
+                results.noIgnoreOnRotating  = actionRow(rotRow, categoryOf('Tracker')).indexOf('ignore"') === -1;
+                results.ignoreOnStaticBle   = actionRow(staticRow, categoryOf('Tracker')).indexOf('data-act="ignore"') > 0;
+                results.noIgnoreUnmatched   = actionRow(pubRow, categoryOf('')).indexOf('ignore"') === -1;
+                ignoredMacs = savedIg;
+
                 // The hunted row is pinned to the top of the list even when it
                 // is the weakest thing on screen -- the instrument is up there
                 // and you should not have to scroll to the card it describes.
@@ -4946,10 +5024,17 @@
 
                 foxhuntMode = false;
 
-                // Disconnect drops the whole live set, not just the view.
+                // Disconnect drops the whole live set, not just the view. The
+                // ignore list rides only CMD:CFG (never the push) and may be
+                // legitimately omitted on a lock timeout, so unlike beep_mask/
+                // led/theme it cannot self-heal on the next board's first
+                // reply -- it must be dropped here or a board swap paints the
+                // old board's ignored devices onto the new one.
+                ignoredMacs = new Map([['A8:BB:CC:00:00:01', 1]]);
                 clearLiveState();
                 results.clearsOnDisconnect = Object.keys(liveMatches).length === 0 &&
-                                             huntTrace.length === 0 && huntMac === '';
+                                             huntTrace.length === 0 && huntMac === '' &&
+                                             ignoredMacs.size === 0;
 
                 // Crypto round-trip: create → save → reload → unlock
                 await createPinStore('1234');

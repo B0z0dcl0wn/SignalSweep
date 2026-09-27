@@ -129,6 +129,30 @@ static bool scanAll = false;
 // are rate-based and prone to false alarms in busy places. Persisted, echoed.
 static bool attackDetect = false;
 
+// Per-device Ignore (idea from SquachWatch-CYD). MAC + the AlertCategory it
+// sounded as, so the list still says what it was after the device is gone.
+// Guarded by watchersMutex: read from noteAlertForTarget() (always called with
+// it held), written by the command handlers on the NimBLE host task.
+struct IgnoreEntry { uint8_t mac[6]; uint8_t cat; };
+static_assert(sizeof(IgnoreEntry) == 7, "IgnoreEntry must be 7 bytes -- the NVS blob length check in restoreWatchersState() depends on it");
+static IgnoreEntry ignoreList[IGNORE_MAX];
+static uint8_t ignoreCount = 0;
+
+// Caller holds watchersMutex. Bytes already parsed -- no re-parse per check.
+static bool isIgnoredBytesLocked(const uint8_t m[6]) {
+    for (uint8_t i = 0; i < ignoreCount; i++)
+        if (memcmp(ignoreList[i].mac, m, 6) == 0) return true;
+    return false;
+}
+
+// Caller holds watchersMutex.
+static bool isIgnoredLocked(const String& mac) {
+    if (ignoreCount == 0) return false;
+    uint8_t m[6];
+    if (!alertLogParseMac(mac.c_str(), m)) return false;
+    return isIgnoredBytesLocked(m);
+}
+
 // Whether the clicker is currently sounding. Tracked separately from huntMac so
 // the hunt can stay armed while the target is out of earshot.
 static bool huntAudible = false;
@@ -539,6 +563,10 @@ static bool noteAlert(int weight, const char* category) {
 static void noteAlertForTarget(WatcherTargetInfo& t, int bestWeight, const String& category) {
     if (t.alerted) return;
     if (bestWeight < CONF_ALERT_MIN) return;
+    // Ignored: stay quiet, and leave alerted clear so un-ignoring a device that
+    // is still here sounds it (the beep-mask contract). Checked after the
+    // weight threshold so a sub-threshold advert never pays the parse.
+    if (isIgnoredLocked(t.mac)) return;
     // Only burn the once-per-appearance flag if the alert really sounded. A
     // muted category must stay un-flagged, or un-muting it mid-appearance would
     // be silent until the target went stale — the AirTag in your hand would
@@ -1737,6 +1765,18 @@ void restoreWatchersState() {
     uint8_t band = prefs.getUChar("band", BAND_BOTH);
     sweepBand = (band <= BAND_5) ? band : BAND_BOTH;
 #endif
+    // A blob whose length is not a whole number of entries is from some other
+    // format: drop it rather than read garbage MACs into the gate. Read into a
+    // local buffer first -- this runs on every startWatchersWatch() (including
+    // after a capture), and writing ignoreList/ignoreCount directly here would
+    // race a concurrent addIgnore()/removeIgnore() on the NimBLE host task.
+    IgnoreEntry igBuf[IGNORE_MAX];
+    uint8_t igCount = 0;
+    size_t igLen = prefs.getBytesLength("ignore");
+    if (igLen > 0 && igLen % sizeof(IgnoreEntry) == 0 && igLen <= sizeof(igBuf)) {
+        prefs.getBytes("ignore", igBuf, igLen);
+        igCount = (uint8_t)(igLen / sizeof(IgnoreEntry));
+    }
     prefs.end();
 
     beepMask = mask & BEEP_MASK_ALL;
@@ -1757,6 +1797,101 @@ void restoreWatchersState() {
     if (beepMask != BEEP_MASK_ALL) ESP_LOGI(TAG, "Restored beep mask 0x%02X", beepMask);
     if (alertLogOn) ESP_LOGI(TAG, "Restored alert logging ON (%u records held)",
                              (unsigned)alertLogCount());
+    // Copy the restored ignore list in under the mutex. If it can't be taken,
+    // skip the copy rather than write ignoreList/ignoreCount unlocked -- memory
+    // is already current in that case, since restore only matters at first
+    // start (see the create-before-restore order in startWatchersWatch()).
+    if (igCount > 0 && watchersMutex != NULL &&
+        xSemaphoreTake(watchersMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        memcpy(ignoreList, igBuf, igCount * sizeof(IgnoreEntry));
+        ignoreCount = igCount;
+        xSemaphoreGive(watchersMutex);
+    }
+    if (ignoreCount) ESP_LOGI(TAG, "Restored %u ignored device(s)", (unsigned)ignoreCount);
+}
+
+// Writes a snapshot taken under watchersMutex by the caller -- persistIgnore()
+// itself runs after the lock is released (USB commands in loop() and BLE
+// commands on the NimBLE host task can otherwise overlap this NVS write).
+static void persistIgnore(const IgnoreEntry* list, uint8_t count) {
+    Preferences prefs;
+    if (!prefs.begin(STATE_NVS_NS, false)) return;
+    if (count) prefs.putBytes("ignore", list, count * sizeof(IgnoreEntry));
+    else       prefs.remove("ignore");
+    prefs.end();
+}
+
+int addIgnore(const String& mac) {
+    uint8_t m[6];
+    if (!alertLogParseMac(mac.c_str(), m)) return -2;
+    if (watchersMutex == NULL) return -3;
+    int rc = 0;
+    IgnoreEntry snap[IGNORE_MAX];
+    uint8_t snapCount = 0;
+    if (xSemaphoreTake(watchersMutex, pdMS_TO_TICKS(100)) != pdTRUE) return -3;
+    if (isIgnoredBytesLocked(m)) {
+        rc = 1;
+    } else if (ignoreCount >= IGNORE_MAX) {
+        rc = -1;   // refused, never evicted: a device you chose to silence must not start beeping
+    } else {
+        uint8_t cat = ALERT_GENERIC;
+        for (const auto& t : trackedTargets)
+            if (t.mac.equalsIgnoreCase(mac)) { cat = (uint8_t)alertCategoryFromName(t.type.c_str()); break; }
+        memcpy(ignoreList[ignoreCount].mac, m, 6);
+        ignoreList[ignoreCount].cat = cat;
+        ignoreCount++;
+    }
+    if (rc == 0) {
+        memcpy(snap, ignoreList, ignoreCount * sizeof(IgnoreEntry));
+        snapCount = ignoreCount;
+    }
+    xSemaphoreGive(watchersMutex);
+    if (rc == 0) persistIgnore(snap, snapCount);
+    return rc;
+}
+
+bool removeIgnore(const String& mac) {
+    uint8_t m[6];
+    if (!alertLogParseMac(mac.c_str(), m)) return false;
+    if (watchersMutex == NULL) return false;
+    bool removed = false;
+    IgnoreEntry snap[IGNORE_MAX];
+    uint8_t snapCount = 0;
+    if (xSemaphoreTake(watchersMutex, pdMS_TO_TICKS(100)) != pdTRUE) return false;
+    for (uint8_t i = 0; i < ignoreCount; i++) {
+        if (memcmp(ignoreList[i].mac, m, 6) != 0) continue;
+        ignoreList[i] = ignoreList[--ignoreCount];
+        removed = true;
+        break;
+    }
+    if (removed) {
+        memcpy(snap, ignoreList, ignoreCount * sizeof(IgnoreEntry));
+        snapCount = ignoreCount;
+    }
+    xSemaphoreGive(watchersMutex);
+    if (removed) persistIgnore(snap, snapCount);
+    return removed;
+}
+
+// Adds the "ignore" array to doc only when the lock was obtained. On a timeout
+// the key is left absent -- CMD:CFG must never carry an authoritative empty
+// list it didn't actually read (see the buzzerEnabled/hwMutex trap); the app
+// treats an absent field as "unknown" and keeps whatever it last painted,
+// which the next successful CMD:CFG (or a retry) corrects.
+bool getIgnoreJson(JsonDocument& doc) {
+    if (watchersMutex == NULL) return false;
+    if (xSemaphoreTake(watchersMutex, pdMS_TO_TICKS(50)) != pdTRUE) return false;
+    JsonArray out = doc["ignore"].to<JsonArray>();
+    for (uint8_t i = 0; i < ignoreCount; i++) {
+        char buf[18];
+        const uint8_t* b = ignoreList[i].mac;
+        snprintf(buf, sizeof(buf), "%02X:%02X:%02X:%02X:%02X:%02X", b[0], b[1], b[2], b[3], b[4], b[5]);
+        JsonArray e = out.add<JsonArray>();
+        e.add(buf);
+        e.add(ignoreList[i].cat);
+    }
+    xSemaphoreGive(watchersMutex);
+    return true;
 }
 
 void setBeepMask(uint8_t mask) {

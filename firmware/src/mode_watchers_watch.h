@@ -6,6 +6,7 @@
 
 #include <Arduino.h>
 #include <vector>
+#include <ArduinoJson.h>
 
 /**
  * @brief Information about a signature rule for surveillance device detection
@@ -228,5 +229,19 @@ uint8_t getBand();
 /** @brief C5 only: set and persist the band (sweep-st/band); out of range means both. */
 void setBand(uint8_t band);
 #endif
+
+// Per-device Ignore: your own doorbell, dashcam or tag. Still detected, listed
+// and reported; never beeps, flashes, counts or logs. Persisted (sweep-st/ignore).
+#define IGNORE_MAX 16
+// 0 added, 1 already there, -1 full (list at IGNORE_MAX), -2 not a MAC,
+// -3 couldn't lock (mutex busy or not yet created -- distinct from -1 so a
+// momentarily busy detector doesn't toast "list full").
+int  addIgnore(const String& mac);
+bool removeIgnore(const String& mac);
+// Adds an "ignore" JsonArray to doc, but ONLY if the lock was obtained; on a
+// timeout the key is left absent rather than emitting an authoritative empty
+// list (an absent CMD:CFG field means "unknown", not "no ignored devices").
+// [["AA:BB:..", <AlertCategory>], ...]. Returns false on timeout.
+bool getIgnoreJson(JsonDocument& doc);
 
 #endif // MODE_WATCHERS_WATCH_H
