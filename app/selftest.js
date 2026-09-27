@@ -681,11 +681,13 @@ const OUI_OWNER = {
     'Motorola Solutions device': 'Motorola Solutions',
     'Verkada camera': 'Verkada',
     'Avigilon Alta device': 'Avigilon Alta',
-    'Axis Communications camera': 'Axis Communications'
+    'Axis Communications camera': 'Axis Communications',
+    'Flipper Devices (MAC)': 'Flipper Devices'
 };
 const defaults = (wwSrc.match(/auto addRule = [\s\S]*?serializeJsonPretty\(doc, file\)/) || [''])[0];
 let ouiRules = 0;
-for (const [, name, oui] of defaults.matchAll(/addRule\("([^"]+)",\s*"[^"]*",\s*"([0-9a-fA-F:]{8})"/g)) {
+// The category argument may be the HACKING_GEAR_CATEGORY macro, not a literal.
+for (const [, name, oui] of defaults.matchAll(/addRule\("([^"]+)",\s*(?:"[^"]*"|HACKING_GEAR_CATEGORY),\s*"([0-9a-fA-F:]{8})"/g)) {
     ouiRules++;
     const owner = ouiReg.get(oui.replace(/:/g, '').toUpperCase());
     const want = OUI_OWNER[name];
@@ -705,9 +707,39 @@ for (const call of defaults.match(/addRule\([^;]*\);/g) || []) {
     const hasLux = /0x0D53/i.test(call);
     if (hasFd5f !== hasLux) regFail.push(`glasses rule states fd5f/0x0D53 without the other: ${call.replace(/\s+/g, ' ')}`);
 }
-if (!/#define SIG_SCHEMA_VERSION 9\b/.test(wwSrc)) regFail.push('SIG_SCHEMA_VERSION not bumped to 9');
+if (!/#define SIG_SCHEMA_VERSION 10\b/.test(wwSrc)) regFail.push('SIG_SCHEMA_VERSION not bumped to 10');
 const hwCpp = readFileSync(new URL('../firmware/src/hardware_manager.cpp', import.meta.url), 'utf8');
 if (!/c\.indexOf\("glasses"\)[^;]*\)\s*return ALERT_BODYCAM;/.test(hwCpp)) regFail.push('firmware does not route "glasses" to ALERT_BODYCAM');
+// Every default company-ID rule must name the company the Bluetooth SIG
+// registers that ID to. ESP32 Marauder comments Flipper's ID as 0x0FBA --
+// that is a headset maker; Flipper Devices is 0x0E29. bt-company.txt keys
+// are decimal.
+const sigCo = new Map(readFileSync(new URL('./public/bt-company.txt', import.meta.url), 'utf8')
+    .split(/\r?\n/).map(l => l.split('\t')).filter(p => p.length >= 2)
+    .map(([k, v]) => [parseInt(k, 10), v.trim()]));
+const MFG_OWNER = {
+    'Flipper Devices (company ID)': 'Flipper Devices',
+    'Ray-Ban / Oakley Meta glasses': 'Luxottica',
+    'Snap Spectacles': 'Snapchat'
+};
+let mfgRules = 0;
+for (const [, name, mfg] of defaults.matchAll(/addRule\("([^"]+)",\s*(?:"[^"]*"|HACKING_GEAR_CATEGORY),\s*"[^"]*",\s*"(0x[0-9a-fA-F]{4})"/g)) {
+    mfgRules++;
+    const owner = sigCo.get(parseInt(mfg, 16));
+    const want = MFG_OWNER[name];
+    if (!want) regFail.push(`company-ID rule "${name}" (${mfg}) has no registrant pinned in MFG_OWNER`);
+    else if (!owner || !owner.toLowerCase().includes(want.toLowerCase()))
+        regFail.push(`"${name}" ${mfg} is registered to "${owner || 'nobody'}", not ${want}`);
+}
+if (mfgRules < 3) regFail.push(`only ${mfgRules} literal company-ID rules parsed -- the regex drifted`);
+// Scan the rule calls only: the comments above them name these values on purpose.
+const ruleCalls = (defaults.match(/addRule\([^;]*\);/g) || []).join('\n');
+if (/0x0FBA/i.test(ruleCalls)) regFail.push('0x0FBA added as Flipper -- it is a headset maker');
+if (/80:e1:2[67]/i.test(ruleCalls)) regFail.push('80:E1:26/27 added as Flipper -- that is ST\'s STM32WB address derivation, shared with other STM32WB hardware');
+// The attack-gear defaults exist, all under "Hacking gear".
+for (const want of ['"3081"', '"3082"', '"3083"', '"0x0E29"', '"0c:fa:22"', '"flipper"', '"Pineapple_"', '"pwned"'])
+    if (!new RegExp(`addRule\\([^;]*HACKING_GEAR_CATEGORY[^;]*${want.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i').test(defaults))
+        regFail.push(`no "Hacking gear" default rule carries ${want}`);
 if (regFail.length) { console.log('FAIL: registry:', regFail); process.exit(1); }
 console.log(`[signalsweep self-test] ${ouiRules} default OUI rules match the IEEE registry: ok`);
 
@@ -793,6 +825,31 @@ if (!/ESP_IDF_VERSION_MAJOR >= 5[\s\S]{0,120}esp_core_dump_get_panic_reason\(las
 if (!/o\["reason"\]/.test(crSrc) || !/c\.reason/.test(appSrc)) crFail.push('the panic reason no longer reaches CMD:CFG and the app line');
 if (crFail.length) { console.log('FAIL: crash report:', crFail); process.exit(1); }
 console.log('[signalsweep self-test] crash report wiring: ok');
+
+// ---------------------------------------------------------------------------
+// Attack-gear rules (Phase 2a). Every rule filed under "Hacking gear" is
+// matched only while the Attack toggle is on -- on ALL THREE rule paths:
+// the BLE matcher, the Wi-Fi OUI loop and the SSID-prefix pass. One switch,
+// one meaning: "tell me about attack tools". Flippers are common hobby gear;
+// an always-on beep would cry wolf at every makerspace.
+const agFail = [];
+if (!/#define HACKING_GEAR_CATEGORY "Hacking gear"/.test(wwSrc)) agFail.push('no HACKING_GEAR_CATEGORY define');
+const gateFn = (wwSrc.match(/static inline bool ruleGatedOff\([\s\S]*?\r?\n\}/) || [''])[0];
+if (!/!attackDetect/.test(gateFn) || !/HACKING_GEAR_CATEGORY/.test(gateFn)) agFail.push('ruleGatedOff() does not test attackDetect against the category');
+const bleMatch = (wwSrc.match(/static int matchDeviceAgainstRule\([\s\S]*?\r?\n\}/) || [''])[0];
+if (!/if \(ruleGatedOff\(sig\)\) return 0;/.test(bleMatch)) agFail.push('BLE matcher ignores the Attack toggle');
+const ouiLoopAt = wwSrc.indexOf('sig.oui.length() > 0 && sig.ssidPrefix.length() == 0');
+if (ouiLoopAt < 0 || !/ruleGatedOff\(sig\)/.test(wwSrc.slice(ouiLoopAt - 300, ouiLoopAt + 200)))
+    agFail.push('Wi-Fi OUI loop ignores the Attack toggle');
+const ssidAt = wwSrc.indexOf('!foundSsid.startsWith(sig.ssidPrefix)');
+if (ssidAt < 0 || !/ruleGatedOff\(sig\)/.test(wwSrc.slice(ssidAt - 300, ssidAt + 200)))
+    agFail.push('SSID-prefix pass ignores the Attack toggle');
+if (!/matchedCategory = HACKING_GEAR_CATEGORY;/.test(wwSrc)) agFail.push('pwnagotchi detector no longer uses HACKING_GEAR_CATEGORY');
+// The category must route to generic (All tab only) -- no routing keyword in it.
+for (const kw of ['tag', 'track', 'beacon', 'cam', 'surveil', 'drone', 'uas', 'body', 'axon', 'glasses', 'flock', 'alpr', 'plate', 'shotspotter', 'soundthinking'])
+    if ('hacking gear'.includes(kw)) agFail.push(`"Hacking gear" contains the routing keyword "${kw}"`);
+if (agFail.length) { console.log('FAIL: attack-gear rules:', agFail); process.exit(1); }
+console.log('[signalsweep self-test] attack-gear rules gated by the Attack toggle: ok');
 
 const results = await global.__signalsweepSelfTest();
 const failed = Object.entries(results).filter(([, v]) => !v).map(([k]) => k);

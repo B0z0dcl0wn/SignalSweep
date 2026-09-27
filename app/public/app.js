@@ -3730,9 +3730,7 @@
                 const on = MATCH.filter(([k]) => r[k] !== undefined && String(r[k]).trim() !== '')
                                 .map(([k, lbl]) => lbl + ' <code>' + esc(String(r[k])) + '</code>');
                 const strength = ruleStrength(r);
-                const strengthNote = strength >= 70 ? ' (beeps)'
-                                    : strength >= 60 ? ' (listed, no beep)'
-                                    : ' (label only)';
+                const strengthNote = ruleStrengthNote(r);
                 return '<div class="sig-row">'
                     + '<span class="sig-i">' + cat.icon + '</span>'
                     + '<span class="sig-t">'
@@ -3750,6 +3748,16 @@
         // weights (mode_watchers_watch.cpp's W_OUI/W_MFG/W_NAME/W_UUID); keep
         // both in sync if either changes.
         const SIG_STRENGTH_WEIGHTS = { oui: 30, mfg_id: 45, device_name: 70, service_uuid: 70 };
+        // What the strength means for the operator. "Hacking gear" rules only
+        // match while Attack-gear detection is on (firmware ruleGatedOff), so
+        // a bare "(beeps)" would read as active when the toggle is off.
+        function ruleStrengthNote(r) {
+            const s = ruleStrength(r);
+            const note = s >= 70 ? 'beeps' : s >= 60 ? 'listed, no beep' : 'label only';
+            return r.category === 'Hacking gear'
+                ? ' (' + note + ', only while Attack-gear detection is on)'
+                : ' (' + note + ')';
+        }
         function ruleStrength(r) {
             if (r.weight) return r.weight;
             if (r.ssid_prefix) return 80;
@@ -4656,6 +4664,11 @@
                 results.ruleStrengthSsid     = ruleStrength({ ssid_prefix: 'AB3-' }) === 80;
                 results.ruleStrengthWeightOui = ruleStrength({ oui: 'x', weight: 60 }) === 60;
                 results.ruleStrengthWeightMfg = ruleStrength({ mfg_id: '0x0D53', weight: 70 }) === 70;
+                // Attack-gear rules only match while Attack is on: the note
+                // must say so, not a bare "(beeps)" that reads as active.
+                results.ruleNoteAttackGated = ruleStrengthNote({ category: 'Hacking gear', service_uuid: '3081', weight: 80 })
+                                                  .indexOf('Attack') >= 0;
+                results.ruleNotePlain = ruleStrengthNote({ oui: 'x', weight: 60 }) === ' (listed, no beep)';
 
                 // Category routing
                 results.catDrone   = categoryOf('Remote ID Drone').key === 'drone';
