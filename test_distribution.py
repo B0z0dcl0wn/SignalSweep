@@ -26,6 +26,18 @@ def partition_offset(name):
     raise AssertionError(f"partitions.csv has no {name} row")
 
 
+def test_coredump_partition():
+    """Both frameworks build with CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH; without this
+    row every panic's dump is thrown away. LittleFS must not move, or the
+    update reformats it and wipes the signatures and the alert log."""
+    rows = {r[0].strip(): r for r in csv.reader((ROOT / "firmware/partitions.csv").read_text().splitlines())
+            if r and not r[0].startswith("#")}
+    assert "coredump" in rows, "no coredump partition"
+    assert int(rows["coredump"][3], 16) == 0x600000 and int(rows["coredump"][4], 16) >= 0x10000
+    assert int(rows["spiffs"][3], 16) == 0x610000 and int(rows["spiffs"][4], 16) == 0x1F0000
+    assert int(rows["app0"][3], 16) + int(rows["app0"][4], 16) <= 0x600000
+
+
 def main():
     builds = {b["chipFamily"]: b for b in MANIFEST["builds"]}
     assert set(install.BOARDS) == {"s3", "c5"}, sorted(install.BOARDS)
@@ -53,6 +65,8 @@ def main():
     assert parse("Chip is ESP32-S3 (QFN56) (revision v0.2)") == "s3"              # esptool 4
     assert parse("Chip type:          ESP32-C3 (QFN32)") is None
     assert parse("A fatal error occurred: Failed to connect") is None
+
+    test_coredump_partition()
     print("PASS")
 
 
