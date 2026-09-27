@@ -4516,6 +4516,14 @@
             clearInterval(eggKeepalive); eggKeepalive = null;
             eggScene = 0;
             paintEgg();
+            // Unlike beep_mask/led/theme (which ride every 1 Hz push and so
+            // self-heal within a second on the next board), the ignore list
+            // is CMD:CFG-only and may be legitimately OMITTED on a lock
+            // timeout -- so it does NOT self-correct on reconnect. Left set,
+            // a board swap would paint board A's ignored devices onto board B
+            // the instant B's first CFG reply happened to omit the key.
+            ignoredMacs = new Map();
+            paintIgnoreList();
             if (liveLayer) liveLayer.clearLayers();
             if (meLayer) meLayer.clearLayers();
             renderScope();
@@ -5012,10 +5020,17 @@
 
                 foxhuntMode = false;
 
-                // Disconnect drops the whole live set, not just the view.
+                // Disconnect drops the whole live set, not just the view. The
+                // ignore list rides only CMD:CFG (never the push) and may be
+                // legitimately omitted on a lock timeout, so unlike beep_mask/
+                // led/theme it cannot self-heal on the next board's first
+                // reply -- it must be dropped here or a board swap paints the
+                // old board's ignored devices onto the new one.
+                ignoredMacs = new Map([['A8:BB:CC:00:00:01', 1]]);
                 clearLiveState();
                 results.clearsOnDisconnect = Object.keys(liveMatches).length === 0 &&
-                                             huntTrace.length === 0 && huntMac === '';
+                                             huntTrace.length === 0 && huntMac === '' &&
+                                             ignoredMacs.size === 0;
 
                 // Crypto round-trip: create → save → reload → unlock
                 await createPinStore('1234');
