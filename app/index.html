@@ -1283,6 +1283,7 @@
            the pin reads as a sorting bug. */
         .scope-row.hunted { outline:1px solid var(--band-tracker);
             background:rgba(255,58,200,0.07); opacity:1; }
+        .scope-row.ignored { opacity:.55; }
         .unmatched-tag { white-space:nowrap; font-size:0.65rem; font-weight:600; color:var(--ss-dim);
             border:1px dashed var(--ss-line); border-radius:4px; padding:1px 5px; margin-left:6px; }
 
@@ -1631,6 +1632,10 @@
                     detected and listed</strong>. To stop the device announcing itself on the air,
                     use Receive&#8209;only in Settings.
                 </p>
+
+                <h3 class="set-label">Ignored devices <span id="ignore-count">(0/16)</span></h3>
+                <p class="set-note">Your own gear. Still detected and listed; never beeps, flashes, counts or logs. Kept on the board, so it holds on a battery with no phone.</p>
+                <div id="ignore-list" class="btn-row"></div>
 
                 <!-- Recording. What Start/Stop on the Sweep screen turns on
                      for you; here so you can leave the board logging with no

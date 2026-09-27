@@ -717,6 +717,13 @@ const bsSrc = readFileSync(new URL('../firmware/src/ble_serial.cpp', import.meta
 if (!/doc\["ignore"\]\.is<const char\*>\(\)/.test(bsSrc) || !/doc\["unignore"\]\.is<const char\*>\(\)/.test(bsSrc))
     igFail.push('router has no ignore/unignore command');
 if (!/getIgnoreJson\(/.test(bsSrc)) igFail.push('CMD:CFG does not carry the ignore list');
+// getIgnoreJson() builds "ignore" via doc["ignore"].to<JsonArray>(), not the
+// doc["key"] = ... pattern the cfgKeys scan above matches, so that check
+// never actually covers this field -- assert directly that the app reads it,
+// guarded the way an absent-means-unknown key must be (never Array.isArray
+// false clearing the list).
+if (!/Array\.isArray\(cfg\.ignore\)/.test(appSrc.replace(/\r\n/g, '\n')))
+    igFail.push('app does not read cfg.ignore guarded by Array.isArray');
 if (igFail.length) { console.log('FAIL: ignore:', igFail); process.exit(1); }
 console.log('[signalsweep self-test] ignore list gate + wire: ok');
 
