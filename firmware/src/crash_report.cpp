@@ -29,7 +29,7 @@ static const uint32_t CRUMB_MAGIC = 0x53574350u;   // "SWCP"
 __NOINIT_ATTR static struct { uint32_t magic, up, heap, tgt; } crumb;
 
 static struct {
-    bool     valid = false, crumbOk = false, haveDump = false, same = false, btCorrupt = false;
+    bool     valid = false, crumbOk = false, haveDump = false, same = false, sameKnown = false, btCorrupt = false;
     uint32_t up = 0, heap = 0, tgt = 0, pc = 0;
     uint32_t bt[4] = { 0, 0, 0, 0 };
     uint8_t  btN = 0;
@@ -96,8 +96,14 @@ void crashReportInit() {
                 // of the ELF hash (16 on the S3 build, 9 including the NUL on
                 // the C5), so compare exactly as many as it holds -- a fixed 16
                 // would call every C5 crash "different firmware".
+                // Empty dump SHA (older firmware / short retrieve length) means
+                // "unknown", not "different" -- leave sameKnown false so the
+                // JSON omits "same" rather than claiming a firmware mismatch.
                 const size_t n = strnlen((const char*)s.app_elf_sha256, sizeof(s.app_elf_sha256));
-                last.same = n > 0 && strncmp((const char*)s.app_elf_sha256, running, n) == 0;
+                if (n > 0) {
+                    last.sameKnown = true;
+                    last.same = strncmp((const char*)s.app_elf_sha256, running, n) == 0;
+                }
             }
         }
 #endif
@@ -114,14 +120,25 @@ void crashReportInit() {
                           (unsigned long)last.heap, (unsigned long)last.tgt);
         else
             Serial.print(" up=? heap=? tgt=?");
-        Serial.printf(" dump=%d same_fw=%d\n", (int)last.haveDump, (int)last.same);
+        Serial.printf(" dump=%d same_fw=%s\n", (int)last.haveDump,
+                      last.sameKnown ? (last.same ? "1" : "0") : "?");
     }
 }
 
 void crashBreadcrumbTick(uint32_t targets) {
     crumb.up = millis() / 1000;
     crumb.heap = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
-    crumb.tgt = targets;
+    // Clamp at the write side too: crumb isn't volatile/atomic, so a crash
+    // reader torn mid-update could otherwise see a tgt past the read-side
+    // sanity check (crumb.tgt < 10000 in crashReportInit) and discard a good
+    // up/heap along with it.
+    crumb.tgt = targets > 9999 ? 9999 : targets;
+    // Compiler barrier: without it nothing stops the store to magic from
+    // being reordered ahead of the up/heap/tgt stores above (crumb is a
+    // plain, non-volatile struct), which would let a crash between the
+    // reordered writes pass crashReportInit()'s magic check with a
+    // half-written breadcrumb.
+    __asm__ __volatile__("" ::: "memory");
     crumb.magic = CRUMB_MAGIC;   // last, so a crash before the first tick has no breadcrumb
 }
 
@@ -144,5 +161,5 @@ void crashReportToJson(JsonObject o) {
         o["tgt"] = last.tgt;
     }
     o["dump"] = last.haveDump;
-    o["same"] = last.same;
+    if (last.sameKnown) o["same"] = last.same;   // absent = unknown (older firmware's short/empty SHA)
 }

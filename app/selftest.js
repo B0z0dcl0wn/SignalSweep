@@ -772,7 +772,8 @@ if (!/if \(r != ESP_RST_WDT && esp_core_dump_image_check\(\) == ESP_OK\) \{[\s\S
 if (!/crumb\.tgt\s*</.test(crSrc)) crFail.push('breadcrumb target count not sanity-checked');
 if (!/crumb\.magic = 0;/.test(crSrc)) crFail.push('init does not clear the breadcrumb magic (an early crash would report up=0 as real)');
 const tickFn = (crNorm.match(/void crashBreadcrumbTick\([\s\S]*?\n\}/) || [''])[0];
-if (!/crumb\.tgt = targets;[\s\S]*crumb\.magic = CRUMB_MAGIC;/.test(tickFn)) crFail.push('tick must set the magic after the fields');
+if (!/crumb\.tgt = targets > 9999 \? 9999 : targets;[\s\S]*crumb\.magic = CRUMB_MAGIC;/.test(tickFn)) crFail.push('tick must set the magic after the fields');
+if (!/crumb\.tgt = targets > 9999 \? 9999 : targets;/.test(crSrc)) crFail.push('breadcrumb tgt is not clamped on write (a torn read could push it past the read-side check)');
 // CMD:CRASH must exist only inside #ifdef SWEEP_CRASH_TEST blocks, in any
 // file that could route a command. Strip those blocks and look for leftovers.
 // The lazy match ends at the FIRST #endif, so a nested #if inside such a block

@@ -2482,16 +2482,27 @@
         // same as the ignore list, so a board swap can't paint board A's
         // crash onto board B's Device page.
         let lastCrash = null;
+        // Reset reason (esp_reset_reason()), the same codes as the connect
+        // toast above -- a few words each, not the toast's shorter wording,
+        // because this line is the one place that says which watchdog fired.
+        const CRASH_RESET_LABEL = { 4: 'panic', 5: 'interrupt watchdog',
+                                     6: 'task watchdog', 7: 'RTC watchdog' };
         // up/heap may be absent (crashed before the first 1 Hz breadcrumb
-        // tick) -- say "unknown" rather than print NaN/undefined.
+        // tick) -- say "no details" rather than print NaN/undefined, and
+        // never invent a task/uptime that was never measured.
         function crashText(c) {
+            const label = CRASH_RESET_LABEL[c.reset];
+            const lead = 'Last crash' + (label ? ' (' + label + ')' : '') + ': ';
             const h = typeof c.up === 'number'
-                ? (c.up >= 3600 ? (c.up / 3600).toFixed(1) + ' h' : Math.round(c.up / 60) + ' min')
+                ? (c.up >= 3600 ? (c.up / 3600).toFixed(1) + ' h' : (c.up < 60 ? '<1 min' : Math.round(c.up / 60) + ' min'))
                 : null;
             const mem = typeof c.heap === 'number' ? Math.round(c.heap / 1024) + ' KB free' : null;
-            const when = h && mem ? 'after ' + h + ', ' + mem : 'uptime unknown';
-            return 'Last crash: ' + (c.task || 'unknown task') + ' ' + when
-                + (c.dump ? '' : ' (no core dump)') + (c.same === false && c.dump ? ' (older firmware)' : '');
+            const when = h && mem ? 'after ' + h + ', ' + mem : null;
+            const body = c.task && when ? c.task + ' ' + when
+                       : c.task || when || 'no details';
+            return lead + body
+                + (c.dump ? '' : ' — no core dump')
+                + (c.same === false ? ' (older firmware)' : '');
         }
         function paintCrash() {
             const row = document.getElementById('crash-row');
@@ -2562,7 +2573,9 @@
                 crashNotedBoot = bootKey;
                 showToast(devName + ' restarted: it ' + crash, '⚠');
             }
-            lastCrash = cfg.crash || null;
+            // Keep the reset reason alongside the crash detail -- crashText()
+            // leads the line with it, and Copy JSON should carry it too.
+            lastCrash = cfg.crash ? Object.assign({ reset: cfg.reset }, cfg.crash) : null;
             paintCrash();
             // Alert log. log_boot/log_secs are the board's current ordering key:
             // the bookmark a session starts from. They also feed this phone's
@@ -5200,15 +5213,22 @@
                 }
 
                 // Crash line: shown only when CMD:CFG carries `crash`.
-                results.crashLine = crashText({ task: 'btController', pc: '0x4200abcd', bt: ['0x42001234'],
+                results.crashLine = crashText({ reset: 4, task: 'btController', pc: '0x4200abcd', bt: ['0x42001234'],
                                                 up: 20880, heap: 96256, tgt: 41, dump: true, same: true })
                                     .indexOf('btController after 5.8 h, 94 KB free') >= 0;
-                results.crashOlderFw = crashText({ task: 'x', pc: '0x0', bt: [], up: 60, heap: 1024, tgt: 0, dump: true, same: false })
+                results.crashOlderFw = crashText({ reset: 6, task: 'x', pc: '0x0', bt: [], up: 60, heap: 1024, tgt: 0, dump: true, same: false })
                                     .indexOf('older firmware') >= 0;
                 // No breadcrumb (e.g. an RTC-watchdog reset, or a crash before
-                // the first 1 Hz tick): say "unknown", never NaN/undefined.
-                results.crashNoCrumb = crashText({ task: '', pc: '0x00000000', bt: [], dump: false, same: false }).indexOf('unknown') >= 0
-                                    && crashText({ task: '', pc: '0x00000000', bt: [], dump: false, same: false }).indexOf('NaN') < 0;
+                // the first 1 Hz tick): say "no details", never NaN/undefined.
+                results.crashNoCrumb = crashText({ reset: 7, task: '', pc: '0x00000000', bt: [], dump: false }).indexOf('no details') >= 0
+                                    && crashText({ reset: 7, task: '', pc: '0x00000000', bt: [], dump: false }).indexOf('NaN') < 0;
+                // Reset label: the watchdog codes (5/6/7) each say "watchdog"
+                // so a task/interrupt/RTC watchdog reads as one at a glance.
+                results.crashResetLabel = crashText({ reset: 6, task: '', pc: '0x0', bt: [], dump: false })
+                                    .toLowerCase().indexOf('watchdog') >= 0;
+                // An uptime under a minute must not read "0 min".
+                results.crashUnderMinute = crashText({ reset: 4, task: 'x', pc: '0x0', bt: [], up: 5, heap: 1024, dump: true, same: true })
+                                    .indexOf('<1 min') >= 0;
                 return results;
             };
         }
