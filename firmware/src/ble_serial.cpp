@@ -126,6 +126,10 @@ static bool wifiScanOn = true;
 // comment at the command. Written on the NimBLE host task, read on loop().
 static volatile bool sigsRequested = false;
 
+// Set for one CMD:CFG reply when an {"ignore":mac} was refused because the
+// list is already at IGNORE_MAX -- the app toasts, then it clears itself.
+static bool ignoreFullOnce = false;
+
 // CMD:LOG:READ likewise. One request in flight is enough -- the app pages
 // strictly one at a time, waiting for the `done` frame before asking again.
 static volatile bool     logReadPending = false;
@@ -217,6 +221,9 @@ String getBleConfigJson() {
     // Optional microSD (sd_store.h): 0 none, 1 ok, 2 error, 3 full; free in MB.
     doc["sd"] = sdState();
     doc["sd_free"] = sdFreeMB();
+    // Per-device Ignore list, device-owned: the app paints only from this.
+    getIgnoreJson(doc["ignore"].to<JsonArray>());
+    if (ignoreFullOnce) { doc["ignore_full"] = true; ignoreFullOnce = false; }
     String out;
     serializeJson(doc, out);
     return out;
@@ -827,6 +834,16 @@ void processIncomingCommand(const String& rawCommand) {
         // the device, like the beep mask.
         if (doc["attack"].is<bool>()) {
             setAttackDetect(doc["attack"].as<bool>());
+            sendConfigReply();
+        }
+
+        // Per-device Ignore. Config reply so the app paints from the device.
+        if (doc["ignore"].is<const char*>()) {
+            ignoreFullOnce = (addIgnore(String(doc["ignore"].as<const char*>())) == -1);
+            sendConfigReply();
+        }
+        if (doc["unignore"].is<const char*>()) {
+            removeIgnore(String(doc["unignore"].as<const char*>()));
             sendConfigReply();
         }
 

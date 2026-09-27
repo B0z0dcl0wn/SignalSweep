@@ -129,6 +129,31 @@ static bool scanAll = false;
 // are rate-based and prone to false alarms in busy places. Persisted, echoed.
 static bool attackDetect = false;
 
+// Per-device Ignore (idea from SquachWatch-CYD). MAC + the AlertCategory it
+// sounded as, so the list still says what it was after the device is gone.
+// Guarded by watchersMutex: read from noteAlertForTarget() (always called with
+// it held), written by the command handlers on the NimBLE host task.
+struct IgnoreEntry { uint8_t mac[6]; uint8_t cat; };
+static IgnoreEntry ignoreList[IGNORE_MAX];
+static uint8_t ignoreCount = 0;
+
+static bool parseMacBytes(const String& s, uint8_t out[6]) {
+    unsigned v[6];
+    if (sscanf(s.c_str(), "%2x:%2x:%2x:%2x:%2x:%2x", &v[0], &v[1], &v[2], &v[3], &v[4], &v[5]) != 6) return false;
+    for (int i = 0; i < 6; i++) out[i] = (uint8_t)v[i];
+    return true;
+}
+
+// Caller holds watchersMutex.
+static bool isIgnoredLocked(const String& mac) {
+    if (ignoreCount == 0) return false;
+    uint8_t m[6];
+    if (!parseMacBytes(mac, m)) return false;
+    for (uint8_t i = 0; i < ignoreCount; i++)
+        if (memcmp(ignoreList[i].mac, m, 6) == 0) return true;
+    return false;
+}
+
 // Whether the clicker is currently sounding. Tracked separately from huntMac so
 // the hunt can stay armed while the target is out of earshot.
 static bool huntAudible = false;
@@ -538,6 +563,9 @@ static bool noteAlert(int weight, const char* category) {
 // pruned (WATCHERS_STALE_MS), so something you drive past twice beeps twice.
 static void noteAlertForTarget(WatcherTargetInfo& t, int bestWeight, const String& category) {
     if (t.alerted) return;
+    // Ignored: stay quiet, and leave alerted clear so un-ignoring a device that
+    // is still here sounds it (the beep-mask contract).
+    if (isIgnoredLocked(t.mac)) return;
     if (bestWeight < CONF_ALERT_MIN) return;
     // Only burn the once-per-appearance flag if the alert really sounded. A
     // muted category must stay un-flagged, or un-muting it mid-appearance would
@@ -1737,6 +1765,13 @@ void restoreWatchersState() {
     uint8_t band = prefs.getUChar("band", BAND_BOTH);
     sweepBand = (band <= BAND_5) ? band : BAND_BOTH;
 #endif
+    // A blob whose length is not a whole number of entries is from some other
+    // format: drop it rather than read garbage MACs into the gate.
+    size_t igLen = prefs.getBytesLength("ignore");
+    if (igLen > 0 && igLen % sizeof(IgnoreEntry) == 0 && igLen <= sizeof(ignoreList)) {
+        prefs.getBytes("ignore", ignoreList, igLen);
+        ignoreCount = (uint8_t)(igLen / sizeof(IgnoreEntry));
+    }
     prefs.end();
 
     beepMask = mask & BEEP_MASK_ALL;
@@ -1757,6 +1792,66 @@ void restoreWatchersState() {
     if (beepMask != BEEP_MASK_ALL) ESP_LOGI(TAG, "Restored beep mask 0x%02X", beepMask);
     if (alertLogOn) ESP_LOGI(TAG, "Restored alert logging ON (%u records held)",
                              (unsigned)alertLogCount());
+    if (ignoreCount) ESP_LOGI(TAG, "Restored %u ignored device(s)", (unsigned)ignoreCount);
+}
+
+static void persistIgnore() {
+    Preferences prefs;
+    if (!prefs.begin(STATE_NVS_NS, false)) return;
+    if (ignoreCount) prefs.putBytes("ignore", ignoreList, ignoreCount * sizeof(IgnoreEntry));
+    else             prefs.remove("ignore");
+    prefs.end();
+}
+
+int addIgnore(const String& mac) {
+    uint8_t m[6];
+    if (!parseMacBytes(mac, m)) return -2;
+    int rc = 0;
+    if (xSemaphoreTake(watchersMutex, pdMS_TO_TICKS(100)) != pdTRUE) return -1;
+    if (isIgnoredLocked(mac)) {
+        rc = 1;
+    } else if (ignoreCount >= IGNORE_MAX) {
+        rc = -1;   // refused, never evicted: a device you chose to silence must not start beeping
+    } else {
+        uint8_t cat = ALERT_GENERIC;
+        for (const auto& t : trackedTargets)
+            if (t.mac.equalsIgnoreCase(mac)) { cat = (uint8_t)alertCategoryFromName(t.type.c_str()); break; }
+        memcpy(ignoreList[ignoreCount].mac, m, 6);
+        ignoreList[ignoreCount].cat = cat;
+        ignoreCount++;
+    }
+    xSemaphoreGive(watchersMutex);
+    if (rc == 0) persistIgnore();
+    return rc;
+}
+
+bool removeIgnore(const String& mac) {
+    uint8_t m[6];
+    if (!parseMacBytes(mac, m)) return false;
+    bool removed = false;
+    if (xSemaphoreTake(watchersMutex, pdMS_TO_TICKS(100)) != pdTRUE) return false;
+    for (uint8_t i = 0; i < ignoreCount; i++) {
+        if (memcmp(ignoreList[i].mac, m, 6) != 0) continue;
+        ignoreList[i] = ignoreList[--ignoreCount];
+        removed = true;
+        break;
+    }
+    xSemaphoreGive(watchersMutex);
+    if (removed) persistIgnore();
+    return removed;
+}
+
+void getIgnoreJson(JsonArray out) {
+    if (xSemaphoreTake(watchersMutex, pdMS_TO_TICKS(50)) != pdTRUE) return;
+    for (uint8_t i = 0; i < ignoreCount; i++) {
+        char buf[18];
+        const uint8_t* b = ignoreList[i].mac;
+        snprintf(buf, sizeof(buf), "%02X:%02X:%02X:%02X:%02X:%02X", b[0], b[1], b[2], b[3], b[4], b[5]);
+        JsonArray e = out.add<JsonArray>();
+        e.add(buf);
+        e.add(ignoreList[i].cat);
+    }
+    xSemaphoreGive(watchersMutex);
 }
 
 void setBeepMask(uint8_t mask) {

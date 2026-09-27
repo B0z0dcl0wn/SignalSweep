@@ -698,6 +698,28 @@ if (!/c\.indexOf\("glasses"\)[^;]*\)\s*return ALERT_BODYCAM;/.test(hwCpp)) regFa
 if (regFail.length) { console.log('FAIL: registry:', regFail); process.exit(1); }
 console.log(`[signalsweep self-test] ${ouiRules} default OUI rules match the IEEE registry: ok`);
 
+// ---------------------------------------------------------------------------
+// Per-device Ignore. It is a beep gate, never a detection gate, and it must
+// sit before noteAlert() inside noteAlertForTarget() WITHOUT setting alerted:
+// otherwise un-ignoring a device that is still here stays silent until it goes
+// stale -- the bug the beep mask already avoids.
+const igFail = [];
+const noteFnIg = (wwSrc.match(/static void noteAlertForTarget\([\s\S]*?\r?\n\}/) || [''])[0];
+const igAt = noteFnIg.indexOf('isIgnoredLocked(t.mac)');
+if (igAt < 0) igFail.push('noteAlertForTarget() has no ignore gate');
+if (igAt > noteFnIg.indexOf('noteAlert(')) igFail.push('ignore gate comes after noteAlert()');
+if (!/isIgnoredLocked\(t\.mac\)\)\s*return;/.test(noteFnIg)) igFail.push('ignore gate does more than return (it must not touch t.alerted)');
+if (!/#define IGNORE_MAX 16/.test(wwHdr)) igFail.push('IGNORE_MAX is not 16 in mode_watchers_watch.h');
+if (!/const IGNORE_MAX = 16;/.test(appSrc)) igFail.push('app IGNORE_MAX drifted from firmware');
+if (!/getBytesLength\("ignore"\)/.test(wwSrc) || !/%\s*sizeof\(IgnoreEntry\)/.test(wwSrc))
+    igFail.push('restore does not validate the ignore blob length (a format change would read garbage MACs)');
+const bsSrc = readFileSync(new URL('../firmware/src/ble_serial.cpp', import.meta.url), 'utf8');
+if (!/doc\["ignore"\]\.is<const char\*>\(\)/.test(bsSrc) || !/doc\["unignore"\]\.is<const char\*>\(\)/.test(bsSrc))
+    igFail.push('router has no ignore/unignore command');
+if (!/getIgnoreJson\(/.test(bsSrc)) igFail.push('CMD:CFG does not carry the ignore list');
+if (igFail.length) { console.log('FAIL: ignore:', igFail); process.exit(1); }
+console.log('[signalsweep self-test] ignore list gate + wire: ok');
+
 const results = await global.__signalsweepSelfTest();
 const failed = Object.entries(results).filter(([, v]) => !v).map(([k]) => k);
 console.log('[signalsweep self-test]', results);
