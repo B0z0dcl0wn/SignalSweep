@@ -87,7 +87,12 @@ static const char *SIG_FILE_PATH = "/data/signatures.json";
 //       Motorola Solutions / Verkada / Avigilon Alta / Axis; the three
 //       "Sierra" OUIs were Fiberblaze, Bitworks and unregistered -- replaced
 //       with the six blocks the IEEE gives Sierra Wireless.
-#define SIG_SCHEMA_VERSION 9
+//   v10: Attack gear (SquachWatch-CYD values, registry-checked): Flipper Zero
+//        service UUIDs 3081/3082/3083 (80), Flipper Devices company ID
+//        0x0E29 and OUI 0c:fa:22 (70), a "flipper" name (60, listed only),
+//        Pineapple_ management AP SSID (70) and the ESP deauther's "pwned"
+//        SSID (60). All "Hacking gear", matched only while Attack is on.
+#define SIG_SCHEMA_VERSION 10
 
 static SemaphoreHandle_t watchersMutex = NULL;
 static bool watchersRunning = false;
@@ -383,6 +388,26 @@ static void ensureSignaturesFileExists() {
             // the rule's own weight 70 -- only when both are present.
             addRule("Ray-Ban / Oakley Meta glasses", "Smart glasses", "", "0x0D53", "", "fd5f", 70);
             addRule("Snap Spectacles", "Smart glasses", "", "0x03C2", "", "", 70);
+
+            // Attack gear. Category HACKING_GEAR_CATEGORY: matched only while
+            // Attack is on (ruleGatedOff), All tab only, generic beep.
+            // Flipper Zero advertises one 16-bit service UUID per case colour
+            // (its firmware's own constants -- there is no registry for them).
+            addRule("Flipper Zero (service UUID)", HACKING_GEAR_CATEGORY, "", "", "", "3081", 80);
+            addRule("Flipper Zero (service UUID)", HACKING_GEAR_CATEGORY, "", "", "", "3082", 80);
+            addRule("Flipper Zero (service UUID)", HACKING_GEAR_CATEGORY, "", "", "", "3083", 80);
+            // Registry-checked: SIG company 0x0E29 and IEEE MA-L 0c:fa:22 are
+            // both Flipper Devices. (80:E1:26/27, copied between detectors as
+            // "Flipper", are in no registry; Marauder's 0x0FBA is a headset maker.)
+            addRule("Flipper Devices (company ID)", HACKING_GEAR_CATEGORY, "", "0x0E29", "", "", 70);
+            addRule("Flipper Devices (MAC)", HACKING_GEAR_CATEGORY, "0c:fa:22", "", "", "", 70);
+            // The default name, but anyone can type it: listed, never beeps
+            // alone (a real Flipper also carries the UUID and beeps from that).
+            addRule("Name contains Flipper", HACKING_GEAR_CATEGORY, "", "", "flipper", "", 60);
+            // Vendor-default control APs. Pineapple_XXXX is specific; "pwned"
+            // is also a common joke network name, so it lists without beeping.
+            addRule("Pineapple management AP", HACKING_GEAR_CATEGORY, "", "", "", "", 70, "Pineapple_");
+            addRule("'pwned' SSID (ESP deauther default)", HACKING_GEAR_CATEGORY, "", "", "", "", 60, "pwned");
 
             // Trackers (planted-on-you category). Keyed on service UUID, which
             // the matcher already handles. AirTag is matched in code (its Find
