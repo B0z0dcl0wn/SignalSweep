@@ -1027,6 +1027,19 @@ static int32_t bleCompanyId(SWEEP_ADV* dev) {
     return static_cast<uint8_t>(mfg[0]) | (static_cast<uint8_t>(mfg[1]) << 8);
 }
 
+// Forward declaration: upsertAttackTarget is defined later in this file (used
+// today only from the WiFi promiscuous callback, below its own definition),
+// but the BLE-spam detector inside WatchersScanCallbacks::onResult needs it
+// too, and that class is defined earlier in the file.
+static void upsertAttackTarget(const String& mac, int rssi, const char* proto,
+                                const String& title, uint8_t ch = 0);
+
+// BLE popup-spam state: distinct RANDOM MACs blasting Apple Proximity Pairing
+// (0x07) / Nearby Action (0x0F) adverts. BLE scan callback only, no lock. A
+// room of real AirPods (public/static addresses) must never trip this -- only
+// rapidly-rotating random MACs do, which is why the gate is `!pubAddr`.
+static BleSpamState bleSpamState;
+
 /**
  * @brief NimBLE Scan Callbacks for Watcher's Watch
  */
@@ -1051,6 +1064,32 @@ class WatchersScanCallbacks : public NimBLEAdvertisedDeviceCallbacks {
         // ponytail: advertised UUIDs only; a tag that hides 0x1802 in GATT gets no Ring button.
         bool ringable = advertisedDevice->isAdvertisingService(NimBLEUUID((uint16_t)0x1802)) ||
                         advertisedDevice->isAdvertisingService(NimBLEUUID((uint16_t)0x1803));
+
+        // BLE popup spam (Flipper "BLE spam" and friends): floods of Apple
+        // Proximity-Pairing / Nearby-Action adverts from rotating random MACs
+        // that make nearby iPhones throw pairing popups. Count DISTINCT random
+        // MACs sending 0x07/0x0F in the window; public/static Apple gear is
+        // real traffic and excluded by !pubAddr. Attack toggle only. Keys on
+        // a hash of the MAC STRING (not raw address bytes) -- the distinct-set
+        // only needs a stable per-MAC key, same technique karma uses for
+        // SSIDs, and it sidesteps any NimBLE 1.4-vs-2.x address-byte-order
+        // difference between the S3 and C5 cores. No mutex here (matches
+        // deauth/karma); upsertAttackTarget takes watchersMutex itself.
+        if (attackDetect && !pubAddr && advertisedDevice->haveManufacturerData()) {
+            std::string mfgd = advertisedDevice->getManufacturerData();
+            if (mfgd.length() >= 3 &&
+                (uint8_t)mfgd[0] == 0x4C && (uint8_t)mfgd[1] == 0x00 &&
+                ((uint8_t)mfgd[2] == 0x07 || (uint8_t)mfgd[2] == 0x0F)) {
+                uint64_t key = attackHash((const uint8_t*)mac.c_str(), mac.length());
+                uint32_t nMacs = bleSpamNote(&bleSpamState, key, now);
+                if (nMacs >= ATTACK_BLESPAM_THRESHOLD) {
+                    char title[40];
+                    snprintf(title, sizeof(title), "%s \xC2\xB7 %u MACs",
+                             ATTACK_TITLE_BLESPAM, (unsigned)nMacs);
+                    upsertAttackTarget(String(ATTACK_TITLE_BLESPAM), rssi, "BLE", String(title), 0);
+                }
+            }
+        }
 
         // Hunting: every advert from the target refreshes the click rate. Done
         // before the mutex so a busy detector never delays the feedback you are
@@ -1347,7 +1386,7 @@ static void upsertDroneTarget(const String& mac, int rssi, const char* proto,
 // appearance beep to noteAlertForTarget. `mac` may be a sentinel string for a
 // detector with no single transmitter (BLE popup spam).
 static void upsertAttackTarget(const String& mac, int rssi, const char* proto,
-                               const String& title, uint8_t ch = 0) {
+                               const String& title, uint8_t ch) {
     if (watchersMutex == NULL) return;
     if (xSemaphoreTake(watchersMutex, pdMS_TO_TICKS(10)) != pdTRUE) return;
     uint32_t now = millis();

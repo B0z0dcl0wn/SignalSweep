@@ -890,6 +890,18 @@ for (const kw of ['tag', 'track', 'beacon', 'cam', 'surveil', 'drone', 'uas', 'b
 if (agFail.length) { console.log('FAIL: attack-gear rules:', agFail); process.exit(1); }
 console.log('[signalsweep self-test] attack-gear rules gated by the Attack toggle: ok');
 
+// ---------------------------------------------------------------------------
+// BLE popup-spam detector must key on RANDOM addresses only (a room of real
+// AirPods on public/static addresses is not spam) and use the shared window fn.
+{
+    const bs = [];
+    if (!/attackDetect && !pubAddr && advertisedDevice->haveManufacturerData\(\)[\s\S]{0,400}\(uint8_t\)mfgd\[2\] == 0x07 \|\| \(uint8_t\)mfgd\[2\] == 0x0F/.test(wwSrc))
+        bs.push('BLE-spam detector does not gate on !pubAddr + 0x07/0x0F');
+    if (!/bleSpamNote\(&bleSpamState/.test(wwSrc)) bs.push('BLE-spam detector does not call bleSpamNote');
+    if (bs.length) { console.log('FAIL: ble-spam detector:', bs); process.exit(1); }
+    console.log('[signalsweep self-test] BLE popup-spam detector keys on random 0x07/0x0F: ok');
+}
+
 const results = await global.__signalsweepSelfTest();
 const failed = Object.entries(results).filter(([, v]) => !v).map(([k]) => k);
 console.log('[signalsweep self-test]', results);
