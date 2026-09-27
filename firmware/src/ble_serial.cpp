@@ -162,6 +162,10 @@ static volatile char     sdRmName[13]  = "";
 // clear. Only used to size bulk lines, so a rare mix-up (a USB command routed
 // while a BLE write is in flight) just picks a different line size.
 static volatile bool cmdViaBle = false;
+// The NimBLE host task, recorded by onWrite. notifyChunk() may only wait
+// briefly on it (it is the task that frees the mbuf pool). NULL until the
+// first write, which every app connection starts with (CMD:CFG).
+static TaskHandle_t nimbleHostTask = NULL;
 static volatile bool sdGetViaBle = false;
 static volatile bool logReadViaBle = false;
 static size_t bulkLineBytes(bool viaBle);   // defined beside negotiatedMtu
@@ -1007,6 +1011,7 @@ class RxCallbacks : public NimBLECharacteristicCallbacks {
     void onWrite(NimBLECharacteristic *pCharacteristic) override {
 #endif
         std::string rxValue = pCharacteristic->getValue();
+        nimbleHostTask = xTaskGetCurrentTaskHandle();   // onWrite runs on it
         if (rxValue.length() > 0) {
             cmdViaBle = true;
             processIncomingCommand(String(rxValue.c_str()));
@@ -1091,16 +1096,23 @@ bool isBleSerialConnected() {
 // that task is the one that frees the pool when the controller reports
 // packets sent -- a wait there cannot be satisfied, so it must give up. No
 // locals beyond a few words: see the host-task stack trap.
-#define NOTIFY_RETRY_MS  5
-#define NOTIFY_GIVEUP_MS 300
+// Anywhere else (loop()'s bulk replies, the 1 Hz push) the wait IS satisfied,
+// just slowly: the S3 on a phone link frees about one 512-byte notification
+// per ~300 ms (bench 2026-09-26, single waits up to 493 ms), so the old
+// 300 ms bound cut every bulk reply at the 12-block pool -- CMD:SIGS arrived
+// as exactly 12 x 512 B and was discarded as torn. 2 s is ~4x the worst wait.
+#define NOTIFY_RETRY_MS       5
+#define NOTIFY_GIVEUP_HOST_MS 300
+#define NOTIFY_GIVEUP_MS      2000
 static bool notifyChunk(uint16_t conn, uint16_t attr, const uint8_t* p, size_t n) {
     uint32_t start = millis();
+    const uint32_t giveUp = xTaskGetCurrentTaskHandle() == nimbleHostTask ? NOTIFY_GIVEUP_HOST_MS : NOTIFY_GIVEUP_MS;
     for (;;) {
         os_mbuf* om = ble_hs_mbuf_from_flat(p, n);
         int rc = om ? ble_gattc_notify_custom(conn, attr, om) : BLE_HS_ENOMEM;
         if (rc == 0) return true;
         if (rc != BLE_HS_ENOMEM && rc != BLE_HS_EBUSY) return false;
-        if (millis() - start >= NOTIFY_GIVEUP_MS) return false;
+        if (millis() - start >= giveUp) return false;
         vTaskDelay(pdMS_TO_TICKS(NOTIFY_RETRY_MS));
     }
 }

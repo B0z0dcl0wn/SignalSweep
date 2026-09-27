@@ -569,7 +569,13 @@ console.log('[signalsweep self-test] alert log record + write path: ok');
     if (!/ble_hs_mbuf_from_flat\(/.test(nc) || !/ble_gattc_notify_custom\(/.test(nc)) rs.push('notifyChunk no longer calls the host API where the result is visible');
     if (!/rc != BLE_HS_ENOMEM && rc != BLE_HS_EBUSY\) return false/.test(nc)) rs.push('notifyChunk no longer retries only on a full queue');
     if (!/for \(;;\)[\s\S]*vTaskDelay\(pdMS_TO_TICKS\(NOTIFY_RETRY_MS\)\)/.test(nc)) rs.push('notifyChunk no longer waits and resends the same chunk');
-    if (!/NOTIFY_GIVEUP_MS\) return false/.test(nc)) rs.push('notifyChunk retry is no longer bounded');
+    if (!/NOTIFY_GIVEUP_MS\) return false/.test(nc) && !/>= giveUp\) return false/.test(nc)) rs.push('notifyChunk retry is no longer bounded');
+    // The S3 drains ~1 x 512 B notification per ~300 ms on a phone link (bench
+    // 2026-09-26: single waits up to 493 ms), so a 300 ms bound cut every bulk
+    // reply at the 12-block pool. Short only on the NimBLE host task, where
+    // the wait cannot be satisfied.
+    if (!/xTaskGetCurrentTaskHandle\(\) == nimbleHostTask\s*\?\s*NOTIFY_GIVEUP_HOST_MS\s*:\s*NOTIFY_GIVEUP_MS/.test(nc)) rs.push('notifyChunk no longer waits longer off the NimBLE host task (bulk replies cut at 12 x 512 B on the S3)');
+    if (!/nimbleHostTask = xTaskGetCurrentTaskHandle\(\);/.test(bs)) rs.push('onWrite no longer records the NimBLE host task');
     const sbs = (bs.match(/void sendBleSerial\([\s\S]*?\n\}/) || [''])[0];
     if (!/notifyChunk\(/.test(sbs)) rs.push('sendBleSerial bypasses notifyChunk');
     if (/->notify\(/.test(bs)) rs.push('a bare notify() is back (it drops silently on a full pool)');
