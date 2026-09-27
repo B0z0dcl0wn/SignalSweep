@@ -1748,6 +1748,11 @@
                 <button class="ctrl-btn" style="width:100%;" onclick="saveIdentity()">Save &amp; restart device</button>
                 <h3 class="set-label">Clock</h3>
                 <p class="set-note" id="cfg-clock">Not connected</p>
+                <div id="crash-row" hidden>
+                    <h3 class="set-label">Last crash</h3>
+                    <p class="set-note" id="crash-text"></p>
+                    <button class="ctrl-btn" onclick="copyCrash()">Copy crash report</button>
+                </div>
                 </section>
 
                 <section class="set-page" id="setp-signatures" data-title="Signatures" hidden>

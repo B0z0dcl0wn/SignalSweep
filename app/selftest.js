@@ -122,6 +122,19 @@ if (cfgKeys.length < 5 || cfgUnread.length) {
 }
 console.log('[signalsweep self-test] app reads every CMD:CFG field: ok');
 
+// `crash` is built with crashReportToJson(doc["crash"].to<JsonObject>()), not
+// a plain `doc["crash"] =`, so the generic CMD:CFG-unread scan above never
+// sees it -- assert both sides explicitly instead. (CRLF working copy: no
+// literal \n in these regexes.)
+{
+    const bsrc = readFileSync(new URL('../firmware/src/ble_serial.cpp', import.meta.url), 'utf8');
+    const fail = [];
+    if (!/crashReportToJson\(doc\["crash"\]\.to<JsonObject>\(\)\)/.test(bsrc)) fail.push('firmware does not build cfg.crash');
+    if (!/cfg\.crash/.test(appSrc)) fail.push('app never reads cfg.crash');
+    if (fail.length) { console.log('FAIL:', fail.join('; ')); process.exit(1); }
+    console.log('[signalsweep self-test] app reads cfg.crash: ok');
+}
+
 // Host time push: the app must send {"time"} paired with each CMD:CFG attempt
 // (USB opens reset the board, so a lone push can land mid-boot and vanish),
 // the firmware must parse it, and both sides must agree on the anchors key.

@@ -2477,6 +2477,37 @@
         // wrong board's lie. Painted only from CMD:CFG, like the radios.
         let buzzerOn = null;
         let crashNotedBoot = '';
+        // Last crash reported by the connected board (cfg.crash), or null.
+        // Belongs to one board -- cleared on disconnect in clearLiveState(),
+        // same as the ignore list, so a board swap can't paint board A's
+        // crash onto board B's Device page.
+        let lastCrash = null;
+        // up/heap may be absent (crashed before the first 1 Hz breadcrumb
+        // tick) -- say "unknown" rather than print NaN/undefined.
+        function crashText(c) {
+            const h = typeof c.up === 'number'
+                ? (c.up >= 3600 ? (c.up / 3600).toFixed(1) + ' h' : Math.round(c.up / 60) + ' min')
+                : null;
+            const mem = typeof c.heap === 'number' ? Math.round(c.heap / 1024) + ' KB free' : null;
+            const when = h && mem ? 'after ' + h + ', ' + mem : 'uptime unknown';
+            return 'Last crash: ' + (c.task || 'unknown task') + ' ' + when
+                + (c.dump ? '' : ' (no core dump)') + (c.same === false && c.dump ? ' (older firmware)' : '');
+        }
+        function paintCrash() {
+            const row = document.getElementById('crash-row');
+            const txt = document.getElementById('crash-text');
+            if (!row || !txt) return;
+            row.hidden = !lastCrash;
+            if (lastCrash) txt.textContent = crashText(lastCrash);
+        }
+        // For addr2line against the ELF of the firmware that crashed.
+        function copyCrash() {
+            if (!lastCrash) return;
+            const s = JSON.stringify(Object.assign({ board: devName }, lastCrash));
+            (navigator.clipboard ? navigator.clipboard.writeText(s) : Promise.reject())
+                .then(() => showToast('Crash report copied', '📋'))
+                .catch(() => showToast(s, '⚠'));
+        }
         // ---- Device identity (name / random address) ------------------------
         // Both live in the firmware's NVS and are read at boot before the BLE
         // stack comes up, so saving either restarts the board. The device is
@@ -2531,6 +2562,8 @@
                 crashNotedBoot = bootKey;
                 showToast(devName + ' restarted: it ' + crash, '⚠');
             }
+            lastCrash = cfg.crash || null;
+            paintCrash();
             // Alert log. log_boot/log_secs are the board's current ordering key:
             // the bookmark a session starts from. They also feed this phone's
             // own fallback guess (noteBootEpoch/logBootEpochs) for dating
@@ -4520,6 +4553,9 @@
             clearInterval(eggKeepalive); eggKeepalive = null;
             eggScene = 0;
             paintEgg();
+            // A crash report belongs to one board, like the ignore list below.
+            lastCrash = null;
+            paintCrash();
             // Unlike beep_mask/led/theme (which ride every 1 Hz push and so
             // self-heal within a second on the next board), the ignore list
             // is CMD:CFG-only and may be legitimately OMITTED on a lock
@@ -5162,6 +5198,17 @@
                     results.analyzerFlock = flock.flockDetected && flock.flockMacs === 1 && flock.signature.type === 'flock-ie' &&
                                             !chinaDragon.flockDetected && !randomMac.flockDetected;
                 }
+
+                // Crash line: shown only when CMD:CFG carries `crash`.
+                results.crashLine = crashText({ task: 'btController', pc: '0x4200abcd', bt: ['0x42001234'],
+                                                up: 20880, heap: 96256, tgt: 41, dump: true, same: true })
+                                    .indexOf('btController after 5.8 h, 94 KB free') >= 0;
+                results.crashOlderFw = crashText({ task: 'x', pc: '0x0', bt: [], up: 60, heap: 1024, tgt: 0, dump: true, same: false })
+                                    .indexOf('older firmware') >= 0;
+                // No breadcrumb (e.g. an RTC-watchdog reset, or a crash before
+                // the first 1 Hz tick): say "unknown", never NaN/undefined.
+                results.crashNoCrumb = crashText({ task: '', pc: '0x00000000', bt: [], dump: false, same: false }).indexOf('unknown') >= 0
+                                    && crashText({ task: '', pc: '0x00000000', bt: [], dump: false, same: false }).indexOf('NaN') < 0;
                 return results;
             };
         }
