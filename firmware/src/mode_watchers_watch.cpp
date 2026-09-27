@@ -27,6 +27,7 @@
 #include <freertos/semphr.h>
 #include <freertos/task.h>
 #include <vector>
+#include "attack_detectors.h"
 #include <algorithm>
 #include "hardware_manager.h"
 #include "capabilities.h"
@@ -489,6 +490,7 @@ static void ensureSignaturesFileExists() {
 // (pwnd_tot/pwnd_run/grid_version) are the real tell — the MAC is trivially
 // editable, so it is only corroboration. Strong: it identifies on its own.
 #define W_PWNGRID    90
+#define W_ATTACK 90   // attack-detector rows: above CONF_ALERT_MIN, generic beep
 // A single weak, non-Flock-specific signal (a broad OUI prefix, or the Lite-On
 // vendor IE that rides countless consumer WiFi chips) is noise on its own. Only
 // list a device that clears 60 — i.e. one specific signal (SSID/UUID/name at
@@ -1339,6 +1341,45 @@ static void upsertDroneTarget(const String& mac, int rssi, const char* proto,
     xSemaphoreGive(watchersMutex);
 }
 
+// Surface a rate-detector hit (deauth/karma/BLE-spam) as an ordinary "Hacking
+// gear" row. Same shape as upsertDroneTarget: keyed by mac, takes watchersMutex
+// briefly (bail on miss -- never block a radio callback), leaves the once-per-
+// appearance beep to noteAlertForTarget. `mac` may be a sentinel string for a
+// detector with no single transmitter (BLE popup spam).
+static void upsertAttackTarget(const String& mac, int rssi, const char* proto,
+                               const String& title, uint8_t ch = 0) {
+    if (watchersMutex == NULL) return;
+    if (xSemaphoreTake(watchersMutex, pdMS_TO_TICKS(10)) != pdTRUE) return;
+    uint32_t now = millis();
+    bool found = false;
+    for (auto& t : trackedTargets) {
+        if (t.mac.equalsIgnoreCase(mac)) {
+            t.rssi = rssi; t.lastSeenMs = now; t.count++;
+            if (W_ATTACK > t.confidence) t.confidence = W_ATTACK;
+            t.tier = tierForConfidence(t.confidence);
+            t.type = HACKING_GEAR_CATEGORY;
+            t.matchedRule = title;
+            if (ch > 0) t.wifiCh = ch;
+            noteAlertForTarget(t, W_ATTACK, HACKING_GEAR_CATEGORY);
+            found = true; break;
+        }
+    }
+    if (!found) {
+        WatcherTargetInfo t;
+        t.mac = mac; t.type = HACKING_GEAR_CATEGORY; t.matchedRule = title;
+        t.rssi = rssi; t.firstSeenMs = now; t.lastSeenMs = now; t.count = 1;
+        t.protocol = proto; t.confidence = W_ATTACK; t.tier = tierForConfidence(W_ATTACK);
+        t.lastReportedMs = 0; if (ch > 0) t.wifiCh = ch;
+        trackedTargets.push_back(t);
+        noteAlertForTarget(trackedTargets.back(), W_ATTACK, HACKING_GEAR_CATEGORY);
+    }
+    xSemaphoreGive(watchersMutex);
+}
+
+// Deauth-burst state: touched ONLY from the single-threaded Wi-Fi promiscuous
+// callback, so it needs no lock (same rule as wifiUas/pwngridBuf).
+static DeauthState deauthState;
+
 static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type_t type) {
     if (!watchersRunning) return;
     if (type != WIFI_PKT_MGMT) return;
@@ -1383,6 +1424,25 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
             }
             return;
         }
+    }
+
+    // Deauthentication (subtype 12) / disassociation (subtype 10) burst: an
+    // aircrack/Pineapple signature. These already reach us (mgmt filter) and are
+    // dropped by the 4/5/8 test below. Count per transmitter in a sliding window;
+    // a broadcast deauth (addr1 = ff:ff:ff:ff:ff:ff) hits every client at once and
+    // counts double. Attack toggle only -- roaming APs deauth constantly.
+    if (attackDetect && ftype == 0 && (fsubtype == 12 || fsubtype == 10)) {
+        static const uint8_t bcast[6] = {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF};
+        bool isBroadcast = (memcmp(addr1, bcast, 6) == 0);
+        uint32_t frames = deauthNote(&deauthState, attackMac48(addr2), isBroadcast, millis());
+        if (frames >= ATTACK_DEAUTH_THRESHOLD) {
+            char m[18]; snprintf(m, sizeof(m), "%02X:%02X:%02X:%02X:%02X:%02X",
+                addr2[0], addr2[1], addr2[2], addr2[3], addr2[4], addr2[5]);
+            char title[40]; snprintf(title, sizeof(title), "%s \xC2\xB7 %u frames \xC2\xB7 ch %u",
+                ATTACK_TITLE_DEAUTH, (unsigned)frames, (unsigned)packet->rx_ctrl.channel);
+            upsertAttackTarget(String(m), rssi, "WiFi", String(title), packet->rx_ctrl.channel);
+        }
+        return;   // a deauth is never a probe/beacon; done with this frame
     }
 
     // Probe Request (subtype 4) or Beacon (subtype 8) or Probe Response (subtype 5)
