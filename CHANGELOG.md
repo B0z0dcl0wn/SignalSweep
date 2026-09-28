@@ -4,6 +4,27 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Added — Flock's solar battery by its own GATT services (signatures v11)
+
+- **Two exact 128-bit UUID rules, "Flock battery (auth service)"
+  `e8ccbb38-9532-46a8-9fe5-1814df172e6f` and "(safety service)"
+  `20c944c1-add2-42d7-a638-967ee9a26ff6`, category Flock Safety, strength 80
+  (beeps).** They come from the Flock camera firmware dump: the pole's Nordic
+  battery pack hosts them. Flock's own 128-bit UUIDs, matched in full, so nothing
+  else carries them. Expect them rarely: the camera holds the battery's link
+  open, and a connected battery normally stops advertising, so only one whose
+  link has dropped will show up. 0 in 173 captures so far.
+- **The first 128-bit rules in the defaults, so the full-UUID path of the
+  matcher was proven on hardware before shipping:** a temporary rule for the
+  Nordic UART UUID each board advertises matched the other board on both the S3
+  (NimBLE 1.4) and the C5 (NimBLE 2.x), confidence 80. selftest pins both rules
+  at full length, since a truncated UUID would fall into the 16-bit branch.
+- **Not taken from the same source:** Wi-Fi module vendors' OUIs (Lite-On, USI,
+  Silicon Labs, Espressif), the Raven 0x3100–0x3500 range and a bare 10-digit
+  serial as a name. We removed all three as false-positive sources before
+  (signatures v2, v5, v7); a bare serial is what an iPhone's Nearby Info advert
+  sends as its placeholder name.
+
 ## [0.6.0] — 2026-09-28 — It hears the attack gear, keeps a card, knows the time, and says why it crashed
 
 Field note: the three attack detectors had one grocery-store false-positive

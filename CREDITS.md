@@ -44,6 +44,13 @@ payload (`50:6f:9a:16:03:01:03`) tightens it further. Drive-tested in Joplin at
 11 of 12 cameras caught with 2 false positives. Reached us via
 colonelpanichacks/flock-you.
 
+**Flock camera firmware dump** (published 2026-09, collected in
+[colonelpanichacks/flock-you](https://github.com/colonelpanichacks/flock-you)
+issue #15, MIT) — the solar battery's GATT service UUIDs (auth
+`e8ccbb38-…`, safety `20c944c1-…`) and, read alongside it, the finding that a
+healthy camera advertises nothing at all. Values only; SquachWatch-CYD pointed us
+back to them.
+
 **Will Greenberg ([@wgreenberg](https://github.com/wgreenberg))** — his
 [flock-you](https://github.com/wgreenberg/flock-you) fork advanced the Flock
 detection heuristics and the structured approach to managing detection
