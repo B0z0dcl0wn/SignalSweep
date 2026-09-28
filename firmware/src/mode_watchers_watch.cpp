@@ -1051,13 +1051,26 @@ static int32_t bleCompanyId(SWEEP_ADV* dev) {
 // but the BLE-spam detector inside WatchersScanCallbacks::onResult needs it
 // too, and that class is defined earlier in the file.
 static void upsertAttackTarget(const String& mac, int rssi, const char* proto,
-                                const String& title, uint8_t ch = 0);
+                                const String& title, uint8_t ch = 0,
+                                const char* category = HACKING_GEAR_CATEGORY);
 
 // BLE popup-spam state: distinct RANDOM MACs blasting Apple Proximity Pairing
 // (0x07) / Nearby Action (0x0F) adverts. BLE scan callback only, no lock. A
 // room of real AirPods (public/static addresses) must never trip this -- only
 // rapidly-rotating random MACs do, which is why the gate is `!pubAddr`.
 static BleSpamState bleSpamState;
+
+// Tag-flood state, one per tracker type. BLE scan callback only, no lock.
+static TagFloodState tagFloodState[TAGFLOOD_TYPES];
+static const char* const TAGFLOOD_NAMES[TAGFLOOD_TYPES] = { "Apple Find My", "Google Find My", "Samsung SmartTag", "Tile" };
+static int tagFloodType(SWEEP_ADV* dev) {
+    if (bleIsAirtag(dev)) return 0;
+    String n = bleTrackerNetwork(dev);
+    if (n.startsWith("Google")) return 1;
+    if (n.startsWith("Samsung")) return 2;
+    if (n.startsWith("Tile")) return 3;
+    return -1;
+}
 
 /**
  * @brief NimBLE Scan Callbacks for Watcher's Watch
@@ -1107,6 +1120,24 @@ class WatchersScanCallbacks : public NimBLEAdvertisedDeviceCallbacks {
                              ATTACK_TITLE_BLESPAM, (unsigned)nMacs);
                     upsertAttackTarget(String(ATTACK_TITLE_BLESPAM), rssi, "BLE", String(title), 0);
                 }
+            }
+        }
+
+        // Tag flood (always on): a spammer's fake trackers each live for an
+        // advert or two. Once a type floods, its targets stay listed but skip
+        // the beep and the log (Ignore-style, alerted stays clear so a real tag
+        // still here sounds when the hold ends); one Tracker row speaks for them.
+        bool floodMuted = false;
+        int ft = tagFloodType(advertisedDevice);
+        if (ft >= 0) {
+            TagFloodState* fs = &tagFloodState[ft];
+            tagFloodNote(fs, attackHash((const uint8_t*)mac.c_str(), mac.length()), now);
+            if (tagFloodActive(fs, now)) {
+                floodMuted = true;
+                char title[80];
+                snprintf(title, sizeof(title), "%s \xC2\xB7 %s \xC2\xB7 %u fake \xC2\xB7 real tags muted",
+                         TAGFLOOD_TITLE, TAGFLOOD_NAMES[ft], (unsigned)fs->total);
+                upsertAttackTarget(String(TAGFLOOD_TITLE ": ") + TAGFLOOD_NAMES[ft], rssi, "BLE", String(title), 0, "Tracker");
             }
         }
 
@@ -1220,7 +1251,7 @@ class WatchersScanCallbacks : public NimBLEAdvertisedDeviceCallbacks {
                             target.matchedRule = matchedRule;
                         }
                         if (droneDecoded) applyDroneData(target, bleUas);
-                        noteAlertForTarget(target, bestWeight, matchedCategory);
+                        if (!floodMuted) noteAlertForTarget(target, bestWeight, matchedCategory);
                         found = true;
                         break;
                     }
@@ -1254,7 +1285,7 @@ class WatchersScanCallbacks : public NimBLEAdvertisedDeviceCallbacks {
                                  mac.c_str(), matchedRule.c_str(), matchedCategory.c_str(),
                                  confidence, newTarget.tier.c_str(), rssi);
                     }
-                    noteAlertForTarget(trackedTargets.back(), bestWeight, matchedCategory);
+                    if (!floodMuted) noteAlertForTarget(trackedTargets.back(), bestWeight, matchedCategory);
                 }
             }
             xSemaphoreGive(watchersMutex);
@@ -1405,7 +1436,7 @@ static void upsertDroneTarget(const String& mac, int rssi, const char* proto,
 // appearance beep to noteAlertForTarget. `mac` may be a sentinel string for a
 // detector with no single transmitter (BLE popup spam).
 static void upsertAttackTarget(const String& mac, int rssi, const char* proto,
-                               const String& title, uint8_t ch) {
+                               const String& title, uint8_t ch, const char* category) {
     if (watchersMutex == NULL) return;
     if (xSemaphoreTake(watchersMutex, pdMS_TO_TICKS(10)) != pdTRUE) return;
     uint32_t now = millis();
@@ -1415,21 +1446,21 @@ static void upsertAttackTarget(const String& mac, int rssi, const char* proto,
             t.rssi = rssi; t.lastSeenMs = now; t.count++;
             if (W_ATTACK > t.confidence) t.confidence = W_ATTACK;
             t.tier = tierForConfidence(t.confidence);
-            t.type = HACKING_GEAR_CATEGORY;
+            t.type = category;
             t.matchedRule = title;
             if (ch > 0) t.wifiCh = ch;
-            noteAlertForTarget(t, W_ATTACK, HACKING_GEAR_CATEGORY);
+            noteAlertForTarget(t, W_ATTACK, category);
             found = true; break;
         }
     }
     if (!found) {
         WatcherTargetInfo t;
-        t.mac = mac; t.type = HACKING_GEAR_CATEGORY; t.matchedRule = title;
+        t.mac = mac; t.type = category; t.matchedRule = title;
         t.rssi = rssi; t.firstSeenMs = now; t.lastSeenMs = now; t.count = 1;
         t.protocol = proto; t.confidence = W_ATTACK; t.tier = tierForConfidence(W_ATTACK);
         t.lastReportedMs = 0; if (ch > 0) t.wifiCh = ch;
         trackedTargets.push_back(t);
-        noteAlertForTarget(trackedTargets.back(), W_ATTACK, HACKING_GEAR_CATEGORY);
+        noteAlertForTarget(trackedTargets.back(), W_ATTACK, category);
     }
     xSemaphoreGive(watchersMutex);
 }
@@ -2311,10 +2342,16 @@ static void watchersPeriodicTask(void *pvParameters) {
                 if (!t.logPending) continue;
                 t.logPending = false;
                 PendingLog p;
-                if (!alertLogParseMac(t.mac.c_str(), p.mac)) continue;
+                // Sentinel rows ("Tag flood: Tile", "BLE popup spam") have no
+                // address: log them under 02:00:00:00:00:00 (locally administered,
+                // so no vendor lookup), named by the row -- the title carries a
+                // changing count and would burn a names.txt slot per flood.
+                bool sentinel = t.mac.indexOf(' ') >= 0;
+                if (sentinel) { memset(p.mac, 0, 6); p.mac[0] = 0x02; }
+                else if (!alertLogParseMac(t.mac.c_str(), p.mac)) continue;
                 p.cat  = (uint8_t)alertCategoryFromName(t.type.c_str());
                 p.rssi = (int8_t)t.rssi;
-                p.rule = t.matchedRule;
+                p.rule = sentinel ? t.mac : t.matchedRule;
                 // The card copy's extra detail (sd_log.h). Deliberately no drone
                 // or operator coordinates: that is the user's position.
                 p.name = t.name;

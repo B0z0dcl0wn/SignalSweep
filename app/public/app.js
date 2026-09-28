@@ -540,6 +540,8 @@
         // Trackers get the two things you actually want when something may be
         // following you: walk it down, or make it announce itself.
         function actionRow(m, cat) {
+            // Sentinel rows ("Tag flood: Tile", "BLE popup spam") have no address to act on.
+            if (/\s/.test(String(m.mac))) return '';
             // Ignore is offered wherever a stable, categorised address is
             // shown, regardless of the tracker/foxhunt gate below -- it is a
             // per-device opt-out, not a foxhunt tool. Painted only from the
@@ -1852,6 +1854,16 @@
             // Before handledMacs for the same reason: un-muting a category must
             // bring its devices back, not skip them for the rest of the session.
             if (pinMute.has(categoryOf(match.type || match.rule).key)) return;
+            // A sentinel row has no place to pin, and while a tag flood is live
+            // the board has muted trackers, so no prompt for them either. Before
+            // handledMacs, so a real tag is still offered once the flood ends.
+            // ponytail: mutes every tracker type, not just the flooded one; the
+            // fakes' rows don't say which network they belong to.
+            if (/\s/.test(String(match.mac))) return;
+            if (categoryOf(match.type || match.rule).key === 'tracker' &&
+                Object.values(liveMatches).some(function (m) {
+                    return /^Tag flood:/.test(m.mac) && Date.now() - m.ts < LIVE_STALE_MS;
+                })) return;
             if (handledMacs.has(match.mac)) return;
             handledMacs.add(match.mac);
             consentQueue.push(match);
@@ -4745,6 +4757,20 @@
                 ]);
                 results.pinsOnlyMatches = consentQueue.length === 1 &&
                                           consentQueue[0].mac === 'BB:00:02';
+                // A tag flood: the flood row is never offered a pin, and while it
+                // is live no tracker is (the board has muted them; 170 fakes must
+                // not become 170 prompts).
+                {
+                    const savedLive = liveMatches;
+                    liveMatches = {}; consentQueue = [];
+                    ingestTargets([
+                        { mac: 'Tag flood: Tile', rssi: -50, confidence: 90, type: 'Tracker' },
+                        { mac: 'BB:00:03', rssi: -60, confidence: 80, type: 'Tracker' }
+                    ]);
+                    results.noPinsInTagFlood = consentQueue.length === 0 && !handledMacs.has('BB:00:03');
+                    liveMatches = savedLive; consentQueue = [];
+                    handledMacs.clear(); handledMacs.add('BB:00:02');
+                }
                 // An unmatched device is its own state: no category, no icon,
                 // and above all not counted as a camera.
                 results.noMatchIsOwnBand = categoryOf('').key === 'none' &&
@@ -4943,6 +4969,9 @@
                 results.noRingOnAirtag = airtag.indexOf('data-act="ring"') === -1 &&
                                          airtag.indexOf('data-act="hunt"') > 0;
                 results.ringOnFob = fob.indexOf('data-act="ring"') > 0;
+                // A sentinel row ("Tag flood: Tile", "BLE popup spam") has no address:
+                // Hunt/Ring/Ignore would send a MAC the board can never match.
+                results.noActionsOnSentinel = actionRow({ mac: 'Tag flood: Tile', protocol: 'BLE' }, categoryOf('Tracker')) === '';
 
                 // Ignore: offered on stable addresses only, painted from the device.
                 const savedIg = ignoredMacs;

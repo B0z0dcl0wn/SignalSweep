@@ -4,6 +4,56 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Added — a fake-tracker flood is one alert, not a hundred
+
+- **A tag spammer (fake AirTags, Google Find My, Samsung SmartTags or Tiles on a
+  fresh throwaway address every burst) now collapses into one "Tag flood · <type>"
+  Tracker row per type, instead of one beep per fake.** Idea from SquachWatch-CYD,
+  whose field logs show 91 fake AirTags in 22 minutes and later 170 fake Google
+  tags; reimplemented here, nothing copied. Always on, not behind the Attack
+  toggle: the alert storm happens whether Attack is on or not.
+- **The evidence is address lifetime, not payload.** A real tag keeps one address
+  for about 15 minutes and adverts every ~2 s; a spammer's address is heard a
+  couple of times and never again. An address that goes quiet for 30 s having been
+  heard 3 times or fewer is one piece of evidence; 6 inside 5 minutes trips that
+  type, and 5 minutes with no new evidence releases it. A real tag passes 3 adverts
+  in a few seconds, so it never counts, however long it sits beside the board
+  (host test: an hour at 2 s, zero evidence).
+- **Trap: a flood faster than the 32-address ring must still trip.** Evicting an
+  address from a full ring counts as evidence when it was heard 3 times or fewer;
+  otherwise a fast enough spammer pushes every fake out before it goes quiet, and
+  the detector never trips (host test: 100 addresses in 10 s).
+- **Trap: date the evidence when the address went quiet, not when it was noticed.**
+  The sweep is lazy -- it runs on the next advert of that type -- so the fakes
+  still in the ring when a flood stops get swept by whatever comes next, maybe
+  hours later. Dated "now", they re-tripped the gate and muted the first real tag
+  to show up. The first bench run caught it live: the real Tile keychain on the
+  bench kept the Tile flood refreshing for minutes after the spammer stopped.
+  Evidence is now stamped at last-heard + 30 s, and one address counts once per
+  window, or a weak real tag heard every ~40 s counts on every gap and two real
+  tags trip a false flood (host tests for both).
+- **While a type is flooded its fakes stay listed but never beep or log, the same
+  way Ignore works.** Their once-per-appearance `alerted` flag stays clear, so a
+  real tag still present when the flood ends sounds then. Only the flood row itself
+  beeps (tracker pattern) and logs, once. The app follows suit: with Record on it
+  offers no pin for the flood row, nor for trackers while a flood row is live, so
+  170 fakes are not 170 prompts.
+- **Rows with no single transmitter -- "Tag flood: <type>" and "BLE popup spam" --
+  now reach the flash log and the SD card**, under the reserved address
+  `02:00:00:00:00:00` (locally administered, so no vendor lookup), named by the
+  row. Their "MAC" is a name, and the log's MAC parser dropped them, so the one
+  beep a flood makes was missing from the record.
+- **Bench, both boards:** a transmitter sending one fake per second across all four
+  types tripped every type in about 80 s on the S3 and the C5. Before it trips, each
+  fake still beeps once (about 9-10 per type, because an address has to go quiet for
+  30 s before it counts; the spec's cuts are starting values, to be tuned from field
+  logs). After that the alert count stayed flat for the rest of the flood. When the
+  spammer stopped, each type released 5 minutes after its last evidence; the steady
+  fake AirTag, silent while muted, then beeped exactly once. All four flood rows
+  landed in the flash log, once each. One stationary fake AirTag for 5 minutes
+  produced no flood row. The flood rows have no Hunt, Ring or Ignore buttons in the
+  app, because they have no real address to act on.
+
 ### Added — Flock's solar battery by its own GATT services (signatures v11)
 
 - **Two exact 128-bit UUID rules, "Flock battery (auth service)"

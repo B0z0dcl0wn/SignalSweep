@@ -138,3 +138,78 @@ typedef DistinctSet BleSpamState;
 static inline uint32_t bleSpamNote(BleSpamState* st, uint64_t mac, uint32_t now) {
     return attackDistinctNote(st, mac, now, ATTACK_WINDOW_MS_BLESPAM);
 }
+
+// ---- Tag flood: fake trackers on throwaway addresses ------------------------
+// A real tag keeps one address ~15 min and adverts every ~2 s. A spammer's
+// address is heard a couple of times and never again. Evidence = an address
+// quiet >= QUIET_MS with <= MAX_HITS adverts (or evicted from a full ring with
+// <= MAX_HITS: a flood faster than the ring must still count). EVIDENCE pieces
+// inside WINDOW_MS trips; HOLD_MS with no new evidence releases. Per type.
+// Evidence is dated when the address went quiet (last + QUIET_MS), never when
+// the lazy sweep noticed: fakes left in the ring after a flood are swept by the
+// next advert of that type, maybe hours later, and dating them "now" re-tripped
+// the gate on the first real tag. One address counts once per WINDOW_MS, or a
+// weak real tag heard every ~40 s counts on every gap.
+#define TAGFLOOD_TYPES      4          // Apple Find My, Google FMDN, Samsung, Tile
+#define TAGFLOOD_ADDRS      32
+#define TAGFLOOD_EVIDENCE   6
+#define TAGFLOOD_MAX_HITS   3
+#define TAGFLOOD_QUIET_MS   30000u
+#define TAGFLOOD_WINDOW_MS  300000u
+#define TAGFLOOD_HOLD_MS    300000u
+#define TAGFLOOD_TITLE      "Tag flood"
+
+typedef struct { uint8_t used; uint8_t hits; uint64_t key; uint32_t last; } TagFloodAddr;
+typedef struct {
+    TagFloodAddr a[TAGFLOOD_ADDRS];
+    uint32_t ev[TAGFLOOD_EVIDENCE]; uint64_t evKey[TAGFLOOD_EVIDENCE]; uint8_t evN;
+    uint8_t tripped; uint32_t lastEvidence; uint32_t total;
+} TagFloodState;
+
+// `stamp` <= now always (a sweep only fires once last + QUIET_MS has passed).
+static inline void tagFloodEvidence(TagFloodState* st, uint64_t key, uint32_t stamp, uint32_t now) {
+    int slot = st->evN;
+    for (int i = 0; i < st->evN; i++) {
+        if (st->evKey[i] == key && (uint32_t)(now - st->ev[i]) <= TAGFLOOD_WINDOW_MS) return;
+        if (st->evN == TAGFLOOD_EVIDENCE && (slot == TAGFLOOD_EVIDENCE ||
+            (uint32_t)(now - st->ev[i]) > (uint32_t)(now - st->ev[slot]))) slot = i;   // oldest
+    }
+    if (st->evN < TAGFLOOD_EVIDENCE) st->evN++;
+    st->ev[slot] = stamp; st->evKey[slot] = key; st->total++;
+    if (st->total == 1 || (uint32_t)(now - stamp) < (uint32_t)(now - st->lastEvidence)) st->lastEvidence = stamp;
+    if (st->evN < TAGFLOOD_EVIDENCE) return;
+    uint32_t newest = 0xFFFFFFFFu, oldest = 0;
+    for (int i = 0; i < TAGFLOOD_EVIDENCE; i++) {
+        uint32_t age = (uint32_t)(now - st->ev[i]);
+        if (age < newest) newest = age;
+        if (age > oldest) oldest = age;
+    }
+    if (oldest - newest <= TAGFLOOD_WINDOW_MS) st->tripped = 1;
+}
+
+static inline void tagFloodNote(TagFloodState* st, uint64_t key, uint32_t now) {
+    int hit = -1, empty = -1, oldest = -1;
+    for (int i = 0; i < TAGFLOOD_ADDRS; i++) {
+        TagFloodAddr* e = &st->a[i];
+        if (!e->used) { if (empty < 0) empty = i; continue; }
+        if (e->key == key) { hit = i; continue; }
+        if ((uint32_t)(now - e->last) >= TAGFLOOD_QUIET_MS) {
+            if (e->hits <= TAGFLOOD_MAX_HITS) tagFloodEvidence(st, e->key, e->last + TAGFLOOD_QUIET_MS, now);
+            e->used = 0; if (empty < 0) empty = i; continue;
+        }
+        if (oldest < 0 || (uint32_t)(now - e->last) > (uint32_t)(now - st->a[oldest].last)) oldest = i;
+    }
+    if (hit >= 0) { st->a[hit].last = now; if (st->a[hit].hits < 255) st->a[hit].hits++; return; }
+    int put = empty;
+    if (put < 0) { put = oldest; if (st->a[put].hits <= TAGFLOOD_MAX_HITS) tagFloodEvidence(st, st->a[put].key, now, now); }
+    st->a[put].used = 1; st->a[put].hits = 1; st->a[put].key = key; st->a[put].last = now;
+}
+
+// ponytail: expiry is checked lazily, on the next advert of this type; a type
+// silent for 49+ days mid-hold would read as fresh (millis wrap). Accepted.
+static inline int tagFloodActive(TagFloodState* st, uint32_t now) {
+    if (st->tripped && (uint32_t)(now - st->lastEvidence) >= TAGFLOOD_HOLD_MS) {
+        st->tripped = 0; st->evN = 0; st->total = 0;
+    }
+    return st->tripped;
+}
