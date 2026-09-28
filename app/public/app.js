@@ -540,6 +540,8 @@
         // Trackers get the two things you actually want when something may be
         // following you: walk it down, or make it announce itself.
         function actionRow(m, cat) {
+            // Sentinel rows ("Tag flood: Tile", "BLE popup spam") have no address to act on.
+            if (/\s/.test(String(m.mac))) return '';
             // Ignore is offered wherever a stable, categorised address is
             // shown, regardless of the tracker/foxhunt gate below -- it is a
             // per-device opt-out, not a foxhunt tool. Painted only from the
@@ -4943,6 +4945,9 @@
                 results.noRingOnAirtag = airtag.indexOf('data-act="ring"') === -1 &&
                                          airtag.indexOf('data-act="hunt"') > 0;
                 results.ringOnFob = fob.indexOf('data-act="ring"') > 0;
+                // A sentinel row ("Tag flood: Tile", "BLE popup spam") has no address:
+                // Hunt/Ring/Ignore would send a MAC the board can never match.
+                results.noActionsOnSentinel = actionRow({ mac: 'Tag flood: Tile', protocol: 'BLE' }, categoryOf('Tracker')) === '';
 
                 // Ignore: offered on stable addresses only, painted from the device.
                 const savedIg = ignoredMacs;
