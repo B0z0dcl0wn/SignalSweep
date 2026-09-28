@@ -4,6 +4,13 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-09-28 — It hears the attack gear, keeps a card, knows the time, and says why it crashed
+
+Field note: the three attack detectors had one grocery-store false-positive
+soak. Karma and BLE spam were clean at their first-cut thresholds; deauth was
+raised to 30 after it, and 30 has been bench-tested but not re-soaked in the
+field. Attack detection stays off by default.
+
 ### Added — attack detectors: deauth burst, karma/PineAP, BLE popup spam; pwnagotchi gzip on the C5
 
 - **Three rate-based detectors join the Attack toggle: deauth bursts, karma/PineAP
