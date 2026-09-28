@@ -94,6 +94,17 @@ Copyright (C) 2019 Intel Corporation (maintainer: Gabriel Cox); (C) 2020 Simon
 Wunderlich, Marek Sobe; (C) 2020 Doodle Labs. The full ASTM F3411 decode is
 theirs — we call it, we did not write it.
 
+## Pwnagotchi gzip decode (ESP32-C5)
+
+**[miniz](https://github.com/richgel999/miniz)** — MIT, by Rich Geldreich and
+contributors. The S3 gets `tinfl_decompress` for free from its ROM
+(`esp32s3.rom.ld`); the ESP32-C5's IDF-5.x ROM dropped miniz, so
+`firmware/src/vendor/miniz_tinfl.{h,c}` vendors just the `tinfl_*` inflate
+half (no deflate/compress, no zip-archive code) so the C5 can gunzip a real
+pwnagotchi/pwngrid advertisement the same way the S3 already does. License
+header kept verbatim in both files; gated to build only under
+`CONFIG_IDF_TARGET_ESP32C5` so the S3 keeps using its ROM copy unchanged.
+
 ## Libraries
 
 | Library | Author |

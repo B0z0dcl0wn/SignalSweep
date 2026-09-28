@@ -9,10 +9,15 @@
 #include <WiFi.h>
 #include <esp_wifi.h>
 // The S3 ROM exports tinfl_decompress (esp32s3.rom.ld), so we gunzip a compressed
-// pwngrid advertisement for free. The C5 ROM (IDF 5.x) dropped miniz, so it has no
-// rom/miniz.h — the C5 detects only uncompressed pwngrid until a portable inflate
-// is vendored. Gate the whole gzip path on this.
-#if !defined(CONFIG_IDF_TARGET_ESP32C5)
+// pwngrid advertisement for free. The C5 ROM (IDF 5.x) dropped miniz, so there is
+// no rom/miniz.h there.
+#if defined(CONFIG_IDF_TARGET_ESP32C5)
+  // Vendor the MIT tinfl (inflate only) -- one-way compatible into GPL-3.0,
+  // header intact. Same symbols the S3 gets from ROM, so the gzip code below
+  // is identical on both boards.
+  #include "vendor/miniz_tinfl.h"
+  #define PWN_HAS_GUNZIP 1
+#else
   #include "rom/miniz.h"
   #define PWN_HAS_GUNZIP 1
 #endif
@@ -1742,7 +1747,8 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
                         if (st == TINFL_STATUS_DONE) { pwnJson[outSz] = 0; json = pwnJson; }
                     }
 #endif
-                    // C5 (no ROM miniz): a compressed advert is left undecoded.
+                    // (PWN_HAS_GUNZIP is now defined on both boards -- see the
+                    // include block at the top of this file.)
                 } else {
                     pwngridBuf[pwnLen] = 0;
                     json = pwngridBuf;
