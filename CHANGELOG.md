@@ -12,10 +12,16 @@ All notable changes to SignalSweep are recorded here.
   only, never a camera tab), and share the once-per-appearance beep via
   `noteAlertForTarget`. Rows surface through a common `upsertAttackTarget()` and
   read "Deauth burst · N frames · ch X", "Karma AP · N SSIDs" and "BLE popup spam ·
-  N MACs". The thresholds below are a first cut, not a tuned model — reasonable
-  starting cuts, to be tuned by a busy-place false-positive soak (not yet run).
-- **Deauth: per-transmitter sliding window, 10 frames / 5 s, broadcast counts
-  double.** Frames are bucketed by the transmitter's own MAC (802.11 addr2), not
+  N MACs". Karma and BLE spam held their first-cut thresholds through a
+  grocery-store false-positive soak (zero hits); deauth did not, see below.
+- **Deauth: per-transmitter sliding window, 30 frames / 5 s, broadcast counts
+  double.** The first cut was 10: a store soak (2026-09-28) logged 11 false
+  alarms from ordinary access points at 11-24 frames per 5 s (clients being
+  moved between radios), so it is 30 now, above that peak and still far below a
+  real flood. The timestamp ring grew from 24 to 64 with it, and a
+  `static_assert` keeps it larger than the threshold: a ring that can hold fewer
+  timestamps than the threshold can never reach it, and the detector goes
+  silently dead. Frames are bucketed by the transmitter's own MAC (802.11 addr2), not
   globally, so one flooding AP or attacker trips it without every other AP's
   ordinary deauths adding up against it. A broadcast deauth (addr1 =
   `ff:ff:ff:ff:ff:ff`) hits every associated client at once, so it is counted

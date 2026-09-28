@@ -14,9 +14,10 @@
 #define ATTACK_LRU_SLOTS          8
 #define ATTACK_DISTINCT_CAP       16
 
-#define ATTACK_DEAUTH_THRESHOLD   10       // frames per transmitter in the window
+#define ATTACK_DEAUTH_THRESHOLD   30       // frames per transmitter in the window (field soak 2026-09-28: legit APs hit 11-24)
 #define ATTACK_WINDOW_MS_DEAUTH   5000u
-#define ATTACK_DEAUTH_RING        24       // > 2*threshold: a broadcast burst (x2) fits
+#define ATTACK_DEAUTH_RING        64       // > 2*threshold: a broadcast burst (x2) fits; must exceed THRESHOLD or it can never fire
+static_assert(ATTACK_DEAUTH_RING > ATTACK_DEAUTH_THRESHOLD, "deauth ring must hold more than THRESHOLD timestamps or the detector can never fire");
 
 #define ATTACK_KARMA_THRESHOLD    4        // distinct SSIDs one BSSID answers
 #define ATTACK_WINDOW_MS_KARMA    60000u
