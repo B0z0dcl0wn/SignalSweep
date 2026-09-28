@@ -138,3 +138,62 @@ typedef DistinctSet BleSpamState;
 static inline uint32_t bleSpamNote(BleSpamState* st, uint64_t mac, uint32_t now) {
     return attackDistinctNote(st, mac, now, ATTACK_WINDOW_MS_BLESPAM);
 }
+
+// ---- Tag flood: fake trackers on throwaway addresses ------------------------
+// A real tag keeps one address ~15 min and adverts every ~2 s. A spammer's
+// address is heard a couple of times and never again. Evidence = an address
+// quiet >= QUIET_MS with <= MAX_HITS adverts (or evicted from a full ring with
+// <= MAX_HITS: a flood faster than the ring must still count). EVIDENCE pieces
+// inside WINDOW_MS trips; HOLD_MS with no new evidence releases. Per type.
+#define TAGFLOOD_TYPES      4          // Apple Find My, Google FMDN, Samsung, Tile
+#define TAGFLOOD_ADDRS      32
+#define TAGFLOOD_EVIDENCE   6
+#define TAGFLOOD_MAX_HITS   3
+#define TAGFLOOD_QUIET_MS   30000u
+#define TAGFLOOD_WINDOW_MS  300000u
+#define TAGFLOOD_HOLD_MS    300000u
+#define TAGFLOOD_TITLE      "Tag flood"
+
+typedef struct { uint8_t used; uint8_t hits; uint64_t key; uint32_t last; } TagFloodAddr;
+typedef struct {
+    TagFloodAddr a[TAGFLOOD_ADDRS];
+    uint32_t ev[TAGFLOOD_EVIDENCE]; uint8_t evN, evHead;   // evidence time ring
+    uint8_t tripped; uint32_t lastEvidence; uint32_t total;
+} TagFloodState;
+
+static inline void tagFloodEvidence(TagFloodState* st, uint32_t now) {
+    st->ev[st->evHead] = now;
+    st->evHead = (uint8_t)((st->evHead + 1) % TAGFLOOD_EVIDENCE);
+    if (st->evN < TAGFLOOD_EVIDENCE) st->evN++;
+    st->lastEvidence = now; st->total++;
+    // evHead now points at the oldest stamp.
+    if (st->evN == TAGFLOOD_EVIDENCE && (uint32_t)(now - st->ev[st->evHead]) <= TAGFLOOD_WINDOW_MS)
+        st->tripped = 1;
+}
+
+static inline void tagFloodNote(TagFloodState* st, uint64_t key, uint32_t now) {
+    int hit = -1, empty = -1, oldest = -1;
+    for (int i = 0; i < TAGFLOOD_ADDRS; i++) {
+        TagFloodAddr* e = &st->a[i];
+        if (!e->used) { if (empty < 0) empty = i; continue; }
+        if (e->key == key) { hit = i; continue; }
+        if ((uint32_t)(now - e->last) >= TAGFLOOD_QUIET_MS) {
+            if (e->hits <= TAGFLOOD_MAX_HITS) tagFloodEvidence(st, now);
+            e->used = 0; if (empty < 0) empty = i; continue;
+        }
+        if (oldest < 0 || (uint32_t)(now - e->last) > (uint32_t)(now - st->a[oldest].last)) oldest = i;
+    }
+    if (hit >= 0) { st->a[hit].last = now; if (st->a[hit].hits < 255) st->a[hit].hits++; return; }
+    int put = empty;
+    if (put < 0) { put = oldest; if (st->a[put].hits <= TAGFLOOD_MAX_HITS) tagFloodEvidence(st, now); }
+    st->a[put].used = 1; st->a[put].hits = 1; st->a[put].key = key; st->a[put].last = now;
+}
+
+// ponytail: expiry is checked lazily, on the next advert of this type; a type
+// that goes silent for 49 days mid-hold would wrap. Called per advert, so it can't.
+static inline int tagFloodActive(TagFloodState* st, uint32_t now) {
+    if (st->tripped && (uint32_t)(now - st->lastEvidence) >= TAGFLOOD_HOLD_MS) {
+        st->tripped = 0; st->evN = 0; st->evHead = 0; st->total = 0;
+    }
+    return st->tripped;
+}

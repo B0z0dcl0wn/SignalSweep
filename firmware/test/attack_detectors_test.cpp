@@ -118,6 +118,54 @@ static void test_titles_keyword_clean() {
         for (const char* k : kw) assert(strstr(lc, k) == nullptr); }
 }
 
+static void addrs(TagFloodState* st, int n, uint8_t base, uint32_t t0, uint32_t gap) {
+    for (int i = 0; i < n; i++) tagFloodNote(st, mac((uint8_t)(base + i)), t0 + i * gap);
+}
+static void test_tagflood_stable_never_evidence() {
+    TagFloodState st; memset(&st, 0, sizeof(st));
+    for (int i = 0; i < 1800; i++) tagFloodNote(&st, mac(1), 1000 + i * 2000);  // 1 h at 2 s
+    assert(st.total == 0 && !tagFloodActive(&st, 1000 + 1800 * 2000));
+}
+static void test_tagflood_six_trips_five_doesnt() {
+    TagFloodState st; memset(&st, 0, sizeof(st));
+    addrs(&st, 5, 10, 1000, 10000);                    // 5 one-shot addresses
+    tagFloodNote(&st, mac(200), 200000);               // sweep: all 5 quiet >= 30 s
+    assert(st.total == 5 && !tagFloodActive(&st, 200000));
+    TagFloodState s2; memset(&s2, 0, sizeof(s2));
+    addrs(&s2, 6, 10, 1000, 10000);
+    tagFloodNote(&s2, mac(200), 200000);
+    assert(s2.total == 6 && tagFloodActive(&s2, 200000));
+}
+static void test_tagflood_five_no_trip() {             // spread beyond the 5-min window
+    TagFloodState st; memset(&st, 0, sizeof(st));
+    // one one-shot passer every 70 s; each is swept by the next, so 6 stamps
+    // span 350 s > WINDOW and it never trips
+    for (int i = 0; i < 12; i++) tagFloodNote(&st, mac((uint8_t)(10 + i)), 1000 + i * 70000);
+    assert(st.total == 11);
+    assert(!tagFloodActive(&st, 1000 + 12 * 70000));
+}
+static void test_tagflood_hold_expires() {
+    TagFloodState st; memset(&st, 0, sizeof(st));
+    addrs(&st, 6, 10, 1000, 1000);
+    tagFloodNote(&st, mac(200), 60000);
+    assert(tagFloodActive(&st, 60000));
+    assert(tagFloodActive(&st, 60000 + TAGFLOOD_HOLD_MS - 1));
+    assert(!tagFloodActive(&st, 60000 + TAGFLOOD_HOLD_MS));
+    assert(st.total == 0);                             // reset for the next flood
+}
+static void test_tagflood_fast_flood_trips() {         // 100 addresses in 10 s, ring is 32
+    TagFloodState st; memset(&st, 0, sizeof(st));
+    addrs(&st, 100, 0, 1000, 100);
+    assert(tagFloodActive(&st, 11000));
+}
+static void test_tagflood_wrap_safe() {
+    TagFloodState st; memset(&st, 0, sizeof(st));
+    uint32_t t0 = 0xFFFFFFFFu - 20000;
+    addrs(&st, 6, 10, t0, 1000);
+    tagFloodNote(&st, mac(200), t0 + 60000);           // wraps
+    assert(tagFloodActive(&st, t0 + 60000));
+}
+
 int main() {
     test_deauth_fires_at_threshold();
     test_deauth_slow_trickle_never_fires();
@@ -129,6 +177,12 @@ int main() {
     test_blespam_distinct_random_macs();
     test_blespam_distinct_set_over_capacity();
     test_titles_keyword_clean();
+    test_tagflood_stable_never_evidence();
+    test_tagflood_six_trips_five_doesnt();
+    test_tagflood_five_no_trip();
+    test_tagflood_hold_expires();
+    test_tagflood_fast_flood_trips();
+    test_tagflood_wrap_safe();
     printf("attack_detectors_test: all passed\n");
     return 0;
 }
