@@ -149,9 +149,34 @@ static void test_tagflood_hold_expires() {
     addrs(&st, 6, 10, 1000, 1000);
     tagFloodNote(&st, mac(200), 60000);
     assert(tagFloodActive(&st, 60000));
-    assert(tagFloodActive(&st, 60000 + TAGFLOOD_HOLD_MS - 1));
-    assert(!tagFloodActive(&st, 60000 + TAGFLOOD_HOLD_MS));
+    // Evidence is dated when the address went quiet (last + QUIET), not when
+    // the lazy sweep noticed: the last fake was heard at 6000.
+    uint32_t le = st.lastEvidence;
+    assert(le == 6000 + TAGFLOOD_QUIET_MS);
+    assert(tagFloodActive(&st, le + TAGFLOOD_HOLD_MS - 1));
+    assert(!tagFloodActive(&st, le + TAGFLOOD_HOLD_MS));
     assert(st.total == 0);                             // reset for the next flood
+}
+// Review finding: the fakes left in the ring when a flood stops are swept by
+// the NEXT advert of that type, hours later. Dated at the sweep, they re-tripped
+// the gate and muted the first real tag to show up.
+static void test_tagflood_stale_ring_no_retrip() {
+    TagFloodState st; memset(&st, 0, sizeof(st));
+    addrs(&st, 45, 10, 1000, 4000);                    // 3 min, one fake per 4 s
+    assert(tagFloodActive(&st, 1000 + 44 * 4000));
+    uint32_t later = 1000 + 44 * 4000 + 3u * 3600u * 1000u;
+    tagFloodNote(&st, mac(250), later);                // a real tag, 3 h on
+    assert(!tagFloodActive(&st, later));
+}
+// Review finding: one weak real tag heard every 44 s went quiet >= 30 s each
+// time and counted as fresh evidence every time -- a false flood from two tags.
+static void test_tagflood_same_key_counts_once() {
+    TagFloodState st; memset(&st, 0, sizeof(st));
+    for (uint32_t t = 1000; t < 1000 + 600000; t += 2000) {
+        tagFloodNote(&st, mac(1), t);                  // strong stable tag
+        if ((t - 1000) % 44000 == 0) tagFloodNote(&st, mac(2), t);   // weak one
+        assert(!tagFloodActive(&st, t));
+    }
 }
 static void test_tagflood_fast_flood_trips() {         // 100 addresses in 10 s, ring is 32
     TagFloodState st; memset(&st, 0, sizeof(st));
@@ -183,6 +208,8 @@ int main() {
     test_tagflood_hold_expires();
     test_tagflood_fast_flood_trips();
     test_tagflood_wrap_safe();
+    test_tagflood_stale_ring_no_retrip();
+    test_tagflood_same_key_counts_once();
     printf("attack_detectors_test: all passed\n");
     return 0;
 }

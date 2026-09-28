@@ -604,6 +604,10 @@ console.log('[signalsweep self-test] alert log record + write path: ok');
     if (!/upsertAttackTarget\(String\(TAGFLOOD_TITLE ": "\)[^;]*"Tracker"\);/.test(ww)) rs.push('the tag-flood row no longer files under Tracker');
     if ((ww.match(/if \(!floodMuted\) noteAlertForTarget/g) || []).length !== 2) rs.push('tag flood must gate exactly the two BLE noteAlertForTarget calls');
     if (/attackDetect[^\n]*tagFlood|tagFlood[^\n]*attackDetect/.test(ww)) rs.push('tag flood must not be Attack-gated');
+    // A sentinel row's "mac" is a name, so alertLogParseMac rejects it and the
+    // one alert the flood row sounds never reached the flash log or the card.
+    if (!/bool sentinel = t\.mac\.indexOf\(' '\) >= 0;\s*if \(sentinel\) \{ memset\(p\.mac, 0, 6\); p\.mac\[0\] = 0x02; \}/.test(ww) ||
+        !/p\.rule = sentinel \? t\.mac : t\.matchedRule;/.test(ww)) rs.push('sentinel rows (Tag flood, BLE popup spam) are no longer logged under the reserved 02:00:00:00:00:00');
     if (rs.length) { console.log('FAIL: tag flood:', rs); process.exit(1); }
     console.log('[signalsweep self-test] tag flood: ok');
 }

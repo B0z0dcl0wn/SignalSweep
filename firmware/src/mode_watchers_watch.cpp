@@ -2342,10 +2342,16 @@ static void watchersPeriodicTask(void *pvParameters) {
                 if (!t.logPending) continue;
                 t.logPending = false;
                 PendingLog p;
-                if (!alertLogParseMac(t.mac.c_str(), p.mac)) continue;
+                // Sentinel rows ("Tag flood: Tile", "BLE popup spam") have no
+                // address: log them under 02:00:00:00:00:00 (locally administered,
+                // so no vendor lookup), named by the row -- the title carries a
+                // changing count and would burn a names.txt slot per flood.
+                bool sentinel = t.mac.indexOf(' ') >= 0;
+                if (sentinel) { memset(p.mac, 0, 6); p.mac[0] = 0x02; }
+                else if (!alertLogParseMac(t.mac.c_str(), p.mac)) continue;
                 p.cat  = (uint8_t)alertCategoryFromName(t.type.c_str());
                 p.rssi = (int8_t)t.rssi;
-                p.rule = t.matchedRule;
+                p.rule = sentinel ? t.mac : t.matchedRule;
                 // The card copy's extra detail (sd_log.h). Deliberately no drone
                 // or operator coordinates: that is the user's position.
                 p.name = t.name;
