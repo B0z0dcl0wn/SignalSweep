@@ -99,7 +99,10 @@ static const char *SIG_FILE_PATH = "/data/signatures.json";
 //        the STM32WB-derived 80:e1:26/27 addresses a Flipper Zero uses (60),
 //        Pineapple_ management AP SSID (70) and the ESP deauther's "pwned"
 //        SSID (60). All "Hacking gear", matched only while Attack is on.
-#define SIG_SCHEMA_VERSION 10
+//   v11: Flock's solar battery GATT services as exact 128-bit UUIDs (80):
+//        auth e8ccbb38-... and safety 20c944c1-..., from the Flock firmware
+//        dump. The first 128-bit UUID rules in the defaults.
+#define SIG_SCHEMA_VERSION 11
 
 static SemaphoreHandle_t watchersMutex = NULL;
 static bool watchersRunning = false;
@@ -315,6 +318,17 @@ static void ensureSignaturesFileExists() {
             // enough to beep. service_uuid is exact-matched now (uuidMatches),
             // but a UUID rule still has to be specific enough to stand alone,
             // because that is exactly what CONF_ALERT_MIN lets it do.
+
+            // Flock's solar battery ("Penguin") GATT services, from the Flock
+            // camera firmware dump (the Flock-You project, MIT; also in
+            // SquachWatch-CYD). Full 128-bit, Flock's own -- exact-matched, so
+            // nothing else carries them. The battery only shows these if its
+            // link to the camera has dropped (the camera holds it open): 0 in
+            // 173 captures so far. A sighting is a Flock pole, so it beeps.
+            addRule("Flock battery (auth service)", "Flock Safety", "", "", "",
+                    "e8ccbb38-9532-46a8-9fe5-1814df172e6f", 80);
+            addRule("Flock battery (safety service)", "Flock Safety", "", "", "",
+                    "20c944c1-add2-42d7-a638-967ee9a26ff6", 80);
 
             // Device Name Keywords. "raven" and "penguin" were dropped at v5:
             // ordinary words, matched as substrings, scoring W_NAME (70) — i.e.

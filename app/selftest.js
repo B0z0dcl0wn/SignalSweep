@@ -738,7 +738,13 @@ for (const call of defaults.match(/addRule\([^;]*\);/g) || []) {
     const hasLux = /0x0D53/i.test(call);
     if (hasFd5f !== hasLux) regFail.push(`glasses rule states fd5f/0x0D53 without the other: ${call.replace(/\s+/g, ' ')}`);
 }
-if (!/#define SIG_SCHEMA_VERSION 10\b/.test(wwSrc)) regFail.push('SIG_SCHEMA_VERSION not bumped to 10');
+if (!/#define SIG_SCHEMA_VERSION 11\b/.test(wwSrc)) regFail.push('SIG_SCHEMA_VERSION not bumped to 11');
+// Flock battery GATT services (v11): full 128-bit UUIDs, exact-matched, filed
+// under "Flock Safety" so they route to the ALPR/camera lens and beep. A
+// truncated UUID would fall into uuidMatches' 16-bit branch or never match.
+for (const u of ['e8ccbb38-9532-46a8-9fe5-1814df172e6f', '20c944c1-add2-42d7-a638-967ee9a26ff6'])
+    if (!new RegExp(`addRule\\("Flock battery[^"]*",\\s*"Flock Safety",\\s*"",\\s*"",\\s*"",\\s*"${u}",\\s*80\\)`).test(wwSrc))
+        regFail.push(`no "Flock Safety" 128-bit UUID rule at 80 for ${u}`);
 const hwCpp = readFileSync(new URL('../firmware/src/hardware_manager.cpp', import.meta.url), 'utf8');
 if (!/c\.indexOf\("glasses"\)[^;]*\)\s*return ALERT_BODYCAM;/.test(hwCpp)) regFail.push('firmware does not route "glasses" to ALERT_BODYCAM');
 // Every default company-ID rule must name the company the Bluetooth SIG
