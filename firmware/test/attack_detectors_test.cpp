@@ -32,8 +32,8 @@ static void test_deauth_slow_trickle_never_fires() {
 static void test_deauth_broadcast_counts_double() {
     DeauthState st; memset(&st, 0, sizeof(st));
     uint32_t c = 0;
-    // 5 broadcast frames == 10 counted -> fires.
-    for (int i = 0; i < 5; i++) c = deauthNote(&st, mac(1), 1 /*broadcast*/, 1000 + i);
+    // half-threshold broadcast frames, each counted twice -> fires.
+    for (int i = 0; i < (ATTACK_DEAUTH_THRESHOLD + 1) / 2; i++) c = deauthNote(&st, mac(1), 1 /*broadcast*/, 1000 + i);
     assert(c >= ATTACK_DEAUTH_THRESHOLD);
 }
 
@@ -47,7 +47,7 @@ static void test_deauth_window_slides() {
 
 static void test_deauth_wrap_safe() {
     DeauthState st; memset(&st, 0, sizeof(st));
-    uint32_t base = 0xFFFFF000u; // ~4 s before wrap
+    uint32_t base = 0xFFFFFC00u; // ~1 s before wrap, so the burst really crosses it
     uint32_t c = 0;
     for (int i = 0; i < ATTACK_DEAUTH_THRESHOLD; i++) c = deauthNote(&st, mac(1), 0, base + i * 100); // crosses UINT32_MAX->0
     assert(c == ATTACK_DEAUTH_THRESHOLD); // window math must not blow up across the wrap
@@ -61,13 +61,16 @@ static void test_deauth_lru_keeps_active_burster() {
     DeauthState st; memset(&st, 0, sizeof(st));
     // t=1000: seed 7 other transmitters (7 of the 8 slots), all older.
     for (uint8_t k = 1; k <= ATTACK_LRU_SLOTS - 1; k++) deauthNote(&st, mac(k), 0, 1000);
-    // t=2000..2008: burst mac(0) into the 8th (last) slot -- newest lastSeen.
-    for (int i = 0; i < ATTACK_DEAUTH_THRESHOLD - 1; i++) deauthNote(&st, mac(0), 0, 2000 + i);
-    // t=2009: a 9th distinct tx needs a slot; must evict one of the OLDER
+    // t=2000..: burst mac(0) into the 8th (last) slot -- newest lastSeen.
+    // Later times are derived from the burst end so the clock never steps
+    // back, whatever ATTACK_DEAUTH_THRESHOLD is.
+    uint32_t t = 2000;
+    for (int i = 0; i < ATTACK_DEAUTH_THRESHOLD - 1; i++) deauthNote(&st, mac(0), 0, t++);
+    // a 9th distinct tx needs a slot; must evict one of the OLDER
     // (t=1000) transmitters, never the just-active burster.
-    deauthNote(&st, mac(8), 0, 2009);
-    // t=2010: the burster's next frame must still see its own history.
-    uint32_t c = deauthNote(&st, mac(0), 0, 2010);
+    deauthNote(&st, mac(8), 0, t++);
+    // the burster's next frame must still see its own history.
+    uint32_t c = deauthNote(&st, mac(0), 0, t);
     assert(c >= ATTACK_DEAUTH_THRESHOLD);
 }
 
