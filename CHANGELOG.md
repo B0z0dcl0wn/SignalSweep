@@ -13,8 +13,7 @@ All notable changes to SignalSweep are recorded here.
   `noteAlertForTarget`. Rows surface through a common `upsertAttackTarget()` and
   read "Deauth burst · N frames · ch X", "Karma AP · N SSIDs" and "BLE popup spam ·
   N MACs". The thresholds below are a first cut, not a tuned model — reasonable
-  starting numbers checked against a busy-place false-positive soak, expected to
-  move with more field time.
+  starting cuts, to be tuned by a busy-place false-positive soak (not yet run).
 - **Deauth: per-transmitter sliding window, 10 frames / 5 s, broadcast counts
   double.** Frames are bucketed by the transmitter's own MAC (802.11 addr2), not
   globally, so one flooding AP or attacker trips it without every other AP's
