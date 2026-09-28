@@ -9,10 +9,15 @@
 #include <WiFi.h>
 #include <esp_wifi.h>
 // The S3 ROM exports tinfl_decompress (esp32s3.rom.ld), so we gunzip a compressed
-// pwngrid advertisement for free. The C5 ROM (IDF 5.x) dropped miniz, so it has no
-// rom/miniz.h — the C5 detects only uncompressed pwngrid until a portable inflate
-// is vendored. Gate the whole gzip path on this.
-#if !defined(CONFIG_IDF_TARGET_ESP32C5)
+// pwngrid advertisement for free. The C5 ROM (IDF 5.x) dropped miniz, so there is
+// no rom/miniz.h there.
+#if defined(CONFIG_IDF_TARGET_ESP32C5)
+  // Vendor the MIT tinfl (inflate only) -- one-way compatible into GPL-3.0,
+  // header intact. Same symbols the S3 gets from ROM, so the gzip code below
+  // is identical on both boards.
+  #include "vendor/miniz_tinfl.h"
+  #define PWN_HAS_GUNZIP 1
+#else
   #include "rom/miniz.h"
   #define PWN_HAS_GUNZIP 1
 #endif
@@ -27,6 +32,7 @@
 #include <freertos/semphr.h>
 #include <freertos/task.h>
 #include <vector>
+#include "attack_detectors.h"
 #include <algorithm>
 #include "hardware_manager.h"
 #include "capabilities.h"
@@ -489,6 +495,7 @@ static void ensureSignaturesFileExists() {
 // (pwnd_tot/pwnd_run/grid_version) are the real tell — the MAC is trivially
 // editable, so it is only corroboration. Strong: it identifies on its own.
 #define W_PWNGRID    90
+#define W_ATTACK 90   // attack-detector rows: above CONF_ALERT_MIN, generic beep
 // A single weak, non-Flock-specific signal (a broad OUI prefix, or the Lite-On
 // vendor IE that rides countless consumer WiFi chips) is noise on its own. Only
 // list a device that clears 60 — i.e. one specific signal (SSID/UUID/name at
@@ -1025,6 +1032,19 @@ static int32_t bleCompanyId(SWEEP_ADV* dev) {
     return static_cast<uint8_t>(mfg[0]) | (static_cast<uint8_t>(mfg[1]) << 8);
 }
 
+// Forward declaration: upsertAttackTarget is defined later in this file (used
+// today only from the WiFi promiscuous callback, below its own definition),
+// but the BLE-spam detector inside WatchersScanCallbacks::onResult needs it
+// too, and that class is defined earlier in the file.
+static void upsertAttackTarget(const String& mac, int rssi, const char* proto,
+                                const String& title, uint8_t ch = 0);
+
+// BLE popup-spam state: distinct RANDOM MACs blasting Apple Proximity Pairing
+// (0x07) / Nearby Action (0x0F) adverts. BLE scan callback only, no lock. A
+// room of real AirPods (public/static addresses) must never trip this -- only
+// rapidly-rotating random MACs do, which is why the gate is `!pubAddr`.
+static BleSpamState bleSpamState;
+
 /**
  * @brief NimBLE Scan Callbacks for Watcher's Watch
  */
@@ -1049,6 +1069,32 @@ class WatchersScanCallbacks : public NimBLEAdvertisedDeviceCallbacks {
         // ponytail: advertised UUIDs only; a tag that hides 0x1802 in GATT gets no Ring button.
         bool ringable = advertisedDevice->isAdvertisingService(NimBLEUUID((uint16_t)0x1802)) ||
                         advertisedDevice->isAdvertisingService(NimBLEUUID((uint16_t)0x1803));
+
+        // BLE popup spam (Flipper "BLE spam" and friends): floods of Apple
+        // Proximity-Pairing / Nearby-Action adverts from rotating random MACs
+        // that make nearby iPhones throw pairing popups. Count DISTINCT random
+        // MACs sending 0x07/0x0F in the window; public/static Apple gear is
+        // real traffic and excluded by !pubAddr. Attack toggle only. Keys on
+        // a hash of the MAC STRING (not raw address bytes) -- the distinct-set
+        // only needs a stable per-MAC key, same technique karma uses for
+        // SSIDs, and it sidesteps any NimBLE 1.4-vs-2.x address-byte-order
+        // difference between the S3 and C5 cores. No mutex here (matches
+        // deauth/karma); upsertAttackTarget takes watchersMutex itself.
+        if (attackDetect && !pubAddr && advertisedDevice->haveManufacturerData()) {
+            std::string mfgd = advertisedDevice->getManufacturerData();
+            if (mfgd.length() >= 3 &&
+                (uint8_t)mfgd[0] == 0x4C && (uint8_t)mfgd[1] == 0x00 &&
+                ((uint8_t)mfgd[2] == 0x07 || (uint8_t)mfgd[2] == 0x0F)) {
+                uint64_t key = attackHash((const uint8_t*)mac.c_str(), mac.length());
+                uint32_t nMacs = bleSpamNote(&bleSpamState, key, now);
+                if (nMacs >= ATTACK_BLESPAM_THRESHOLD) {
+                    char title[40];
+                    snprintf(title, sizeof(title), "%s \xC2\xB7 %u MACs",
+                             ATTACK_TITLE_BLESPAM, (unsigned)nMacs);
+                    upsertAttackTarget(String(ATTACK_TITLE_BLESPAM), rssi, "BLE", String(title), 0);
+                }
+            }
+        }
 
         // Hunting: every advert from the target refreshes the click rate. Done
         // before the mutex so a busy detector never delays the feedback you are
@@ -1339,6 +1385,49 @@ static void upsertDroneTarget(const String& mac, int rssi, const char* proto,
     xSemaphoreGive(watchersMutex);
 }
 
+// Surface a rate-detector hit (deauth/karma/BLE-spam) as an ordinary "Hacking
+// gear" row. Same shape as upsertDroneTarget: keyed by mac, takes watchersMutex
+// briefly (bail on miss -- never block a radio callback), leaves the once-per-
+// appearance beep to noteAlertForTarget. `mac` may be a sentinel string for a
+// detector with no single transmitter (BLE popup spam).
+static void upsertAttackTarget(const String& mac, int rssi, const char* proto,
+                               const String& title, uint8_t ch) {
+    if (watchersMutex == NULL) return;
+    if (xSemaphoreTake(watchersMutex, pdMS_TO_TICKS(10)) != pdTRUE) return;
+    uint32_t now = millis();
+    bool found = false;
+    for (auto& t : trackedTargets) {
+        if (t.mac.equalsIgnoreCase(mac)) {
+            t.rssi = rssi; t.lastSeenMs = now; t.count++;
+            if (W_ATTACK > t.confidence) t.confidence = W_ATTACK;
+            t.tier = tierForConfidence(t.confidence);
+            t.type = HACKING_GEAR_CATEGORY;
+            t.matchedRule = title;
+            if (ch > 0) t.wifiCh = ch;
+            noteAlertForTarget(t, W_ATTACK, HACKING_GEAR_CATEGORY);
+            found = true; break;
+        }
+    }
+    if (!found) {
+        WatcherTargetInfo t;
+        t.mac = mac; t.type = HACKING_GEAR_CATEGORY; t.matchedRule = title;
+        t.rssi = rssi; t.firstSeenMs = now; t.lastSeenMs = now; t.count = 1;
+        t.protocol = proto; t.confidence = W_ATTACK; t.tier = tierForConfidence(W_ATTACK);
+        t.lastReportedMs = 0; if (ch > 0) t.wifiCh = ch;
+        trackedTargets.push_back(t);
+        noteAlertForTarget(trackedTargets.back(), W_ATTACK, HACKING_GEAR_CATEGORY);
+    }
+    xSemaphoreGive(watchersMutex);
+}
+
+// Deauth-burst state: touched ONLY from the single-threaded Wi-Fi promiscuous
+// callback, so it needs no lock (same rule as wifiUas/pwngridBuf).
+static DeauthState deauthState;
+
+// Karma/PineAP state: one BSSID answering probes for many SSIDs. Promiscuous
+// callback only, no lock.
+static KarmaState karmaState;
+
 static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type_t type) {
     if (!watchersRunning) return;
     if (type != WIFI_PKT_MGMT) return;
@@ -1383,6 +1472,25 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
             }
             return;
         }
+    }
+
+    // Deauthentication (subtype 12) / disassociation (subtype 10) burst: an
+    // aircrack/Pineapple signature. These already reach us (mgmt filter) and are
+    // dropped by the 4/5/8 test below. Count per transmitter in a sliding window;
+    // a broadcast deauth (addr1 = ff:ff:ff:ff:ff:ff) hits every client at once and
+    // counts double. Attack toggle only -- roaming APs deauth constantly.
+    if (attackDetect && ftype == 0 && (fsubtype == 12 || fsubtype == 10)) {
+        static const uint8_t bcast[6] = {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF};
+        bool isBroadcast = (memcmp(addr1, bcast, 6) == 0);
+        uint32_t frames = deauthNote(&deauthState, attackMac48(addr2), isBroadcast, millis());
+        if (frames >= ATTACK_DEAUTH_THRESHOLD) {
+            char m[18]; snprintf(m, sizeof(m), "%02X:%02X:%02X:%02X:%02X:%02X",
+                addr2[0], addr2[1], addr2[2], addr2[3], addr2[4], addr2[5]);
+            char title[40]; snprintf(title, sizeof(title), "%s \xC2\xB7 %u frames \xC2\xB7 ch %u",
+                ATTACK_TITLE_DEAUTH, (unsigned)frames, (unsigned)packet->rx_ctrl.channel);
+            upsertAttackTarget(String(m), rssi, "WiFi", String(title), packet->rx_ctrl.channel);
+        }
+        return;   // a deauth is never a probe/beacon; done with this frame
     }
 
     // Probe Request (subtype 4) or Beacon (subtype 8) or Probe Response (subtype 5)
@@ -1639,7 +1747,8 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
                         if (st == TINFL_STATUS_DONE) { pwnJson[outSz] = 0; json = pwnJson; }
                     }
 #endif
-                    // C5 (no ROM miniz): a compressed advert is left undecoded.
+                    // (PWN_HAS_GUNZIP is now defined on both boards -- see the
+                    // include block at the top of this file.)
                 } else {
                     pwngridBuf[pwnLen] = 0;
                     json = pwngridBuf;
@@ -1667,6 +1776,21 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
                         matchedCategory = HACKING_GEAR_CATEGORY;
                     }
                 }
+            }
+        }
+
+        // Karma / PineAP: one BSSID (addr2) sending PROBE RESPONSES for many
+        // distinct SSIDs is "impersonate all networks". A legit multi-SSID AP
+        // uses distinct BSSIDs per SSID, so this fans out from one. Attack only.
+        if (attackDetect && fsubtype == 5 && foundSsid.length() > 0) {
+            uint64_t sh = attackHash((const uint8_t*)foundSsid.c_str(), foundSsid.length());
+            uint32_t nSsids = karmaNote(&karmaState, attackMac48(addr2), sh, millis());
+            if (nSsids >= ATTACK_KARMA_THRESHOLD) {
+                char m[18]; snprintf(m, sizeof(m), "%02X:%02X:%02X:%02X:%02X:%02X",
+                    addr2[0], addr2[1], addr2[2], addr2[3], addr2[4], addr2[5]);
+                char title[40]; snprintf(title, sizeof(title), "%s \xC2\xB7 %u SSIDs",
+                    ATTACK_TITLE_KARMA, (unsigned)nSsids);
+                upsertAttackTarget(String(m), rssi, "WiFi", String(title), packet->rx_ctrl.channel);
             }
         }
 

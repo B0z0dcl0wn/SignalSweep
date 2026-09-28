@@ -25,6 +25,30 @@ global.window = global;
 await import('./public/app.js');
 
 // ---------------------------------------------------------------------------
+// Host-side C++ tests for the attack-detector window math (firmware/test).
+// Same script CI runs. Skipped only if no C++ compiler is reachable (a bare
+// checkout), with a loud note -- never silently. On Windows there is
+// typically no g++ on the native PATH even inside Git Bash, so run.sh is
+// invoked through WSL there; everywhere else (CI, macOS, Linux) plain bash
+// finds g++ directly.
+import { spawnSync } from 'node:child_process';
+{
+    const cxx = process.platform === 'win32'
+        ? spawnSync('wsl', ['bash', 'firmware/test/run.sh'], { encoding: 'utf8' })
+        : spawnSync('bash', ['firmware/test/run.sh'], { encoding: 'utf8' });
+    if (cxx.error && cxx.error.code === 'ENOENT') {
+        console.log('[signalsweep self-test] WARNING: ' +
+            (process.platform === 'win32' ? 'wsl' : 'bash/g++') +
+            ' not found, skipped firmware/test/run.sh');
+    } else if (cxx.status !== 0) {
+        console.log('FAIL: firmware/test/run.sh:\n' + (cxx.stdout || '') + (cxx.stderr || ''));
+        process.exit(1);
+    } else {
+        console.log('[signalsweep self-test] attack_detectors host tests: ok');
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Markup/selector drift check.
 //
 // The band tabs were dead for a release because the delegated click listener
@@ -865,6 +889,18 @@ for (const kw of ['tag', 'track', 'beacon', 'cam', 'surveil', 'drone', 'uas', 'b
     if ('hacking gear'.includes(kw)) agFail.push(`"Hacking gear" contains the routing keyword "${kw}"`);
 if (agFail.length) { console.log('FAIL: attack-gear rules:', agFail); process.exit(1); }
 console.log('[signalsweep self-test] attack-gear rules gated by the Attack toggle: ok');
+
+// ---------------------------------------------------------------------------
+// BLE popup-spam detector must key on RANDOM addresses only (a room of real
+// AirPods on public/static addresses is not spam) and use the shared window fn.
+{
+    const bs = [];
+    if (!/attackDetect && !pubAddr && advertisedDevice->haveManufacturerData\(\)[\s\S]{0,400}\(uint8_t\)mfgd\[2\] == 0x07 \|\| \(uint8_t\)mfgd\[2\] == 0x0F/.test(wwSrc))
+        bs.push('BLE-spam detector does not gate on !pubAddr + 0x07/0x0F');
+    if (!/bleSpamNote\(&bleSpamState/.test(wwSrc)) bs.push('BLE-spam detector does not call bleSpamNote');
+    if (bs.length) { console.log('FAIL: ble-spam detector:', bs); process.exit(1); }
+    console.log('[signalsweep self-test] BLE popup-spam detector keys on random 0x07/0x0F: ok');
+}
 
 const results = await global.__signalsweepSelfTest();
 const failed = Object.entries(results).filter(([, v]) => !v).map(([k]) => k);

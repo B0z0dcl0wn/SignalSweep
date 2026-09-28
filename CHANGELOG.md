@@ -4,7 +4,68 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
-### Added — attack gear: Flipper Zero and Pineapple/deauther rules, behind the Attack toggle
+### Added — attack detectors: deauth burst, karma/PineAP, BLE popup spam; pwnagotchi gzip on the C5
+
+- **Three rate-based detectors join the Attack toggle: deauth bursts, karma/PineAP
+  APs and BLE popup-spam floods.** All three are behind `{"attack":bool}` like the
+  Flipper/Pineapple signature rules, category "Hacking gear" (generic beep, All tab
+  only, never a camera tab), and share the once-per-appearance beep via
+  `noteAlertForTarget`. Rows surface through a common `upsertAttackTarget()` and
+  read "Deauth burst · N frames · ch X", "Karma AP · N SSIDs" and "BLE popup spam ·
+  N MACs". The thresholds below are a first cut, not a tuned model — reasonable
+  starting cuts, to be tuned by a busy-place false-positive soak (not yet run).
+- **Deauth: per-transmitter sliding window, 10 frames / 5 s, broadcast counts
+  double.** Frames are bucketed by the transmitter's own MAC (802.11 addr2), not
+  globally, so one flooding AP or attacker trips it without every other AP's
+  ordinary deauths adding up against it. A broadcast deauth (addr1 =
+  `ff:ff:ff:ff:ff:ff`) hits every associated client at once, so it is counted
+  twice against the sender to reflect the larger blast radius of one frame.
+- **Karma/PineAP: one BSSID answering probe responses for 4 or more distinct
+  SSIDs inside 60 s.** A rogue AP impersonating whatever SSID a client asks for is
+  the PineAP/karma signature; a legitimate AP only ever answers for its own SSID
+  (or a small handful on multi-SSID hardware), so 4 distinct answers from one
+  BSSID is already well past ordinary Wi-Fi. **Evil twin was deliberately not
+  shipped** — the honest RF-only test for "is this AP impersonating a real one"
+  doesn't exist without a second radio or a client-side view, and every
+  discriminator we tried also fires on a legitimate mesh AP or a public hotspot
+  answering the same SSID from several BSSIDs. Shipping a rule that alarms on
+  ordinary infrastructure is worse than shipping nothing.
+- **BLE popup spam: 8 or more distinct random MACs sending Apple Proximity-Pairing
+  (0x07) or Nearby-Action (0x0F) adverts inside 5 s.** This is the Flipper-Zero
+  "BLE spam" attack — the same popup-flood payload from a rotating cast of fake
+  senders. **Public and static-address Apple gear is excluded (`!pubAddr`)** —
+  the real devices sending these types constantly (an iPhone announcing a nearby
+  action, an AirPods case) use stable addresses, and gating on address type alone
+  (never payload count from one device) is what keeps a room full of real Apple
+  hardware silent while a burst of fresh random MACs still trips it.
+- **The decision logic is a pure header, `firmware/src/attack_detectors.h`, proven
+  by host-side C++ tests before it ever runs on a board.** No ESP/Arduino headers,
+  `<stdint.h>`/`<string.h>` only, so `firmware/test/attack_detectors_test.cpp`
+  (`firmware/test/run.sh`, wired into `node app/selftest.js`) runs the exact same
+  sliding-window and LRU-eviction code the firmware links, rather than a
+  reimplementation that could silently drift from it. The window helper is
+  `millis()`-wrap-safe by construction (`(uint32_t)(now - ts) <= windowMs`), the
+  same form used everywhere else in this codebase that measures elapsed time
+  against a free-running clock; the tests include a deliberate backward-time case
+  to pin that. The per-transmitter/per-BSSID LRU keeps the actual burster's slot
+  under sustained load rather than evicting it for a quieter but more recent MAC.
+- **Thread ownership: deauth and karma state are touched only from the Wi-Fi
+  promiscuous callback, BLE-spam state only from the BLE scan callback — both
+  lock-free, no mutex in `attack_detectors.h` at all.** Only `upsertAttackTarget()`
+  crosses into shared state, and it takes `watchersMutex` itself, the same rule
+  every other write to `trackedTargets` follows.
+- **The C5 pwnagotchi path now inflates a real gzip'd pwngrid advert, via a
+  vendored MIT-licensed `tinfl`** (`firmware/src/vendor/miniz_tinfl.{h,c}`,
+  inflate-only, `#if defined(CONFIG_IDF_TARGET_ESP32C5)` only). The C5's IDF 5.x
+  ROM has no `rom/miniz.h` — that header only exists on the S3 — so the C5 could
+  only ever detect an uncompressed test beacon while a real pwnagotchi (which
+  gzips whenever it shrinks the payload) went silent. The S3 is untouched: it
+  keeps using the existing ROM `tinfl_decompress`, no vendored code, no dep added.
+- **A bench-only BLE-spam emitter persona (`blespam`) exists to prove the
+  detector against something, and it never ships.** It lives under the gitignored
+  `firmware/src/bench/emitter_main.cpp`, walled off from every real tier the same
+  way the drone/Flock/AirTag personas are — it is not a re-introduction of the
+  cut `ble_spoof` primitive, only a fake signal for the two-board bench rig.
 
 - **Signatures v10 add eight "Hacking gear" rules, each weighted by what its
   signal proves.** The Flipper Zero case-colour service UUIDs
