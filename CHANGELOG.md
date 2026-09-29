@@ -4,6 +4,8 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-09-28 — A tag flood is one alert, the buzzer has a volume knob, and Flock's battery has a name
+
 ### Added — buzzer volume: Low / Med / High
 
 - **A persisted volume, `{"vol":0..2}`, for every sound the board makes** —
