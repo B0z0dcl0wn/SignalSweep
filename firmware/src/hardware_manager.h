@@ -97,6 +97,15 @@ void setTheme(uint8_t theme);
 /** @brief Current theme; no mutex, reported by CMD:CFG and the 1 Hz push. */
 uint8_t getTheme();
 
+// Buzzer volume, 0 Low / 1 Med / 2 High (today's sound, the default). LEDC
+// duty, applied to every sound; independent of the mute and of theme pitch.
+// Persisted.
+/** @brief Set the volume (clamped to 2), persist it, and preview it. */
+void setVolume(uint8_t vol);
+
+/** @brief Current volume; no mutex, reported by CMD:CFG and the 1 Hz push. */
+uint8_t getVolume();
+
 // Easter-egg scenes: the bar as a flashlight / light show. Deliberately NOT a
 // mode and NOT persisted -- it owns the frame while it is set, expires on its
 // own, and a power cycle always comes back to the detector's own heartbeat.

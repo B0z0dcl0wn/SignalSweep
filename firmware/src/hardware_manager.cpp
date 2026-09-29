@@ -71,16 +71,28 @@ static const Theme THEMES[] = {
     {0,   0,   0,   1.0f},  // Party    -- hue per pixel, see applyTheme()
 };
 
-// Arduino's tone() attaches the LEDC channel lazily on first use, and noTone()
-// on a channel that was never attached logs an error every single call. Nothing
-// hit this while a board always booted audible -- tone() ran first. Now that the
-// mute persists, a board that boots muted never calls tone() at all, and the
-// unguarded noTone()s in the audio loop flooded the USB telemetry mirror.
-// Measured on COM3: 561 LEDC errors in 4 s booted muted, 0 booted audible.
-static volatile bool ledcReady = false;
-// ledcReady is set AFTER tone() returns: setting it first left a window in
-// which setBuzzerEnabled() on the caller's thread could noTone() a channel
-// tone() had not finished attaching -- one stray error per mute transition.
+// Volume is LEDC duty out of 1024 (10-bit): 512 = 50 %, the loudest a square
+// wave gets, and exactly what tone() always wrote. Index = the {"vol"} wire
+// value (0 Low, 1 Med, 2 High); the app's #vol-modes buttons follow this order.
+// ponytail: Low/Med confirmed by ear on both bench boards (2026-09-28): Low
+// clearly quieter but audible, Med between. A different piezo may want new numbers.
+static const uint16_t VOL_DUTY[] = {20, 90, 512};
+#define VOL_HIGH 2
+static volatile uint8_t buzzerVol = VOL_HIGH;
+
+// We drive LEDC ourselves instead of Arduino tone()/noTone(). tone() hands each
+// note to a task that re-attaches the channel and writes a fixed 50 % duty on
+// both cores, so a quieter duty written after it would race that task. Owning
+// the channel also retires the old trap: tone() attached lazily, and noTone()
+// on a never-attached channel logged an error every call (561 in 4 s on a board
+// booted muted). The channel is attached once in hardwareInit(), before the
+// audio task exists, so buzzerOff() is always safe.
+// Core 2.x (S3) addresses LEDC by channel, core 3.x (C5) by pin.
+#if CONFIG_IDF_TARGET_ESP32C5
+#define BUZZ_LEDC BUZZER_PIN
+#else
+#define BUZZ_LEDC 0
+#endif
 // Every sound passes through here, so the theme's pitch is applied once and a
 // rhythm can never change. Classic skips the scaling entirely: byte-for-byte
 // today's tones. The clamp is the piezo's usable range (highest note today is
@@ -89,10 +101,10 @@ static inline void buzzerTone(uint16_t freq) {
     uint8_t th = themeId;
     if (th != THEME_CLASSIC)
         freq = (uint16_t)constrain((int)(freq * THEMES[th].pitch), 200, 6000);
-    tone(BUZZER_PIN, freq);
-    ledcReady = true;
+    ledcWriteTone(BUZZ_LEDC, freq);                  // also writes 50 % duty...
+    ledcWrite(BUZZ_LEDC, VOL_DUTY[buzzerVol]);       // ...so the volume goes after it
 }
-static inline void buzzerOff() { if (ledcReady) noTone(BUZZER_PIN); }
+static inline void buzzerOff() { ledcWrite(BUZZ_LEDC, 0); }
 
 struct Note {
     uint16_t freq;       // Hz (0 = rest/silence)
@@ -653,8 +665,13 @@ void hardwareInit() {
         hwMutex = xSemaphoreCreateMutex();
     }
 
-    pinMode(BUZZER_PIN, OUTPUT);
-    digitalWrite(BUZZER_PIN, LOW);
+#if CONFIG_IDF_TARGET_ESP32C5
+    ledcAttach(BUZZER_PIN, 2000, 10);
+#else
+    ledcSetup(BUZZ_LEDC, 2000, 10);
+    ledcAttachPin(BUZZER_PIN, BUZZ_LEDC);
+#endif
+    buzzerOff();
 
     strip.begin();
     strip.setBrightness(50);
@@ -669,6 +686,8 @@ void hardwareInit() {
         ledMode = led > LED_FULL ? LED_FULL : led;
         uint8_t th = prefs.getUChar("theme", THEME_CLASSIC);
         themeId = th > THEME_PARTY ? THEME_CLASSIC : th;
+        uint8_t v = prefs.getUChar("vol", VOL_HIGH);
+        buzzerVol = v > VOL_HIGH ? VOL_HIGH : v;
         prefs.end();
     } else {
         buzzerEnabled = true;
@@ -848,6 +867,32 @@ void setTheme(uint8_t theme) {
 
 uint8_t getTheme() {
     return themeId;
+}
+
+void setVolume(uint8_t vol) {
+    if (vol > VOL_HIGH) vol = VOL_HIGH;
+    bool changed = vol != buzzerVol;
+    buzzerVol = vol;   // the next note picks it up
+    // Preview at the new level, so the pick is audible. Mute still applies
+    // (the audio loop checks buzzerEnabled). Never over a hunt: the clicker
+    // owns the buzzer while a target is heard.
+    if (changed && hwMutex != NULL && xSemaphoreTake(hwMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        bool hunting = geigerLocked;
+        xSemaphoreGive(hwMutex);
+        if (!hunting) playConnectionChirp();
+    }
+    // Outside hwMutex, for the same reason as setLedMode(): NVS is slow.
+    Preferences prefs;
+    if (prefs.begin(BUZZER_NVS_NS, false)) {
+        prefs.putUChar("vol", buzzerVol);
+        prefs.end();
+    } else {
+        ESP_LOGW(TAG, "Could not open %s — volume will not survive a reboot", BUZZER_NVS_NS);
+    }
+}
+
+uint8_t getVolume() {
+    return buzzerVol;
 }
 
 // Deliberately unlike setLedMode()/setTheme(): no Preferences write, no mutex,

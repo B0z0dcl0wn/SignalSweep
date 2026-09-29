@@ -307,6 +307,23 @@ if (!/if \(!flashActive\) applyTheme\(now\)/.test(hwSrc))
 if (themeFail.length) { console.log('FAIL: themes:', themeFail); process.exit(1); }
 console.log('[signalsweep self-test] theme ids match firmware ThemeId: ok');
 
+// Buzzer volume is LEDC duty. Arduino tone() queues each note to a task that
+// writes a fixed 50 % duty, so any tone()/noTone() left in the file either
+// ignores the volume or races it. ledcWriteTone() also writes 50 % itself, so
+// the volume duty must be written AFTER it.
+const volFail = [];
+if (/\b(no)?[tT]one\(/.test(hwSrc.replace(/\/\/.*$/gm, '').replace(/buzzerTone\(|ledcWriteTone\(/g, '')))
+    volFail.push('tone()/noTone() is back in hardware_manager.cpp');
+const volDuty = ((hwSrc.match(/static const uint16_t VOL_DUTY\[\] = \{([^}]*)\}/) || [])[1] || '').split(',').filter(s => s.trim());
+if (volDuty.length !== 3) volFail.push('VOL_DUTY must have 3 levels, has ' + volDuty.length);
+if (!/static inline void buzzerTone\([^)]*\) \{[\s\S]{0,500}?ledcWriteTone\([\s\S]{0,120}?ledcWrite\(BUZZ_LEDC, VOL_DUTY\[/.test(hwSrc))
+    volFail.push('buzzerTone does not write the volume duty after ledcWriteTone');
+const volBtns = (htmlSrc.match(/data-vol="\d"/g) || []).length;
+if (volBtns !== volDuty.length) volFail.push('#vol-modes has ' + volBtns + ' buttons, VOL_DUTY has ' + volDuty.length);
+if (!/setVolUi\(cfg\.vol\)/.test(appSrc) || !/setVolUi\(data\.vol\)/.test(appSrc)) volFail.push('app does not adopt vol from CMD:CFG and the push');
+if (volFail.length) { console.log('FAIL: volume:', volFail); process.exit(1); }
+console.log('[signalsweep self-test] buzzer volume is LEDC duty, 3 levels: ok');
+
 // The easter egg is another shared index, with no reply to catch a drift: the
 // device deliberately does not report `egg` anywhere, so a scene added on one
 // side only would just light the wrong thing. And it must stay transient --
