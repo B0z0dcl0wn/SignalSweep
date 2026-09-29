@@ -2669,6 +2669,7 @@ String getWatchersTargetsJson() {
     doc["buzzer"] = isBuzzerEnabled();
     doc["led"] = getLedMode();
     doc["theme"] = getTheme();
+    doc["vol"] = getVolume();
 #if CONFIG_IDF_TARGET_ESP32C5
     doc["band"] = getBand();   // C5 only, ~9 B; the device is the authority
 #endif

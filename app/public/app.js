@@ -964,6 +964,8 @@
             if (rt) { setRadioChip(rt.getAttribute('data-radio')); return; }
             const lm = ev.target.closest('#led-modes .radio-tab');
             if (lm) { setLed(Number(lm.getAttribute('data-led'))); return; }
+            const vm = ev.target.closest('#vol-modes .radio-tab');
+            if (vm) { setVol(Number(vm.getAttribute('data-vol'))); return; }
             const tc = ev.target.closest('#theme-modes .theme-chip');
             if (tc) { setTheme(Number(tc.getAttribute('data-theme'))); return; }
             const bm = ev.target.closest('#band-modes .radio-tab');
@@ -2553,6 +2555,7 @@
             setBuzzerUi(cfg.buzzer);
             setLedUi(cfg.led);
             setThemeUi(cfg.theme);
+            setVolUi(cfg.vol);
             setBandUi(cfg.band);
             // Absent means "unknown" (the board couldn't lock its list in
             // time), never "empty" -- keep the last list the app had.
@@ -3233,6 +3236,7 @@
             if (typeof data.buzzer === 'boolean') setBuzzerUi(data.buzzer);
             if (typeof data.led === 'number') setLedUi(data.led);
             if (typeof data.theme === 'number') setThemeUi(data.theme);
+            if (typeof data.vol === 'number') setVolUi(data.vol);
             if (typeof data.band === 'number') setBandUi(data.band);
             const devAll = !!data.scan_all;
             if (devAll !== foxhuntMode && Date.now() > filterPendingUntil) {
@@ -3521,6 +3525,28 @@
             const el = document.querySelector('#led-modes .radio-tab[data-led="' + n + '"]');
             if (el) el.classList.add('pending');
             sendCommand({ led: n });
+        }
+
+        // Volume: 0 low, 1 med, 2 high (firmware VOL_DUTY order; selftest pins
+        // the count). Same contract as the LED mode -- painted only from device
+        // frames. The row stays hidden for firmware that does not report it.
+        let volLevel = null;
+        function setVolUi(n) {
+            volLevel = (typeof n === 'number') ? n : null;
+            const row = document.getElementById('vol-row');
+            if (row) row.hidden = volLevel === null;
+            document.querySelectorAll('#vol-modes .radio-tab').forEach(function (el) {
+                const on = volLevel !== null && Number(el.getAttribute('data-vol')) === volLevel;
+                el.setAttribute('aria-pressed', on ? 'true' : 'false');
+                el.classList.remove('pending');
+            });
+        }
+        function setVol(n) {
+            if (volLevel === null) { showToast('Waiting for the device', '…'); return; }
+            if (n === volLevel) return;
+            const el = document.querySelector('#vol-modes .radio-tab[data-vol="' + n + '"]');
+            if (el) el.classList.add('pending');
+            sendCommand({ vol: n });
         }
 
         // Theme: firmware ThemeId, same index order (selftest pins it). One
@@ -3915,6 +3941,7 @@
                 setBuzzerUi(null);
                 setLedUi(null);
                 setThemeUi(null);
+                setVolUi(null);
                 setBandUi(null);
                 // Same reason: the category mask is per-board too, and it used
                 // to survive a disconnect as five checkboxes still showing the

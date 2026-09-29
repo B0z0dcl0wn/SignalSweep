@@ -4,6 +4,34 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Added — buzzer volume: Low / Med / High
+
+- **A persisted volume, `{"vol":0..2}`, for every sound the board makes** —
+  alerts, the hunt beeps, chirps, the siren. High is the default and is exactly
+  the old sound; Low and Med are for a quiet drive, indoors, or a foxhunt next
+  to people. Idea from SquachWatch-CYD's buzzer levels. Saved in `sweep-bz`/`vol`,
+  echoed in `CMD:CFG` and the 1 Hz push (the board is the authority, like the LED
+  mode), and picked in Settings > Alerts under Sound, which paints only from the
+  board. Picking a level plays the connect chirp at the new level (not while
+  hunting; the mute still wins). The mute stays its own control.
+- **Volume is PWM duty, so the buzzer no longer goes through Arduino `tone()`.**
+  On both cores `tone()` queues each note to a background task that re-attaches
+  the LEDC channel and writes a fixed 50 % duty, so a quieter duty written after
+  it just races that task. `buzzerTone()`/`buzzerOff()` now own the channel:
+  attached once at boot, `ledcWriteTone()` for the pitch, then the level's duty
+  from `VOL_DUTY[]` (20 / 90 / 512 of 1024). **Trap: `ledcWriteTone()` writes 50 %
+  duty itself, so the volume write must come after it** — `selftest.js` pins the
+  order and fails if `tone()`/`noTone()` reappear. Owning the channel also retires
+  the old lazy-attach trap (`noTone()` on a never-attached channel logged an error
+  every call, 561 in 4 s on a board booted muted): bench, both boards, booted
+  muted and stepped through all three levels with zero LEDC errors.
+- Bench (S3 + C5): Low and Med confirmed by ear against High on both boards; the
+  level survives a reboot; setting it from the phone over Bluetooth (the NimBLE
+  host task) repaints the picker with no reboot; 60 of 60 pushes in 60 s with the
+  extra field. Volume and theme pitch are independent (duty vs frequency); a piezo
+  is louder at some pitches than others, and that is accepted rather than
+  calibrated per theme.
+
 ### Added — a fake-tracker flood is one alert, not a hundred
 
 - **A tag spammer (fake AirTags, Google Find My, Samsung SmartTags or Tiles on a

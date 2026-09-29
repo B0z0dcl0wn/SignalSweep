@@ -193,6 +193,7 @@ String getBleConfigJson() {
     doc["buzzer"] = isBuzzerEnabled();
     doc["led"] = getLedMode();   // 0 off, 1 one LED, 2 dim, 3 full
     doc["theme"] = getTheme();   // 0 classic, 1 night, 2 terminal, 3 glacier, 4 party
+    doc["vol"] = getVolume();    // 0 low, 1 med, 2 high
 #if CONFIG_IDF_TARGET_ESP32C5
     doc["band"] = getBand();     // 0 both, 1 2.4 GHz, 2 5 GHz (C5 only)
 #endif
@@ -780,6 +781,13 @@ void processIncomingCommand(const String& rawCommand) {
         // Persisted, and answered so the app paints from the device.
         if (doc["theme"].is<int>()) {
             setTheme((uint8_t)constrain(doc["theme"].as<int>(), 0, (int)THEME_PARTY));
+            sendConfigReply();
+        }
+
+        // 2c'. Volume: {"vol":0..2} = low / med / high (LEDC duty). Persisted,
+        // and answered so the app paints from the device, like the LED mode.
+        if (doc["vol"].is<int>()) {
+            setVolume((uint8_t)constrain(doc["vol"].as<int>(), 0, 2));
             sendConfigReply();
         }
 
