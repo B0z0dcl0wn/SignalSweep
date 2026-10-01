@@ -965,13 +965,13 @@
             if (rt) { setRadioChip(rt.getAttribute('data-radio')); return; }
             const lm = ev.target.closest('#led-modes .radio-tab');
             if (lm) { setLed(Number(lm.getAttribute('data-led'))); return; }
-            const vm = ev.target.closest('#vol-modes .radio-tab');
+            const vm = ev.target.closest('#sound-modes .radio-tab[data-vol]');
             if (vm) { setVol(Number(vm.getAttribute('data-vol'))); return; }
             const tc = ev.target.closest('#theme-modes .theme-chip');
             if (tc) { setTheme(Number(tc.getAttribute('data-theme'))); return; }
             const bm = ev.target.closest('#band-modes .radio-tab');
             if (bm) { setBand(Number(bm.getAttribute('data-band'))); return; }
-            const sm = ev.target.closest('#sound-modes .radio-tab');
+            const sm = ev.target.closest('#sound-modes .radio-tab[data-sound]');
             if (sm) { setSound(sm.getAttribute('data-sound') === '1'); return; }
             const eg = ev.target.closest('#egg-scenes .radio-tab');
             if (eg) { setEggAsk(Number(eg.getAttribute('data-egg'))); return; }
@@ -2695,30 +2695,24 @@
             sendCommand({ beep_mask: pendingMask });
         }
 
-        // What one category's alert will actually do, given the two outputs.
-        // The buzzer mute is sound only and a category switch gates both its
-        // beep and its light, so a bare ON/OFF lied both ways -- that is how
-        // "Buzzer: OFF" sat above five rows still reading ON. Outputs not yet
-        // reported (null; older firmware has no LED mode) count as on.
-        function alertChip(on, sound, led) {
-            if (on === null) return '—';
-            if (!on) return 'Off';
-            const s = sound !== false, l = led !== 0;
-            return s && l ? '🔊 💡' : s ? '🔊' : l ? '💡' : 'Silent';
-        }
+        // Each category row is a plain On/Off switch. Sound and Lights are
+        // global, so "will this row actually do anything" is one line above
+        // the list (#alerts-dead) rather than a per-row chip: with both
+        // outputs off, five switches reading On must not stand unqualified.
         function paintAlertRows() {
             for (const key in BEEP_BITS) {
                 const el = document.getElementById('beep-' + key);
                 if (!el) continue;
                 const on = deviceBeepMask === null ? null : (deviceBeepMask & BEEP_BITS[key]) !== 0;
-                const chip = alertChip(on, buzzerOn, ledMode);
                 el.dataset.on = on === null ? '' : (on ? '1' : '0');
-                el.classList.toggle('on', on === true && chip !== 'Silent');
-                el.classList.toggle('off', on === false);
-                el.classList.toggle('idle', chip === 'Silent');
                 const state = el.querySelector('.snd-state');
-                if (state) state.textContent = chip;
+                if (!state) continue;
+                state.textContent = on === null ? '—' : on ? 'On' : 'Off';
+                state.classList.toggle('on', on === true);
+                state.classList.toggle('off', on === false);
             }
+            const dead = document.getElementById('alerts-dead');
+            if (dead) dead.hidden = !(buzzerOn === false && ledMode === 0);
         }
 
         // What is currently muted, on the Alerts heading itself, so the
@@ -3493,13 +3487,29 @@
             sendCommand({ buzzer: on });
         }
 
-        function setBuzzerUi(on) {
-            buzzerOn = (typeof on === 'boolean') ? on : null;
+        // One row for mute + volume: Off | Low | Med | High. Firmware that
+        // reports no volume (volLevel null) gets Off | On instead.
+        function paintSound() {
             document.querySelectorAll('#sound-modes .radio-tab').forEach(function (el) {
-                const pressed = buzzerOn !== null && (el.getAttribute('data-sound') === '1') === buzzerOn;
+                const v = el.getAttribute('data-vol'), s = el.getAttribute('data-sound');
+                let pressed;
+                if (v !== null) {
+                    el.hidden = volLevel === null;
+                    pressed = buzzerOn === true && Number(v) === volLevel;
+                } else if (s === '1') {
+                    el.hidden = volLevel !== null;
+                    pressed = buzzerOn === true && volLevel === null;
+                } else {
+                    pressed = buzzerOn === false;
+                }
                 el.setAttribute('aria-pressed', pressed ? 'true' : 'false');
                 el.classList.remove('pending');
             });
+        }
+
+        function setBuzzerUi(on) {
+            buzzerOn = (typeof on === 'boolean') ? on : null;
+            paintSound();
             paintAlertRows();
             setSoundsSummary();
         }
@@ -3533,20 +3543,16 @@
         let volLevel = null;
         function setVolUi(n) {
             volLevel = (typeof n === 'number') ? n : null;
-            const row = document.getElementById('vol-row');
-            if (row) row.hidden = volLevel === null;
-            document.querySelectorAll('#vol-modes .radio-tab').forEach(function (el) {
-                const on = volLevel !== null && Number(el.getAttribute('data-vol')) === volLevel;
-                el.setAttribute('aria-pressed', on ? 'true' : 'false');
-                el.classList.remove('pending');
-            });
+            paintSound();
         }
         function setVol(n) {
-            if (volLevel === null) { showToast('Waiting for the device', '…'); return; }
-            if (n === volLevel) return;
-            const el = document.querySelector('#vol-modes .radio-tab[data-vol="' + n + '"]');
+            if (volLevel === null || buzzerOn === null) { showToast('Waiting for the device', '…'); return; }
+            if (n === volLevel && buzzerOn) return;
+            const el = document.querySelector('#sound-modes .radio-tab[data-vol="' + n + '"]');
             if (el) el.classList.add('pending');
-            sendCommand({ vol: n });
+            // Unmute first, so the board's level-preview chirp is audible.
+            if (!buzzerOn) sendCommand({ buzzer: true });
+            if (n !== volLevel) sendCommand({ vol: n });
         }
 
         // Theme: firmware ThemeId, same index order (selftest pins it). One
@@ -4963,18 +4969,6 @@
                     // ...but a "Private" registration names nobody, so fall back.
                     vendorOf({ mac: '98:17:3C:00:00:01', protocol: 'BLE', pub: true, cid: 76 }) === 'Apple';
                 ouiNames = savedOui; btNames = savedBt;
-
-                // A category chip says what its alert will actually do. The
-                // buzzer mute is sound only, so with sound off a row must read
-                // lights-only, not ON (as if it beeps) nor Off (as if it's dark).
-                results.alertChip =
-                    alertChip(true, true, 3) === '🔊 💡' &&
-                    alertChip(true, false, 3) === '💡' &&
-                    alertChip(true, true, 0) === '🔊' &&
-                    alertChip(true, false, 0) === 'Silent' &&
-                    alertChip(false, true, 3) === 'Off' &&
-                    alertChip(null, true, 3) === '—' &&
-                    alertChip(true, null, null) === '🔊 💡';
 
                 results.themeNote =
                     themeNote(4, 3).startsWith('Party') &&
