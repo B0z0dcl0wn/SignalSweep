@@ -981,9 +981,28 @@
             border:1px solid var(--card-border); border-radius:10px; font-size:0.9rem; }
         .set-toggle { flex:none; padding:6px 14px; border-radius:6px; font-weight:700;
             font-size:0.8rem; cursor:pointer; transition:all 0.2s ease; }
-        .set-toggle.on  { background:var(--accent-emerald); border:1px solid var(--accent-emerald); color:#000; }
-        .set-toggle.off { background:rgba(239,68,68,0.2); border:1px solid var(--accent-red); color:var(--accent-red); }
-        /* Neither on nor alarming: an off switch that is a normal choice. */
+        /* The toggle standard: the row names the thing, the control is a
+           sliding switch showing its state. Knob right + green = On, knob left
+           + grey = Off (a normal choice, never red). Still a <button> painted
+           from device frames -- pure CSS, so it cannot flip on its own the way
+           a checkbox does. A .set-toggle with neither class is a plain button
+           (SD Download/Delete). */
+        .set-toggle.on, .set-toggle.off, #btn-foxhunt.on, #btn-foxhunt.off {
+            position:relative; padding-right:calc(var(--sw-r, 0px) + 52px); }
+        .set-toggle.on, .set-toggle.off { background:none; border:0; padding-left:0;
+            min-height:32px; color:var(--text-muted); }
+        #btn-foxhunt { --sw-r:10px; }
+        .set-toggle.on::after, .set-toggle.off::after, #btn-foxhunt.on::after, #btn-foxhunt.off::after {
+            content:''; position:absolute; right:var(--sw-r, 0px); top:50%; margin-top:-12px;
+            width:44px; height:24px; border-radius:12px; background:rgba(156,163,175,0.35);
+            transition:background 0.2s ease; }
+        .set-toggle.on::before, .set-toggle.off::before, #btn-foxhunt.on::before, #btn-foxhunt.off::before {
+            content:''; position:absolute; z-index:1; right:calc(var(--sw-r, 0px) + 22px); top:50%; margin-top:-10px;
+            width:20px; height:20px; border-radius:50%; background:#fff;
+            box-shadow:0 1px 3px rgba(0,0,0,0.5); transition:right 0.2s ease; }
+        .set-toggle.on::after, #btn-foxhunt.on::after { background:var(--accent-emerald); }
+        .set-toggle.on::before, #btn-foxhunt.on::before { right:calc(var(--sw-r, 0px) + 2px); }
+        .set-toggle.on { color:var(--accent-emerald); }
         .set-toggle:not(.on):not(.off) { background:transparent; border:1px solid var(--card-border); color:var(--text-muted); }
         /* SD card file list: name on one line (it gives, not the buttons), two
            small .set-toggle buttons side by side. Own classes on purpose --
@@ -1255,6 +1274,7 @@
             font-size:0.82rem; display:inline-flex; align-items:center; justify-content:center;
             font-weight:700; border:1px solid var(--ss-line);
             background:rgba(255,255,255,0.05); color:#e8eef7; }
+        .scope-act.on { border-color:var(--accent-emerald); color:var(--accent-emerald); }
         .scope-act:hover { border-color:rgba(140,170,210,0.35); }
         .scope-act.hunting { border-color:var(--band-tracker); color:var(--band-tracker);
             background:rgba(255,58,200,0.12); }
@@ -1661,12 +1681,12 @@
                 </p>
                 <div class="set-row">
                     <span>Log alerts on the board</span>
-                    <button class="set-toggle" id="btn-log" onclick="toggleAlertLog()">Off</button>
+                    <button class="set-toggle off" id="btn-log" onclick="toggleAlertLog()">Off</button>
                 </div>
                 <p class="set-note" id="log-note" style="margin:0.5rem 0 0.75rem;">Off. The board keeps no record of what it beeped at.</p>
                 <div class="set-row">
-                    <span>Ask to pin matches</span>
-                    <button class="set-toggle" id="btn-record" onclick="toggleRecording()">Off</button>
+                    <span>Ask to pin matches on the map</span>
+                    <button class="set-toggle off" id="btn-record" onclick="toggleRecording()">Off</button>
                 </div>
                 <!-- Undo for the consent prompt's third answer. A mute made in
                      one tap in the field must be visible somewhere, or it is a
@@ -1698,11 +1718,11 @@
                 </p>
                 <div class="set-row">
                     <span>Bluetooth LE</span>
-                    <button class="set-toggle on" id="btn-ble-scan" onclick="toggleBleScan()">Scanning</button>
+                    <button class="set-toggle on" id="btn-ble-scan" onclick="toggleBleScan()">On</button>
                 </div>
                 <div class="set-row">
                     <span>Wi&#8209;Fi</span>
-                    <button class="set-toggle on" id="btn-wifi-scan" onclick="toggleWifiScan()">Scanning</button>
+                    <button class="set-toggle on" id="btn-wifi-scan" onclick="toggleWifiScan()">On</button>
                 </div>
                 <div class="set-row" id="band-row" hidden>
                     <span>Wi&#8209;Fi bands</span>
@@ -1736,8 +1756,8 @@
                     <strong>Receive-only</strong> stops the device announcing itself &mdash; no advertising, no connection. It keeps scanning and keeps beeping; this is not the buzzer mute. Over Bluetooth <strong>this connection will drop</strong> &mdash; tap the BOOT button on the device to bring it back for two minutes. Over a USB cable nothing drops: only the radio goes quiet, and you can turn it back on here.
                 </p>
                 <div class="set-row">
-                    <span>Currently: <strong id="cfg-rxonly">advertising</strong></span>
-                    <button class="set-toggle off" id="btn-rxonly" onclick="toggleReceiveOnly()">Go quiet</button>
+                    <span>Receive&#8209;only</span>
+                    <button class="set-toggle off" id="btn-rxonly" onclick="toggleReceiveOnly()">Off</button>
                 </div>
                 </section>
 
