@@ -793,14 +793,15 @@
             const btn = document.getElementById('btn-foxhunt');
             if (!btn) return;
             if (!connectionType) {
-                btn.classList.remove('on');
+                btn.classList.remove('on', 'off');
                 btn.textContent = '—';
                 return;
             }
-            // A state, not a toggle name. "Filter: Off" meant the list was
-            // showing MORE, and the word now belongs to the radio chips.
-            btn.classList.toggle('on', foxhuntMode);
-            btn.textContent = foxhuntMode ? 'All devices' : 'Matches only';
+            // The toggle standard: name the thing, show its state. On means
+            // filtering (matches only), so foxhuntMode -- filter OFF -- is unlit.
+            btn.classList.toggle('on', !foxhuntMode);
+            btn.classList.toggle('off', foxhuntMode);
+            btn.textContent = foxhuntMode ? 'Filter: Off' : 'Filter: On';
         }
 
         function huntTarget(mac) {
@@ -1811,6 +1812,7 @@
             const btn = document.getElementById('btn-record');
             if (btn) {
                 btn.classList.toggle('on', recordEnabled);
+                btn.classList.toggle('off', !recordEnabled);
                 btn.textContent = recordEnabled ? 'On' : 'Off';
             }
             paintPinMute();
@@ -2751,7 +2753,7 @@
             const paint = (id, on) => {
                 const b = document.getElementById(id);
                 if (!b || typeof on !== 'boolean') return;
-                b.textContent = on ? 'Scanning' : 'Paused';
+                b.textContent = on ? 'On' : 'Off';
                 b.classList.toggle('on', on);
                 b.classList.toggle('off', !on);
                 b.dataset.on = on ? '1' : '0';
@@ -3178,11 +3180,9 @@
         let deviceRxOnly = false;
         function setRxOnlyUi(quiet) {
             deviceRxOnly = quiet;
-            const label = document.getElementById('cfg-rxonly');
-            if (label) label.textContent = quiet ? 'receive-only' : 'advertising';
             const btn = document.getElementById('btn-rxonly');
             if (btn) {
-                btn.textContent = quiet ? 'Advertise' : 'Go quiet';
+                btn.textContent = quiet ? 'On' : 'Off';
                 btn.classList.toggle('on', quiet);
                 btn.classList.toggle('off', !quiet);
             }

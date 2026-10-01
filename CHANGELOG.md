@@ -4,6 +4,33 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+## [0.7.1] — 2026-10-01 — Every toggle is a sliding switch that says what it is set to
+
+### Changed — one toggle standard: the row names the thing, the switch shows its state
+
+- **Every on/off control in the app is now a sliding switch: knob right and
+  green is On, knob left and grey is Off, with the word beside it.** The old
+  buttons each spoke their own dialect. Sweep's filter read `Matches only` /
+  `All devices` (a state that looked like an action you were about to take),
+  the radios read `Scanning` / `Paused`, and Receive-only showed the *action*
+  (`Go quiet` / `Advertise`) next to a separate "Currently: advertising" line.
+  Now: `Filter: On` (matches only) / `Filter: Off` on Sweep, and plain On / Off
+  for Bluetooth LE, Wi-Fi, Attack-gear detection, Receive-only, the alert log
+  and the pin prompt. The Receive-only confirm, with its Bluetooth "this
+  connection will drop" warning, is unchanged.
+- **Off is grey, never red.** Off is a normal choice; a red Off made
+  Attack-gear detection look like an error at its default.
+- **`Filter: On` means filtering.** The filter was labelled "Filter: On/Off"
+  once before and dropped because On meant the filter was *off* (`foxhuntMode`
+  true). The label is back with the sense the right way round, and with no
+  board connected it shows a plain dash with no switch, because the board's
+  filter state is unknown.
+- **The switch is CSS on the same `<button>`, not a checkbox.** A native
+  checkbox flips itself on tap whether or not the write lands, which is how the
+  app and the board drifted apart before. These still paint only from what the
+  board reports. A `.set-toggle` with neither `on` nor `off` stays a plain
+  button (SD card Download / Delete).
+
 ## [0.7.0] — 2026-09-28 — A tag flood is one alert, the buzzer has a volume knob, and Flock's battery has a name
 
 ### Added — buzzer volume: Low / Med / High
