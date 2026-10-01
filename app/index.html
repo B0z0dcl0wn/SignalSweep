@@ -1058,8 +1058,6 @@
         .snd-list { border:1px solid var(--card-border); border-radius:10px; overflow:hidden; }
         .snd-list .snd-row { border:0; border-radius:0; background:transparent; }
         .snd-list .snd-row + .snd-row { border-top:1px solid var(--card-border); }
-        .snd-row.on  { border-color:var(--accent-emerald); }
-        .snd-row.off { opacity:0.55; }
         /* Alerts sheet sections: How (outputs) and What (categories). */
         .alert-sec { font-size:0.7rem; font-weight:700; letter-spacing:0.12em;
             text-transform:uppercase; color:var(--text-muted); margin:18px 0 8px; }
@@ -1077,20 +1075,12 @@
             border:1px solid var(--card-border); border-radius:10px; font-size:0.9rem; }
         .snd-label { display:flex; flex-direction:column; gap:2px; }
         .snd-label em { font-style:normal; font-size:0.72rem; color:var(--text-muted); }
-        .snd-state { flex:none; min-width:64px;  /* fits "🔊 💡", so the chip doesn't shift as outputs toggle */ padding:6px 12px; border-radius:6px;
-            font-weight:700; font-size:0.78rem; text-align:center;
-            background:rgba(255,255,255,0.07); border:1px solid var(--card-border);
-            color:var(--text-muted); cursor:pointer; transition:all 0.2s ease; }
-        .snd-row.on .snd-state {
-            background:var(--accent-emerald); border-color:var(--accent-emerald); color:#000; }
-        .snd-row.off .snd-state {
-            background:rgba(239,68,68,0.2); border-color:var(--accent-red); color:var(--accent-red); }
+        /* The row is the tap target; its switch is a span, not a second button. */
+        .snd-state { flex:none; }
         /* Sent, awaiting the device's next frame (under a second). Deliberately
            does NOT change the ON/OFF text -- a tap must never claim an outcome
            the board has not confirmed. */
         .snd-row.pending { opacity:0.45; }
-        /* Category on, but Sound and Lights are both off: nothing will happen. */
-        .snd-row.idle { opacity:0.55; }
 
         /* ------------------------------------------------------------------
            Band selector + foxhunt instrument.
@@ -1206,7 +1196,8 @@
            by id on purpose: widening .radios itself would break the radio strip,
            and adding a shared class is how the chips ended up inheriting a
            layout class they had no business in. */
-        #sound-modes { grid-template-columns:repeat(2,1fr); }
+        /* Off + On, or Off + three volume levels: one column per visible button. */
+        #sound-modes { grid-template-columns:none; grid-auto-flow:column; grid-auto-columns:1fr; }
         #led-modes { grid-template-columns:repeat(4,1fr); }
         /* Theme chips: a sideways strip, not a grid -- five names don't fit a
            phone row, and scrolling keeps every tap target 44 px. */
@@ -1590,23 +1581,19 @@
                 <section class="set-page" id="setp-alerts" data-title="Alerts" hidden>
                 <h3 class="set-label">Alerts</h3>
                 <p class="set-note">
-                    How the device gets your attention, and what for. Saved on the
-                    board, so you can set it and walk away.
+                    How the board gets your attention, and what for. Saved on the board.
                 </p>
-                <div class="alert-sec">How</div>
+                <div class="alert-sec">How it alerts</div>
+                <!-- Sound and volume are one row: Off mutes, a level unmutes at
+                     that volume. Firmware that reports no volume shows Off / On. -->
                 <div class="out-row">
                     <span class="snd-label"><strong>&#128266; Sound</strong></span>
                     <div class="radios seg" id="sound-modes" role="group" aria-label="Sound">
                         <button class="radio-tab" data-sound="0" aria-pressed="false">Off</button>
                         <button class="radio-tab" data-sound="1" aria-pressed="false">On</button>
-                    </div>
-                </div>
-                <div class="out-row" id="vol-row" hidden>
-                    <span class="snd-label"><strong>&#128265; Volume</strong></span>
-                    <div class="radios seg" id="vol-modes" role="group" aria-label="Volume">
-                        <button class="radio-tab" data-vol="0" aria-pressed="false">Low</button>
-                        <button class="radio-tab" data-vol="1" aria-pressed="false">Med</button>
-                        <button class="radio-tab" data-vol="2" aria-pressed="false">High</button>
+                        <button class="radio-tab" data-vol="0" aria-pressed="false" hidden>Low</button>
+                        <button class="radio-tab" data-vol="1" aria-pressed="false" hidden>Med</button>
+                        <button class="radio-tab" data-vol="2" aria-pressed="false" hidden>High</button>
                     </div>
                 </div>
                 <div class="out-row">
@@ -1619,7 +1606,37 @@
                     </div>
                 </div>
                 <p class="set-note alert-note">One lights a single LED in the alert&rsquo;s colour. Off stays dark, even during an alert.</p>
-                <div class="out-row" style="margin-top:12px;">
+
+                <div class="alert-sec">Alert for</div>
+                <p class="set-note" id="alerts-dead" style="color:var(--accent-amber,#f59e0b);margin-bottom:8px;" hidden>Sound and lights are both off, so nothing will alert.</p>
+                <div class="snd-list">
+                    <button class="snd-row" id="beep-alpr" onclick="toggleBeep('alpr')">
+                        <span class="snd-label"><strong>&#128247; ALPR / camera</strong><em>Two long beeps &middot; sweep</em></span>
+                        <span class="snd-state set-toggle">&mdash;</span>
+                    </button>
+                    <button class="snd-row" id="beep-bodycam" onclick="toggleBeep('bodycam')">
+                        <span class="snd-label"><strong>&#127909; Body cam &amp; smart glasses</strong><em>Long&#8209;short&#8209;short &middot; flash pops</em></span>
+                        <span class="snd-state set-toggle">&mdash;</span>
+                    </button>
+                    <button class="snd-row" id="beep-drone" onclick="toggleBeep('drone')">
+                        <span class="snd-label"><strong>&#128760; Drone (Remote ID)</strong><em>Rising trill &middot; spinning rotors</em></span>
+                        <span class="snd-state set-toggle">&mdash;</span>
+                    </button>
+                    <button class="snd-row" id="beep-tracker" onclick="toggleBeep('tracker')">
+                        <span class="snd-label"><strong>&#128205; Tracker</strong><em>Fast ticking &middot; sonar pings</em></span>
+                        <span class="snd-state set-toggle">&mdash;</span>
+                    </button>
+                    <button class="snd-row" id="beep-generic" onclick="toggleBeep('generic')">
+                        <span class="snd-label"><strong>Other matches</strong><em>Plain warning &middot; glow</em></span>
+                        <span class="snd-state set-toggle">&mdash;</span>
+                    </button>
+                </div>
+
+                <p class="set-note alert-note">
+                    A category switched off is <strong>still detected and listed</strong>; it just stays quiet.
+                </p>
+
+                <div class="out-row" style="margin-top:18px;">
                     <span class="snd-label"><strong>&#127912; Theme</strong></span>
                 </div>
                 <div id="theme-modes" role="group" aria-label="Theme">
@@ -1631,35 +1648,6 @@
                 </div>
                 <p class="set-note alert-note" id="theme-note" hidden></p>
 
-                <div class="alert-sec">What</div>
-                <div class="snd-list">
-                    <button class="snd-row" id="beep-alpr" onclick="toggleBeep('alpr')">
-                        <span class="snd-label"><strong>&#128247; ALPR / camera</strong><em>Two long beeps &middot; sweep</em></span>
-                        <span class="snd-state">&mdash;</span>
-                    </button>
-                    <button class="snd-row" id="beep-bodycam" onclick="toggleBeep('bodycam')">
-                        <span class="snd-label"><strong>&#127909; Body cam &amp; smart glasses</strong><em>Long&#8209;short&#8209;short &middot; flash pops</em></span>
-                        <span class="snd-state">&mdash;</span>
-                    </button>
-                    <button class="snd-row" id="beep-drone" onclick="toggleBeep('drone')">
-                        <span class="snd-label"><strong>&#128760; Drone (Remote ID)</strong><em>Rising trill &middot; spinning rotors</em></span>
-                        <span class="snd-state">&mdash;</span>
-                    </button>
-                    <button class="snd-row" id="beep-tracker" onclick="toggleBeep('tracker')">
-                        <span class="snd-label"><strong>&#128205; Tracker</strong><em>Fast ticking &middot; sonar pings</em></span>
-                        <span class="snd-state">&mdash;</span>
-                    </button>
-                    <button class="snd-row" id="beep-generic" onclick="toggleBeep('generic')">
-                        <span class="snd-label"><strong>Other matches</strong><em>Plain warning &middot; glow</em></span>
-                        <span class="snd-state">&mdash;</span>
-                    </button>
-                </div>
-
-                <p class="set-note alert-note">
-                    A category you switch off stops beeping and flashing, but is <strong>still
-                    detected and listed</strong>. To stop the device announcing itself on the air,
-                    use Receive&#8209;only in Settings.
-                </p>
 
                 <h3 class="set-label">Ignored devices <span id="ignore-count">(0/16)</span></h3>
                 <p class="set-note">Your own gear. Still detected and listed; never beeps, flashes, counts or logs. Kept on the board, so it holds on a battery with no phone.</p>

@@ -4,6 +4,25 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Changed — the Alerts page: one Sound row, switches for categories, less to read
+
+- **Sound and Volume are one row: `Off` / `Low` / `Med` / `High`.** They were
+  two pickers for one question. Off mutes; tapping a level while muted sends
+  the unmute first and then the level, so the board's level-preview chirp is
+  heard. The mute and the volume are still separate on the board and on the
+  wire (`{"buzzer":bool}`, `{"vol":0..2}`), so nothing persisted changes.
+  Firmware that reports no volume gets `Off` / `On`.
+- **Each category is a sliding On/Off switch**, the same control as the rest of
+  Settings, replacing the per-row chip that read 🔊 💡 / 💡 / 🔊 / Silent / Off.
+  The chip existed so a row never read "On" while nothing could alert. Sound
+  and Lights are global, so that is now one line above the list, shown only
+  when both are off: "Sound and lights are both off, so nothing will alert."
+- **Theme moved below the categories** (cosmetic, set least often), and the
+  intro and the "still detected and listed" note are one line each.
+- **Layout trap:** the Sound picker shows two or four buttons depending on the
+  firmware, so it is `grid-auto-flow:column` rather than a fixed column count;
+  a fixed two-column grid wrapped the four buttons into a 2x2 block.
+
 ## [0.7.1] — 2026-10-01 — Every toggle is a sliding switch that says what it is set to
 
 ### Changed — one toggle standard: the row names the thing, the switch shows its state
