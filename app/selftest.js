@@ -940,7 +940,7 @@ console.log('[signalsweep self-test] attack-gear rules gated by the Attack toggl
     const bs = [];
     if (!/attackDetect && !pubAddr && advertisedDevice->haveManufacturerData\(\)[\s\S]{0,400}\(uint8_t\)mfgd\[2\] == 0x07 \|\| \(uint8_t\)mfgd\[2\] == 0x0F/.test(wwSrc))
         bs.push('BLE-spam detector does not gate on !pubAddr + 0x07/0x0F');
-    if (!/bleSpamNote\(&bleSpamState/.test(wwSrc)) bs.push('BLE-spam detector does not call bleSpamNote');
+    if (!/bleSpamNote\(&bleSpamState, key, rssi, now\)/.test(wwSrc)) bs.push('BLE-spam detector does not pass rssi to bleSpamNote (the AirPods-crowd floor)');
     if (bs.length) { console.log('FAIL: ble-spam detector:', bs); process.exit(1); }
     console.log('[signalsweep self-test] BLE popup-spam detector keys on random 0x07/0x0F: ok');
 }

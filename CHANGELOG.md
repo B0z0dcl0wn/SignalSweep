@@ -23,6 +23,36 @@ All notable changes to SignalSweep are recorded here.
   firmware, so it is `grid-auto-flow:column` rather than a fixed column count;
   a fixed two-column grid wrapped the four buttons into a 2x2 block.
 
+### Fixed — a crowd of AirPods is no longer BLE popup spam
+
+- **The popup-spam rule now ignores adverts weaker than -80 dBm**
+  (`ATTACK_BLESPAM_MIN_RSSI` in `attack_detectors.h`). The rule counts distinct
+  random addresses sending Apple Proximity Pairing (`0x07`) or Nearby Action
+  (`0x0F`) and fires at 8 inside 5 s. On a drive on 2026-10-01 it fired in
+  traffic beside a supermarket lot: a capture taken minutes later holds 52 such
+  addresses in ten minutes, peaking at 12 in one window. They were ordinary
+  AirPods status beacons, each a different model and address, nearly all at
+  -90 to -97 dBm. With the floor the same capture peaks at 5.
+- **Why a signal floor and not "new addresses only".** Counting only addresses
+  first heard inside the window still peaked at 11 on that capture: driving
+  past a crowd makes real earbuds look exactly as throwaway as a spammer's
+  addresses. Signal strength is the difference that survives — a transmitter
+  far enough away to read -90 is not the one raising popups on the phone in
+  your hand. Filtering on Apple-style private addresses also cleared the
+  capture, and was not taken, because it trusts an address the attacker
+  chooses.
+- **Measured against every capture we hold (164):** only that one trips the old
+  rule, none trips the new one. Bench, both boards, emitter's `blespam`
+  persona at -25 to -39 dBm: fires in under 5 s. A temporary S3 build with the
+  floor at -20 stayed silent for 45 s against the same emitter, so the gate is
+  proven in both directions on hardware.
+- **The floor is a tuning knob, fitted to one capture.** It is wrapped in
+  `#ifndef` so a bench build can move it with `-D`. No capture of real popup
+  spam at a distance exists yet; if a field run shows spam being missed, this
+  is the number to revisit. The host tests cover it
+  (`test_blespam_weak_adverts_ignored`): weak adverts are not counted and do
+  not pad a count that near adverts are building.
+
 ## [0.7.1] — 2026-10-01 — Every toggle is a sliding switch that says what it is set to
 
 ### Changed — one toggle standard: the row names the thing, the switch shows its state

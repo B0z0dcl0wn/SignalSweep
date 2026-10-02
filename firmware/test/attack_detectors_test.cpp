@@ -90,13 +90,27 @@ static void test_karma_distinct_ssids() {
 static void test_blespam_distinct_random_macs() {
     BleSpamState st; memset(&st, 0, sizeof(st));
     uint32_t c = 0;
-    for (uint8_t i = 0; i < ATTACK_BLESPAM_THRESHOLD; i++) c = bleSpamNote(&st, mac(i), 1000 + i);
+    for (uint8_t i = 0; i < ATTACK_BLESPAM_THRESHOLD; i++) c = bleSpamNote(&st, mac(i), -40, 1000 + i);
     assert(c >= ATTACK_BLESPAM_THRESHOLD);
     // The same rotating attacker MAC re-seen does not inflate the count.
     BleSpamState st2; memset(&st2, 0, sizeof(st2));
     uint32_t c2 = 0;
-    for (int i = 0; i < 20; i++) c2 = bleSpamNote(&st2, mac(1), 1000 + i);
+    for (int i = 0; i < 20; i++) c2 = bleSpamNote(&st2, mac(1), -40, 1000 + i);
     assert(c2 == 1);
+}
+
+// A crowd of real AirPods at the edge of range (2026-10-01 lot capture) must
+// not trip it: adverts under the RSSI floor are not counted at all, and they
+// must not pad a count that near adverts are building either.
+static void test_blespam_weak_adverts_ignored() {
+    BleSpamState st; memset(&st, 0, sizeof(st));
+    uint32_t c = 0;
+    for (uint8_t i = 0; i < 20; i++) c = bleSpamNote(&st, mac(i), ATTACK_BLESPAM_MIN_RSSI - 1, 1000 + i);
+    assert(c == 0);
+    for (uint8_t i = 20; i < 20 + ATTACK_BLESPAM_THRESHOLD - 1; i++) c = bleSpamNote(&st, mac(i), ATTACK_BLESPAM_MIN_RSSI, 1100 + i);
+    assert(c == ATTACK_BLESPAM_THRESHOLD - 1);   // the 20 weak ones added nothing
+    c = bleSpamNote(&st, mac(99), ATTACK_BLESPAM_MIN_RSSI, 1200);
+    assert(c >= ATTACK_BLESPAM_THRESHOLD);       // at the floor still counts
 }
 
 static void test_blespam_distinct_set_over_capacity() {
@@ -106,7 +120,7 @@ static void test_blespam_distinct_set_over_capacity() {
     // wrong.
     BleSpamState st; memset(&st, 0, sizeof(st));
     uint32_t c = 0;
-    for (int i = 0; i < ATTACK_DISTINCT_CAP + 5; i++) c = bleSpamNote(&st, mac((uint8_t)i), 1000 + (uint32_t)i);
+    for (int i = 0; i < ATTACK_DISTINCT_CAP + 5; i++) c = bleSpamNote(&st, mac((uint8_t)i), -40, 1000 + (uint32_t)i);
     assert(c == ATTACK_DISTINCT_CAP);          // saturates at the set's capacity
     assert(c >= ATTACK_BLESPAM_THRESHOLD);     // still well past the fire threshold
 }
@@ -200,6 +214,7 @@ int main() {
     test_deauth_lru_keeps_active_burster();
     test_karma_distinct_ssids();
     test_blespam_distinct_random_macs();
+    test_blespam_weak_adverts_ignored();
     test_blespam_distinct_set_over_capacity();
     test_titles_keyword_clean();
     test_tagflood_stable_never_evidence();

@@ -24,6 +24,12 @@ static_assert(ATTACK_DEAUTH_RING > ATTACK_DEAUTH_THRESHOLD, "deauth ring must ho
 
 #define ATTACK_BLESPAM_THRESHOLD  8        // distinct random MACs sending 0x07/0x0F
 #define ATTACK_WINDOW_MS_BLESPAM  5000u
+// Adverts weaker than this do not count. A parking lot of AirPods at -90..-97
+// tripped the rule on 2026-10-01 (12 real earbuds in one 5 s window); at -80
+// the same capture peaks at 5. Tuning knob: fitted to that one capture.
+#ifndef ATTACK_BLESPAM_MIN_RSSI          // -D overrides it for a bench build
+#define ATTACK_BLESPAM_MIN_RSSI   (-80)
+#endif
 
 #define ATTACK_TITLE_DEAUTH   "Deauth burst"
 #define ATTACK_TITLE_KARMA    "Karma AP"
@@ -135,7 +141,8 @@ static inline uint32_t karmaNote(KarmaState* st, uint64_t bssid, uint64_t ssidHa
 
 // ---- BLE popup spam: distinct random MACs sending 0x07/0x0F globally ------
 typedef DistinctSet BleSpamState;
-static inline uint32_t bleSpamNote(BleSpamState* st, uint64_t mac, uint32_t now) {
+static inline uint32_t bleSpamNote(BleSpamState* st, uint64_t mac, int rssi, uint32_t now) {
+    if (rssi < ATTACK_BLESPAM_MIN_RSSI) return 0;   // too far to be the thing popping up your phone
     return attackDistinctNote(st, mac, now, ATTACK_WINDOW_MS_BLESPAM);
 }
 
