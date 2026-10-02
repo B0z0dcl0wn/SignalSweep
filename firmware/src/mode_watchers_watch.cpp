@@ -1113,7 +1113,7 @@ class WatchersScanCallbacks : public NimBLEAdvertisedDeviceCallbacks {
                 (uint8_t)mfgd[0] == 0x4C && (uint8_t)mfgd[1] == 0x00 &&
                 ((uint8_t)mfgd[2] == 0x07 || (uint8_t)mfgd[2] == 0x0F)) {
                 uint64_t key = attackHash((const uint8_t*)mac.c_str(), mac.length());
-                uint32_t nMacs = bleSpamNote(&bleSpamState, key, now);
+                uint32_t nMacs = bleSpamNote(&bleSpamState, key, rssi, now);
                 if (nMacs >= ATTACK_BLESPAM_THRESHOLD) {
                     char title[40];
                     snprintf(title, sizeof(title), "%s \xC2\xB7 %u MACs",
