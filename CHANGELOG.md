@@ -4,6 +4,27 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Fixed — saving signature rules over Bluetooth
+
+- **Settings › Signatures › Edit as JSON › Send to device never worked over Bluetooth.** The app
+  sent the whole rule set (~11 KB) as one GATT write, and one write carries one attribute value,
+  512 bytes at most. Measured on the bench from a PC at MTU 517: the single write fails outright and
+  the board keeps its old rules. Over the USB cable it always worked, because a byte stream has no
+  such cap, which is how it hid.
+- **Splitting the write alone is not enough:** the board routed every write as a complete command,
+  so 62 split writes went through cleanly and each was dropped as broken JSON (also measured).
+- Now the app sends any command over 180 bytes as a series of acknowledged writes (180 fits one
+  packet at any MTU of 183 or more; short commands still go as one write), and the board's
+  `onWrite` reassembles them up to the newline every app command already ends with. A reassembled
+  line over 512 bytes is routed from `loop()` instead of the NimBLE host task — the same rule as
+  `CMD:SIGS`, keeping a multi-KB parse and a LittleFS write off that task's small stack. A half-sent
+  command is dropped on disconnect so it cannot prefix the next peer's, and a buffer that grows past
+  64 KB with no newline is discarded.
+- Bench (S3, real BLE link): an 11,035-byte rule set in 62 writes, 10.3 s from a Windows PC; read
+  back over Bluetooth in 1.6 s with the new rule present; short commands still answered; no reboot.
+- For scale: the stored rule file is ~16 KB of a 1.94 MB filesystem (the alert log claims up to
+  1.6 MB of it), so flash leaves room for roughly 20 times today's rule set.
+
 ### Added — OUI-Spy's mode-selector AP is a default Hacking-gear rule
 
 - **SSID prefix `oui-spy`, weight 70, category Hacking gear** (signature schema v12, so deployed

@@ -662,6 +662,16 @@ console.log('[signalsweep self-test] alert log record + write path: ok');
     if (!/if \(attrLen > BLE_ATT_MAX_ATTR_LEN\) attrLen = BLE_ATT_MAX_ATTR_LEN;/.test(bs)) rs.push('bulkLineBytes no longer clamps the attribute length to 512 before sizing a line (the 513-byte SDF: line bug)');
     if (!/\(attrLen - 5\) \/ 4\) \* 3/.test(bs) || !/if \(n < 48\) n = 48;/.test(bs)) rs.push('bulkLineBytes no longer sizes a BLE line to one notification');
     if (!/if \(maxChunkSize > BLE_ATT_MAX_ATTR_LEN\) maxChunkSize = BLE_ATT_MAX_ATTR_LEN;/.test(sbs)) rs.push('sendBleSerial no longer clamps its chunk size to the 512-byte attribute cap');
+    // The other direction: one write is one attribute too. A rule-set push
+    // (~11 KB) sent as one write failed outright (bench 2026-10-06, MTU 517),
+    // and split writes each routed alone were dropped as broken JSON.
+    const chunk = Number((appSrc.match(/const BLE_WRITE_CHUNK\s*=\s*(\d+)/) || [])[1]);
+    if (!(chunk > 0 && chunk <= 182)) rs.push('BLE_WRITE_CHUNK missing or larger than one packet at MTU 185');
+    if (!/i \+= BLE_WRITE_CHUNK/.test(appSrc)) rs.push('sendCommandNow no longer splits a long BLE command into several writes');
+    const ow = (bs.match(/class RxCallbacks[\s\S]*?\n\};/) || [''])[0];
+    if (!/bleRxBuf \+= /.test(ow) || !/indexOf\('\\n'\)/.test(ow)) rs.push('onWrite no longer reassembles split writes up to the newline');
+    if (!/line\.length\(\) > BLE_ROUTE_INLINE_MAX/.test(ow) || !/if \(bleLongPending\) \{/.test(bs)) rs.push('a long BLE command is routed on the NimBLE host task instead of loop()');
+    if (!/bleRxBuf = "";\s*\/\/ a half-sent/.test(bs)) rs.push('onDisconnect no longer drops a half-received command');
     if (!/perLine = bulkLineBytes\(viaBle\) \/ ALERT_LOG_REC_SIZE/.test(bs)) rs.push('LOG: lines no longer carry whole 16-byte records');
     if (!/\\"done\\":true,\\"off\\":%u,\\"next\\":%u/.test(bs)) rs.push('the sdget done frame no longer echoes its request offset');
     if (!/'off' in o && o\.off !== st\.pageOff/.test(appSrc) || !/if \(o\.off !== st\.pageOff\) return;/.test(appSrc)) rs.push('the app no longer ignores a stale sdget header/done');
