@@ -602,7 +602,11 @@ console.log('[signalsweep self-test] alert log record + write path: ok');
     if ((bs.match(/vTaskDelay\(pdMS_TO_TICKS\(BULK_LINE_PACE_MS\)\)/g) || []).length !== 2) rs.push('sendSdFile/sendAlertLog no longer pause BULK_LINE_PACE_MS per line');
     const getLines = +((bs.match(/#define SD_GET_LINES\s+(\d+)/) || [])[1]);
     if (!(getLines >= 1 && getLines <= 8)) rs.push('SD_GET_LINES (lines per CMD:SD:GET page) must be 1..8');
-    if (!/sent >= SD_GET_LINES \* batch/.test(bs)) rs.push('the SD page no longer scales with the line size');
+    const usbLines = +((bs.match(/#define SD_GET_LINES_USB\s+(\d+)/) || [])[1]);
+    if (!(usbLines >= getLines && usbLines <= 128)) rs.push('SD_GET_LINES_USB must be SD_GET_LINES..128 (it holds loop() for the whole page)');
+    if (!/pageLines = viaBle \? SD_GET_LINES : SD_GET_LINES_USB/.test(bs)) rs.push('BLE pages must stay SD_GET_LINES; only USB gets the big page');
+    if (!/pageBytes = pageLines \* batch/.test(bs)) rs.push('the SD page no longer scales with the line size');
+    if (!/sdRead\(name, off, buf, pageBytes, &size\)/.test(bs)) rs.push('read the SD page in ONE sdRead() (each call reopens + re-seeks, ~30 ms)');
     if (!/static void sendReply[\s\S]{0,120}?sendUsbLine\(payload\)/.test(bs)) rs.push('sendReply bypasses the USB line mutex');
     if (!/sendBleSerial\(jsonStr\);\s*sendUsbLine\(jsonStr\)/.test(ww)) rs.push('the 1 Hz push bypasses the USB line mutex');
     if (rs.length) { console.log('FAIL: rx resync:', rs); process.exit(1); }

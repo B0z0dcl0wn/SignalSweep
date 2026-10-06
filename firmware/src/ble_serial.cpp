@@ -151,7 +151,11 @@ static volatile bool     sdRmPending  = false;
 static volatile char     sdGetName[13] = "";
 static volatile uint32_t sdGetOff      = 0;
 static volatile char     sdRmName[13]  = "";
-#define SD_GET_LINES  8       // SDF: lines per CMD:SD:GET page (the page scales with the line)
+#define SD_GET_LINES  8       // SDF: lines per CMD:SD:GET page over BLE (the page scales with the line)
+// Over USB nothing is dropped and the round trip per page was the ceiling
+// (~6 KB per request); 64 x 768 B = 48 KB a page. It holds loop() for well
+// under a second (64 x BULK_LINE_PACE_MS plus the card reads).
+#define SD_GET_LINES_USB 64
 #define SD_GET_BATCH  768     // max raw bytes per SDF:/LOG: line (1024 base64 chars); USB always uses it
 // A short yield after each bulk base64 line (SDF:, LOG:), so the 1 Hz push
 // and the host task get a look in. It is NOT flow control any more: it was
@@ -313,14 +317,19 @@ static void sendSdFile(const char* name, uint32_t off, bool viaBle) {
     // Over BLE each SDF: line must fit ONE notification (bulkLineBytes()), so
     // a lost notification loses a whole line cleanly, never half of one.
     const size_t batch = bulkLineBytes(viaBle);
-    uint8_t* buf = (uint8_t*)malloc(SD_GET_BATCH);
+    const size_t pageLines = viaBle ? SD_GET_LINES : SD_GET_LINES_USB;
+    // The whole page in ONE sdRead(): each call reopens the file and re-walks
+    // the FAT chain to the offset, ~30 ms on the bench, so a read per 768 B
+    // line was 1.9 s of a 2.6 s USB page (~19 KB/s). 48 KB lands in PSRAM.
+    const size_t pageBytes = pageLines * batch;
+    uint8_t* buf = (uint8_t*)malloc(pageBytes);
     uint8_t* b64 = (uint8_t*)malloc((SD_GET_BATCH * 4) / 3 + 8);
     if (!buf || !b64) { free(buf); free(b64); sendReply("{\"sdget\":{\"err\":\"mem\"}}"); return; }
     // The capture being written right now is not readable yet (sdRead()
     // refuses it); say so, rather than "no such file" for a file in the list.
     if (sdIsOpen(name)) { free(buf); free(b64); sendReply("{\"sdget\":{\"err\":\"busy\"}}"); return; }
     uint32_t size = 0;
-    int32_t got = sdRead(name, off, buf, batch, &size);
+    int32_t got = sdRead(name, off, buf, pageBytes, &size);
     if (got < 0) { free(buf); free(b64); sendReply("{\"sdget\":{\"err\":\"no such file\"}}"); return; }
     {
         JsonDocument h;
@@ -328,25 +337,22 @@ static void sendSdFile(const char* name, uint32_t off, bool viaBle) {
         o["n"] = name; o["size"] = size; o["off"] = off;
         String out; serializeJson(h, out); sendReply(out);
     }
-    uint32_t pos = off, sent = 0;
-    bool readFailed = false;
-    while (got > 0) {
+    uint32_t pos = off;
+    for (size_t i = 0; i < (size_t)got; ) {
+        size_t n = (size_t)got - i < batch ? (size_t)got - i : batch;
         size_t olen = 0;
-        if (mbedtls_base64_encode(b64, (SD_GET_BATCH * 4) / 3 + 8, &olen, buf, (size_t)got) != 0) break;
+        if (mbedtls_base64_encode(b64, (SD_GET_BATCH * 4) / 3 + 8, &olen, buf + i, n) != 0) break;
         String line = "SDF:";
         line.concat((const char*)b64, olen);
         sendReply(line);
         vTaskDelay(pdMS_TO_TICKS(BULK_LINE_PACE_MS));
-        pos += got; sent += got;
-        if (sent >= SD_GET_LINES * batch || pos >= size) break;
-        got = sdRead(name, pos, buf, batch, &size);
-        // pos < size here (the break above already caught pos >= size), so a
-        // non-positive read is a genuine failure, not real EOF -- the file
-        // shrank, the card dropped out, whatever. Never tell a client "more"
-        // is coming when nothing more was actually read.
-        if (got <= 0) readFailed = true;
+        pos += n; i += n;
     }
     free(buf); free(b64);
+    // A short page that stops before EOF is a genuine failure, not real EOF --
+    // the file shrank, the card dropped out, whatever. Never tell a client
+    // "more" is coming when nothing more was actually read.
+    bool readFailed = pos < size && pos - off < pageBytes;
     if (readFailed) {
         char err[80];
         snprintf(err, sizeof(err), "{\"sdget\":{\"err\":\"read failed\",\"next\":%u}}", (unsigned)pos);
@@ -707,7 +713,7 @@ void bleSerialTick() {
     if (sdGetPending) {
         sdGetPending = false;
         // Copy the name/offset into locals before calling: sendSdFile()'s
-        // send loop runs for a while (up to SD_GET_LINES lines, one BULK_LINE_PACE_MS pause per
+        // send loop runs for a while (up to SD_GET_LINES_USB lines, one BULK_LINE_PACE_MS pause per
         // line), and reading the volatile globals again partway through
         // would let a later CMD:SD:GET on this same tick's queue -- or a
         // torn write from the router mid-copy -- switch files under it.

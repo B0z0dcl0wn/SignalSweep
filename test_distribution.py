@@ -60,6 +60,20 @@ def main():
     html = (ROOT / "site/index.html").read_text(encoding="utf-8")
     assert re.search(r"esp-web-tools@\d+\.\d+\.\d+/", html), "flasher script is not pinned to an exact version"
 
+    # The data-pull page promises it cannot phone home; the browser enforces
+    # that only while this policy is in place and nothing loads from elsewhere.
+    pull = (ROOT / "site/pull.html").read_text(encoding="utf-8")
+    assert "connect-src 'none'" in pull and "default-src 'none'" in pull, "pull.html lost its no-network CSP"
+    assert not re.search(r"<script[^>]+src=|<link[^>]+href=\"?https?:", pull), "pull.html must load nothing external"
+    assert "pull.html" in html, "flasher page no longer links the data pull"
+    # One report.html, whichever tool made it: the page carries pull.py's template verbatim.
+    tpl = re.search(r"const REPORT_HTML = `(.*?)`;", pull, re.S)
+    py = re.search(r'REPORT_HTML = r"""(.*?)"""', (ROOT / "pull.py").read_text(encoding="utf-8"), re.S)
+    assert tpl and py and tpl.group(1).replace("<\\/", "</") == py.group(1), \
+        "pull.html's REPORT_HTML drifted from pull.py's (re-embed it)"
+    assert "default-src 'none'" in py.group(1), "report.html lost its no-network CSP"
+    assert "pull.html" in (ROOT / "site/assemble.sh").read_text() and "pull.py" in (ROOT / "site/assemble.sh").read_text()
+
     parse = install.board_from_chip_output
     assert parse("Chip type:          ESP32-C5 (QFN32) (revision v1.0)") == "c5"   # esptool 5
     assert parse("Chip is ESP32-S3 (QFN56) (revision v0.2)") == "s3"              # esptool 4
