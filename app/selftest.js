@@ -779,7 +779,7 @@ for (const call of defaults.match(/addRule\([^;]*\);/g) || []) {
     const hasLux = /0x0D53/i.test(call);
     if (hasFd5f !== hasLux) regFail.push(`glasses rule states fd5f/0x0D53 without the other: ${call.replace(/\s+/g, ' ')}`);
 }
-if (!/#define SIG_SCHEMA_VERSION 11\b/.test(wwSrc)) regFail.push('SIG_SCHEMA_VERSION not bumped to 11');
+if (!/#define SIG_SCHEMA_VERSION 12\b/.test(wwSrc)) regFail.push('SIG_SCHEMA_VERSION not bumped to 12');
 // Flock battery GATT services (v11): full 128-bit UUIDs, exact-matched, filed
 // under "Flock Safety" so they route to the ALPR/camera lens and beep. A
 // truncated UUID would fall into uuidMatches' 16-bit branch or never match.
@@ -823,7 +823,7 @@ for (const oui of ['80:e1:26', '80:e1:27']) {
         regFail.push(`${oui} rule must be Hacking gear, weight 60, named STM32WB, not "Flipper...": ${call.replace(/\s+/g, ' ')}`);
 }
 // The attack-gear defaults exist, all under "Hacking gear".
-for (const want of ['"3081"', '"3082"', '"3083"', '"0x0E29"', '"0c:fa:22"', '"flipper"', '"Pineapple_"', '"pwned"'])
+for (const want of ['"3081"', '"3082"', '"3083"', '"0x0E29"', '"0c:fa:22"', '"flipper"', '"Pineapple_"', '"pwned"', '"oui-spy"'])
     if (!new RegExp(`addRule\\([^;]*HACKING_GEAR_CATEGORY[^;]*${want.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i').test(defaults))
         regFail.push(`no "Hacking gear" default rule carries ${want}`);
 if (regFail.length) { console.log('FAIL: registry:', regFail); process.exit(1); }
