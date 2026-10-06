@@ -102,7 +102,10 @@ static const char *SIG_FILE_PATH = "/data/signatures.json";
 //   v11: Flock's solar battery GATT services as exact 128-bit UUIDs (80):
 //        auth e8ccbb38-... and safety 20c944c1-..., from the Flock firmware
 //        dump. The first 128-bit UUID rules in the defaults.
-#define SIG_SCHEMA_VERSION 11
+//   v12: OUI-Spy's mode-selector AP, SSID prefix "oui-spy" (70, Hacking
+//        gear). Its MAC is random per boot, so the default name is the only
+//        handle; a renamed board is not caught.
+#define SIG_SCHEMA_VERSION 12
 
 static SemaphoreHandle_t watchersMutex = NULL;
 static bool watchersRunning = false;
@@ -435,6 +438,9 @@ static void ensureSignaturesFileExists() {
             // Vendor-default control APs. Pineapple_XXXX is specific; "pwned"
             // is also a common joke network name, so it lists without beeping.
             addRule("Pineapple management AP", HACKING_GEAR_CATEGORY, "", "", "", "", 70, "Pineapple_");
+            // OUI-Spy (Colonel Panic) boot selector. Default SSID, bench-proven
+            // 2026-10-06; the board randomizes its AP MAC every boot.
+            addRule("OUI-Spy selector AP", HACKING_GEAR_CATEGORY, "", "", "", "", 70, "oui-spy");
             addRule("'pwned' SSID (ESP deauther default)", HACKING_GEAR_CATEGORY, "", "", "", "", 60, "pwned");
 
             // Trackers (planted-on-you category). Keyed on service UUID, which

@@ -4,6 +4,22 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Added — OUI-Spy's mode-selector AP is a default Hacking-gear rule
+
+- **SSID prefix `oui-spy`, weight 70, category Hacking gear** (signature schema v12, so deployed
+  boards pick it up on their next boot). Colonel Panic's OUI-Spy Unified Blue boots into a mode
+  selector that raises a WPA2 AP named `oui-spy` on channel 1; with Attack detection on it now lists
+  and beeps under All. Low-hanging fruit on purpose: plenty of boards run with the default name,
+  and catching the lazy ones is still catching them.
+- **The SSID is the only handle.** The selector picks a fresh random (locally administered) AP MAC
+  every boot, so no OUI or address rule can hold it, and a board renamed from its own selector page,
+  or switched into one of its modes (each brings up its own AP or BLE name), is not caught by this rule.
+- Bench-proven on the S3: the real board, untouched, detected at 70 / Likely with the filter on, one
+  alert. Bench trap from the same run: resetting that board by toggling its serial port's RTS line
+  brought it back printing "AP started: SUCCESS" while radiating nothing, as neither the detector nor
+  a separate Wi-Fi scanner could hear it. Only its hardware reset button brought the AP back on the
+  air. Use the button, or a phone Wi-Fi scanner as a witness, before blaming the detector.
+
 ## [0.8.0] — 2026-10-06 — Get your data off without opening the case
 
 ### Added — a data export page beside the flasher, and `pull.py`
