@@ -11,6 +11,7 @@
 
         const NUS_SERVICE_UUID = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
         const NUS_RX_UUID      = '6e400002-b5a3-f393-e0a9-e50e24dcca9e';
+        const BLE_WRITE_CHUNK  = 180;   // bytes per BLE write; see sendCommandNow()
         const NUS_TX_UUID      = '6e400003-b5a3-f393-e0a9-e50e24dcca9e';
 
         let connectionType = null; // 'BLE' | 'SERIAL' | null
@@ -4444,14 +4445,22 @@
             const jsonStr = (cmdObj.raw || JSON.stringify(cmdObj)) + '\n';
             if (connectionType === 'BLE') {
                 try {
+                    // One write carries at most one 512 B attribute, so a long
+                    // command (a rule-set push is ~11 KB) goes as several
+                    // acknowledged writes; the board reassembles up to the '\n'.
+                    // 180 fits one packet at any MTU >= 183.
                     const data = new TextEncoder().encode(jsonStr);
-                    if (window.Capacitor && window.Capacitor.isNativePlatform()) {
-                        await window.BleClient.write(bleDevice.deviceId, NUS_SERVICE_UUID, NUS_RX_UUID, new DataView(data.buffer));
-                    } else if (rxCharacteristic) {
-                        if (rxCharacteristic.writeValueWithoutResponse) {
-                            await rxCharacteristic.writeValueWithoutResponse(data);
-                        } else {
-                            await rxCharacteristic.writeValueWithResponse(data);
+                    const multi = data.length > BLE_WRITE_CHUNK;
+                    for (let i = 0; i < data.length; i += BLE_WRITE_CHUNK) {
+                        const part = data.slice(i, i + BLE_WRITE_CHUNK);
+                        if (window.Capacitor && window.Capacitor.isNativePlatform()) {
+                            await window.BleClient.write(bleDevice.deviceId, NUS_SERVICE_UUID, NUS_RX_UUID, new DataView(part.buffer));
+                        } else if (rxCharacteristic) {
+                            if (rxCharacteristic.writeValueWithoutResponse && !multi) {
+                                await rxCharacteristic.writeValueWithoutResponse(part);
+                            } else {
+                                await rxCharacteristic.writeValueWithResponse(part);
+                            }
                         }
                     }
                     return true;

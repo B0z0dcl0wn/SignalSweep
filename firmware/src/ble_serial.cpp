@@ -127,6 +127,19 @@ static bool wifiScanOn = true;
 // comment at the command. Written on the NimBLE host task, read on loop().
 static volatile bool sigsRequested = false;
 
+// One BLE write carries at most one attribute value (512 B), so the app splits
+// a long command ({"signatures":[...]} is ~11 KB) across several writes and
+// onWrite reassembles them, routing one command per '\n' -- every app command
+// ends in one. bleRxBuf is touched only on the NimBLE host task (onWrite,
+// onDisconnect). A line too big for the router's tight host-task budget is
+// handed to bleSerialTick() on loop(), like CMD:SIGS: the host task writes
+// bleLongCmd only while the flag is clear, loop() copies it and clears it.
+static String bleRxBuf;
+static String bleLongCmd;
+static volatile bool bleLongPending = false;
+#define BLE_RX_MAX          65536   // garbage with no newline is dropped, not hoarded
+#define BLE_ROUTE_INLINE_MAX 512    // longer lines run on loop(), not the host task
+
 // Set for one CMD:CFG reply when an {"ignore":mac} was refused because the
 // list is already at IGNORE_MAX -- the app toasts, then it clears itself.
 static bool ignoreFullOnce = false;
@@ -626,6 +639,7 @@ class ServerCallbacks : public NimBLEServerCallbacks {
 #endif
         deviceConnected = false;
         negotiatedMtu = 23;   // next peer renegotiates from scratch
+        bleRxBuf = "";        // a half-sent command must not prefix the next peer's
         playDisconnectionChirp();
         // THE trap. This call used to be unconditional, which means the instant
         // receive-only dropped the client the device advertised itself again —
@@ -698,6 +712,14 @@ void openAdvertisingWindow() {
 }
 
 void bleSerialTick() {
+    // A long BLE command (a rule-set push), reassembled by onWrite.
+    if (bleLongPending) {
+        String cmd = bleLongCmd;
+        bleLongCmd = "";
+        bleLongPending = false;
+        processIncomingCommand(cmd);
+    }
+
     // Answer a deferred CMD:SIGS from loop(), off the NimBLE host task.
     if (sigsRequested) {
         sigsRequested = false;
@@ -1049,11 +1071,24 @@ class RxCallbacks : public NimBLECharacteristicCallbacks {
 #endif
         std::string rxValue = pCharacteristic->getValue();
         nimbleHostTask = xTaskGetCurrentTaskHandle();   // onWrite runs on it
-        if (rxValue.length() > 0) {
+        bleRxBuf += rxValue.c_str();
+        int nl;
+        while ((nl = bleRxBuf.indexOf('\n')) >= 0) {
+            String line = bleRxBuf.substring(0, nl);
+            bleRxBuf.remove(0, nl + 1);
+            line.trim();
+            if (line.length() == 0) continue;
+            if (line.length() > BLE_ROUTE_INLINE_MAX) {
+                if (bleLongPending) { ESP_LOGW(TAG, "Long BLE command dropped: one already queued"); continue; }
+                bleLongCmd = line;
+                bleLongPending = true;
+                continue;
+            }
             cmdViaBle = true;
-            processIncomingCommand(String(rxValue.c_str()));
+            processIncomingCommand(line);
             cmdViaBle = false;
         }
+        if (bleRxBuf.length() > BLE_RX_MAX) bleRxBuf = "";
     }
 };
 
