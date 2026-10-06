@@ -105,12 +105,29 @@ and makes you type the target's name back before it writes a byte.
 `install.py --help` has `--apk-only`, `--esp-only` and `--erase`. It asks the
 chip which board it is; `--board c5` forces it.
 
+### Getting your data off
+
+The SD card stays in the case. Pull it over the cable instead: plug in, open the
+[data pull page](https://b0z0dcl0wn.github.io/SignalSweep/pull.html), hit
+**Export**, pick a folder. You get `alerts.txt` (what it beeped at, readable),
+`report.html` (the same, sortable), a `.pcap` per capture for Wireshark, and the
+untouched originals in `raw/`. The page is one file, and its security policy
+blocks all network access, so nothing leaves your machine. Don't trust hosted
+pages? Same folder, no browser:
+
+```bash
+pip install pyserial
+python pull.py              # same export into ./SignalSweep-<time>/
+python pull.py --wipe       # then delete what copied intact (asks first)
+python pull.py --phone      # also grab the app's files off the phone over adb
+```
+
 ## Hardware and controls
 
 The bare board works. A **passive buzzer**, a **WS2812 LED bar**, and an
 optional **DS3231 clock** (so the alert log keeps real dates across power
 cuts with no phone around) are all add-ons — none of them required. Add a
-**microSD card** and you get a richer drive log (names, SSIDs, channels) and
+**microSD card** and you get a richer session log (names, SSIDs, channels) and
 captures started from the app over Bluetooth, no cable needed. Parts, pads
 and pictures are in the **[Wiring Guide](firmware/WIRING.md)** and the
 illustrated `firmware/wiring-diagram.html` / `wiring-diagram-c5.html` pages.

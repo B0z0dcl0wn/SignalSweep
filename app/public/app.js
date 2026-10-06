@@ -3324,7 +3324,7 @@
             sendCommand({ raw: 'CMD:SD:LS' });
         }
 
-        function sdKind(n) { return /^CAP\d{5}\.SSC$/.test(n) ? 'Capture' : /^LOG\d{5}\.CSV$/.test(n) ? 'Drive log' : 'File'; }
+        function sdKind(n) { return /^CAP\d{5}\.SSC$/.test(n) ? 'Capture' : /^LOG\d{5}\.CSV$/.test(n) ? 'Session log' : 'File'; }
         function sdSize(s) { return s >= 1048576 ? (s / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(s / 1024)) + ' KB'; }
 
         function handleSdList(o) {
@@ -3392,7 +3392,6 @@
 
         async function sdDownload(name) {
             if (sdRx) { showToast('A download is already running', '✕'); return; }
-            if (!capNativeFs()) { showToast('File storage unavailable', '✕'); return; }
             const f = sdFiles.find(function (x) { return x.n === name; });
             if (!f) return;
             if (!capIsUsb() && sdKind(name) === 'Capture' && f.s > 65536) {
@@ -3417,8 +3416,9 @@
                         st.parts.length = st.pageStart;
                         st.get(st.pageOff);
                     },
-                    // A page is 8 lines (SD_GET_LINES), well under a second
-                    // over BLE, so 5 s of silence means the page was lost.
+                    // A page is 8 lines over BLE (SD_GET_LINES), 64 over USB
+                    // (SD_GET_LINES_USB), each well under a second, so 5 s of
+                    // silence means the page was lost.
                     arm: function () { clearTimeout(st.timer); st.timer = setTimeout(function () { st.retry('the board stopped replying'); }, SD_PAGE_TIMEOUT_MS); },
                     // Only clear sdRx if it's still THIS attempt: a disconnect
                     // (or a later attempt) may already have replaced/nulled it,
@@ -3448,6 +3448,8 @@
             const out = sdKind(name) === 'Capture'
                 ? 'signalsweep-capture-' + capStamp() + '.sscap'
                 : 'signalsweep-log-' + capStamp() + '-' + name.replace(/\.CSV$/, '') + '.csv';   // keeps the card's boot number
+            // Desktop browser: no Documents folder, so a normal download.
+            if (!capNativeFs()) { downloadBlob(new Blob([all]), out); return; }
             try {
                 await window.CapFilesystem.writeFile({
                     path: out, data: text,

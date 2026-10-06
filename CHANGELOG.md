@@ -4,6 +4,59 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-10-06 — Get your data off without opening the case
+
+### Added — a data export page beside the flasher, and `pull.py`
+
+- **The SD card stays in the case.** `pull.html`, linked from the flasher,
+  talks to the board over the USB cable (Web Serial). Tick what you want (the
+  alert log, captures, session logs; grouped, sortable, long groups folded
+  shut), then **Export to a folder…** or **Save to Downloads**. You get
+  `alerts.txt` (counts per kind, then every alert in your local time),
+  `report.html` (the same, sortable and filterable, opens offline), a `.pcap`
+  per capture for Wireshark (Wi-Fi frames, radiotap channel and dBm), and the
+  untouched originals in `raw/`. A **? Help** guide says what lives on the
+  board, how each store fills up, and what each exported file is.
+- **Nothing leaves the machine.** The page is one file with a
+  `default-src 'none'; connect-src 'none'` policy and loads nothing external;
+  `report.html` carries the same policy. `test_distribution.py` fails if either
+  goes.
+- **`pull.py`** makes the same folder with no browser (needs only pyserial),
+  plus `--wipe` (typed confirm, then skips any file that grew since it was
+  copied), `--phone` (adb pull of the app's Documents files) and `--pcap`. It is
+  self-contained on purpose, so it can be read top to bottom before it runs.
+  The page carries `pull.py`'s report template byte for byte, and the test
+  checks it.
+- **Reports come from the board's flash alert log, not the card's session
+  logs.** Both record the same alerts, so reading both would count everything
+  twice. The session logs' extra columns (name, SSID, channel, maker) ship in
+  `raw/`.
+- **Both save routes, side by side, and every failure in the log box.** A
+  folder keeps an export in one place; plain downloads are the fallback. A
+  picker or write error is printed under the buttons instead of being
+  swallowed.
+- **"Drive log" is now "session log"** (one per power-on) in the app and docs:
+  not every outing is a drive.
+
+### Fixed — card downloads over USB, and pcaps Wireshark can read cleanly
+
+- **`CMD:SD:GET` over USB sends 64 lines (48 KB) a page instead of 8**; BLE
+  stays 8. Timing one page on the bench showed `sdRead()` taking 1.94 s of the
+  2.6 s: every call reopened the file and re-walked the FAT chain to the
+  offset, ~30 ms per 768-byte line. A page is now one `sdRead()`, sliced into
+  lines: 0.8 s a page, and a 3.8 MB card pull went from 234 s to 74 s (~50 KB/s).
+  Most of what remains is the 5 ms per-line yield. A short read before the end
+  of the file now answers `read failed` instead of promising more. selftest
+  pins the single read.
+- **Trap: ESP32 promiscuous frames end in 4 bytes that are not a valid FCS.**
+  Written to a pcap as-is, 2,864 beacons in one capture ran their IE chain 4
+  bytes past the end, so Wireshark would show a malformed IE on nearly every
+  frame. Both converters drop those 4 bytes on whole frames and record the true
+  `orig_len` on truncated ones; all 637 whole beacons then parse exactly.
+- **The hosted app's SD Download on a desktop browser** (no Capacitor
+  filesystem) toasted "File storage unavailable"; it now saves as a normal
+  download.
+
 ### Changed — the Alerts page: one Sound row, switches for categories, less to read
 
 - **Sound and Volume are one row: `Off` / `Low` / `Med` / `High`.** They were
