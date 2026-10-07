@@ -105,7 +105,9 @@ static const char *SIG_FILE_PATH = "/data/signatures.json";
 //   v12: OUI-Spy's mode-selector AP, SSID prefix "oui-spy" (70, Hacking
 //        gear). Its MAC is random per boot, so the default name is the only
 //        handle; a renamed board is not caught.
-#define SIG_SCHEMA_VERSION 12
+//   v13: OUI-Spy's mode APs: "snoopuntothem" (Detector), "foxhunter"
+//        (Foxhunter), "ouispy-" (PCAP + BLE Sniff), all 70, Hacking gear.
+#define SIG_SCHEMA_VERSION 13
 
 static SemaphoreHandle_t watchersMutex = NULL;
 static bool watchersRunning = false;
@@ -441,6 +443,11 @@ static void ensureSignaturesFileExists() {
             // OUI-Spy (Colonel Panic) boot selector. Default SSID, bench-proven
             // 2026-10-06; the board randomizes its AP MAC every boot.
             addRule("OUI-Spy selector AP", HACKING_GEAR_CATEGORY, "", "", "", "", 70, "oui-spy");
+            // Its modes' default APs. Flock-You WiFi and Sky Spy are passive (no
+            // AP, no BLE advertising) and cannot be heard at all.
+            addRule("OUI-Spy Detector AP", HACKING_GEAR_CATEGORY, "", "", "", "", 70, "snoopuntothem");
+            addRule("OUI-Spy Foxhunter AP", HACKING_GEAR_CATEGORY, "", "", "", "", 70, "foxhunter");
+            addRule("OUI-Spy capture AP (PCAP / BLE Sniff)", HACKING_GEAR_CATEGORY, "", "", "", "", 70, "ouispy-");
             addRule("'pwned' SSID (ESP deauther default)", HACKING_GEAR_CATEGORY, "", "", "", "", 60, "pwned");
 
             // Trackers (planted-on-you category). Keyed on service UUID, which
