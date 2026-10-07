@@ -4529,6 +4529,14 @@
             if (reader) { try { await reader.cancel(); } catch (e) {} }
             if (writer) { try { await writer.close(); } catch (e) {} }
             await Promise.all(pipes);
+            // The browser opens the port with DTR+RTS asserted and the OS drops
+            // them one at a time on close; the in-between RTS-high/DTR-low state
+            // is the USB-Serial-JTAG reset, so Disconnect rebooted the board.
+            // Drop RTS first, then DTR, so the close changes no lines.
+            if (port && port.setSignals) {
+                try { await port.setSignals({ requestToSend: false }); } catch (e) {}
+                try { await port.setSignals({ dataTerminalReady: false }); } catch (e) {}
+            }
             if (port) { try { await port.close(); } catch (e) { console.warn('serial close failed', e); } }
             serialPort = null;
             onDeviceDisconnected();

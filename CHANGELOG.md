@@ -4,6 +4,16 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Fixed — Disconnect no longer reboots a USB-connected board
+
+- **Pressing Disconnect on a cable (Web Serial) connection rebooted the board** — the tick was the
+  boot sound, and `CMD:CFG` showed `reset:11` (USB reset, not a crash) with the boot counter one
+  higher. The browser opens the port with DTR and RTS asserted and the OS drops them one at a time
+  on close; the in-between RTS-high/DTR-low state is the ESP32 USB-Serial-JTAG reset. `disconnectDevice()`
+  now drops RTS, then DTR, through `port.setSignals()` before `port.close()`, so the close changes no
+  lines. Verified on both boards in Chrome and Firefox, repeated connect/disconnect, no reboot. Opening
+  the port still resets the board — a page cannot set the lines before the port opens.
+
 ### Fixed — saving signature rules over Bluetooth
 
 - **Settings › Signatures › Edit as JSON › Send to device never worked over Bluetooth.** The app
