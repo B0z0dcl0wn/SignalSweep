@@ -35,6 +35,12 @@ All notable changes to SignalSweep are recorded here.
 - **The SSID is the only handle.** The selector picks a fresh random (locally administered) AP MAC
   every boot, so no OUI or address rule can hold it, and a board renamed from its own selector page,
   or switched into one of its modes (each brings up its own AP or BLE name), is not caught by this rule.
+- **Its modes' default APs too (schema v13), same weight and category:** `snoopuntothem` (Detector),
+  `foxhunter` (Foxhunter) and the prefix `ouispy-` (PCAP's `ouispy-pcap`, BLE Sniff's
+  `ouispy-blesniff`). Its recovery AP, `oui-spy-recovery`, already falls under the selector rule.
+  Two modes stay invisible by design and no rule can change that: Flock-You WiFi (the DeFlock
+  wildcard-probe detector) runs Wi-Fi in listen-only mode with no AP, and Sky Spy only listens on
+  Wi-Fi and scans BLE; the "DroneID" name it gives its BLE stack is never advertised.
 - Bench-proven on the S3: the real board, untouched, detected at 70 / Likely with the filter on, one
   alert. Bench trap from the same run: resetting that board by toggling its serial port's RTS line
   brought it back printing "AP started: SUCCESS" while radiating nothing, as neither the detector nor
