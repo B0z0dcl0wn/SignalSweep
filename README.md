@@ -8,7 +8,7 @@ category has its own beep, so it works with no screen at all.
 - 📷 **ALPR / camera**: two long beeps
 - 🎥 **Body cam**: long, short, short
 - 🛸 **Drone (Remote ID)**: rising trill
-- 📍 **Tracker (AirTag/Tile)**: fast ticking
+- 📍 **Tracker (AirTag, Tile, SmartTag)**: fast ticking
 
 The phone app is optional. It shows what's here right now, then forgets it.
 
@@ -38,11 +38,21 @@ The phone app is optional. It shows what's here right now, then forgets it.
   app still lists everything the buzzer skips.
 - **Lights on your terms.** Each category has its own LED animation. Run the bar
   off, one LED, dim or full, so a parked car doesn't glow like a beacon.
-- **Foxhunts.** Lock one MAC and walk it down by ear. Found an AirTag you didn't
-  put there? Make it ring.
+- **Foxhunts.** Lock one MAC and walk it down by ear. Cheap keyfob tags that
+  advertise an alert service can be made to ring; the button only shows up on
+  those. (AirTags can't be rung by anything but their owner's phone.)
 - **Reads drone Remote ID in full** (ASTM F3411 / OpenDroneID) over BLE, Wi-Fi
   beacons and Wi-Fi NAN: ID, position, altitude, heading, and where the operator
   is standing. Often before you can hear the props.
+- **Spots the attack gear.** BLE popup spam, deauth bursts, Pineapple-style
+  karma, Flipper Zero hints, and pwnagotchis by name. Opt-in, because a busy
+  mall trips the rate detectors.
+- **Doesn't cry wolf in a tag flood.** Someone spamming fake trackers gets a
+  handful of beeps, then one row that says what it is, and the board goes quiet.
+  A real tag still in range sounds once the storm passes.
+- **Keeps a log, if you ask.** What it beeped at and when, on the board's own
+  flash or an SD card, for a drive with no phone along. Off by default. Never
+  where.
 - **Names what it hears.** Vendor lookup runs offline against the IEEE and
   Bluetooth SIG tables. No MAC ever leaves your phone. Wi-Fi rows tell access
   points from clients.
@@ -59,14 +69,16 @@ No jamming. No deauth. No packet injection. No advert spoofing. No arbitrary
 GATT writes. It's a receiver. Ringing a tracker is one fixed Immediate Alert
 write, and its only parameter is a MAC.
 
-No cloud, no telemetry, no accounts, no logs. What's in range shows up, and it's
-wiped when you disconnect. The one thing it can keep is a location pin you say
-yes to, one device at a time, stored as AES-GCM ciphertext behind a PIN. Pinning
-is off by default, and detection never asks for the PIN.
+No cloud, no telemetry, no accounts. The app keeps no history: what's in range
+shows up, and it's wiped when you disconnect. The board logs what it beeped at
+only if you switch that on, and never where. The one location anything keeps is
+a pin you say yes to, one device at a time, stored as AES-GCM ciphertext behind
+a PIN. Pinning is off by default, and detection never asks for the PIN.
 
 Listening to radio is legal in most places. Transmitting usually isn't, and this
-doesn't, apart from a Bluetooth advert you can switch off. Your local law isn't
-everyone's. Go and read it.
+barely does: a Bluetooth advert you can switch off, the scan requests that ask
+nearby devices for their names, and the one write when you press Ring. Your
+local law isn't everyone's. Go and read it.
 
 ---
 
