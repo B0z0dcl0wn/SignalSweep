@@ -959,6 +959,26 @@ console.log('[signalsweep self-test] attack-gear rules gated by the Attack toggl
     console.log('[signalsweep self-test] BLE popup-spam detector keys on random 0x07/0x0F: ok');
 }
 
+// ---------------------------------------------------------------------------
+// UI warts found shooting marketing screens (2026-10-08). Each one put a false
+// or broken-looking thing in a screenshot.
+{
+    const ui = [];
+    // The hunt panel offered "Make it ring" on an AirTag. Same gate as the rows.
+    if (!/id="fox-ring" hidden/.test(htmlSrc)) ui.push('fox panel Ring button is not hidden by default');
+    if (!/ringEl\.hidden = !\(m && m\.ring\)/.test(appSrc)) ui.push('fox panel Ring button is not gated on the ring flag');
+    // break-all split "conf 90" into "conf 9" / "0" on every scope row.
+    if (/\.scope-sub \{[^}]*word-break:break-all/.test(htmlSrc)) ui.push('.scope-sub is break-all again (splits numbers mid-digit)');
+    if (!/'conf\\u00a0' \+/.test(appSrc)) ui.push('"conf" and its number are no longer joined by a no-break space');
+    // The map rebuilds its layers every push, so a popup closed in a second; labels are permanent.
+    if ((appSrc.match(/bindTooltip\([^)]*MAP_LABEL\)/g) || []).length < 3) ui.push('map markers (you / drone / pilot) lost their permanent labels');
+    if (!/#map \{[^}]*isolation:isolate/.test(htmlSrc)) ui.push('#map lost isolation:isolate (Leaflet attribution paints over the tab bar)');
+    // The native app said "Web Bluetooth API: Not Supported" under a working Bluetooth button.
+    if (!/isNativePlatform\(\)\) \{\s*bleBadge\.className = 'api-badge ok'; bleBadge\.textContent = 'Native BLE'/.test(appSrc)) ui.push('native app no longer reports its own BLE as supported');
+    if (ui.length) { console.log('FAIL: ui polish:', ui); process.exit(1); }
+    console.log('[signalsweep self-test] ui polish guards: ok');
+}
+
 const results = await global.__signalsweepSelfTest();
 const failed = Object.entries(results).filter(([, v]) => !v).map(([k]) => k);
 console.log('[signalsweep self-test]', results);

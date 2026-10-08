@@ -4,6 +4,34 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Fixed — eight things a screenshot caught
+
+Shooting marketing screens on the bench rig (filter on, emitter cycling, phone on a mock location)
+put the app under a camera for an afternoon, and the camera found eight things the eye had stopped
+seeing. Each one is now pinned by `node app/selftest.js`.
+
+- **The hunt panel offered "Make it ring" on an AirTag.** The row buttons have obeyed the firmware's
+  `ring:1` flag for a long time; the panel's own button was unconditional. It is now hidden unless the
+  hunted row carries `ring`, and "Stop hunting" takes the full width.
+- **`conf 90` wrapped mid-number** ("conf 9" / "0") on almost every row: `.scope-sub` used
+  `word-break:break-all` so long MACs could wrap. It is `overflow-wrap:anywhere` now (a MAC still
+  breaks when it must), and `conf` is joined to its number with a no-break space.
+- **A tag flood's own row sank under its fakes.** Ninety fake trackers at the same RSSI outsorted the
+  `Tag flood:` row that explains them, so the alert count froze with no visible reason. Summary rows
+  (any MAC with a space) now sort first; a hunted row still takes the very top.
+- **Map markers had no labels, and their popups could not be opened.** `renderMap()` rebuilds the
+  layers on every 1 Hz push, which closed any popup within a second. The drone, the pilot and you now
+  carry permanent labels.
+- **The map's attribution painted over the bottom tab bar.** Leaflet's controls are `z-index:1000`
+  and the bar is 900; `#map` now has `isolation:isolate`, so everything Leaflet draws stays in its box.
+- **The Android app said "Web Bluetooth API: Not Supported" under a working Bluetooth button.** It
+  uses the native plugin, not Web Bluetooth. The row is "Bluetooth" and reads **Native BLE** there, the
+  same way USB already read "Native USB host".
+- **The map note wrapped "9 ring(s)." onto the Recenter button's line.** The prose and the button are
+  on separate lines now, with a real plural.
+- **"Ignored devices" sat flush against the theme chips** in Settings > Alerts; it has the spacing every
+  other heading there has.
+
 ### Fixed — Disconnect no longer reboots a USB-connected board
 
 - **Pressing Disconnect on a cable (Web Serial) connection rebooted the board** — the tick was the

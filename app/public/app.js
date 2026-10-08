@@ -425,6 +425,10 @@
                 // aimed at moved. Strongest-first still holds; the jitter does
                 // not move anything.
                 .sort(function (a, b) {
+                    // Summary rows ("Tag flood: Tile", "BLE popup spam") go first:
+                    // a flood is 90 fakes at one RSSI, and its own row sank among them.
+                    const sa = /\s/.test(String(a.mac)), sb = /\s/.test(String(b.mac));
+                    if (sa !== sb) return sa ? -1 : 1;
                     const ba = Math.round((Number(a.rssi) || -999) / 5);
                     const bb = Math.round((Number(b.rssi) || -999) / 5);
                     if (ba !== bb) return bb - ba;
@@ -679,7 +683,7 @@
                               (title === m.mac ? '' : '<span class="mono">' + esc(m.mac) + '</span>'),
                               (m.ssid && m.ssid !== title ? esc(m.ssid) : ''),
                               (m.rule ? esc(m.rule) : ''),
-                              (unmatched ? '' : 'conf ' + (m.confidence | 0))
+                              (unmatched ? '' : 'conf\u00a0' + (m.confidence | 0))
                             ].filter(Boolean).join(' \u00b7 ') + '</div>' +
                     '</div>' +
                     '<div class="scope-signal">' +
@@ -867,7 +871,11 @@
             const macEl   = document.getElementById('fox-mac');
             const rssiEl  = document.getElementById('fox-rssi');
             const trendEl = document.getElementById('fox-trend');
+            const ringEl  = document.getElementById('fox-ring');
             if (macEl) macEl.textContent = huntMac;
+            // Same rule as the row buttons: only a target the firmware heard
+            // advertising Immediate Alert / Link Loss. An AirTag never rings.
+            if (ringEl) ringEl.hidden = !(m && m.ring);
 
             if (!m) {
                 if (nameEl)  nameEl.textContent = 'Lost signal';
@@ -1070,6 +1078,10 @@
             }
         }
 
+        // Permanent labels: the layers are rebuilt every push, which closes a
+        // popup within a second, so an unlabelled dot could never say what it was.
+        const MAP_LABEL = { permanent: true, direction: 'right', offset: [8, 0], className: 'map-label' };
+
         function renderMap(rows) {
             if (!map || !window.L) return;
             meLayer.clearLayers();
@@ -1078,7 +1090,7 @@
             if (mapFix) {
                 window.L.circleMarker([mapFix.lat, mapFix.lng], {
                     radius: 6, color: '#34d399', fillColor: '#34d399', fillOpacity: 0.9, weight: 2
-                }).addTo(meLayer).bindPopup('You');
+                }).addTo(meLayer).bindPopup('You').bindTooltip('You', MAP_LABEL);
                 if (mapFix.acc) {
                     window.L.circle([mapFix.lat, mapFix.lng], {
                         radius: mapFix.acc, color: '#34d399', weight: 1, opacity: 0.3, fill: false
@@ -1094,11 +1106,12 @@
                     // A real, broadcast coordinate: it gets a real marker.
                     window.L.circleMarker([m.lat, m.lng], {
                         radius: 8, color: cat.color, fillColor: cat.color, fillOpacity: 0.85, weight: 2
-                    }).addTo(liveLayer).bindPopup(cat.icon + ' ' + title + '<br>' + esc(m.mac));
+                    }).addTo(liveLayer).bindPopup(cat.icon + ' ' + title + '<br>' + esc(m.mac))
+                      .bindTooltip(cat.icon + ' ' + title, MAP_LABEL);
                     if (m.opLat != null && m.opLng != null) {
                         window.L.circleMarker([m.opLat, m.opLng], {
                             radius: 6, color: cat.color, fillColor: '#000', fillOpacity: 0.6, weight: 2
-                        }).addTo(liveLayer).bindPopup('Operator of ' + title);
+                        }).addTo(liveLayer).bindPopup('Operator of ' + title).bindTooltip('Pilot', MAP_LABEL);
                     }
                 } else if (mapFix) {
                     // Distance only. Dashed, unfilled, centred on you -- it must
@@ -1116,12 +1129,14 @@
 
             const note = document.getElementById('map-note');
             if (note) {
-                note.innerHTML = (mapFix ? '' : 'No fix yet. ') +
+                // Prose on one line, the button on the next: inline, the ring count
+                // wrapped onto the button's line and read as a stray word.
+                note.innerHTML = '<div>' + (mapFix ? '' : 'No fix yet. ') +
                     'Solid markers are broadcast coordinates (drones). ' +
                     'Dashed rings are distance-from-you estimates from signal strength \u2014 ' +
-                    'not locations. ' + (ringed ? ringed + ' ring(s). ' : '') +
-                    '<button class="scope-act" style="margin-left:6px" onclick="recenterMap()">\u27f3 Recenter</button>' +
-                    (pinsCache.length ? '' : ' <span style="opacity:0.7">Saved pins appear once unlocked.</span>');
+                    'not locations.' + (ringed ? ' ' + ringed + (ringed === 1 ? ' ring.' : ' rings.') : '') + '</div>' +
+                    '<div style="margin-top:6px"><button class="scope-act" onclick="recenterMap()">\u27f3 Recenter</button>' +
+                    (pinsCache.length ? '' : ' <span style="opacity:0.7">Saved pins appear once unlocked.</span>') + '</div>';
             }
         }
 
@@ -3861,7 +3876,11 @@
         function checkApiSupport() {
             const bleBadge = document.getElementById('bleSupportBadge');
             const serialBadge = document.getElementById('serialSupportBadge');
-            if ('bluetooth' in navigator) {
+            // The Android app talks BLE through the Capacitor plugin and has no
+            // Web Bluetooth at all; "Not Supported" there read as broken.
+            if (window.Capacitor && window.Capacitor.isNativePlatform()) {
+                bleBadge.className = 'api-badge ok'; bleBadge.textContent = 'Native BLE';
+            } else if ('bluetooth' in navigator) {
                 bleBadge.className = 'api-badge ok'; bleBadge.textContent = 'Supported';
             } else {
                 bleBadge.className = 'api-badge warn'; bleBadge.textContent = 'Not Supported';
@@ -5012,6 +5031,19 @@
                 // A sentinel row ("Tag flood: Tile", "BLE popup spam") has no address:
                 // Hunt/Ring/Ignore would send a MAC the board can never match.
                 results.noActionsOnSentinel = actionRow({ mac: 'Tag flood: Tile', protocol: 'BLE' }, categoryOf('Tracker')) === '';
+                // ...and it sorts above the fakes it summarises, however weak it is.
+                {
+                    const keep = liveMatches;
+                    liveMatches = {};
+                    ingestTargets([
+                        { mac: 'C0:C0:6F:7A:00:01', type: 'Tracker', rssi: -40, confidence: 80 },
+                        { mac: 'C0:C0:6F:7A:00:02', type: 'Tracker', rssi: -41, confidence: 80 },
+                        { mac: 'Tag flood: Tile',   type: 'Tracker', rssi: -55, confidence: 80 }
+                    ]);
+                    const r = liveRows('tracker');
+                    results.sentinelSortsFirst = r.length === 3 && r[0].mac === 'Tag flood: Tile';
+                    liveMatches = keep;
+                }
 
                 // Ignore: offered on stable addresses only, painted from the device.
                 const savedIg = ignoredMacs;
