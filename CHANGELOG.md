@@ -4,6 +4,8 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+## [0.8.1] — 2026-10-08 — What the camera caught
+
 ### Fixed — eight things a screenshot caught
 
 Shooting marketing screens on the bench rig (filter on, emitter cycling, phone on a mock location)
