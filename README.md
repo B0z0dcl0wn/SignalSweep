@@ -15,7 +15,10 @@ The phone app is optional. It shows what's here right now, then forgets it.
 | `live` | `hunt <mac>` | `map` |
 |---|---|---|
 | ![Live scope](docs/img/scope.png) | ![Foxhunt](docs/img/foxhunt.png) | ![Drone on the map](docs/img/map-drone.png) |
-| Live matches, strongest first. Every Wi-Fi row shows its band and channel, and a router's radios fold into one row. Cleared when you disconnect. | One target. The beeps speed up as you close in. Walk, don't watch the screen. | Full ASTM F3411 decode: aircraft position and operator position. |
+| Live matches, strongest first. Every Wi-Fi row shows its band and channel, and a router's radios fold into one row. Cleared when you disconnect. | One target. The beeps speed up as you close in. Walk, don't watch the screen. | Full ASTM F3411 decode. That's the aircraft. The other pin is the pilot. |
+| `beep --id` | `tagflood` | `live --lens cameras` |
+| ![Alert settings](docs/img/alerts.png) | ![Tag flood](docs/img/tagflood.gif) | ![Cameras lens](docs/img/cameras.png) |
+| A sound and a light per category. Switch one off and it's still listed, just quiet. | Someone's spamming fake trackers. The list fills up, the alert count stops climbing. | Tap a tab and the board only beeps for that. (Bench emitter faking a Flock probe and a Flock BLE name.) |
 
 ---
 
