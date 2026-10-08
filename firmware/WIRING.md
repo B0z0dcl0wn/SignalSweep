@@ -159,7 +159,7 @@ serial log says `[RTC] none fitted` with it attached).
   series at DIN, and a 1000 µF cap across the bar's VCC ↔ GND to absorb the
   inrush when all eight LEDs snap on.
 - **microSD reader:** see above. 3.3 V only.
-- **C5 antenna:** use a **dual-band** U.FL antenna. The stock one is 2.4 GHz only.
+- **C5 antenna:** use a **dual-band** U.FL antenna, so it hears 5 GHz as well as 2.4.
 
 ## Power sanity
 

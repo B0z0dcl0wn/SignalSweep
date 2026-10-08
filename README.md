@@ -111,9 +111,8 @@ also sweeps the 5 GHz band, where a growing share of cameras and access points
 live, and it can be told to watch one band or both.
 
 Optional, and worth it: a **passive buzzer** and a **WS2812 LED bar** (it beeps
-and blinks without them only if something else is listening). On the C5, add a
-**dual-band U.FL antenna** — the one in the box is 2.4 GHz only, which throws
-away the reason to buy that board.
+and blinks without them only if something else is listening). On the C5, use a
+**dual-band U.FL antenna** so it hears 5 GHz as well as 2.4.
 The C5 ships tuned to US Wi-Fi channels; elsewhere it still works, it just
 skips channels 12–13.
 
