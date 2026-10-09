@@ -13,9 +13,8 @@
 </p>
 
 <p align="center">
-  <img src="docs/img/strip.png" alt="The SignalSweep app: live scope, hunting a tracker, a drone and its pilot on the map, and the alert settings">
+  <img src="docs/img/hero-pumpkin.jpg" width="560" alt="A SignalSweep in its 3D-printed case standing on a log beside a pumpkin, antenna up, LED bar lit red">
 </p>
-<p align="center"><sub>Live scope · Hunt by ear · Drone + pilot · A sound per threat</sub></p>
 
 ---
 
@@ -93,6 +92,13 @@ Mute any category you don't care about. It's still detected and listed, just qui
 - **Keeps its mouth shut.** Receive-only stops its Bluetooth advertising, so it isn't announcing itself to the gear it's hunting. It keeps listening and beeping.
 - **No trail.** The app shows what's here right now and forgets it when you disconnect. Vendor names are looked up offline; no MAC ever leaves your phone.
 - **Pins only when you say yes.** One device at a time, AES-GCM encrypted behind a PIN. Off by default, and detection never asks for the PIN.
+
+## The app
+
+<p align="center">
+  <img src="docs/img/strip.png" alt="The SignalSweep app: live scope, hunting a tracker, a drone and its pilot on the map, and the alert settings">
+</p>
+<p align="center"><sub>Live scope · Hunt by ear · Drone + pilot · A sound per threat</sub></p>
 
 ## The full build
 
