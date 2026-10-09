@@ -29,6 +29,36 @@
 
 Want one when they're ready? **Watch → Custom → Releases** on this repo and you'll hear first.
 
+## Getting started
+
+### The fast way: flash it from your browser
+
+<p align="center">
+  <a href="https://b0z0dcl0wn.github.io/SignalSweep/"><img src="https://img.shields.io/badge/Flash%20it%20in%20your%20browser-b0z0dcl0wn.github.io%2FSignalSweep-2ea44f?style=for-the-badge" alt="Flash it in your browser"></a>
+</p>
+
+Chrome or Edge, a USB-C cable, one button. It works out which board is
+plugged in (C5 or S3) and flashes the matching image. The app runs on the same
+site at [`/app/`](https://b0z0dcl0wn.github.io/SignalSweep/app/) and talks to the
+board over Bluetooth, so a laptop needs nothing but the browser.
+
+### The script: board and Android phone
+
+```bash
+git clone https://github.com/B0z0dcl0wn/SignalSweep.git
+cd SignalSweep
+pip install -U esptool pyserial
+
+python install.py              # flash the board and install the app on the phone
+python install.py --esp-only   # just the board
+python install.py --apk-only   # just the phone
+```
+
+It downloads the latest release, checks every file's hash, asks which device if
+more than one is plugged in, and makes you type the target's name back before
+it writes a byte. The phone needs `adb` and USB debugging on. `--erase` wipes the board's saved settings
+first, and `--help` has the rest.
+
 ## Hear it, don't read it
 
 Every threat category has its own sound and its own light pattern, so the
@@ -116,25 +146,9 @@ and blinks without them only if something else is listening). On the C5, use a
 The C5 ships tuned to US Wi-Fi channels; elsewhere it still works, it just
 skips channels 12–13.
 
-**Browser, zero install.** Open
-[b0z0dcl0wn.github.io/SignalSweep](https://b0z0dcl0wn.github.io/SignalSweep/) in
-Chrome or Edge, plug the board in, hit **Connect & flash**. The app lives at
-`/app/` on the same site and talks to the board over Bluetooth. The flasher works
-out which board is plugged in and flashes the matching image.
+Then flash it the same way as everyone else: see [Getting started](#getting-started).
 
-**Script: firmware plus the Android APK.**
-
-```bash
-pip install -U esptool pyserial
-python install.py
-```
-
-Flashes the board and sideloads the APK over `adb`. It lists what's plugged in
-and makes you type the target's name back before it writes a byte.
-`install.py --help` has `--apk-only`, `--esp-only` and `--erase`. It asks the
-chip which board it is; `--board c5` forces it.
-
-### Getting your data off
+## Getting your data off
 
 The SD card stays in the case. Pull it over the cable instead: plug in, open the
 [data pull page](https://b0z0dcl0wn.github.io/SignalSweep/pull.html), hit
