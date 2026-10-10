@@ -4,6 +4,24 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+## [0.8.2] — 2026-10-09 — The list holds still under your thumb
+
+### Fixed — Hunt landed on the wrong row with the filter off
+
+Foxhunting your own gear (a Govee light, filter off, a quiet house) was a race: every 1 Hz push
+rebuilt the whole list, and a push landing between touchdown and the click put the tap on whatever
+row had just slid into that slot. The 5 dB bucketing from earlier stops rows swapping on jitter; it
+cannot stop new rows arriving or old ones ageing out, and a city adds both every second.
+
+- **The list freezes while a finger is on it, and for 3 s after the finger lifts or a scroll stops**
+  (`listTouching`/`listHoldUntil`, `LIST_HOLD_MS`). Only the row rebuild is skipped: the band counts
+  and the hunt panel above still update every push, and the board's beeps and LED meter never pass
+  through the app at all, so the hunt stays as analog as it was.
+- **A row button clears the hold before acting**, so Hunt, Ring, Ignore and expand redraw at once
+  instead of waiting out the 3 s they just started.
+- Known cost: while you are touching the list, the hunted row's own dBm and bars freeze with it. The
+  fox panel above does not, and Hunt scrolls you up to it.
+
 ## [0.8.1] — 2026-10-08 — What the camera caught
 
 ### Fixed — eight things a screenshot caught

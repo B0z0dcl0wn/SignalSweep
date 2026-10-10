@@ -296,6 +296,24 @@
             if (t) t.textContent = text;
         }
 
+        // Touching or scrolling freezes the list (renderScope) until the finger
+        // is up and LIST_HOLD_MS has passed, so a 1 Hz push can't move the row
+        // you are aiming at. ponytail: fixed delay; a "paused" chip if 3 s
+        // ever feels like the app froze.
+        const LIST_HOLD_MS = 3000;
+        let listTouching = false, listHoldUntil = 0;
+        function holdList() { listHoldUntil = Date.now() + LIST_HOLD_MS; }
+        if (typeof document !== 'undefined' && document.addEventListener) {
+            document.addEventListener('pointerdown', function (ev) {
+                if (ev.target.closest && ev.target.closest('#targets-list')) listTouching = true;
+            });
+            ['pointerup', 'pointercancel'].forEach(function (t) {
+                document.addEventListener(t, function () { if (listTouching) { listTouching = false; holdList(); } });
+            });
+            // scroll doesn't bubble; capture catches the page and any scroller.
+            document.addEventListener('scroll', holdList, { capture: true, passive: true });
+        }
+
         function toggleView() {
             viewMode = (viewMode === 'list') ? 'map' : 'list';
             const wrap = document.getElementById('map-wrap');
@@ -628,6 +646,10 @@
 
             const list = document.getElementById('targets-list');
             if (!list) return;
+            // Hold the list still under a finger: a push that rebuilds it
+            // between touchdown and click lands the tap on whatever row slid
+            // into that slot. Counts and the fox panel above still update.
+            if (listTouching || Date.now() < listHoldUntil) return;
 
             if (rows.length === 0) {
                 list.innerHTML = '<div class="scope-empty">' +
@@ -997,6 +1019,7 @@
             }
             const act = ev.target.closest('.scope-act');
             if (!act) return;
+            listHoldUntil = 0;   // the tap landed; let its own re-render through
             if (act.getAttribute('data-act') === 'expand') {
                 const g = act.getAttribute('data-group');
                 if (expandedGroups.has(g)) expandedGroups.delete(g); else expandedGroups.add(g);
