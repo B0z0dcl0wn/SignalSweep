@@ -190,7 +190,7 @@ cuts with no phone around) are all add-ons — none of them required. Add a
 **microSD card** and you get a richer session log (names, SSIDs, channels) and
 captures started from the app over Bluetooth, no cable needed. Parts, pads
 and pictures are in the **[Wiring Guide](firmware/WIRING.md)** and the
-illustrated `firmware/wiring-diagram.html` / `wiring-diagram-c5.html` pages.
+illustrated `firmware/wiring-diagram.html` page (one page, both boards).
 
 | BOOT button | What it does |
 |---|---|

@@ -5,15 +5,14 @@ detector: plug it into USB, connect the app, and it streams everything it
 hears. Every other part is optional. Leave a part off and you lose exactly
 that feature, nothing else.
 
-Illustrated versions: [`wiring-diagram.html`](wiring-diagram.html) (S3) and
-[`wiring-diagram-c5.html`](wiring-diagram-c5.html) (C5).
+Illustrated version, for both boards: [`wiring-diagram.html`](wiring-diagram.html).
 
 | Part | Required? | What it adds | Without it |
 |------|-----------|--------------|------------|
 | XIAO ESP32-S3 or ESP32-C5 + U.FL antenna (C5: dual-band) | **Yes** | the detector | — |
 | Passive buzzer | optional | the headless "what is near" beep patterns, and Hunt's beeps | phone only |
 | WS2812 8-LED bar | optional | colour/animation per category, the hunt meter | phone only |
-| microSD reader (3.3 V, 6 pins, no regulator) | optional, **firmware support coming** | (coming) alert log and Site Survey captures on a card | — |
+| microSD reader (3.3 V, 6 pins, no regulator) | optional | a session log per boot and Site Survey captures on a card | the alert log stays on flash |
 | DS3231 clock module | optional, **not fitted on this build** | real dates across power cuts with no phone | the phone or PC sets the time at each connect |
 | C5 instead of S3 | optional | hears 5 GHz Wi-Fi too | 2.4 GHz only |
 
@@ -53,10 +52,26 @@ regulator**: 6 pins in a row, silkscreen top to bottom
 > **Never connect this board to 5V.** It has no regulator, and 5V can kill
 > the card. Its `3v3` pin goes to the XIAO's **3V3** pad and nothing else.
 
-The wiring is final, but the firmware does not drive the card yet (support is
-coming). Other SD readers order their pins differently, and some are 5V
+Format the card FAT32; the board keeps its files in `/SIGSWEEP/`. Other SD readers order their pins differently, and some are 5V
 modules with a regulator; with any other reader, match by label and check its
 power pin's marking.
+
+## Wire colours
+
+The diagram draws each wire in the colour it is on the bench. Six colours,
+nine wires, so the SD data wires reuse three; they leave from different pads.
+
+| Wire | Colour |
+|------|--------|
+| 5V → bar VCC | red |
+| every ground | black |
+| 3V3 → SD 3v3 | white |
+| D1 → bar IN | yellow |
+| D2 → buzzer + | green |
+| D3 → SD CS | blue |
+| D10 → SD MOSI | yellow |
+| D8 → SD CLK | green |
+| SD MISO → D9 | blue |
 
 ## One wire per XIAO pad
 
@@ -182,7 +197,8 @@ from the XIAO's 3V3. If you run it off a weak battery, budget for those.
 
 ## Verify
 
-1. Install with the web flasher, or `python flash.py --tier 1 --port COMx`.
+1. Install with the web flasher, or `python flash.py --port COMx` (C5: add
+   `--board c5`).
 2. On boot: a short jingle and an LED blink (if fitted). With no clock fitted
    the serial log says `[RTC] none fitted, waiting for a host`, which is
    expected.
