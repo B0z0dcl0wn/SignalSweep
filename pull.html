@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- The page can talk to the USB cable and nothing else. connect-src 'none'
+     means the browser itself refuses any fetch/XHR/WebSocket from this page,
+     so nothing read off the board can leave this machine through it. Check it
+     yourself: DevTools > Network stays empty after the page loads. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'none'; img-src 'none'; form-action 'none'; base-uri 'none'">
+<title>SignalSweep Data Pull</title>
+<style>
+  :root{
+    --bg:#090d16; --panel:#0d1320; --line:rgba(140,170,210,.14);
+    --text:#f3f4f6; --dim:#9ca3af; --cyan:#00f2fe; --bad:#ef4444;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--text);line-height:1.6;
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif}
+  .wrap{max-width:760px;margin:0 auto;padding:0 1rem 4rem}
+  header{padding:3rem 0 1.5rem;position:relative}
+  .help-btn{position:absolute;top:1rem;right:0;padding:.4rem .9rem;border-radius:999px;
+    border:1px solid rgba(0,242,254,.45);background:transparent;color:var(--cyan);font:600 .95rem/1.2 inherit;cursor:pointer}
+  .help-btn:hover{background:rgba(0,242,254,.1)}
+  /* The guide: a big two-column panel on a wide screen, a full-screen sheet on
+     a phone. Only the body scrolls; the title bar and its close stay put. */
+  dialog#help{background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:14px;
+    padding:0;width:min(1000px,calc(100% - 3rem));max-width:none;max-height:calc(100vh - 3rem);margin:auto;
+    overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.6)}
+  dialog#help[open]{display:flex;flex-direction:column}
+  dialog#help::backdrop{background:rgba(3,6,12,.75);backdrop-filter:blur(2px)}
+  .help-bar{display:flex;align-items:center;justify-content:space-between;gap:1rem;
+    padding:1rem 1.5rem;border-bottom:1px solid var(--line);flex:none}
+  .help-bar h2{margin:0;font-size:1.25rem;color:var(--cyan)}
+  .help-body{overflow:auto;padding:1.2rem 1.5rem 1.5rem;display:grid;grid-template-columns:1fr 1fr;gap:0 2.5rem}
+  .help-col h2{font-size:1.05rem;margin:.4rem 0 .5rem;padding-bottom:.3rem;border-bottom:1px solid var(--line)}
+  dialog#help h3{font-size:.95rem;margin:.7rem 0 .25rem}
+  dialog#help p,dialog#help li{font-size:.93rem}
+  dialog#help ul{margin:0 0 .9rem 1.1rem}
+  dialog#help li{margin-bottom:.45rem}
+  .help-x{background:none;border:1px solid var(--line);border-radius:8px;color:var(--text);
+    font-size:1.5rem;line-height:1;width:2.6rem;height:2.6rem;cursor:pointer;flex:none}
+  .help-x:hover{border-color:var(--cyan);color:var(--cyan)}
+  @media (max-width:760px){
+    .help-body{grid-template-columns:1fr}
+    dialog#help{width:100%;height:100%;max-height:none;border-radius:0;border:0}
+    .help-bar{padding:.8rem 1rem}
+    .help-body{padding:1rem}
+  }
+  details.grp{border:1px solid var(--line);border-radius:8px;padding:.3rem .6rem}
+  details.grp summary{cursor:pointer;display:flex;align-items:center;gap:.6rem;padding:.3rem 0;font-weight:600}
+  details.grp summary span{color:var(--dim);font-weight:400}
+  details.grp .files{margin:.3rem 0 .4rem;max-height:18rem;overflow:auto}
+  select{background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:6px;padding:.2rem .4rem;font:inherit}
+  h1{font-size:2rem;letter-spacing:-.02em}
+  h1 span{color:var(--cyan)}
+  h2{font-size:1.15rem;margin-bottom:.6rem}
+  p{color:#d4d8e0;margin-bottom:.8rem}
+  a{color:var(--cyan)}
+  code{font-family:var(--mono);font-size:.9em;background:rgba(255,255,255,.06);padding:.1rem .35rem;border-radius:4px}
+  section{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:1.3rem;margin:1rem 0}
+  .btn{background:var(--cyan);color:#04121a;font-weight:650;border:0;border-radius:8px;
+    padding:.6rem 1.1rem;font-size:.95rem;cursor:pointer}
+  .btn.ghost{background:transparent;color:var(--cyan);border:1px solid rgba(0,242,254,.45)}
+  .btn:disabled{opacity:.4;cursor:default}
+  .row{display:flex;gap:.6rem;flex-wrap:wrap;align-items:center;margin:.6rem 0}
+  .files{display:grid;gap:.4rem;margin-top:.6rem}
+  .file{display:flex;align-items:center;gap:.6rem;cursor:pointer;
+    border:1px solid var(--line);border-radius:8px;padding:.45rem .7rem;font-family:var(--mono);font-size:.88rem;flex-wrap:wrap}
+  .file span{color:var(--dim)}
+  pre{background:#05080f;border:1px solid var(--line);border-radius:8px;padding:.7rem;
+    font-family:var(--mono);font-size:.8rem;color:#c7cdd8;max-height:14rem;overflow:auto;white-space:pre-wrap;word-break:break-word}
+  .note{color:var(--dim);font-size:.88rem}
+  ul{margin:0 0 .8rem 1.2rem;color:#d4d8e0}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <button class="help-btn" id="help-open" title="What am I looking at?" aria-label="Help">? Help</button>
+  <h1>Signal<span>Sweep</span> data pull</h1>
+  <p>Get your data off the board over the USB cable: the SD card, the alert log
+  in the board's own flash, and captures as <code>.pcap</code> for Wireshark.
+  The card never leaves the case.</p>
+</header>
+
+<dialog id="help" aria-labelledby="help-title">
+ <div class="help-bar">
+  <h2 id="help-title">What am I looking at?</h2>
+  <button class="help-x" id="help-close" aria-label="Close">×</button>
+ </div>
+ <div class="help-body">
+ <div class="help-col">
+  <h2>What's on the board</h2>
+  <h3>Alert log, in the board's own memory</h3>
+  <p>One line for every alert the board beeped for: when, what kind (camera,
+  drone, tracker…), which rule matched, signal strength and the device's radio
+  address. Every board has it, card or not. It keeps the last 100,000 alerts;
+  after that each new one overwrites the oldest. It only records while
+  <em>Log alerts on the board</em> is on (app: Settings → Recording, or
+  <em>Record</em> on the Sweep screen). It never records a location.</p>
+  <h3>On the SD card, if one is fitted</h3>
+  <ul>
+    <li><b>Session logs</b> (<code>LOG00107.CSV</code>): a copy of the alert log, one file per
+      power-on, named by its power-on number. It adds the device name, Wi-Fi network,
+      channel and maker, which the board's memory has no room for.</li>
+    <li><b>Captures</b> (<code>CAP00003.SSC</code>): every Wi-Fi frame and Bluetooth
+      advert heard during a Site Survey capture. Saved here as a <code>.pcap</code>
+      for Wireshark (Wi-Fi only; the Bluetooth part stays in the original).</li>
+  </ul>
+  <p>The board never deletes anything from the card, so files pile up. It only
+  lists its newest 64 session logs and 64 captures; older ones are still on the
+  card but don't show here. <code>python pull.py --wipe</code> clears the card
+  after copying everything off.</p>
+ </div>
+ <div class="help-col">
+  <h2>What you get</h2>
+  <ul>
+    <li><b>alerts.txt</b>: the alert log, readable. Counts per kind at the top,
+      then every alert, oldest first, in your local time.</li>
+    <li><b>report.html</b>: the same alerts as a page you can sort and filter. Opens
+      in any browser, offline.</li>
+    <li><b>CAP*.pcap</b>: a capture, ready for Wireshark.</li>
+    <li><b>raw/</b> (in Downloads: names with <code>-raw-</code>): the originals, untouched:
+      the alert log as a spreadsheet (<code>alert-log.csv</code>), the session logs
+      and the capture files. Keep them if you want everything.</li>
+  </ul>
+  <h2>Words you'll see</h2>
+  <ul>
+    <li><b>Power-on / boot</b>: the board counts every time it gets power. Session
+      logs and the <code>boot</code> column use that number.</li>
+    <li><b>boot 83 +1:15:14</b>: the board didn't know the date that power-on
+      (no phone connected, no clock fitted), so the time is given as 1 h 15 min 14 s
+      after power-on 83.</li>
+    <li><b>dBm</b>: signal strength. Around −30 is right beside you; −90 is far off or faint.</li>
+    <li><b>MAC</b>: a device's radio address. Phones and trackers often change theirs
+      every few minutes, so one device can show up as several.</li>
+  </ul>
+  <p class="note">Nothing on this page leaves your computer.</p>
+ </div>
+ </div>
+</dialog>
+
+<section>
+  <h2>Nothing leaves this machine</h2>
+  <p>This page is one file with no libraries, no analytics and no CDN. Its
+  security policy (<code>connect-src 'none'</code>) has the browser block any
+  network request it tries, so it can only talk to the cable. Files are
+  written only where you choose to save them.</p>
+  <p class="note">Don't want to trust a hosted page at all? Save this page
+  (Ctrl+S) and open your copy offline, or skip the browser and use
+  <a href="pull.py" download>pull.py</a>: one readable Python file, needs only
+  <code>pyserial</code>. <code>python pull.py --wipe</code> also clears the card
+  once every file has copied intact.</p>
+</section>
+
+<section>
+  <h2>1 · Plug in the board</h2>
+  <div class="row">
+    <button class="btn" id="conn">Connect</button>
+    <span class="note" id="who">Desktop Chrome, Edge or Opera. Close the SignalSweep app first: only one program can hold the port.</span>
+  </div>
+</section>
+
+<section>
+  <h2>2 · Pick and save</h2>
+  <div id="picks" hidden>
+    <p class="note">Untick anything you don't want. <a href="#" id="pick-all">All</a> · <a href="#" id="pick-none">None</a>
+      · Sort <select id="sort"><option value="new">newest first</option><option value="old">oldest first</option><option value="big">largest first</option></select></p>
+    <div class="files" id="files"></div>
+  </div>
+  <div class="row">
+    <button class="btn" id="all" disabled>Export to a folder…</button>
+    <button class="btn ghost" id="dl" disabled>Save to Downloads</button>
+  </div>
+  <pre id="out">Not connected.</pre>
+  <p class="note">A folder keeps it tidy: pick one (Documents is fine) and a new
+  <code>SignalSweep-&lt;date&gt;</code> folder lands inside it. What you get:</p>
+  <ul class="note">
+    <li><code>alerts.txt</code>: what the board alerted on, readable, oldest first</li>
+    <li><code>report.html</code>: the same, as a page you can sort and filter</li>
+    <li><code>CAP*.pcap</code>: each packet capture, ready for Wireshark (Wi-Fi frames, with channel and signal)</li>
+    <li><code>raw/</code>: the untouched originals, for <code>analyze-capture.py</code> and BLE adverts
+      (in Downloads these are named <code>…-raw-…</code>)</li>
+  </ul>
+</section>
+
+<section>
+  <h2>Already have a capture?</h2>
+  <p class="note">Turn a <code>.sscap</code> from the phone, or a <code>.SSC</code> from the card, into a <code>.pcap</code>. No board needed.</p>
+  <div class="row"><input type="file" id="conv" accept=".sscap,.ssc,.SSC"></div>
+</section>
+
+<section>
+  <h2>Data on the phone</h2>
+  <p>The app saves captures and session logs to the phone's <code>Documents</code>
+  folder as <code>signalsweep-*</code>. Plug the phone into the PC, pick
+  <em>File transfer</em>, and copy them. Or run <code>python pull.py --phone --no-board</code> with adb.</p>
+  <p class="note">Saved pins and photo finds are encrypted in the app and stay
+  that way. Export them from the app with your PIN (Survey → export).</p>
+</section>
+
+
+</div>
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+const CARD_NAME = /^[A-Z0-9]{1,8}\.[A-Z0-9]{1,3}$/;       // sd_store.cpp writes 8.3 names only
+const CATS = ['ALPR/Camera', 'Body cam', 'Drone', 'Tracker', 'Other'];   // AlertCategory order
+let port = null, reader = null, writer = null, rx = '', listeners = [], busy = false, card = [];
+const td = new TextDecoder();
+
+function say(m) { const o = $('out'); o.textContent += '\n' + m; o.scrollTop = o.scrollHeight; }
+function sayOver(m) { const o = $('out'); o.textContent = o.textContent.replace(/[^\n]*$/, m); }   // progress: rewrite the last line
+function setUi() {
+  const on = !!port;
+  $('conn').textContent = on ? 'Disconnect' : 'Connect';
+  $('all').disabled = $('dl').disabled = !on || busy;
+}
+function save(blob, name) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 600000);   // 2 s freed it while a Save-as prompt was still open
+}
+function b64(s) {
+  const b = atob(s), u = new Uint8Array(b.length);     // throws on a torn line
+  for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i);
+  return u;
+}
+function concat(parts) {
+  let n = 0; parts.forEach(p => n += p.length);
+  const all = new Uint8Array(n); let o = 0;
+  parts.forEach(p => { all.set(p, o); o += p.length; });
+  return all;
+}
+function frame(line, key) {
+  if (!line.startsWith('{"' + key + '"')) return null;
+  try { return JSON.parse(line)[key]; } catch (e) { return null; }
+}
+
+// ---- the cable -----------------------------------------------------------
+async function connect() {
+  if (port) return disconnect();
+  if (!('serial' in navigator)) { say('This browser has no Web Serial. Use desktop Chrome/Edge, or pull.py.'); return; }
+  try {
+    port = await navigator.serial.requestPort({ filters: [{ usbVendorId: 0x303a }] });
+    await port.open({ baudRate: 115200 });
+  } catch (e) { port = null; say('Not connected: ' + e.message); return; }
+  port.addEventListener('disconnect', () => { say('Board unplugged.'); port = null; setUi(); });
+  writer = port.writable.getWriter();
+  readLoop();
+  $('out').textContent = 'Connected. Asking the board for its card...';
+  setUi();
+  await run(listCard);
+}
+async function disconnect() {
+  const p = port; port = null;
+  try { await reader.cancel(); } catch (e) {}
+  try { writer.releaseLock(); } catch (e) {}
+  try { await p.close(); } catch (e) {}
+  say('Disconnected.'); setUi();
+}
+async function readLoop() {
+  reader = port.readable.getReader();
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      rx += td.decode(value, { stream: true });
+      let i;
+      while ((i = rx.indexOf('\n')) >= 0) {
+        const line = rx.slice(0, i).trim(); rx = rx.slice(i + 1);
+        listeners.slice().forEach(f => f(line));
+      }
+    }
+  } catch (e) { /* cancelled or unplugged */ } finally { reader.releaseLock(); }
+}
+// Send one command; onLine sees every line until it returns a value (or time runs out -> null).
+function ask(cmd, onLine, ms) {
+  return new Promise(resolve => {
+    const f = line => { const r = onLine(line); if (r !== undefined) done(r); };
+    const t = setTimeout(() => done(null), ms);
+    function done(v) { clearTimeout(t); listeners = listeners.filter(x => x !== f); resolve(v); }
+    listeners.push(f);
+    writer.write(new TextEncoder().encode(cmd + '\n')).catch(() => done(null));
+  });
+}
+async function run(job) {
+  if (busy || !port) return;
+  busy = true; setUi();
+  try { await job(); } catch (e) { say('FAILED: ' + e.message); }
+  busy = false; setUi();
+}
+
+// ---- card ----------------------------------------------------------------
+async function listCard() {
+  let o = null;
+  // Opening the port can reset the board; ask until it is up.
+  for (let i = 0; i < 4 && !o; i++) o = await ask('CMD:SD:LS', l => frame(l, 'sdls') || undefined, 3000);
+  if (!o) throw new Error('the board did not answer. Is it running SignalSweep v0.7 or later?');
+  card = o.state === 1 ? (o.files || []).filter(f => CARD_NAME.test(f.n)).sort((a, b) => a.n < b.n ? 1 : -1).sort((a, b) => /^CAP/.test(b.n) - /^CAP/.test(a.n)) : [];   // captures first, newest first
+  if (o.state !== 1) say('No readable SD card (state ' + o.state + '). The alert log in flash can still be exported.');
+  else {
+    say('Card: ' + card.length + ' file(s), ' + (o.free / 1024).toFixed(1) + ' GB free.');
+    if (o.total > card.length) say('Note: the board lists only the newest ' + card.length + ' of ' + o.total + ' files.');
+  }
+  $('files').textContent = '';       // a fresh listing starts all ticked
+  renderPicks();
+  $('picks').hidden = false;
+}
+function size(s) { return s >= 1048576 ? (s / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(s / 1024)) + ' KB'; }
+
+// One tick box per thing to save; Export saves what is ticked. Card files sit
+// in groups (a card piles up hundreds), each with a tick box for the lot and
+// folded shut when long. Re-sorting keeps ticks and open/shut state.
+const GROUPS = [['CAP', 'Captures', n => /^CAP/.test(n)], ['SES', 'Session logs, one per power-on', n => /^LOG/.test(n)],
+                ['OTH', 'Other files', n => !/^(CAP|LOG)/.test(n)]];
+function pickRow(n, label, meta, ticked) {
+  const row = document.createElement('label'); row.className = 'file';
+  const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = ticked !== false; cb.dataset.pick = n;
+  const name = document.createElement('div'); name.textContent = label + ' ';
+  const m = document.createElement('span'); m.textContent = meta; name.appendChild(m);
+  row.append(cb, name); return row;
+}
+function renderPicks() {
+  const keep = {}, open = {};
+  document.querySelectorAll('[data-pick]').forEach(cb => { keep[cb.dataset.pick] = cb.checked; });
+  document.querySelectorAll('details.grp').forEach(d => { open[d.dataset.g] = d.open; });
+  const by = $('sort').value;
+  const cmp = by === 'old' ? (a, b) => (a.n < b.n ? -1 : 1) : by === 'big' ? (a, b) => b.s - a.s : (a, b) => (a.n < b.n ? 1 : -1);
+  const box = $('files'); box.textContent = '';
+  box.appendChild(pickRow('LOG', 'Alert log', "from the board's memory → alerts.txt + report.html", keep.LOG));
+  for (const [g, title, match] of GROUPS) {
+    const items = card.filter(f => match(f.n)).sort(cmp);
+    if (!items.length) continue;
+    const d = document.createElement('details'); d.className = 'grp'; d.dataset.g = g;
+    d.open = g in open ? open[g] : items.length <= 8;
+    const sum = document.createElement('summary');
+    const gcb = document.createElement('input'); gcb.type = 'checkbox'; gcb.dataset.group = g;
+    const t = document.createElement('div'); t.textContent = title + ' ';
+    const m = document.createElement('span'); m.textContent = items.length + ' · ' + size(items.reduce((s, f) => s + f.s, 0)); t.appendChild(m);
+    sum.append(gcb, t);
+    const list = document.createElement('div'); list.className = 'files';
+    items.forEach(f => list.appendChild(g === 'SES'
+      ? pickRow(f.n, 'Power-on ' + parseInt(f.n.slice(3, 8), 10), f.n + ' · ' + size(f.s), keep[f.n])
+      : pickRow(f.n, f.n, size(f.s) + (g === 'CAP' ? ' · saved as .pcap' : ''), keep[f.n])));
+    d.append(sum, list); box.appendChild(d);
+  }
+  syncGroups();
+}
+function syncGroups() {
+  document.querySelectorAll('details.grp').forEach(d => {
+    const kids = [...d.querySelectorAll('[data-pick]')], on = kids.filter(c => c.checked).length;
+    const g = d.querySelector('[data-group]');
+    g.checked = on === kids.length; g.indeterminate = on > 0 && on < kids.length;
+  });
+}
+
+// Page by page. A page is kept only if the bytes that decoded add up to what
+// the board says it sent; otherwise it is asked for again.
+async function getFile(name, total) {
+  const parts = []; let off = 0, got = 0;
+  for (;;) {
+    let page = null;
+    for (let a = 0; a < 4 && !page; a++) {
+      let hdr = false, bytes = [], n = 0, bad = false;
+      const r = await ask('CMD:SD:GET:' + name + ':' + off, l => {
+        if (l.startsWith('SDF:')) {
+          if (hdr) { try { const u = b64(l.slice(4)); bytes.push(u); n += u.length; } catch (e) { bad = true; } }
+          return;
+        }
+        const o = frame(l, 'sdget'); if (!o) return;
+        if (o.err) return o;
+        if ('size' in o) { if (o.off === off) { hdr = true; bytes = []; n = 0; bad = false; } return; }
+        if (o.done && hdr && (o.off === undefined || o.off === off)) return o;
+      }, 8000);
+      if (r && r.err) throw new Error(name + ': board says ' + r.err);
+      if (r && !bad && n === r.next - off) page = { bytes, done: r };
+    }
+    if (!page) throw new Error(name + ': page at byte ' + off + ' kept failing');
+    parts.push(...page.bytes); got += page.done.next - off; off = page.done.next;
+    sayOver(name + ' ' + Math.round(100 * got / Math.max(1, total)) + '%');
+    if (!page.done.more) break;
+  }
+  if (got !== total) throw new Error(name + ': got ' + got + ' of ' + total + ' bytes');
+  return concat(parts);
+}
+
+// ---- alert log in flash --------------------------------------------------
+async function readLog() {
+  const recs = []; let names = [], epochs = {}, skip = 0, tries = 0;
+  for (;;) {
+    if (++tries > 4) throw new Error('alert log page at record ' + skip + ' kept failing');
+    let hdr = null, blob = [];
+    const end = await ask('CMD:LOG:READ:0:0:' + skip, l => {
+      if (l.startsWith('LOG:')) { if (hdr) { try { blob.push(b64(l.slice(4))); } catch (e) {} } return; }
+      const o = frame(l, 'logrd'); if (!o) return;
+      if (o.err || o.done) return o;
+      if (o.skip === skip) { hdr = o; blob = []; }
+    }, 10000);
+    if (end && end.err) throw new Error('board could not read its log: ' + end.err);
+    if (!end || !hdr) continue;
+    const all = concat(blob), n = Math.floor(all.length / 16);
+    if (n !== hdr.n) continue;
+    if (hdr.names) names = hdr.names.split('\n').filter(Boolean);
+    Object.assign(epochs, hdr.epochs || {});
+    for (let i = 0; i < n; i++) recs.push(all.subarray(i * 16, i * 16 + 16));
+    tries = 0;
+    if (!hdr.more || !n) return { recs, names, epochs };
+    skip += n;
+  }
+}
+// Records -> [unix time or null, boot, secs, mac, category, rule, dBm], oldest
+// first. The boot counter only goes up, so (boot, secs) orders undated boots too.
+// Same rows as pull.py's log_rows(); the reports below match its output.
+function logRows({ recs, names, epochs }) {
+  return recs.map(r => {
+    const d = new DataView(r.buffer, r.byteOffset, 16);
+    const boot = d.getUint16(0, true), secs = d.getUint32(2, true), ep = epochs[String(boot)];
+    return [ep !== undefined ? ep + secs : null, boot, secs,
+            Array.from(r.subarray(6, 12), b => b.toString(16).padStart(2, '0')).join(':'),
+            CATS[r[12]] ?? String(r[12]), names[r[13]] ?? String(r[13]), d.getInt8(14)];
+  }).sort((a, b) => a[1] - b[1] || a[2] - b[2]);
+}
+function csvCell(v) { v = String(v); return /[",\r\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; }
+function alertCsv(rows) {
+  return ['utc,boot,secs,mac,category,rule,rssi'].concat(rows.map(([t, ...rest]) =>
+    [t === null ? '' : new Date(t * 1000).toISOString().replace(/\.\d+Z$/, 'Z'), ...rest].map(csvCell).join(','))).join('\r\n') + '\r\n';
+}
+const two = n => String(n).padStart(2, '0');
+function stamp(d, secs) {
+  return d.getFullYear() + '-' + two(d.getMonth() + 1) + '-' + two(d.getDate()) + ' ' + two(d.getHours()) + ':' + two(d.getMinutes()) + (secs ? ':' + two(d.getSeconds()) : '');
+}
+function when([t, boot, secs]) {
+  return t !== null ? stamp(new Date(t * 1000), true)
+    : 'boot ' + boot + ' +' + Math.floor(secs / 3600) + ':' + two(Math.floor(secs / 60) % 60) + ':' + two(secs % 60);
+}
+// The human-readable report. pull.py's alerts_txt() writes the same text.
+function alertsTxt(rows, made) {
+  const out = ['SignalSweep export, made ' + made + ". Times are this computer's local time.", ''];
+  if (!rows.length) {
+    out.push("The board's alert log is empty. It is off by default: in the app,",
+             'Settings > Recording > Log alerts on the board (or Record on the Sweep screen).');
+    return out.join('\n') + '\n';
+  }
+  out.push(rows.length + " alert(s) from the board's own log, boots " + rows[0][1] + ' to ' + rows[rows.length - 1][1] + '.', '', 'What it heard');
+  const extra = [...new Set(rows.map(r => r[4]))].filter(c => !CATS.includes(c)).sort();
+  for (const c of CATS.concat(extra)) {
+    const rules = {};
+    rows.forEach(r => { if (r[4] === c) rules[r[5]] = (rules[r[5]] || 0) + 1; });
+    const top = Object.entries(rules).sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
+    if (!top.length) continue;
+    const n = top.reduce((s, kv) => s + kv[1], 0);
+    out.push('  ' + c.padEnd(12) + ' ' + String(n).padStart(6) + '  ' + top.slice(0, 3).map(kv => kv[0] + ' ' + kv[1]).join(', ')
+             + (top.length > 3 ? ', +' + (top.length - 3) + ' more' : ''));
+  }
+  out.push('', 'Every alert, oldest first', 'time'.padEnd(19) + '  ' + 'category'.padEnd(12) + ' ' + 'dBm'.padStart(4) + '  ' + 'mac'.padEnd(17) + '  rule');
+  rows.forEach(r => out.push(when(r).padEnd(19) + '  ' + r[4].padEnd(12) + ' ' + String(r[6]).padStart(4) + '  ' + r[3].padEnd(17) + '  ' + r[5]));
+  return out.join('\n') + '\n';
+}
+// "<" escaped so a rule name (device-chosen: a pwnagotchi names itself) can
+// never close the script. A function replacement, so "$&" in a name stays literal.
+function reportHtml(rows, made) {
+  const json = JSON.stringify({ made, rows }).replace(/</g, '\\u003c');
+  return REPORT_HTML.replace('__DATA__', () => json);
+}
+
+// ---- .sscap -> pcap (Wi-Fi only, radiotap: channel + dBm signal) --------
+// Record: B radio, I seq, I ts_us, B channel, b rssi, H orig_len, H cap_len, payload.
+function toPcap(text) {
+  const g = new DataView(new ArrayBuffer(24));
+  g.setUint32(0, 0xa1b2c3d4, true); g.setUint16(4, 2, true); g.setUint16(6, 4, true);
+  g.setUint32(16, 65535, true); g.setUint32(20, 127, true);      // LINKTYPE_IEEE802_11_RADIOTAP
+  const out = [g.buffer]; let n = 0;
+  for (const raw of text.split('\n')) {
+    const line = raw.trim();
+    if (!line || line[0] === '#') continue;
+    let b; try { b = b64(line); } catch (e) { continue; }
+    if (b.length < 15 || b[0] !== 0) continue;
+    const d = new DataView(b.buffer);
+    const ts = d.getUint32(5, true), ch = b[9] || 1, rssi = d.getInt8(10), olen = d.getUint16(11, true), clen = d.getUint16(13, true);
+    // Drop the ESP32's 4 trailing FCS bytes (not a valid CRC; Wireshark reads
+    // them as a junk IE). A truncated record never reached them.
+    const flen = Math.max(olen - 4, 0), body = b.subarray(15, 15 + Math.min(clen, flen));
+    const [freq, cf] = ch > 14 ? [5000 + 5 * ch, 0x0140] : [2407 + 5 * ch, 0x00a0];
+    const h = new DataView(new ArrayBuffer(29));
+    h.setUint32(0, Math.floor(ts / 1e6), true); h.setUint32(4, ts % 1e6, true);
+    h.setUint32(8, 13 + body.length, true); h.setUint32(12, 13 + flen, true);
+    h.setUint16(18, 13, true); h.setUint32(20, 0x28, true);         // radiotap len, present: channel + dBm
+    h.setUint16(24, freq, true); h.setUint16(26, cf, true); h.setInt8(28, rssi);
+    out.push(h.buffer, body); n++;
+  }
+  return { blob: new Blob(out), n };
+}
+
+// ---- report.html template (pull.py's REPORT_HTML byte for byte; test_distribution.py checks) --
+const REPORT_HTML = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'">
+<title>SignalSweep alerts<\/title>
+<style>
+:root{color-scheme:dark;--bg:#0f1218;--fg:#e6e9ef;--dim:#8a93a3;--line:#262c38;--acc:#4fd18b}
+@media (prefers-color-scheme:light){:root{color-scheme:light;--bg:#fff;--fg:#1a1d24;--dim:#5b6372;--line:#dde1e8;--acc:#1a8f55}}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.45 system-ui,sans-serif}
+main{max-width:1100px;margin:0 auto;padding:16px}
+h1{font-size:1.3rem;margin:.2rem 0}.dim{color:var(--dim)}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}
+.chip{border:1px solid var(--line);background:none;color:inherit;border-radius:999px;padding:6px 12px;cursor:pointer;font:inherit}
+.chip.on{border-color:var(--acc);color:var(--acc)}
+input{width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:none;color:inherit;font:inherit;margin-bottom:8px}
+.wrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:.9rem}
+th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+th{cursor:pointer;user-select:none;position:sticky;top:0;background:var(--bg)}
+td.n{text-align:right}td.m{font-family:ui-monospace,Consolas,monospace}
+<\/style><\/head><body><main>
+<h1>SignalSweep alerts<\/h1>
+<p class="dim" id="sub"><\/p>
+<div class="chips" id="chips"><\/div>
+<input id="q" type="search" placeholder="Filter by rule, MAC or category">
+<div class="wrap"><table><thead><tr><th data-k="0">Time<\/th><th data-k="4">Category<\/th><th data-k="5">Rule<\/th><th data-k="6">dBm<\/th><th data-k="3">MAC<\/th><\/tr><\/thead><tbody id="tb"><\/tbody><\/table><\/div>
+<p class="dim" id="more"><\/p>
+<\/main>
+<script type="application/json" id="d">__DATA__<\/script>
+<script>
+var D = JSON.parse(document.getElementById('d').textContent), R = D.rows, cat = '', key = 0, dir = 1, MAX = 2000;
+function $(i) { return document.getElementById(i); }
+function two(n) { return (n < 10 ? '0' : '') + n; }
+function when(r) {
+  if (r[0] === null) return 'boot ' + r[1] + ' +' + Math.floor(r[2] / 3600) + ':' + two(Math.floor(r[2] / 60) % 60) + ':' + two(r[2] % 60);
+  var d = new Date(r[0] * 1000);
+  return d.getFullYear() + '-' + two(d.getMonth() + 1) + '-' + two(d.getDate()) + ' ' + two(d.getHours()) + ':' + two(d.getMinutes()) + ':' + two(d.getSeconds());
+}
+function cmp(a, b) {
+  if (key === 0) return dir * (a[1] - b[1] || a[2] - b[2]);
+  var x = a[key], y = b[key];
+  return dir * (typeof x === 'number' ? x - y : String(x).localeCompare(String(y)));
+}
+function draw() {
+  var q = $('q').value.toLowerCase(), rows = R.filter(function (r) {
+    return (!cat || r[4] === cat) && (!q || (r[3] + ' ' + r[4] + ' ' + r[5]).toLowerCase().indexOf(q) >= 0);
+  }).sort(cmp), tb = $('tb'), f = document.createDocumentFragment();
+  rows.slice(0, MAX).forEach(function (r) {
+    var tr = document.createElement('tr');
+    [[when(r), ''], [r[4], ''], [r[5], ''], [r[6], 'n'], [r[3], 'm']].forEach(function (c) {
+      var td = document.createElement('td'); td.textContent = c[0]; td.className = c[1]; tr.appendChild(td);
+    });
+    f.appendChild(tr);
+  });
+  tb.textContent = ''; tb.appendChild(f);
+  $('more').textContent = rows.length > MAX ? 'Showing ' + MAX + ' of ' + rows.length + '. Filter to narrow it down.' : rows.length + ' shown.';
+}
+$('sub').textContent = R.length ? R.length + " alert(s) from the board's own log. Exported " + D.made + ". Times are local to whoever opens this page."
+  : "The board's alert log is empty. It is off by default: in the app, Settings > Recording > Log alerts on the board.";
+var counts = {};
+R.forEach(function (r) { counts[r[4]] = (counts[r[4]] || 0) + 1; });
+[''].concat(Object.keys(counts).sort(function (a, b) { return counts[b] - counts[a]; })).forEach(function (c) {
+  var b = document.createElement('button'); b.className = 'chip' + (c === '' ? ' on' : '');
+  b.textContent = c === '' ? 'All ' + R.length : c + ' ' + counts[c];
+  b.onclick = function () {
+    cat = c; document.querySelectorAll('.chip').forEach(function (x) { x.classList.toggle('on', x === b); }); draw();
+  };
+  $('chips').appendChild(b);
+});
+document.querySelectorAll('th').forEach(function (th) {
+  th.onclick = function () { var k = +th.dataset.k; dir = k === key ? -dir : 1; key = k; draw(); };
+});
+$('q').oninput = draw;
+draw();
+<\/script><\/body><\/html>
+`;
+$('conn').onclick = connect;
+$('pick-all').onclick = $('pick-none').onclick = e => {
+  e.preventDefault();
+  document.querySelectorAll('[data-pick]').forEach(cb => { cb.checked = e.target.id === 'pick-all'; });
+  syncGroups();
+};
+$('sort').onchange = renderPicks;
+$('files').addEventListener('change', e => {
+  const g = e.target.dataset.group;
+  if (g) e.target.closest('details').querySelectorAll('[data-pick]').forEach(cb => { cb.checked = e.target.checked; });
+  syncGroups();
+});
+$('help-open').onclick = () => $('help').showModal();
+$('help-close').onclick = () => $('help').close();
+$('help').addEventListener('click', e => { if (e.target === $('help')) $('help').close(); });   // backdrop
+// Two ways to save, both visible, because neither is guaranteed: a folder the
+// user picks (one place, no Downloads bar), or plain downloads. The first
+// version used downloads only and on the bench Chrome showed them while
+// nothing reached the disk; the second used the folder only and did nothing
+// visible at all. Every failure now lands in the log box.
+function picks() { return [...document.querySelectorAll('[data-pick]:checked')].map(x => x.dataset.pick); }
+function exportName() { return 'SignalSweep-' + stamp(new Date(), true).replace(/[-:]/g, '').replace(' ', '-'); }
+function fail(where, e) { console.error('[pull]', where, e); say(where + ' failed: ' + (e && e.name ? e.name + ': ' : '') + (e && e.message || e)); }
+$('all').onclick = async () => {
+  if (busy || !port) return;
+  const p = picks(); if (!p.length) { say('Nothing is ticked.'); return; }
+  if (!window.showDirectoryPicker) { say('This browser has no folder picker. Use "Save to Downloads" instead.'); return; }
+  say('Opening the folder picker...');
+  let root;
+  // Asked before run(): the picker needs the click's user activation.
+  try { root = await showDirectoryPicker({ id: 'signalsweep', mode: 'readwrite', startIn: 'documents' }); }
+  catch (e) { fail('The folder picker', e); say('If you did not cancel it, try "Save to Downloads" instead.'); return; }
+  const name = exportName();
+  run(async () => {
+    const dir = await root.getDirectoryHandle(name, { create: true }); let raw = null;
+    await exportTo(p, root.name + '/' + name, async (n, data, isRaw) => {
+      const d = isRaw ? (raw = raw || await dir.getDirectoryHandle('raw', { create: true })) : dir;
+      const w = await (await d.getFileHandle(n, { create: true })).createWritable();
+      await w.write(data); await w.close();
+    });
+  });
+};
+$('dl').onclick = () => {
+  const p = picks(); if (!p.length) { say('Nothing is ticked.'); return; }
+  const name = exportName();
+  say('Chrome may ask to allow this page to download multiple files: click Allow.');
+  run(() => exportTo(p, 'your Downloads folder, names starting ' + name, async (n, data, isRaw) => {
+    save(new Blob([data]), name + (isRaw ? '-raw-' : '-') + n);
+    await new Promise(r => setTimeout(r, 500));     // one at a time, so Chrome keeps up
+  }));
+};
+async function exportTo(p, where, put) {
+  say('Saving to ' + where);
+  let failed = 0;
+  if (p.includes('LOG')) {
+    try {
+      say('Reading the alert log from flash...');
+      const rows = logRows(await readLog()), made = stamp(new Date(), false);
+      await put('alerts.txt', alertsTxt(rows, made));
+      await put('report.html', reportHtml(rows, made));
+      await put('alert-log.csv', alertCsv(rows), true);
+      say('alerts.txt + report.html: ' + rows.length + ' alert(s)');
+    } catch (e) { failed++; fail('Alert log', e); }
+  }
+  for (const f of card.filter(f => p.includes(f.n))) {
+    try {
+      say(f.n + ' 0%');
+      const data = await getFile(f.n, f.s);
+      let extra = '';
+      if (/\.SSC$/.test(f.n)) {
+        const pc = toPcap(new TextDecoder().decode(data));   // not td: that one is mid-stream on the port
+        await put(f.n.replace(/\.SSC$/, '.pcap'), pc.blob);
+        extra = ' + ' + pc.n + ' Wi-Fi frames to .pcap';
+      }
+      await put(f.n, data, true);
+      sayOver(f.n + ' ok, ' + size(f.s) + extra);
+    } catch (e) { failed++; fail(f.n, e); }
+  }
+  say(failed ? 'Done, but ' + failed + ' item(s) failed (see above).' : 'Done. Saved to ' + where + '.');
+}
+$('conv').onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  const p = toPcap(await f.text());
+  save(p.blob, f.name.replace(/\.[^.]+$/, '') + '.pcap');
+  say(f.name + ': ' + p.n + ' Wi-Fi frames to .pcap');
+};
+</script>
+</body>
+</html>
