@@ -47,7 +47,7 @@
 #include "mode_watchers_watch.h"
 #include "c5_radio.h"
 #include "sd_store.h"
-#include "rtc_clock.h"
+#include "host_time.h"
 #include "ble_serial.h"
 
 static const char* TAG = "Capture";
@@ -369,7 +369,7 @@ static void startCapture(uint32_t durationSecs, bool toSd) {
         }
         // Same header the phone writes, so both analyzers read card captures as-is.
         char hdr[96], t[24] = "-";
-        uint32_t now = rtcNow();
+        uint32_t now = hostTimeNow();
         if (now) { time_t tt = now; struct tm tmv; gmtime_r(&tt, &tmv); strftime(t, sizeof(t), "%Y-%m-%dT%H:%M:%SZ", &tmv); }
         int n = snprintf(hdr, sizeof(hdr), "#SSCAP v1 secs=%u src=sd t=%s\n", (unsigned)durationSecs, t);
         if (!sdStreamWrite((const uint8_t*)hdr, n)) { sdStreamClose(); capReply("{\"cap\":{\"error\":\"card lost\"}}"); return; }

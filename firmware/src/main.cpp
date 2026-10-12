@@ -10,7 +10,6 @@
 #include <nvs_flash.h>
 #include <LittleFS.h>
 #include "alert_log.h"
-#include "rtc_clock.h"
 #include "sd_store.h"
 #include "crash_report.h"
 
@@ -61,13 +60,6 @@ void setup() {
     // log's ordering key monotonic across power cycles, and derives the ring's
     // write head from the data rather than from a stored pointer.
     alertLogInit();
-
-    // Optional DS3231. After alertLogInit() because a good RTC anchors this
-    // boot in the log; the anchor is written on the first alertLogTick().
-    rtcInit();
-    Serial.printf("[RTC] %s\n", rtcState() == RTC_OK ? "DS3231 ok, clock set"
-                              : rtcState() == RTC_LOST ? "DS3231 lost power, waiting for a host"
-                              : "none fitted, waiting for a host");
 
     // Optional microSD card (sd_store.h). No card = no change anywhere.
     sdProbe();

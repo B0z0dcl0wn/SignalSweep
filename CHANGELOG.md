@@ -4,6 +4,22 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Removed — The DS3231 clock, and the optional resistor and capacitor
+
+SignalSweep's hardware is the XIAO, a passive buzzer, a WS2812 LED bar and a microSD reader. The
+clock module, the 330-470 ohm DIN resistor and the 1000 uF bar capacitor were never part of the
+build, so they are gone from the wiring guide, the illustrated diagram and the README.
+
+- **The DS3231 driver is gone; the phone's time push stays.** `rtc_clock.{h,cpp}` is now
+  `host_time.{h,cpp}`: `hostTimeSet()` takes `{"time":N}` from the app on every connect, with the
+  same 2026..2038 range guard, and the alert log and SD log are dated exactly as before. The board
+  forgets the date at power off, as it always did with no clock fitted.
+- **`CMD:CFG` no longer reports `rtc`.** `epoch` stays, and Settings > Device identity > Clock now
+  reads "synced · time from the phone until power off" from it alone.
+- **D4 and D5 are simply unused** instead of reserved for a clock.
+- **The "C5 + SD reader on D3 not bench-checked" warning is gone**: C5 boards have run with the
+  reader on D3 (GPIO7) since the SD work landed, and boot fine.
+
 ## [0.8.2] — 2026-10-09 — The list holds still under your thumb
 
 ### Fixed — Hunt landed on the wrong row with the filter off

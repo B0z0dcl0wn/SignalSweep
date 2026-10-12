@@ -2608,7 +2608,7 @@
             if (cfg.ignore_full) showToast('Ignore list full (' + IGNORE_MAX + ')', '⚠');
             devName = (typeof cfg.ble_name === 'string' && cfg.ble_name) || 'SignalSweep';
             if (typeof cfg.uptime === 'number') bootAt = Date.now() - cfg.uptime * 1000;
-            setClockUi(cfg.rtc, cfg.epoch);
+            setClockUi(cfg.epoch);
             setSdUi(cfg.sd, cfg.sd_free);
             // F2 pairing hole: if the {time} push queued ahead of this CFG
             // request was dropped (a USB-open reset can land between the two),
@@ -2639,11 +2639,11 @@
             // Alert log. log_boot/log_secs are the board's current ordering key:
             // the bookmark a session starts from. They also feed this phone's
             // own fallback guess (noteBootEpoch/logBootEpochs) for dating
-            // records from a boot the board itself never anchored -- no RTC
-            // fitted, and no host connected before power was lost. A board
-            // with an RTC, or one any phone reached while running, anchors its
-            // own boots (rtc_clock.h / alert_log.cpp epochs.bin) and that wins;
-            // this is only the "nobody else dated it" case.
+            // records from a boot the board itself never anchored -- no host
+            // connected before power was lost. A board any phone reached while
+            // running anchors its own boots (host_time.h / alert_log.cpp
+            // epochs.bin) and that wins; this is only the "nobody else dated
+            // it" case.
             if (typeof cfg.log_n === 'number') logHeld = cfg.log_n;
             if (typeof cfg.log_boot === 'number') logBootNow = cfg.log_boot;
             if (typeof cfg.log_secs === 'number') logSecsNow = cfg.log_secs;
@@ -2843,7 +2843,7 @@
         let logSession = null;   // { boot, secs, at }
 
         // A record carries (boot, seconds-since-boot), never a wall clock: the
-        // board has no RTC and is deliberately offline. Any boot this phone has
+        // board has no clock of its own and is deliberately offline. Any boot this phone has
         // actually seen can be dated, though, so remember when each one started
         // and old records become real timestamps. First observation wins --
         // later ones drift with the board's own clock.
@@ -2863,7 +2863,7 @@
             saveBootEpochs();
         }
 
-        // Anchors the board stored itself (its DS3231 at boot, or a host push).
+        // Anchors the board stored itself (from a host time push).
         // They win over this phone's own guesses: the board saw the boot, while
         // the phone may never have. Seconds on the wire, ms here.
         //
@@ -3101,7 +3101,7 @@
             const t = when
                 ? when.getFullYear() + '-' + pad(when.getMonth() + 1) + '-' + pad(when.getDate()) +
                   ' ' + pad(when.getHours()) + ':' + pad(when.getMinutes()) + ':' + pad(when.getSeconds())
-                // A boot nobody dated (no RTC, and no host connected before the
+                // A boot nobody dated (no host connected before the
                 // power went) cannot be placed in time. Say how far into it.
                 : ('boot ' + rec.boot + ' +' + rec.secs + 's').padEnd(19);
             const cat = LOG_CATS[rec.cat] || ('cat ' + rec.cat);
@@ -3318,19 +3318,17 @@
             }, ms));
         }
 
-        // Optional DS3231. The phone sets the board's clock on every connect,
-        // so "off by" here means the push was lost or rejected.
-        function setClockUi(rtc, epoch) {
+        // The phone sets the board's clock on every connect, so "off by" here
+        // means the push was lost or rejected.
+        function setClockUi(epoch) {
             const el = document.getElementById('cfg-clock');
             if (!el) return;
-            // Older firmware has no `rtc` field at all, which reads as
+            // Older firmware has no `epoch` field at all, which reads as
             // "Not connected" forever if this bails -- say why instead.
-            if (typeof rtc !== 'number') { el.textContent = 'Clock not reported by this firmware'; return; }
-            const src = rtc === 1 ? 'RTC fitted' : rtc === 2 ? 'RTC fitted, lost power' : 'No RTC';
+            if (typeof epoch !== 'number') { el.textContent = 'Clock not reported by this firmware'; return; }
             const off = epoch ? Math.round(epoch - Date.now() / 1000) : null;
             const sync = off === null ? 'not set' : Math.abs(off) <= 5 ? 'synced' : ('off by ' + off + ' s');
-            el.textContent = src + ' · ' + sync +
-                (rtc === 1 ? '' : ' · time from the phone until power off');
+            el.textContent = sync + ' · time from the phone until power off';
         }
 
         // Optional microSD card. Painted only from the device (CMD:CFG / sdls).
@@ -5319,7 +5317,7 @@
                         sum.by['Drone'] === 1;
 
                     // A boot this phone never saw has no wall clock -- the board
-                    // has no RTC. Say where in that boot it was; never invent a date.
+                    // has no clock. Say where in that boot it was; never invent a date.
                     const saved = logBootEpochs;
                     logBootEpochs = {};
                     const undated = logLine(r);

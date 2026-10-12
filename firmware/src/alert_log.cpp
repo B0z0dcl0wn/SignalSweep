@@ -18,7 +18,7 @@ static const char* TAG = "ALERTLOG";
 // ponytail: flat file, ~2 boots a day in a car is years. When full the oldest
 // half goes; losing the date on very old records beats an unbounded file.
 #define EPOCH_MAX_BOOTS  1024
-// Any time() past this was set by a host or the RTC (an unset clock counts
+// Any time() past this was set by a host (an unset clock counts
 // from 1970). Only used to decide whether clearing the log should re-anchor.
 #define TIME_SET_FLOOR   1000000000UL
 
@@ -128,7 +128,7 @@ void alertLogTick() {
         remMs   %= 1000;
     }
 
-    // Deferred here from rtcInit()/the {"time"} command: a LittleFS write is
+    // Deferred here from the {"time"} command: a LittleFS write is
     // tens of ms and must not run on the NimBLE host task.
     if (anchorPending) {
         anchorPending = false;

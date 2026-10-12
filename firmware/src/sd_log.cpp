@@ -4,7 +4,7 @@
 #include "sd_log.h"
 #include "sd_store.h"
 #include "alert_log.h"
-#include "rtc_clock.h"
+#include "host_time.h"
 #include <time.h>
 
 // Same order as AlertCategory and read-log.py's CATS.
@@ -87,7 +87,7 @@ void sdLogWrite(const SdLogFields& f) {
         if (anchor) writeAnchorLine(name.c_str(), anchor);
     }
     logFileSeen = true;
-    String line = sdLogCsvLine(boot, f, rtcNow());
+    String line = sdLogCsvLine(boot, f, hostTimeNow());
     sdAppend(name.c_str(), (const uint8_t*)line.c_str(), line.length());
 }
 
