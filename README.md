@@ -184,9 +184,8 @@ python pull.py --phone      # also grab the app's files off the phone over adb
 
 ## Hardware and controls
 
-The bare board works. A **passive buzzer**, a **WS2812 LED bar**, and an
-optional **DS3231 clock** (so the alert log keeps real dates across power
-cuts with no phone around) are all add-ons — none of them required. Add a
+The bare board works. A **passive buzzer** and a **WS2812 LED bar** are
+add-ons — neither is required. Add a
 **microSD card** and you get a richer session log (names, SSIDs, channels) and
 captures started from the app over Bluetooth, no cable needed. Parts, pads
 and pictures are in the **[Wiring Guide](firmware/WIRING.md)** and the

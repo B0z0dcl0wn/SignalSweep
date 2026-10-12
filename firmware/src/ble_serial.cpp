@@ -5,7 +5,7 @@
 #include "mode_manager.h"
 #include "mode_watchers_watch.h"
 #include "alert_log.h"
-#include "rtc_clock.h"
+#include "host_time.h"
 #include "sd_store.h"
 #include "mbedtls/base64.h"
 #include "mode_capture.h"
@@ -236,10 +236,8 @@ String getBleConfigJson() {
     // Present only after a crashing boot: task, PC, backtrace addresses and
     // the breadcrumb. Absent = the last boot was not a crash (or old firmware).
     if (crashReportPresent()) crashReportToJson(doc["crash"].to<JsonObject>());
-    // Optional DS3231 (rtc_clock.h): 0 absent, 1 ok, 2 fitted but lost power.
-    // epoch is the board's UTC now, 0 until a host or the RTC has set it.
-    doc["rtc"] = rtcState();
-    doc["epoch"] = rtcNow();
+    // epoch is the board's UTC now, 0 until a host has set it (host_time.h).
+    doc["epoch"] = hostTimeNow();
     // Optional microSD (sd_store.h): 0 none, 1 ok, 2 error, 3 full; free in MB.
     doc["sd"] = sdState();
     doc["sd_free"] = sdFreeMB();
@@ -900,10 +898,10 @@ void processIncomingCommand(const String& rawCommand) {
 
         // 3c'''. Host clock: {"time":<unix seconds, UTC>}, sent by the app on
         // every connect. The host is always right, except for a plainly unset
-        // clock (rtcSetEpoch rejects it). Small on purpose: this is the NimBLE
+        // clock (hostTimeSet rejects it). Small on purpose: this is the NimBLE
         // host task. The log anchor it triggers is written later, from the tick.
         if (doc["time"].is<uint32_t>()) {
-            rtcSetEpoch(doc["time"].as<uint32_t>());
+            hostTimeSet(doc["time"].as<uint32_t>());
             sendConfigReply();
         }
 

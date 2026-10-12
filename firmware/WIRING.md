@@ -13,7 +13,6 @@ Illustrated version, for both boards: [`wiring-diagram.html`](wiring-diagram.htm
 | Passive buzzer | optional | the headless "what is near" beep patterns, and Hunt's beeps | phone only |
 | WS2812 8-LED bar | optional | colour/animation per category, the hunt meter | phone only |
 | microSD reader (3.3 V, 6 pins, no regulator) | optional | a session log per boot and Site Survey captures on a card | the alert log stays on flash |
-| DS3231 clock module | optional, **not fitted on this build** | real dates across power cuts with no phone | the phone or PC sets the time at each connect |
 | C5 instead of S3 | optional | hears 5 GHz Wi-Fi too | 2.4 GHz only |
 
 The pads are the contract. Wire by **pad name** (D1, D2, …) and the same
@@ -25,8 +24,6 @@ reader's pins are named as printed on the module (`CLK` is the SPI clock):
 | **D1** | GPIO2 | GPIO0 | LED bar **DIN** | LED bar |
 | **D2** | GPIO3 | GPIO25 | buzzer **+** | buzzer |
 | **D3** | GPIO4 | GPIO7 | SD **CS** (chip select) | SD reader |
-| **D4** | GPIO5 | GPIO23 | nothing: reserved for the clock (SDA) | not fitted |
-| **D5** | GPIO6 | GPIO24 | nothing: reserved for the clock (SCL) | not fitted |
 | **D8** | GPIO7 | GPIO8 | SD **CLK** (SPI clock) | SD reader |
 | **D9** | GPIO8 | GPIO9 | from SD **MISO** (data into the XIAO) | SD reader |
 | **D10** | GPIO9 | GPIO10 | SD **MOSI** | SD reader |
@@ -36,7 +33,7 @@ reader's pins are named as printed on the module (`CLK` is the SPI clock):
 | BOOT button | GPIO0 | GPIO28 | tap = 2 min advertising window; hold 5 s = factory reset | built in |
 
 Pin numbers come from `firmware/src/hardware_manager.h` (LED, buzzer) and the
-board variant's `pins_arduino.h` (`SDA`/`SCL`, SPI). Change the wiring only if
+board variant's `pins_arduino.h` (SPI). Change the wiring only if
 you change those.
 
 Reading the board: Seeed silk-screens the pads **D0–D10**. One long edge has
@@ -108,8 +105,8 @@ and run one wire from the splice to the XIAO GND pad.
       LED bar DIN   ◄──── │ ● D1                 GND ● │ ──► LED bar GND pad 1
       buzzer +      ◄──── │ ● D2                 3V3 ● │ ──► SD 3v3 (3.3 V only)
       SD CS         ◄──── │ ● D3                 D10 ● │ ──► SD MOSI
-      reserved: clock     │ ○ D4                  D9 ● │ ◄── SD MISO
-      reserved: clock     │ ○ D5                  D8 ● │ ──► SD CLK
+               (unused)   │ ○ D4                  D9 ● │ ◄── SD MISO
+               (unused)   │ ○ D5                  D8 ● │ ──► SD CLK
                (unused)   │ ○ D6                  D7 ○ │      (unused)
                           └────────────────────────────┘
 ```
@@ -145,23 +142,8 @@ What each part ends up with (skip any part you don't have):
 5. **SD reader data.** SD `CS` → `D3`, `MOSI` → `D10`, `CLK` → `D8`,
    `MISO` → `D9`.
 6. **Check before power:** nothing on the SD reader touches 5V, one wire per
-   XIAO pad, no strands bridging two pads, D4/D5 empty.
+   XIAO pad, no strands bridging two pads.
 7. **Verify** (below).
-
-## Optional clock (DS3231): parked
-
-Not fitted on this build. The phone or PC sets the time on every connect,
-which dates the alert log, so the clock only matters for real dates across
-power cuts with no phone. **D4 (SDA) / D5 (SCL) are reserved for it**; leave
-them empty.
-
-If you fit one later: any DS3231 breakout at I²C address 0x68. `VCC` → 3V3,
-`SDA` → D4, `SCL` → D5, `GND` → ground. The small "DS3231 For Pi" module
-labels these `+ D C NC −` (`NC` gets no wire); a ZS-042 uses the plain names.
-Two catches: 3V3 already has the SD reader on it, so the clock's power needs a
-splice rather than a second wire in the XIAO 3V3 hole; and "For Pi" boards
-often omit the I²C pull-ups (add 4.7 kΩ from D4 and from D5 to 3V3 if the
-serial log says `[RTC] none fitted` with it attached).
 
 ## Parts detail
 
@@ -170,9 +152,7 @@ serial log says `[RTC] none fitted` with it attached).
   one fixed pitch. A small passive buzzer (< 30 mA) drives fine straight off
   the GPIO.
 - **LED bar:** WS2812/SK6812 8-LED clone. Wire the **DIN** end (the arrows
-  point into the LEDs), not DOUT. Optional hardening: a 330–470 Ω resistor in
-  series at DIN, and a 1000 µF cap across the bar's VCC ↔ GND to absorb the
-  inrush when all eight LEDs snap on.
+  point into the LEDs), not DOUT.
 - **microSD reader:** see above. 3.3 V only.
 - **C5 antenna:** use a **dual-band** U.FL antenna, so it hears 5 GHz as well as 2.4.
 
@@ -186,22 +166,16 @@ from the XIAO's 3V3. If you run it off a weak battery, budget for those.
 ## Gotchas
 
 - **SD reader on 5V** kills the card. This one has no regulator: 3V3 only.
-- **3.3 V data into a 5 V-powered LED bar:** clones almost always accept it
-  over the short run on a bar. If the first LED flickers or shows the wrong
-  colours, add the series resistor at DIN.
+- **3.3 V data into a 5 V-powered LED bar:** clones accept it over the short
+  run to the bar. Keep the DIN wire short.
 - **Wrong end of the bar** (wired to DOUT) = nothing lights. Flip to DIN.
 - **Two wires in one XIAO pad** is how a joint cracks. Double up on a bar pad.
-- **C5 and D3 (GPIO7):** GPIO7 may be sampled at boot, and nobody has booted a
-  C5 with the SD reader wired yet. If the C5 won't start with the SD reader
-  connected, unplug the CS wire (D3), power up, and tell us.
 
 ## Verify
 
 1. Install with the web flasher, or `python flash.py --port COMx` (C5: add
    `--board c5`).
-2. On boot: a short jingle and an LED blink (if fitted). With no clock fitted
-   the serial log says `[RTC] none fitted, waiting for a host`, which is
-   expected.
+2. On boot: a short jingle and an LED blink (if fitted).
 3. Connect the app. **Settings › Device identity › Clock** shows the phone
    synced the time.
 4. Trigger a match (an AirTag near it, or edit a signature). The bar flashes

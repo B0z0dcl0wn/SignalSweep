@@ -198,7 +198,6 @@
   td.pad-cell { font-family: var(--mono); font-weight: 600; white-space: nowrap; }
   td .gpio, td.gpio { color: var(--muted); font-family: var(--mono); font-size: 12.5px; }
   td.muted { color: var(--muted); }
-  tr.parked td { color: var(--muted); }
   .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 8px; vertical-align: middle; box-shadow: 0 0 0 1px var(--wire-edge); }
   .dot.ring { background: transparent !important; border: 2px solid var(--muted); width: 10px; height: 10px; }
 
@@ -263,7 +262,6 @@
           <tr><td>Passive buzzer</td><td><span class="tag">OPTIONAL</span></td><td>the headless "what is near" beep patterns, and Hunt's beeps</td><td class="muted">phone only</td></tr>
           <tr><td>WS2812 8-LED bar</td><td><span class="tag">OPTIONAL</span></td><td>colour/animation per category, the hunt meter</td><td class="muted">phone only</td></tr>
           <tr><td>microSD reader (3.3 V, 6 pins, no regulator)</td><td><span class="tag">OPTIONAL</span></td><td>a session log per boot and Site Survey captures on a card, started from the app</td><td class="muted">—</td></tr>
-          <tr class="parked"><td>DS3231 clock module</td><td><span class="tag off">OPTIONAL</span></td><td>not fitted on this build</td><td class="muted">the phone or PC sets the time at each connect</td></tr>
           <tr><td>XIAO <b>ESP32-C5</b> instead of the S3</td><td><span class="tag">OPTIONAL</span></td><td>hears 5 GHz Wi-Fi too (same harness)</td><td class="muted">2.4 GHz only</td></tr>
         </tbody>
       </table>
@@ -282,7 +280,7 @@
     <figure>
       <p class="scroll-hint">← scroll the drawing sideways →</p>
       <div class="diagram">
-        <svg viewBox="95 62 975 712" role="img" aria-label="Wiring schematic, XIAO ESP32-S3 or ESP32-C5 top view with USB-C at the top. Left edge D0 to D6, right edge 5V/VUSB, GND, 3V3, D10, D9, D8, D7. Every XIAO pad carries exactly one wire. Red runs from 5V to the LED bar VCC. Black ground runs from the XIAO GND up to the bar's top GND pad, and the buzzer minus lands on that same pad from above. From the bar's bottom GND pad a second ground wire runs under the bar, down the right side and under the microSD reader to its GND pin. White 3V3 runs straight from the XIAO 3V3 to the microSD reader's 3v3 pin; it is the only 3V3 wire. Yellow runs from D1 over the top to the bar DIN; green from D2 to the buzzer plus. The microSD reader is a blue board with six pins down its left edge, top to bottom 3v3, CS, MOSI, CLK, MISO, GND. Yellow D10 to MOSI, green D8 to CLK, and blue MISO back to D9. Blue CS runs from D3 down under the XIAO, up the far right and over the reader onto CS. The reader is optional and 3.3 volts only: never connect it to 5V. D4 and D5 are unwired, reserved for an optional clock that is not fitted. Hops mark crossings: 5V and D1 hop the XIAO ground wire, CS hops the reader's ground wire, 3V3 hops CS, and CLK hops MISO.">
+        <svg viewBox="95 62 975 712" role="img" aria-label="Wiring schematic, XIAO ESP32-S3 or ESP32-C5 top view with USB-C at the top. Left edge D0 to D6, right edge 5V/VUSB, GND, 3V3, D10, D9, D8, D7. Every XIAO pad carries exactly one wire. Red runs from 5V to the LED bar VCC. Black ground runs from the XIAO GND up to the bar's top GND pad, and the buzzer minus lands on that same pad from above. From the bar's bottom GND pad a second ground wire runs under the bar, down the right side and under the microSD reader to its GND pin. White 3V3 runs straight from the XIAO 3V3 to the microSD reader's 3v3 pin; it is the only 3V3 wire. Yellow runs from D1 over the top to the bar DIN; green from D2 to the buzzer plus. The microSD reader is a blue board with six pins down its left edge, top to bottom 3v3, CS, MOSI, CLK, MISO, GND. Yellow D10 to MOSI, green D8 to CLK, and blue MISO back to D9. Blue CS runs from D3 down under the XIAO, up the far right and over the reader onto CS. The reader is optional and 3.3 volts only: never connect it to 5V. D4 and D5 are unwired. Hops mark crossings: 5V and D1 hop the XIAO ground wire, CS hops the reader's ground wire, 3V3 hops CS, and CLK hops MISO.">
           <defs>
             <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
               <path d="M0,0 L10,5 L0,10 z" fill="context-stroke"></path>
@@ -329,9 +327,9 @@
           <circle class="pad pin-cs" cx="420" cy="395" r="5.5"></circle>
           <text class="t-board" x="432" y="399" text-anchor="start" font-size="11.5" font-weight="700">D3</text>
           <circle class="pad" cx="420" cy="430" r="4" style="stroke:var(--muted)"></circle>
-          <text class="t-board" x="432" y="434" text-anchor="start" font-size="9.5" opacity="0.7">D4 · reserved: clock</text>
+          <text class="t-board" x="432" y="434" text-anchor="start" font-size="10" opacity="0.55">D4</text>
           <circle class="pad" cx="420" cy="465" r="4" style="stroke:var(--muted)"></circle>
-          <text class="t-board" x="432" y="469" text-anchor="start" font-size="9.5" opacity="0.7">D5 · reserved: clock</text>
+          <text class="t-board" x="432" y="469" text-anchor="start" font-size="10" opacity="0.55">D5</text>
           <circle class="pad" cx="420" cy="500" r="4" style="stroke:var(--muted)"></circle>
           <text class="t-board" x="432" y="504" text-anchor="start" font-size="10" opacity="0.55">D6</text>
           <circle class="pad pin-5v" cx="620" cy="290" r="5.5"></circle>
@@ -466,10 +464,6 @@
         <h3>⚠ microSD reader: 3.3 V ONLY</h3>
         <p><b>Never connect this board to 5V.</b> It has no regulator, and 5V can kill the card. Its <b>3v3</b> pin goes to the XIAO's <b>3V3</b> pad and nothing else.</p>
       </div>
-      <div class="callout small">
-        <h3>Optional clock (DS3231), not fitted <span class="k">parked</span></h3>
-        <p>The phone or PC sets the time on every connect, which dates the log. <b>D4</b> (SDA) / <b>D5</b> (SCL) are reserved for it; leave them empty. See <code>WIRING.md</code>.</p>
-      </div>
     </div>
   </section>
 
@@ -500,8 +494,6 @@
           <tr><td class="pad-cell">D1</td><td class="gpio">GPIO2</td><td class="gpio">GPIO0</td><td><span class="dot" style="background:var(--wire-yellow)"></span>Data</td><td>LED bar <b>DIN</b> (IN)</td><td>LED bar</td></tr>
           <tr><td class="pad-cell">D2</td><td class="gpio">GPIO3</td><td class="gpio">GPIO25</td><td><span class="dot" style="background:var(--wire-green)"></span>Signal</td><td>buzzer <b>+</b></td><td>buzzer</td></tr>
           <tr><td class="pad-cell">D3</td><td class="gpio">GPIO4</td><td class="gpio">GPIO7</td><td><span class="dot" style="background:var(--wire-blue)"></span>SPI chip select</td><td>SD <b>CS</b></td><td>SD reader</td></tr>
-          <tr class="parked"><td class="pad-cell">D4</td><td class="gpio">GPIO5</td><td class="gpio">GPIO23</td><td><span class="dot ring"></span>(I²C SDA)</td><td>nothing: reserved for the clock</td><td>not fitted</td></tr>
-          <tr class="parked"><td class="pad-cell">D5</td><td class="gpio">GPIO6</td><td class="gpio">GPIO24</td><td><span class="dot ring"></span>(I²C SCL)</td><td>nothing: reserved for the clock</td><td>not fitted</td></tr>
           <tr><td class="pad-cell">D8</td><td class="gpio">GPIO7</td><td class="gpio">GPIO8</td><td><span class="dot" style="background:var(--wire-green)"></span>SPI clock</td><td>SD <b>CLK</b></td><td>SD reader</td></tr>
           <tr><td class="pad-cell">D9</td><td class="gpio">GPIO8</td><td class="gpio">GPIO9</td><td><span class="dot" style="background:var(--wire-blue)"></span>SPI MISO</td><td>from SD <b>MISO</b> (data into the XIAO)</td><td>SD reader</td></tr>
           <tr><td class="pad-cell">D10</td><td class="gpio">GPIO9</td><td class="gpio">GPIO10</td><td><span class="dot" style="background:var(--wire-yellow)"></span>SPI MOSI</td><td>SD <b>MOSI</b></td><td>SD reader</td></tr>
@@ -523,7 +515,7 @@
         <ul class="wires">
           <li>LED bar pad <b>VCC</b> → XIAO pad <b>5V</b></li>
           <li>LED bar <b>GND pad 1</b> (the GND beside IN) → XIAO pad <b>GND</b></li>
-          <li>LED bar pad <b>IN</b> → XIAO pad <b>D1</b>. Optional: a 330–470 Ω resistor in this wire, right at the bar.</li>
+          <li>LED bar pad <b>IN</b> → XIAO pad <b>D1</b>.</li>
         </ul></li>
       <li><b>Buzzer</b> (optional). A small <b>passive</b> buzzer (&lt;30 mA) runs straight off the pin.
         <ul class="wires">
@@ -542,9 +534,9 @@
           <li>SD reader pin <b>CLK</b> → XIAO pad <b>D8</b></li>
           <li>SD reader pin <b>MISO</b> → XIAO pad <b>D9</b>: data comes back from the card on this one</li>
         </ul>
-        Format the card FAT32; the board keeps its files in <code>/SIGSWEEP/</code>. <b>On the C5:</b> D3 is GPIO7, and nobody has booted a C5 with a reader on it yet. If it won't start with the SD reader connected, unplug the CS wire (D3), power up, and tell us.</li>
-      <li class="warn"><b>Check before you power it.</b> Nothing on the SD reader touches <b>5V</b>: follow its <b>3v3</b> wire and make sure it ends on the XIAO's <b>3V3</b> pad. Then count: one wire in each XIAO pad, no stray strands bridging two pads, and <b>D4</b> / <b>D5</b> left empty.</li>
-      <li><b>Verify.</b> Flash from the web flasher, or <code>python flash.py --port COM3</code> (C5: <code>python flash.py --board c5 --port COM5</code>). On boot you get a short jingle and an LED blink (if fitted). With no clock fitted the serial log says <code>[RTC] none fitted, waiting for a host</code>, which is expected. Connect the app: <b>Settings › Device identity › Clock</b> shows the phone synced the time. Then trigger a match (an AirTag near it, or edit a signature): the bar flashes and the buzzer plays that category's pattern — ALPR / camera two long beeps, body cam long-short-short, drone a rising trill, tracker fast ticking.</li>
+        Format the card FAT32; the board keeps its files in <code>/SIGSWEEP/</code>.</li>
+      <li class="warn"><b>Check before you power it.</b> Nothing on the SD reader touches <b>5V</b>: follow its <b>3v3</b> wire and make sure it ends on the XIAO's <b>3V3</b> pad. Then count: one wire in each XIAO pad, and no stray strands bridging two pads.</li>
+      <li><b>Verify.</b> Flash from the web flasher, or <code>python flash.py --port COM3</code> (C5: <code>python flash.py --board c5 --port COM5</code>). On boot you get a short jingle and an LED blink (if fitted). Connect the app: <b>Settings › Device identity › Clock</b> shows the phone synced the time. Then trigger a match (an AirTag near it, or edit a signature): the bar flashes and the buzzer plays that category's pattern — ALPR / camera two long beeps, body cam long-short-short, drone a rising trill, tracker fast ticking.</li>
     </ol>
   </section>
 
@@ -555,7 +547,6 @@
         <h3>Power budget <span class="k">≈480 mA</span></h3>
         <ul>
           <li>8× WS2812 at full white peaks near <b>480 mA</b>. SignalSweep only flashes short colored bursts, so USB 5V is fine.</li>
-          <li>Add a <b>1000 µF cap</b> across the bar's 5V↔GND to absorb inrush when all eight snap on.</li>
           <li>An SD card adds a few mA idle and roughly <b>100 mA</b> peaks on writes, all from the XIAO's 3V3. On a weak battery, budget for that.</li>
         </ul>
       </div>
@@ -564,12 +555,11 @@
         <ul>
           <li><b>SD reader on 5V</b> kills the card. This reader has no regulator: <b>3V3 only</b>.</li>
           <li><b>Other SD readers</b> put their pins in a different order, and some want 5V (they have a regulator on board). The drawing is for the 6-pin <code>3v3, CS, MOSI, CLK, MISO, GND</code> reader; with any other, match by label and check its power pin's marking.</li>
-          <li><b>3.3 V data</b> into a 5 V-powered clone bar usually works; if LED 1 flickers, add the 330–470 Ω series resistor at DIN.</li>
+          <li><b>3.3 V data</b> into a 5 V-powered clone bar works over the short run to the bar. Keep the DIN wire short.</li>
           <li><b>Wrong end</b> (wiring DOUT) lights nothing — flip to DIN.</li>
           <li><b>Active buzzer</b> = one fixed pitch: you'll hear each pattern's rhythm but not its tones. Passive is the intended part.</li>
           <li><b>Two wires in one XIAO pad</b> is how a joint cracks. Double up on a bar pad instead.</li>
-          <li><b>C5: boots fine with the buzzer on D2.</b> GPIO25 is sampled at power-up, but a passive buzzer straight to GND does not stop the XIAO C5 booting (bench-checked 2026-09-16 with the LED bar and buzzer wired as shown). If a different buzzer ever does, feed it through a small NPN transistor or a 100 Ω+ series resistor.</li>
-          <li><b>C5: D3 (GPIO7) and the SD reader: not bench-checked yet.</b> GPIO7 may be sampled at boot. <b>If the C5 won't start with the SD reader connected, unplug the CS wire (D3), power up, and tell us.</b></li>
+          <li><b>C5: boots fine with the buzzer on D2.</b> GPIO25 is sampled at power-up, but a passive buzzer straight to GND does not stop the XIAO C5 booting (bench-checked 2026-09-16 with the LED bar and buzzer wired as shown).</li>
         </ul>
       </div>
     </div>
