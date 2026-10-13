@@ -789,7 +789,10 @@ for (const call of defaults.match(/addRule\([^;]*\);/g) || []) {
     const hasLux = /0x0D53/i.test(call);
     if (hasFd5f !== hasLux) regFail.push(`glasses rule states fd5f/0x0D53 without the other: ${call.replace(/\s+/g, ' ')}`);
 }
-if (!/#define SIG_SCHEMA_VERSION 13\b/.test(wwSrc)) regFail.push('SIG_SCHEMA_VERSION not bumped to 13');
+if (!/#define SIG_SCHEMA_VERSION 14\b/.test(wwSrc)) regFail.push('SIG_SCHEMA_VERSION not bumped to 14');
+// v14: an Axon OUI alone beeps (70). Axon gear is police gear; at 60 two Axon
+// APs at a traffic stop listed and stayed silent (field, 2026-10-12).
+if (!/addRule\("Axon Enterprise device", "Axon", "00:25:df", "", "", "", 70\)/.test(wwSrc)) regFail.push('Axon OUI rule no longer beeps alone (expected weight 70)');
 // Flock battery GATT services (v11): full 128-bit UUIDs, exact-matched, filed
 // under "Flock Safety" so they route to the ALPR/camera lens and beep. A
 // truncated UUID would fall into uuidMatches' 16-bit branch or never match.

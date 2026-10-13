@@ -107,7 +107,9 @@ static const char *SIG_FILE_PATH = "/data/signatures.json";
 //        handle; a renamed board is not caught.
 //   v13: OUI-Spy's mode APs: "snoopuntothem" (Detector), "foxhunter"
 //        (Foxhunter), "ouispy-" (PCAP + BLE Sniff), all 70, Hacking gear.
-#define SIG_SCHEMA_VERSION 13
+//   v14: Axon OUI 00:25:df raised 60 -> 70, so it beeps alone. Axon gear is
+//        police gear; two of its 5 GHz APs at a traffic stop stayed silent.
+#define SIG_SCHEMA_VERSION 14
 
 static SemaphoreHandle_t watchersMutex = NULL;
 static bool watchersRunning = false;
@@ -350,10 +352,12 @@ static void ensureSignaturesFileExists() {
             // class of junk as the Espressif OUIs above.
 
             // Pre-existing SignalSweep Rules
-            // 00:25:df is registered to Axon Enterprise, but Axon makes more
-            // than body cams (Tasers, docks, Signal units): the name says
-            // "device", and it lists (60) without beeping on the OUI alone.
-            addRule("Axon Enterprise device", "Axon", "00:25:df", "", "", "", 60);
+            // 00:25:df is registered to Axon Enterprise. Axon makes more than
+            // body cams (Tasers, docks, in-car Fleet, Signal units), so the
+            // name says "device" -- but nearly all of it is police gear, so it
+            // beeps on the OUI alone (70, v14). Field 2026-10-12: two Axon
+            // 5 GHz APs at a traffic stop listed at 60 and stayed silent.
+            addRule("Axon Enterprise device", "Axon", "00:25:df", "", "", "", 70);
             // Body cams broadcast these while pairing (Axon's own admin docs).
             // Vendor-documented, so they beep at the default W_WIFI_SSID (80).
             addRule("Axon Body 2 camera (pairing)", "Axon", "", "", "", "", 0, "AB2-");

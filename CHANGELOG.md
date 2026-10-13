@@ -4,6 +4,20 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Changed — Axon beeps on its address alone
+
+The `Axon Enterprise device` rule (OUI `00:25:df`) now scores 70 instead of 60,
+so an Axon radio sounds the body-cam pattern on its own instead of only listing.
+Signature defaults are now v14, so boards already in the field pick it up on
+the next flash. Field evidence: driving past a traffic stop, the C5 listed two
+Axon access points on 5 GHz (channels 153 and 157, -79/-81 dBm, two distinct
+addresses, no recognised SSID) and stayed silent, exactly as the 60 cap told it
+to. The cap existed because Axon makes more than body cams -- but Tasers, docks,
+in-car Fleet gear and Signal units are police equipment too, and this device
+exists to tell you the watchers are near. Expect beeps passing a police station;
+the body-cam category toggle and per-device Ignore still silence it. The
+self-test fails if the rule drops back below 70.
+
 ### Removed — The DS3231 clock, and the optional resistor and capacitor
 
 SignalSweep's hardware is the XIAO, a passive buzzer, a WS2812 LED bar and a microSD reader. The
