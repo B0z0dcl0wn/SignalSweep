@@ -109,7 +109,9 @@ static const char *SIG_FILE_PATH = "/data/signatures.json";
 //        (Foxhunter), "ouispy-" (PCAP + BLE Sniff), all 70, Hacking gear.
 //   v14: Axon OUI 00:25:df raised 60 -> 70, so it beeps alone. Axon gear is
 //        police gear; two of its 5 GHz APs at a traffic stop stayed silent.
-#define SIG_SCHEMA_VERSION 14
+//   v15: same rule for Flock's registered block b4:1e:52 and SoundThinking
+//        d4:11:d6 (60 -> 70): no consumer owns either company's hardware.
+#define SIG_SCHEMA_VERSION 15
 
 static SemaphoreHandle_t watchersMutex = NULL;
 static bool watchersRunning = false;
@@ -310,13 +312,16 @@ static void ensureSignaturesFileExists() {
             for (const char* oui : flockOuis) {
                 addRule("Flock Safety MAC", "Flock Safety", oui, "", "", "");
             }
-            // The one block the IEEE registers to Flock Safety itself. Listed on
-            // its own (60) rather than only through the wildcard probe; the
-            // category keeps flockOui true, so the probe path still sees it.
-            addRule("Flock Safety MAC (registered block)", "Flock Safety", "b4:1e:52", "", "", "", 60);
+            // The one block the IEEE registers to Flock Safety itself. Beeps on
+            // its own (70, v15): no consumer owns Flock hardware, so the address
+            // alone is enough. The category keeps flockOui true, so the probe
+            // path still sees it. (The flockOuis[] loop above stays at W_OUI:
+            // those prefixes are shared with consumer Wi-Fi modules.)
+            addRule("Flock Safety MAC (registered block)", "Flock Safety", "b4:1e:52", "", "", "", 70);
 
-            // SoundThinking / ShotSpotter
-            addRule("SoundThinking", "SoundThinking", "d4:11:d6", "", "", "", 60);
+            // SoundThinking / ShotSpotter: sells only to police and cities, so
+            // its registered address beeps alone (70, v15).
+            addRule("SoundThinking", "SoundThinking", "d4:11:d6", "", "", "", 70);
 
             // NOTE: the Raven service-UUID rules (3100/3200/3300/3400/3500)
             // were removed at v5, when service_uuid was substring-matched

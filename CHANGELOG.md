@@ -4,12 +4,15 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
-### Changed — Axon beeps on its address alone
+### Changed — Axon, Flock and SoundThinking beep on their address alone
 
 The `Axon Enterprise device` rule (OUI `00:25:df`) now scores 70 instead of 60,
 so an Axon radio sounds the body-cam pattern on its own instead of only listing.
-Signature defaults are now v14, so boards already in the field pick it up on
-the next flash. Field evidence: driving past a traffic stop, the C5 listed two
+The same rule now covers every vendor no consumer owns: Flock's IEEE-registered
+block `b4:1e:52` and SoundThinking/ShotSpotter `d4:11:d6` go 60 -> 70 too. The
+35 community Flock prefixes stay weak (30) -- they overlap consumer Wi-Fi
+modules, so the address alone proves nothing there. Signature defaults are now
+v15, so boards already in the field pick it up on the next flash. Field evidence: driving past a traffic stop, the C5 listed two
 Axon access points on 5 GHz (channels 153 and 157, -79/-81 dBm, two distinct
 addresses, no recognised SSID) and stayed silent, exactly as the 60 cap told it
 to. The cap existed because Axon makes more than body cams -- but Tasers, docks,
