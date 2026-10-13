@@ -188,8 +188,13 @@ def choose(items, label, fmt):
 
 
 def board_from_chip_output(text):
-    """esptool 5 prints 'Chip type: ESP32-C5 ...', esptool 4 'Chip is ESP32-S3 ...'."""
-    m = re.search(r"(?:Chip type:|Chip is)\s*ESP32-(S3|C5)\b", text)
+    """Map esptool chip names to supported firmware targets.
+
+    ESP32-C5HR8 is a C5 package variant, so it uses the same C5 image.
+    """
+    m = re.search(r"(?:Chip type:|Chip is)\s*ESP32-(S3|C5(?:HR8)?)\b", text)
+    if m and m.group(1).startswith("C5"):
+        return "c5"
     return m.group(1).lower() if m else None
 
 
