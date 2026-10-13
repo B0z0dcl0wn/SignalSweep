@@ -111,7 +111,11 @@ static const char *SIG_FILE_PATH = "/data/signatures.json";
 //        police gear; two of its 5 GHz APs at a traffic stop stayed silent.
 //   v15: same rule for Flock's registered block b4:1e:52 and SoundThinking
 //        d4:11:d6 (60 -> 70): no consumer owns either company's hardware.
-#define SIG_SCHEMA_VERSION 15
+//   v16: same test for the registry hints. Beep (70): Genetec (now "Genetec
+//        ALPR"), Neology, WatchGuard Video, Digital Ally. List only (60):
+//        Motorola Solutions (+2 prefixes), Verkada, Avigilon Alta, Axis
+//        (+2), Ubicquia. Fleet routers stay at 30.
+#define SIG_SCHEMA_VERSION 16
 
 static SemaphoreHandle_t watchersMutex = NULL;
 static bool watchersRunning = false;
@@ -383,32 +387,46 @@ static void ensureSignaturesFileExists() {
             addRule("Sierra Wireless Infrastructure", "Fleet / Infrastructure", "84:db:2f", "", "", "");
             addRule("Sierra Wireless Infrastructure", "Fleet / Infrastructure", "cc:93:4a", "", "", "");
 
-            // Label-only hints for surveillance vendors we have NOT yet heard
-            // on the air (IEEE registrations, not field captures). OUI alone is
-            // W_OUI (30): under CONF_LIST_MIN and CONF_ALERT_MIN, so these never
-            // beep and only name a row while the filter is off. The categories
-            // carry no routing keyword on purpose -- "other", All tab only --
-            // until a Site Survey capture proves the hardware transmits. Promote
-            // (category naming "alpr", a stronger signal) only on that evidence.
-            addRule("Genetec (AutoVu / Sharp)", "Genetec", "00:0a:b1", "", "", "");
-            addRule("Genetec (AutoVu / Sharp)", "Genetec", "00:bf:15", "", "", "");
-            addRule("Genetec (AutoVu / Sharp)", "Genetec", "0c:bf:15", "", "", "");
-            addRule("Ubicquia (streetlight node)", "Ubicquia", "94:7b:be", "", "", "");
+            // Surveillance vendors from the IEEE registry, mostly NOT yet heard
+            // on the air (much of this gear is wired). The test since v16 is
+            // "could an ordinary person own this?" (user decision 2026-10-12):
+            //   - police/ALPR-only makers beep on the address alone (70);
+            //   - business security makers whose beep would also mean a hotel
+            //     radio or an office door reader list without beeping (60).
+            // A registered prefix costs nothing if it is never heard.
+            // Genetec AutoVu/Sharp are plate readers: "ALPR" routes the row to
+            // the Cameras tab and the ALPR beep.
+            addRule("Genetec (AutoVu / Sharp)", "Genetec ALPR", "00:0a:b1", "", "", "", 70);
+            addRule("Genetec (AutoVu / Sharp)", "Genetec ALPR", "00:bf:15", "", "", "", 70);
+            addRule("Genetec (AutoVu / Sharp)", "Genetec ALPR", "0c:bf:15", "", "", "", 70);
+            // Neology: plate readers and toll/registration RFID readers.
+            addRule("Neology (ALPR / tolling)", "Neology ALPR", "00:17:3d", "", "", "", 70);
+            // Police in-car and body cameras. WatchGuard *Video* (now Motorola),
+            // never WatchGuard Technologies (00:01:21, 00:90:7f) -- that is the
+            // firewall company.
+            addRule("WatchGuard Video camera", "WatchGuard body cam", "00:1d:96", "", "", "", 70);
+            addRule("Digital Ally camera", "Digital Ally body cam", "00:23:bd", "", "", "", 70);
 
-            // More label-only hints, same rule as Genetec: registry-true, never
-            // heard on the air by us, so W_OUI (30), All tab, never beep.
-            // Motorola Solutions owns Vigilant ALPR but also makes police radios
-            // and in-car video, so the name says "device". The categories avoid
-            // every routing keyword ("cam" would file Verkada under body cams).
-            addRule("Motorola Solutions device", "Motorola Solutions", "00:04:7d", "", "", "");
-            addRule("Motorola Solutions device", "Motorola Solutions", "00:18:85", "", "", "");
-            addRule("Motorola Solutions device", "Motorola Solutions", "00:1f:92", "", "", "");
-            addRule("Motorola Solutions device", "Motorola Solutions", "4c:cc:34", "", "", "");
-            addRule("Motorola Solutions device", "Motorola Solutions", "b8:e2:8c", "", "", "");
-            addRule("Verkada camera", "Verkada", "e0:a7:00", "", "", "");
-            addRule("Avigilon Alta device", "Avigilon Alta", "70:1a:d5", "", "", "");
-            addRule("Axis Communications camera", "Axis Communications", "00:40:8c", "", "", "");
-            addRule("Axis Communications camera", "Axis Communications", "b8:a4:4f", "", "", "");
+            // Listed, never beeping (60). The categories avoid every routing
+            // keyword ("cam" would file Verkada under body cams), so these sit
+            // under All only. Motorola Solutions owns Vigilant ALPR and makes
+            // police radios, but also sells two-way radios to every hotel and
+            // security firm; consumer "Motorola" phones are Motorola Mobility
+            // (Lenovo), a different registrant.
+            addRule("Ubicquia (streetlight node)", "Ubicquia", "94:7b:be", "", "", "", 60);
+            addRule("Motorola Solutions device", "Motorola Solutions", "00:04:7d", "", "", "", 60);
+            addRule("Motorola Solutions device", "Motorola Solutions", "00:18:85", "", "", "", 60);
+            addRule("Motorola Solutions device", "Motorola Solutions", "00:1f:92", "", "", "", 60);
+            addRule("Motorola Solutions device", "Motorola Solutions", "4c:cc:34", "", "", "", 60);
+            addRule("Motorola Solutions device", "Motorola Solutions", "b8:e2:8c", "", "", "", 60);
+            addRule("Motorola Solutions device", "Motorola Solutions", "10:74:6f", "", "", "", 60);
+            addRule("Motorola Solutions device", "Motorola Solutions", "9c:86:2b", "", "", "", 60);
+            addRule("Verkada camera", "Verkada", "e0:a7:00", "", "", "", 60);
+            addRule("Avigilon Alta device", "Avigilon Alta", "70:1a:d5", "", "", "", 60);
+            addRule("Axis Communications camera", "Axis Communications", "00:40:8c", "", "", "", 60);
+            addRule("Axis Communications camera", "Axis Communications", "b8:a4:4f", "", "", "", 60);
+            addRule("Axis Communications camera", "Axis Communications", "ac:cc:8e", "", "", "", 60);
+            addRule("Axis Communications camera", "Axis Communications", "e8:27:25", "", "", "", 60);
 
             // Smart glasses: a camera on someone's face, counted like a body
             // cam (category keyword "glasses" routes to it on both sides).

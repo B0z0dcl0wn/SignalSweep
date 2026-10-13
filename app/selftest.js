@@ -393,16 +393,26 @@ const flockFail = [];
 const ver = Number((fw.match(/#define SIG_SCHEMA_VERSION\s+(\d+)/) || [])[1]);
 if (!(ver >= 8)) flockFail.push('SIG_SCHEMA_VERSION is ' + ver + ', expected >= 8');
 
-// Genetec / Ubicquia are label-only: OUI and nothing else (W_OUI 30 can neither
-// list nor beep), and a category that routes to 'other', never a camera tab.
+// Registry vendors (v16, "could an ordinary person own this?"): OUI-only rules,
+// never heard on the air. Police/ALPR-only makers beep (70) and must route to
+// their tab; business security makers list at 60 and must route to 'other'
+// (All only) -- a "cam" in Verkada's category would file it under body cams.
 const catKw = kw((appSrc.match(/function categoryOf\([\s\S]*?key: 'other'/) || [''])[0]);
-for (const v of ['Genetec', 'Ubicquia']) {
-    const rules = [...fw.matchAll(new RegExp('addRule\\("[^"]*' + v + '[^"]*", "([^"]*)", "([^"]*)", "([^"]*)", "([^"]*)", "([^"]*)"\\);', 'g'))];
-    if (!rules.length) flockFail.push(v + ' label-only rule missing');
-    for (const [r, cat, oui, ...rest] of rules) {
-        if (!oui || rest.some(Boolean)) flockFail.push(v + ' rule is not OUI-only: ' + r);
+const REGISTRY_VENDORS = {          // name fragment -> [weight, routing keyword or null]
+    'Genetec': [70, 'alpr'], 'Neology': [70, 'alpr'],
+    'WatchGuard Video': [70, 'body'], 'Digital Ally': [70, 'body'],
+    'Ubicquia': [60, null], 'Motorola Solutions': [60, null], 'Verkada': [60, null],
+    'Avigilon Alta': [60, null], 'Axis Communications': [60, null]
+};
+for (const [v, [w, route]] of Object.entries(REGISTRY_VENDORS)) {
+    const rules = [...fw.matchAll(new RegExp('addRule\\("[^"]*' + v + '[^"]*", "([^"]*)", "([^"]*)", "([^"]*)", "([^"]*)", "([^"]*)", (\\d+)\\);', 'g'))];
+    if (!rules.length) flockFail.push(v + ' registry rule missing (or lost its explicit weight)');
+    for (const [r, cat, oui, mfg, name, uuid, weight] of rules) {
+        if (!oui || mfg || name || uuid) flockFail.push(v + ' rule is not OUI-only: ' + r);
+        if (Number(weight) !== w) flockFail.push(`${v} rule weight ${weight}, expected ${w}: ${r}`);
         const hit = [...catKw].find(k => cat.toLowerCase().includes(k));
-        if (!catKw.size || hit) flockFail.push(v + ' category "' + cat + '" hits routing keyword "' + hit + '", expected other');
+        if (route ? hit !== route : (!catKw.size || hit))
+            flockFail.push(`${v} category "${cat}" routes by "${hit}", expected ${route || 'other'}`);
     }
 }
 
@@ -752,6 +762,9 @@ const OUI_OWNER = {
     'Peplink Router': 'PePWave',
     'Sierra Wireless Infrastructure': 'Sierra Wireless',
     'Genetec (AutoVu / Sharp)': 'Genetec',
+    'Neology (ALPR / tolling)': 'Neology',
+    'WatchGuard Video camera': 'WatchGuard Video',
+    'Digital Ally camera': 'Digital Ally',
     'Ubicquia (streetlight node)': 'Ubicquia',
     'Motorola Solutions device': 'Motorola Solutions',
     'Verkada camera': 'Verkada',
@@ -789,7 +802,7 @@ for (const call of defaults.match(/addRule\([^;]*\);/g) || []) {
     const hasLux = /0x0D53/i.test(call);
     if (hasFd5f !== hasLux) regFail.push(`glasses rule states fd5f/0x0D53 without the other: ${call.replace(/\s+/g, ' ')}`);
 }
-if (!/#define SIG_SCHEMA_VERSION 15\b/.test(wwSrc)) regFail.push('SIG_SCHEMA_VERSION not bumped to 15');
+if (!/#define SIG_SCHEMA_VERSION 16\b/.test(wwSrc)) regFail.push('SIG_SCHEMA_VERSION not bumped to 16');
 // v14/v15, the "no consumer owns this" rule: surveillance-only vendors beep on
 // their registered address alone (70). At 60 two Axon APs at a traffic stop
 // listed and stayed silent (field, 2026-10-12).

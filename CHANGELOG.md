@@ -11,8 +11,28 @@ so an Axon radio sounds the body-cam pattern on its own instead of only listing.
 The same rule now covers every vendor no consumer owns: Flock's IEEE-registered
 block `b4:1e:52` and SoundThinking/ShotSpotter `d4:11:d6` go 60 -> 70 too. The
 35 community Flock prefixes stay weak (30) -- they overlap consumer Wi-Fi
-modules, so the address alone proves nothing there. Signature defaults are now
-v15, so boards already in the field pick it up on the next flash. Field evidence: driving past a traffic stop, the C5 listed two
+modules, so the address alone proves nothing there.
+
+The rest of the registry hints went through the same test ("could an ordinary
+person own this?") in v16:
+
+- **Beep (70):** Genetec AutoVu/Sharp plate readers (category now "Genetec
+  ALPR", so they sit on the Cameras tab), plus new rules for Neology (plate and
+  toll readers, `00:17:3d`), WatchGuard Video (police in-car and body cameras,
+  `00:1d:96` -- not WatchGuard Technologies, the firewall company) and Digital
+  Ally (police cameras, `00:23:bd`).
+- **List, no beep (60):** Motorola Solutions (police radios, but also every
+  hotel and security firm's two-way radios; consumer Motorola phones are a
+  different registrant), Verkada, Avigilon Alta, Axis (business security
+  cameras and door readers) and Ubicquia streetlight nodes. Two more Motorola
+  Solutions and two more Axis prefixes from the IEEE registry.
+- **Unchanged (30):** the fleet routers -- Cradlepoint, Peplink, Sierra
+  Wireless ride in buses and pharmacies as often as patrol cars.
+
+Most of this hardware is wired and we have not heard it on the air; a
+registered prefix costs nothing if it never transmits. Signature defaults are
+now v16, so boards already in the field pick it up on the next flash. The
+self-test pins every vendor's weight and the tab its category routes to. Field evidence: driving past a traffic stop, the C5 listed two
 Axon access points on 5 GHz (channels 153 and 157, -79/-81 dBm, two distinct
 addresses, no recognised SSID) and stayed silent, exactly as the 60 cap told it
 to. The cap existed because Axon makes more than body cams -- but Tasers, docks,
