@@ -2,6 +2,45 @@
 
 All notable changes to SignalSweep are recorded here.
 
+## [Unreleased]
+
+### Added -- Drone brand names and a tap-to-open Remote ID card
+
+**First real drone in the field (2026-10-14).** All three bench detectors (S3,
+C5 and an OUI-Spy board running tier1) picked up a DJI over **Wi-Fi beacon
+Remote ID** on channel 6 at -75..-79 dBm, rated Confirmed / 90, and decoded its
+serial, position, altitude, speed, heading and operator position. That is the
+first time the Wi-Fi beacon decode path has been proven on a real aircraft
+rather than our own bench transmitter.
+
+- **Brand from the serial.** Remote ID serials are ANSI/CTA-2063-A: a 4-char
+  ICAO maker code, one length character (1-9, A-F = 10-15), then that many
+  characters. `droneMaker()` names the maker only when the length character
+  matches the rest of the string, so a CAA registration or session ID can't
+  pass as a serial. Shipped codes: `1581` DJI (proven by the field serial),
+  `1748` Autel. ICAO publishes no open list, so a code is added when a real
+  serial proves it. Fallback: a DJI OUI on the drone's public Wi-Fi MAC
+  (`60:60:1F` and friends). The row title reads "DJI drone" instead of the
+  `RID-<serial>` SSID.
+- **More of the decode reaches the app.** The firmware now also sends
+  `ua_type`, `rid_status` (ground / airborne / emergency / Remote ID failure),
+  `href`, `vspeed`, `eu_cat`/`eu_class` and `op_loc` (operator position is
+  take-off, live GPS or fixed). Drone rows only, and each field only when the
+  drone sent a real value, so an idle push does not grow.
+- **Tap a drone row to open it.** Closed: status, aircraft type, height, speed.
+  Open: climb rate, heading, MSL altitude, serial, operator ID, self ID, EU
+  class, drone and pilot positions, and the drone-to-pilot distance. Emergency
+  and Remote ID failure show in red. Open rows are memory only and cleared on
+  disconnect, like the radio groups.
+
+### Fixed -- Drone height was labelled AGL when it was over take-off
+
+ODID's Height field is measured from either the ground or the take-off point,
+and the message says which (`HeightType`). DJI sends take-off. The app labelled
+it "AGL" regardless, which is wrong for a drone that launched from a hill. It
+now reads "up" unless the drone says ground, then "AGL". The firmware keeps the
+`agl` key for older apps and adds `href` beside it.
+
 ## [0.9.1] — 2026-10-13 — One logo, one palette, everywhere
 
 ### Changed -- One brand everywhere: SignalSweep brand kit v1.0
