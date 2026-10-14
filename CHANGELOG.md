@@ -2,7 +2,7 @@
 
 All notable changes to SignalSweep are recorded here.
 
-## [Unreleased]
+## [0.9.1] — 2026-10-13 — One logo, one palette, everywhere
 
 ### Changed -- One brand everywhere: SignalSweep brand kit v1.0
 
