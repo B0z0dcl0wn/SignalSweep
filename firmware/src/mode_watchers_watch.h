@@ -90,10 +90,16 @@ struct WatcherTargetInfo {
     String selfId;                   // free-text description the operator chose
     double droneLat = 0, droneLng = 0;  // 0/0 == no value (ODID's own "unknown")
     float  altMsl    = -1000;        // m WGS84-HAE, -1000 == unknown
-    float  heightAgl = -1000;        // m above take-off, -1000 == unknown
+    float  heightAgl = -1000;        // m above heightRef, -1000 == unknown
+    int8_t heightRef = -1;           // ODID_Height_reference_t: 0 take-off, 1 ground, -1 unknown
     float  speed     = 0;            // m/s horizontal
+    float  vSpeed    = 63;           // m/s vertical, 63 == unknown (ODID's own)
     float  heading   = 361;          // degrees true, 361 == unknown
+    uint8_t uaType   = 0;            // ODID_uatype_t, 0 == none declared
+    uint8_t ridStatus = 0;           // ODID_status_t, 0 == undeclared
     double opLat = 0, opLng = 0;     // pilot/operator position, 0/0 == no value
+    int8_t opLocType = -1;           // ODID_operator_location_type_t, -1 unknown
+    uint8_t euCat = 0, euClass = 0;  // ODID EU category/class, 0 == undeclared
 };
 
 /**

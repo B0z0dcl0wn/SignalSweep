@@ -863,6 +863,7 @@ static void odidDecodeInto(ODID_UAS_Data& out, const uint8_t* data, size_t len) 
 static void applyDroneData(WatcherTargetInfo& t, const ODID_UAS_Data& d) {
     t.hasDrone = true;
     if (d.BasicIDValid[0] && d.BasicID[0].UASID[0]) t.uasId = String(d.BasicID[0].UASID);
+    if (d.BasicIDValid[0] && d.BasicID[0].UAType)   t.uaType = d.BasicID[0].UAType;
     if (d.OperatorIDValid && d.OperatorID.OperatorId[0])  t.operatorId = String(d.OperatorID.OperatorId);
     if (d.SelfIDValid && d.SelfID.Desc[0])                t.selfId = String(d.SelfID.Desc);
     if (d.LocationValid) {
@@ -870,12 +871,20 @@ static void applyDroneData(WatcherTargetInfo& t, const ODID_UAS_Data& d) {
         t.droneLng  = d.Location.Longitude;
         t.altMsl    = d.Location.AltitudeGeo;
         t.heightAgl = d.Location.Height;
+        t.heightRef = d.Location.HeightType;
         t.speed     = d.Location.SpeedHorizontal;
+        t.vSpeed    = d.Location.SpeedVertical;
         t.heading   = d.Location.Direction;
+        t.ridStatus = d.Location.Status;
     }
     if (d.SystemValid) {
         t.opLat = d.System.OperatorLatitude;
         t.opLng = d.System.OperatorLongitude;
+        t.opLocType = d.System.OperatorLocationType;
+        if (d.System.ClassificationType == ODID_CLASSIFICATION_TYPE_EU) {
+            t.euCat   = d.System.CategoryEU;
+            t.euClass = d.System.ClassEU;
+        }
     }
 }
 
@@ -2822,12 +2831,24 @@ String getWatchersTargetsJson() {
                     obj["lng"] = t.droneLng;
                 }
                 if (t.altMsl    > -1000) obj["alt"] = t.altMsl;
-                if (t.heightAgl > -1000) obj["agl"] = t.heightAgl;
+                // "agl" keeps its name for older apps; href says what it is
+                // measured from (0 take-off, 1 ground) -- DJI sends take-off.
+                if (t.heightAgl > -1000) {
+                    obj["agl"] = t.heightAgl;
+                    if (t.heightRef >= 0) obj["href"] = t.heightRef;
+                }
                 if (t.speed     > 0)     obj["speed"] = t.speed;
+                if (t.vSpeed    < 63)    obj["vspeed"] = t.vSpeed;
                 if (t.heading   < 361)   obj["heading"] = t.heading;
+                // Enums ship as their ODID numbers; the app owns the words.
+                if (t.uaType)            obj["ua_type"] = t.uaType;
+                if (t.ridStatus)         obj["rid_status"] = t.ridStatus;
+                if (t.euCat)             obj["eu_cat"] = t.euCat;
+                if (t.euClass)           obj["eu_class"] = t.euClass;
                 if (t.opLat != 0.0 || t.opLng != 0.0) {
                     obj["op_lat"] = t.opLat;
                     obj["op_lng"] = t.opLng;
+                    if (t.opLocType >= 0) obj["op_loc"] = t.opLocType;
                 }
             }
         }

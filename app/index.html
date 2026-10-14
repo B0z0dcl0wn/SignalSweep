@@ -872,6 +872,10 @@
         .scope-detail { flex-basis:100%; font-size:0.75rem; color:var(--ss-dim);
             margin-top:0.5rem; line-height:1.5; }
         .scope-detail b { color:var(--ss-text); font-weight:600; font-family:var(--mono); }
+        /* Drone rows open on tap to show the full Remote ID decode. */
+        .scope-row.expandable { cursor:pointer; }
+        .scope-more { color:var(--ss-cyan); white-space:nowrap; }
+        .rid-alarm { color:var(--ss-cat-alpr); font-weight:700; }
         /* Thumb-sized on purpose. These sit in a list that updates while you
            are reading it, so a 24 px button in a moving list is a coin toss --
            the row order is stabilised too, but the target still has to be one

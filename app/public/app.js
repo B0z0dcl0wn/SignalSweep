@@ -166,6 +166,20 @@
             return (m.cid != null && btNames.get(m.cid)) || '';
         }
 
+        // Remote ID serials are ANSI/CTA-2063-A: a 4-char ICAO maker code, one
+        // length char (1-9, A-F = 10-15), then that many chars. The length
+        // check means a CAA registration or session ID can't pass as a serial.
+        // ponytail: only codes we have seen confirmed; ICAO publishes no open
+        // list, so add a code when a real serial proves it.
+        const RID_MAKERS = { '1581': 'DJI', '1748': 'Autel' };
+        function droneMaker(m) {
+            const id = String(m.uasId || '');
+            const n = parseInt(id.charAt(4), 16);
+            if (n > 0 && id.length === 5 + n && RID_MAKERS[id.slice(0, 4)]) return RID_MAKERS[id.slice(0, 4)];
+            // Wi-Fi Remote ID rides the drone's real MAC; DJI's OUI says so too.
+            return /\bDJI\b/i.test(vendorOf(m)) ? 'DJI' : '';
+        }
+
         // =====================================================================
         //  Live scope — what the device hears RIGHT NOW. Nothing persists.
         // =====================================================================
@@ -195,7 +209,10 @@
                     uasId: t.uas_id, operatorId: t.operator_id, selfId: t.self_id,
                     lat: t.lat, lng: t.lng, alt: t.alt, agl: t.agl,
                     speed: t.speed, heading: t.heading,
-                    opLat: t.op_lat, opLng: t.op_lng
+                    opLat: t.op_lat, opLng: t.op_lng,
+                    href: t.href, vspeed: t.vspeed, uaType: t.ua_type,
+                    ridStatus: t.rid_status, euCat: t.eu_cat, euClass: t.eu_class,
+                    opLoc: t.op_loc
                 };
                 maybeOfferRecord(liveMatches[t.mac]);
             }
@@ -556,22 +573,55 @@
             return best;
         }
 
-        // One line of extra detail per category. Drones earn the most, because
-        // Remote ID is a broadcast standard that hands us real values.
-        function detailLine(m, cat) {
+        // ODID enum numbers -> words. Index = the number the firmware sends.
+        const UA_TYPES = ['', 'Fixed wing', 'Rotorcraft', 'Gyroplane', 'VTOL hybrid', 'Ornithopter',
+            'Glider', 'Kite', 'Free balloon', 'Captive balloon', 'Airship', 'Parachute', 'Rocket',
+            'Tethered', 'Ground obstacle', 'Other'];
+        const RID_STATUS = ['', 'On ground', 'Airborne', 'EMERGENCY', 'Remote ID failure'];
+        const OP_LOC = ['takeoff point', 'live GPS', 'fixed spot'];
+        const EU_CAT = ['', 'Open', 'Specific', 'Certified'];
+
+        // Metres between two coordinates; equirectangular is plenty at drone range.
+        function metresBetween(aLat, aLng, bLat, bLng) {
+            const k = Math.PI / 180, x = (bLng - aLng) * k * Math.cos((aLat + bLat) / 2 * k), y = (bLat - aLat) * k;
+            return Math.sqrt(x * x + y * y) * 6371000;
+        }
+
+        // Rows tapped open (drones today), upper-case MAC. Memory only,
+        // cleared on disconnect like expandedGroups.
+        let expandedRows = new Set();
+
+        // Extra detail per category. Drones earn the most, because Remote ID is
+        // a broadcast standard that hands us real values. Closed shows what you
+        // act on (state, type, height, speed); a tap shows everything.
+        function detailLine(m, cat, open) {
             const bits = [];
             if (cat.key === 'drone') {
-                if (m.uasId)      bits.push('UAS <b>' + esc(m.uasId) + '</b>');
-                if (m.operatorId) bits.push('Operator <b>' + esc(m.operatorId) + '</b>');
-                if (m.selfId)     bits.push(esc(m.selfId));
-                if (m.alt   != null) bits.push('Alt <b>' + Math.round(m.alt) + ' m</b>');
-                if (m.agl   != null) bits.push('AGL <b>' + Math.round(m.agl) + ' m</b>');
+                const st = RID_STATUS[m.ridStatus] || '';
+                if (st) bits.push(m.ridStatus >= 3 ? '<span class="rid-alarm">' + st + '</span>' : '<b>' + st + '</b>');
+                if (UA_TYPES[m.uaType]) bits.push('<b>' + UA_TYPES[m.uaType] + '</b>');
+                // Height is over take-off unless the drone says ground (href 1);
+                // labelling a take-off height "AGL" was wrong for DJI.
+                if (m.agl != null) bits.push('<b>' + Math.round(m.agl) + ' m</b> ' + (m.href === 1 ? 'AGL' : 'up'));
                 if (m.speed != null) bits.push('<b>' + Number(m.speed).toFixed(1) + ' m/s</b>');
-                if (m.heading != null) bits.push('Hdg <b>' + Math.round(m.heading) + '\u00b0</b>');
-                if (m.lat != null && m.lng != null)
-                    bits.push('at <b>' + Number(m.lat).toFixed(5) + ', ' + Number(m.lng).toFixed(5) + '</b>');
-                if (m.opLat != null && m.opLng != null)
-                    bits.push('pilot at <b>' + Number(m.opLat).toFixed(5) + ', ' + Number(m.opLng).toFixed(5) + '</b>');
+                if (open) {
+                    if (m.vspeed != null && Math.abs(m.vspeed) >= 0.3)
+                        bits.push((m.vspeed > 0 ? 'climbing ' : 'descending ') + '<b>' + Math.abs(m.vspeed).toFixed(1) + ' m/s</b>');
+                    if (m.heading != null) bits.push('Hdg <b>' + Math.round(m.heading) + '\u00b0</b>');
+                    if (m.alt   != null) bits.push('Alt <b>' + Math.round(m.alt) + ' m</b> MSL');
+                    if (m.uasId)      bits.push('Serial <b>' + esc(m.uasId) + '</b>');
+                    if (m.operatorId) bits.push('Operator <b>' + esc(m.operatorId) + '</b>');
+                    if (m.selfId)     bits.push(esc(m.selfId));
+                    if (m.euCat || m.euClass)
+                        bits.push('EU <b>' + [EU_CAT[m.euCat] || '', m.euClass ? 'C' + (m.euClass - 1) : ''].filter(Boolean).join(' ') + '</b>');
+                    if (m.lat != null && m.lng != null)
+                        bits.push('at <b>' + Number(m.lat).toFixed(5) + ', ' + Number(m.lng).toFixed(5) + '</b>');
+                    if (m.opLat != null && m.opLng != null)
+                        bits.push('pilot at <b>' + Number(m.opLat).toFixed(5) + ', ' + Number(m.opLng).toFixed(5) + '</b>' +
+                            (OP_LOC[m.opLoc] ? ' (' + OP_LOC[m.opLoc] + ')' : '') +
+                            (m.lat != null ? ', <b>' + Math.round(metresBetween(m.lat, m.lng, m.opLat, m.opLng)) + ' m</b> from it' : ''));
+                }
+                bits.push('<span class="scope-more">' + (open ? '\u25be less' : '\u25b8 more') + '</span>');
             }
             if (!bits.length) return '';
             return '<div class="scope-detail">' + bits.join(' \u00b7 ') + '</div>';
@@ -681,7 +731,8 @@
                 // Name it by whatever a person would recognise: its own name,
                 // then the network it is announcing, then the rule it tripped,
                 // then its address. Never invent a word for it.
-                const title = m.name || m.ssid || m.rule || cat.label || m.mac;
+                const maker = cat.key === 'drone' ? droneMaker(m) : '';
+                const title = (maker && maker + ' drone') || m.name || m.ssid || m.rule || cat.label || m.mac;
                 // With the filter off the list contains devices that matched
                 // nothing. Saying so is the difference between a tool and a
                 // scaremonger: a listed device is not a detection.
@@ -697,10 +748,12 @@
                 // A random address with no company ID has no maker to name;
                 // say so rather than leave the blank unexplained.
                 const vendor = vendorOf(m) || (publicMac(m) || m.cid != null ? '' : 'random MAC');
-                return '<div class="scope-row' + (unmatched ? ' unmatched' : '') +
+                const expandable = cat.key === 'drone' && !/\s/.test(String(m.mac));
+                return '<div class="scope-row' + (unmatched ? ' unmatched' : '') + (expandable ? ' expandable' : '') +
                         (ignoredMacs.has(String(m.mac).toUpperCase()) ? ' ignored' : '') +
                         (isHunted ? ' hunted' : '') +
-                        '" style="border-left:4px solid ' + cat.color + '">' +
+                        '"' + (expandable ? ' data-expand="' + esc(m.mac) + '"' : '') +
+                        ' style="border-left:4px solid ' + cat.color + '">' +
                     '<div class="scope-main">' +
                         '<div class="scope-title">' + radioBadges(m.protocol, m.ap, m.ch) + (extraBadges || '') +
                             (cat.icon ? ico(cat.icon, cat.color) + ' ' : '') + '<span class="scope-name">' + esc(title) + '</span>' +
@@ -729,7 +782,7 @@
                         '<div class="scope-bars" style="color:' + cat.color + '">' + signalBars(m.rssi) + '</div>' +
                         '<div class="scope-rssi mono">' + esc(m.rssi) + ' dBm</div>' +
                     '</div>' +
-                    detailLine(m, cat) +
+                    detailLine(m, cat, expandedRows.has(String(m.mac).toUpperCase())) +
                     (extraHtml || '') +
                     (noActions ? '' : actionRow(m, cat)) +
                 '</div>';
@@ -1037,7 +1090,16 @@
                 return;
             }
             const act = ev.target.closest('.scope-act');
-            if (!act) return;
+            if (!act) {
+                // A tap anywhere else on an expandable row opens or closes it.
+                const row = ev.target.closest('.scope-row[data-expand]');
+                if (!row) return;
+                const k = String(row.getAttribute('data-expand')).toUpperCase();
+                if (expandedRows.has(k)) expandedRows.delete(k); else expandedRows.add(k);
+                listHoldUntil = 0;
+                renderScope();
+                return;
+            }
             listHoldUntil = 0;   // the tap landed; let its own re-render through
             if (act.getAttribute('data-act') === 'expand') {
                 const g = act.getAttribute('data-group');
@@ -4695,6 +4757,7 @@
             huntMac = '';
             huntTrace = [];
             expandedGroups = new Set();
+            expandedRows = new Set();
             // Per link, not per app session: a bad stretch on the last board
             // must not paint "updates lost" over the next one.
             rxOk = 0; rxDropped = 0;
@@ -4832,7 +4895,17 @@
                 results.droneFields = drone.uasId === 'X7' && drone.lat === 30.2 &&
                                       drone.opLat === 30.1 && drone.alt === 120;
                 // Detail line renders the decoded values, escaped.
-                results.droneDetail = detailLine(drone, categoryOf('Drone')).indexOf('X7') > 0;
+                results.droneMaker = droneMaker({ uasId: '1581F67QC235D014J1ZZ' }) === 'DJI' &&
+                    droneMaker({ uasId: '1581F67QC' }) === '' &&
+                    droneMaker({ uasId: 'X7' }) === '' &&
+                    (function () { const sv = ouiNames; ouiNames = new Map([['60601F', 'SZ DJI TECHNOLOGY']]);
+                        const ok = droneMaker({ mac: '60:60:1F:0B:0C:26', protocol: 'WiFi' }) === 'DJI';
+                        ouiNames = sv; return ok; })();
+                // Closed: the essentials only. Open: serial and the rest.
+                const dd = Object.assign({}, drone, { agl: 20, href: 0, ridStatus: 3, uaType: 2 });
+                const shut = detailLine(dd, categoryOf('Drone'), false), wide = detailLine(dd, categoryOf('Drone'), true);
+                results.droneDetail = shut.indexOf('X7') < 0 && wide.indexOf('X7') > 0 &&
+                    /EMERGENCY/.test(shut) && /Rotorcraft/.test(shut) && /20 m<\/b> up/.test(shut) && !/AGL/.test(shut);
                 // A device-chosen name must never reach the DOM as markup.
                 results.escapesName = esc('<img src=x onerror=1>').indexOf('<') === -1;
                 // Known plugin errors say what to do; unknown ones keep their text.
