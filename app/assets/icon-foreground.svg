@@ -1,11 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
-  <g transform="translate(512 512) scale(7.2) translate(-32 -32)">
-    <g fill="none" stroke="#00f2fe" stroke-width="4" stroke-linecap="round">
-      <path d="M32 44a1 1 0 0 1 0-16" opacity=".25"/>
-      <path d="M22 46a20 20 0 0 1 0-28" opacity=".55"/>
-      <path d="M12 54a34 34 0 0 1 0-44" opacity=".85"/>
-    </g>
-    <circle cx="38" cy="36" r="5" fill="#00f2fe"/>
-    <path d="M46 20l10-6-4 11 10-3-12 10" fill="#a855f7"/>
-  </g>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024"><g transform="translate(162 162) scale(7)"><defs><filter id="glow" x="-20%" y="-40%" width="140%" height="180%"><feGaussianBlur in="SourceGraphic" stdDeviation="3.5" result="b"></feGaussianBlur><feMerge><feMergeNode in="b"></feMergeNode><feMergeNode in="SourceGraphic"></feMergeNode></feMerge></filter></defs>
+<g filter="url(#glow)"><path d="M18 82 L28.8 20.9 A62 62 0 0 1 61.8 38.2 Z" fill="#19d3b8" opacity=".4"></path>
+<g><g fill="none" stroke="#0aa6c2" stroke-width="6" stroke-linecap="round"><path d="M18 60 A22 22 0 0 1 40 82"></path><path d="M18 40 A42 42 0 0 1 60 82"></path><path d="M18 20 A62 62 0 0 1 80 82"></path></g>
+<circle cx="27.3" cy="53.5" r="5" fill="#ffe600" opacity=".45"></circle></g>
+<circle cx="46.7" cy="41" r="6.5" fill="#ffe600"></circle>
+<path d="M18 82 L61.8 38.2" stroke="#00f2fe" stroke-width="7" stroke-linecap="round"></path><circle cx="18" cy="82" r="8" fill="#00f2fe"></circle></g>
+</g></svg>

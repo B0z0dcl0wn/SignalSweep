@@ -65,3 +65,4 @@ hardware/
 # Local-only bench programs and side-configs — never published
 firmware/src/bench/
 *.local.ini
+docs/SignalSweep-Brand/

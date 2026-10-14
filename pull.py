@@ -261,8 +261,32 @@ REPORT_HTML = r"""<!doctype html>
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'">
 <title>SignalSweep alerts</title>
 <style>
-:root{color-scheme:dark;--bg:#0f1218;--fg:#e6e9ef;--dim:#8a93a3;--line:#262c38;--acc:#4fd18b}
-@media (prefers-color-scheme:light){:root{color-scheme:light;--bg:#fff;--fg:#1a1d24;--dim:#5b6372;--line:#dde1e8;--acc:#1a8f55}}
+/* SignalSweep brand tokens v1.0. Source of truth: brand-guidelines.html */
+:root {
+  /* core */
+  --ss-bg:            #090d16;
+  --ss-panel:         #0d1320;
+  --ss-panel-raised:  #141c2c;
+  --ss-text:          #f3f4f6;
+  --ss-text-muted:    #9ca3af;
+  --ss-cyan:          #00f2fe;
+
+  /* glow (cyan only) */
+  --ss-glow-ambient:  rgba(0, 242, 254, .15);
+  --ss-glow-hover:    rgba(0, 242, 254, .35);
+  --ss-glow-active:   rgba(0, 242, 254, .60);
+
+  /* detection categories */
+  --ss-cat-alpr:      #ef4444;
+  --ss-cat-bodycam:   #ff7a1a;
+  --ss-cat-drone:     #3aa0ff;
+  --ss-cat-tracker:   #ff3ac8;
+  --ss-cat-other:     #f59e0b;
+
+  /* status */
+  --ss-live:          #3ddc84;
+}
+:root{color-scheme:dark;--bg:var(--ss-bg);--fg:var(--ss-text);--dim:var(--ss-text-muted);--line:rgba(140,170,210,.14);--acc:var(--ss-live)}
 body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.45 system-ui,sans-serif}
 main{max-width:1100px;margin:0 auto;padding:16px}
 h1{font-size:1.3rem;margin:.2rem 0}.dim{color:var(--dim)}
@@ -274,7 +298,7 @@ input{width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid var(--l
 table{border-collapse:collapse;width:100%;font-size:.9rem}
 th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
 th{cursor:pointer;user-select:none;position:sticky;top:0;background:var(--bg)}
-td.n{text-align:right}td.m{font-family:ui-monospace,Consolas,monospace}
+td.n{text-align:right}td.m{font-family:'Share Tech Mono',ui-monospace,Consolas,monospace}
 </style></head><body><main>
 <h1>SignalSweep alerts</h1>
 <p class="dim" id="sub"></p>

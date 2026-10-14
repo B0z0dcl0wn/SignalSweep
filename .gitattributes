@@ -33,6 +33,10 @@
 *.gz   binary
 *.pdf  binary
 
+# Brand logo SVGs ship byte-for-byte from the kit: each carries a signed
+# content credential over its exact bytes, so no line-ending conversion.
+*.svg  -text
+
 # Scripts that must keep LF or they break the tool reading them: a shebang
 # followed by \r makes the kernel look for an interpreter named "python3\r",
 # and gradlew is run by sh in CI.

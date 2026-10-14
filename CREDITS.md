@@ -127,6 +127,7 @@ header kept verbatim in both files; gated to build only under
 | [@leeskies/capacitor-usb-serial](https://github.com/leeskies/capacitor-usb-serial) | leeskies |
 | [ESP Web Tools](https://github.com/esphome/esp-web-tools) | Nabu Casa |
 | [PlatformIO](https://platformio.org/) | PlatformIO Labs |
+| [Share Tech Mono](https://fonts.google.com/specimen/Share+Tech+Mono) (font, SIL OFL 1.1, `share-tech-mono-OFL.txt`) | Carrois Type Design, Ralph du Carrois |
 
 ## If we missed you
 
