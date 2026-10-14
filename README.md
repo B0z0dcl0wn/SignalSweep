@@ -14,6 +14,11 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue" alt="GPL-3.0"></a>
 </p>
 
+<p align="center">
+  <img src="docs/img/hero-pumpkin.jpg" width="480" alt="A SignalSweep in its 3D-printed case standing on a log beside a pumpkin, antenna up, LED bar lit red"><br>
+  <sub><b>Hardware</b> you carry · <b>open firmware</b> you flash from a browser · an <b>app</b> if you want one. It beeps without it.</sub>
+</p>
+
 > **But wait, there's more.** It decodes the drone **and where the pilot is
 > standing**. It hunts a tracker by ear, beeping faster as you close in. It
 > catches a fake-AirTag spam storm and **stops crying wolf**. It names your
@@ -120,10 +125,6 @@ Mute any category you don't care about. It's still detected and listed, just qui
 - **Pins only when you say yes.** One device at a time, AES-GCM encrypted behind a PIN. Off by default, and detection never asks for the PIN.
 
 ## The full build
-
-<p align="center">
-  <img src="docs/img/hero-pumpkin.jpg" width="420" alt="A SignalSweep in its 3D-printed case standing on a log beside a pumpkin, antenna up, LED bar lit red">
-</p>
 
 | Part | What you get |
 |---|---|
