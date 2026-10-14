@@ -2,6 +2,20 @@
 
 All notable changes to SignalSweep are recorded here.
 
+## [Unreleased]
+
+### Added -- Self-test refuses hosted font services
+
+`node app/selftest.js` now fails if the app (`index.html`, `app.js`,
+`src/main.js`) or the site (`index.html`, `pull.html`) references Google
+Fonts, Typekit or Bunny Fonts. A hosted font is a third-party request every
+time the page opens -- the same reason vendor names are looked up offline --
+and `pull.html`'s CSP (`default-src 'none'`) would block it anyway. The coming
+brand pass uses Share Tech Mono, and the brand kit's own guidelines page loads
+it from Google; the app ships the font as a local file instead. Proven by
+planting a Google Fonts line in `pull.html`: the self-test failed and named the
+file.
+
 ## [0.9.0] — 2026-10-13 — If no one but a cop owns it, it beeps
 
 ### Changed — Surveillance vendors beep on their address alone

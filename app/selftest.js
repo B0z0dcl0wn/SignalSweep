@@ -999,6 +999,17 @@ console.log('[signalsweep self-test] attack-gear rules gated by the Attack toggl
     console.log('[signalsweep self-test] ui polish guards: ok');
 }
 
+// No runtime third-party font/style loads: a Google Fonts link pings a third party on every
+// open (the opsec reason vendor lookup is offline), and pull.html's CSP blocks it anyway.
+// The brand kit's guidelines page loads one; that pattern must never be copied in here.
+{
+    const files = ['./index.html', './public/app.js', './src/main.js', '../site/index.html', '../site/pull.html'];
+    const hits = files.filter(f => /fonts\.(googleapis|gstatic)\.com|use\.typekit|fonts\.bunny/
+        .test(readFileSync(new URL(f, import.meta.url), 'utf8')));
+    if (hits.length) { console.log('FAIL: third-party font host referenced in', hits); process.exit(1); }
+    console.log('[signalsweep self-test] no third-party font hosts: ok');
+}
+
 const results = await global.__signalsweepSelfTest();
 const failed = Object.entries(results).filter(([, v]) => !v).map(([k]) => k);
 console.log('[signalsweep self-test]', results);
