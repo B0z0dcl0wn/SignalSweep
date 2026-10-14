@@ -33,12 +33,12 @@
             // the filter off most of the list is ordinary hardware, and folding
             // it into the generic bucket titled every unnamed phone "Match"
             // behind a warning triangle, then counted it under Cameras.
-            if (!c) return { key: 'none', label: '', color: '#3a465a', icon: '' };
+            if (!c) return { key: 'none', label: '', color: 'var(--ss-text-muted)', icon: '' };
             if (c.indexOf('drone') >= 0 || c.indexOf('remote id') >= 0 || c.indexOf('uas') >= 0)
-                return { key: 'drone',   label: 'Drone',      color: '#3aa0ff', icon: '🛸' };
+                return { key: 'drone',   label: 'Drone',      color: 'var(--ss-cat-drone)', icon: 'drone' };
             if (c.indexOf('track') >= 0 || c.indexOf('airtag') >= 0 || c.indexOf('tile') >= 0 ||
                 c.indexOf('tag') >= 0 || c.indexOf('beacon') >= 0)
-                return { key: 'tracker', label: 'Tracker',    color: '#ff3ac8', icon: '📍' };
+                return { key: 'tracker', label: 'Tracker',    color: 'var(--ss-cat-tracker)', icon: 'pin' };
             // ALPR before body cam, as in the firmware's alertCategoryFromName():
             // "ALPR / Camera" and "Surveillance Camera" both contain "cam".
             // SoundThinking (ShotSpotter) is named here because the Cameras tab
@@ -46,14 +46,31 @@
             // lands in 'other', which is under Everything only.
             if (c.indexOf('flock') >= 0 || c.indexOf('alpr') >= 0 || c.indexOf('plate') >= 0 || c.indexOf('surveil') >= 0 ||
                 c.indexOf('soundthinking') >= 0 || c.indexOf('shotspotter') >= 0)
-                return { key: 'alpr',    label: 'ALPR / Camera', color: '#ef4444', icon: '📷' };
+                return { key: 'alpr',    label: 'ALPR / Camera', color: 'var(--ss-cat-alpr)', icon: 'camera' };
             // Smart glasses count as a body cam (same tab, same beep, same
             // toggle), but the chip says what the device is.
             if (c.indexOf('glasses') >= 0)
-                return { key: 'bodycam', label: 'Smart glasses', color: '#ff5a1a', icon: '🕶️' };
+                return { key: 'bodycam', label: 'Smart glasses', color: 'var(--ss-cat-bodycam)', icon: 'glasses' };
             if (c.indexOf('body') >= 0 || c.indexOf('axon') >= 0 || c.indexOf('cam') >= 0)
-                return { key: 'bodycam', label: 'Body Cam',   color: '#ff5a1a', icon: '🎥' };
-            return { key: 'other', label: (type || 'Match'), color: '#f59e0b', icon: '⚠️' };
+                return { key: 'bodycam', label: 'Body Cam',   color: 'var(--ss-cat-bodycam)', icon: 'video' };
+            return { key: 'other', label: (type || 'Match'), color: 'var(--ss-cat-other)', icon: 'alert' };
+        }
+
+        // Brand colours are --ss-* tokens in index.html. HTML takes 'var(--ss-x)'
+        // as is; canvas and Leaflet (SVG attributes) need the value, so resolve it.
+        function cssColor(c) {
+            const m = /^var\((--[\w-]+)\)$/.exec(c);
+            if (!m || typeof getComputedStyle !== 'function') return c;
+            return getComputedStyle(document.documentElement).getPropertyValue(m[1]).trim() || c;
+        }
+
+        // One icon set for the whole UI: the line-icon sprite in index.html
+        // (#i-<name>), drawn in the tab bar's style. Never emoji. A category
+        // icon may take its category colour; everything else inherits.
+        function ico(name, color) {
+            if (!name) return '';
+            return '<svg class="ico" aria-hidden="true"' + (color ? ' style="color:' + color + '"' : '') +
+                   '><use href="#i-' + name + '"/></svg>';
         }
 
         // Signal bar 0-5 from RSSI.
@@ -86,7 +103,7 @@
 
         function radioBadges(protocol, ap, ch) {
             const p = String(protocol || '');
-            const wifi = ap === 1 ? '📡 AP' : ap === 0 ? '📱 Client' : 'Wi‑Fi';
+            const wifi = ap === 1 ? ico('antenna') + ' AP' : ap === 0 ? ico('phone') + ' Client' : 'Wi‑Fi';
             return (p.indexOf('BLE')  >= 0 ? '<span class="radio-badge ble">BLE</span>' : '') +
                    (p.indexOf('WiFi') >= 0 ? '<span class="radio-badge wifi">' + wifi + '</span>' : '') +
                    (p.indexOf('WiFi') >= 0 ? bandChip(ch) : '');
@@ -321,7 +338,7 @@
             const btn  = document.getElementById('btn-view');
             if (wrap) wrap.style.display = (viewMode === 'map') ? 'block' : 'none';
             if (list) list.style.display = (viewMode === 'map') ? 'none' : 'block';
-            if (btn)  btn.textContent = (viewMode === 'map') ? '\u2630 List' : '\ud83d\uddfa Map';
+            if (btn)  btn.textContent = (viewMode === 'map') ? '\u2630 List' : 'Map';
             if (viewMode === 'map') initMap();
             renderScope();
         }
@@ -572,7 +589,7 @@
             const ignored = ignoredMacs.has(String(m.mac).toUpperCase());
             const ign = cat.key !== 'none' && stableMac(m)
                 ? '<button class="scope-act" data-act="' + (ignored ? 'unignore' : 'ignore') +
-                  '" data-mac="' + esc(m.mac) + '">' + (ignored ? '\ud83d\udd14 Unignore' : '\ud83d\udd15 Ignore') + '</button>'
+                  '" data-mac="' + esc(m.mac) + '">' + (ignored ? ico('bell') + ' Unignore' : ico('bell-off') + ' Ignore') + '</button>'
                 : '';
             // Trackers always offer hunt. With the filter off, anything does --
             // that is the whole point of turning the filter off: find something
@@ -590,7 +607,7 @@
                     '" data-act="hunt" data-mac="' + esc(m.mac) + '">' +
                     (hunting ? '\u25c9 Hunting \u2014 stop' : '\u25ce Hunt') + '</button>' +
                 (canRing
-                    ? '<button class="scope-act" data-act="ring" data-mac="' + esc(m.mac) + '">\ud83d\udd14 Ring</button>'
+                    ? '<button class="scope-act" data-act="ring" data-mac="' + esc(m.mac) + '">' + ico('bell') + ' Ring</button>'
                     : '') +
                 ign +
             '</div>';
@@ -686,7 +703,7 @@
                         '" style="border-left:4px solid ' + cat.color + '">' +
                     '<div class="scope-main">' +
                         '<div class="scope-title">' + radioBadges(m.protocol, m.ap, m.ch) + (extraBadges || '') +
-                            (cat.icon ? cat.icon + ' ' : '') + '<span class="scope-name">' + esc(title) + '</span>' +
+                            (cat.icon ? ico(cat.icon, cat.color) + ' ' : '') + '<span class="scope-name">' + esc(title) + '</span>' +
                             // A weak hint has no vendor to name -- cat.label is
                             // just the rule text, which already appears below.
                             (unmatched || weak ? '' :
@@ -965,7 +982,7 @@
                 const x = x0 + i * step;
                 if (i === 0) ctx.moveTo(x, y(p.rssi)); else ctx.lineTo(x, y(p.rssi));
             });
-            ctx.strokeStyle = '#ff3ac8';
+            ctx.strokeStyle = cssColor('var(--ss-cat-tracker)');
             ctx.lineWidth = 2;
             ctx.lineJoin = 'round';
             ctx.stroke();
@@ -973,13 +990,15 @@
             ctx.lineTo(x0 + (huntTrace.length - 1) * step, h);
             ctx.lineTo(x0, h);
             ctx.closePath();
-            ctx.fillStyle = 'rgba(255,58,200,0.14)';
+            ctx.fillStyle = cssColor('var(--ss-cat-tracker)');
+            ctx.globalAlpha = 0.14;
             ctx.fill();
+            ctx.globalAlpha = 1;
         }
 
         function ringTarget(mac) {
             sendCommand({ ring: String(mac) });
-            showToast('Ringing\u2026', '\ud83d\udd14');
+            showToast('Ringing\u2026', 'bell');
         }
 
         // Delegated, because a MAC is device-supplied text and must never be
@@ -1107,16 +1126,17 @@
 
         function renderMap(rows) {
             if (!map || !window.L) return;
+            const live = cssColor('var(--ss-live)');
             meLayer.clearLayers();
             liveLayer.clearLayers();
 
             if (mapFix) {
                 window.L.circleMarker([mapFix.lat, mapFix.lng], {
-                    radius: 6, color: '#34d399', fillColor: '#34d399', fillOpacity: 0.9, weight: 2
+                    radius: 6, color: live, fillColor: live, fillOpacity: 0.9, weight: 2
                 }).addTo(meLayer).bindPopup('You').bindTooltip('You', MAP_LABEL);
                 if (mapFix.acc) {
                     window.L.circle([mapFix.lat, mapFix.lng], {
-                        radius: mapFix.acc, color: '#34d399', weight: 1, opacity: 0.3, fill: false
+                        radius: mapFix.acc, color: live, weight: 1, opacity: 0.3, fill: false
                     }).addTo(meLayer);
                 }
             }
@@ -1124,25 +1144,27 @@
             let ringed = 0;
             for (const m of rows) {
                 const cat = categoryOf(m.type || m.rule);
+                const color = cssColor(cat.color);   // Leaflet writes SVG attributes: no var()
                 const title = esc(m.name || m.rule || cat.label);
+                const label = ico(cat.icon) + ' ' + title;
                 if (m.lat != null && m.lng != null) {
                     // A real, broadcast coordinate: it gets a real marker.
                     window.L.circleMarker([m.lat, m.lng], {
-                        radius: 8, color: cat.color, fillColor: cat.color, fillOpacity: 0.85, weight: 2
-                    }).addTo(liveLayer).bindPopup(cat.icon + ' ' + title + '<br>' + esc(m.mac))
-                      .bindTooltip(cat.icon + ' ' + title, MAP_LABEL);
+                        radius: 8, color: color, fillColor: color, fillOpacity: 0.85, weight: 2
+                    }).addTo(liveLayer).bindPopup(ico(cat.icon) + ' ' + title + '<br>' + esc(m.mac))
+                      .bindTooltip(label, MAP_LABEL);
                     if (m.opLat != null && m.opLng != null) {
                         window.L.circleMarker([m.opLat, m.opLng], {
-                            radius: 6, color: cat.color, fillColor: '#000', fillOpacity: 0.6, weight: 2
+                            radius: 6, color: color, fillColor: cssColor('var(--ss-bg)'), fillOpacity: 0.6, weight: 2
                         }).addTo(liveLayer).bindPopup('Operator of ' + title).bindTooltip('Pilot', MAP_LABEL);
                     }
                 } else if (mapFix) {
                     // Distance only. Dashed, unfilled, centred on you -- it must
                     // never read as "the thing is here".
                     window.L.circle([mapFix.lat, mapFix.lng], {
-                        radius: rssiMeters(m.rssi), color: cat.color, weight: 1.5,
+                        radius: rssiMeters(m.rssi), color: color, weight: 1.5,
                         dashArray: '6 6', fill: false, opacity: 0.8
-                    }).addTo(liveLayer).bindPopup(cat.icon + ' ' + title + '<br>' + esc(m.mac) +
+                    }).addTo(liveLayer).bindPopup(ico(cat.icon) + ' ' + title + '<br>' + esc(m.mac) +
                         '<br>within ~' + Math.round(rssiMeters(m.rssi)) + ' m (signal strength only)');
                     ringed++;
                 }
@@ -1174,7 +1196,7 @@
                 if (pin.lat == null || pin.lng == null) continue;
                 const cat = categoryOf(pin.category || pin.rule);
                 window.L.marker([pin.lat, pin.lng]).addTo(pinLayer)
-                    .bindPopup('\ud83d\udccd ' + esc(pin.name || pin.rule || cat.label) +
+                    .bindPopup(ico('pin') + ' ' + esc(pin.name || pin.rule || cat.label) +
                                '<br>' + esc(pin.mac) +
                                '<br>' + esc(new Date(pin.ts).toLocaleString()));
             }
@@ -1240,7 +1262,7 @@
                 if (typeof data.ring === 'string' && 'ok' in data) {
                     showToast(data.ok ? 'Ring landed — listen for it'
                                       : 'Ring failed — out of range or not ringable',
-                              data.ok ? '🔔' : '⚠');
+                              data.ok ? 'bell' : 'alert');
                     return;
                 }
                 // The 4 Hz hunt frame: one target, one number, and deliberately
@@ -1603,8 +1625,8 @@
             document.getElementById('cap-running').style.display = 'none';
             document.getElementById('cap-done').style.display = 'block';
             renderFinds();
-            showToast(lastAnalysis && lastAnalysis.flockDetected ? '⚠ Flock signature detected' : 'Capture saved',
-                      lastAnalysis && lastAnalysis.flockDetected ? '⚠' : '✓');
+            showToast(lastAnalysis && lastAnalysis.flockDetected ? 'Flock signature detected' : 'Capture saved',
+                      lastAnalysis && lastAnalysis.flockDetected ? 'alert' : '✓');
         }
 
         // =====================================================================
@@ -1824,7 +1846,7 @@
                                     .then(done, failed);
                             }
                             setGpsState('sysoff');
-                            showToast('Location is off. Turn it on, then try again.', '⚠');
+                            showToast('Location is off. Turn it on, then try again.', 'alert');
                             window.BleClient.openLocationSettings().catch(() => {});
                             reject(new Error('Location is off'));
                         });
@@ -1842,7 +1864,7 @@
             recordEnabled = !recordEnabled;
             try { localStorage.setItem(RECORD_PREF_KEY, recordEnabled ? '1' : '0'); } catch (e) {}
             paintRecord();
-            showToast(recordEnabled ? 'Will ask to pin each match' : 'Not asking to pin', '📍');
+            showToast(recordEnabled ? 'Will ask to pin each match' : 'Not asking to pin', 'pin');
         }
 
         // The switch lives in Settings > Recording. While a recording is
@@ -1950,7 +1972,7 @@
             consentQueue = consentQueue.filter(
                 m => categoryOf(m.type || m.rule).key !== key);
             showToast('Not asking about ' + (PIN_MUTE_NAME[key] || 'these')
-                      + ' — undo in Settings › Recording', '🔕');
+                      + ' — undo in Settings › Recording', 'bell-off');
             if (consentQueue.length) setTimeout(showNextConsent, 300);
         }
 
@@ -1969,7 +1991,7 @@
         function unmuteCat(key) {
             pinMute.delete(key);
             savePinMute();
-            showToast('Asking about ' + (PIN_MUTE_NAME[key] || key) + ' again', '🔔');
+            showToast('Asking about ' + (PIN_MUTE_NAME[key] || key) + ' again', 'bell');
         }
 
         function consentDismiss() {
@@ -2013,7 +2035,7 @@
             });
             await savePins();
             paintLogSession();
-            showToast('Pin saved (' + pinsCache.length + ' total)', '📍');
+            showToast('Pin saved (' + pinsCache.length + ' total)', 'pin');
         }
 
         // ---- PIN gate modal ----
@@ -2075,7 +2097,7 @@
                     const cat = categoryOf(p.category);
                     return '<div class="scope-row" style="border-left:4px solid ' + cat.color + '">' +
                         '<div class="scope-main">' +
-                            '<div class="scope-title">' + cat.icon + ' ' + esc(p.category) + (p.photo ? ' 📷' : '') + '</div>' +
+                            '<div class="scope-title">' + ico(cat.icon) + ' ' + esc(p.category) + (p.photo ? ' ' + ico('camera') : '') + '</div>' +
                             '<div class="scope-sub">' + esc(p.mac || (p.source === 'camera-log' ? 'photo log' : '')) + ' · ' + p.lat.toFixed(5) + ', ' + p.lng.toFixed(5) +
                                 ' · ±' + Math.round(p.acc) + 'm · ' + new Date(p.ts).toLocaleString() + '</div>' +
                         '</div>' +
@@ -2095,19 +2117,19 @@
             wipePins();
             renderPins();
             renderFinds();
-            showToast('Everything saved was wiped', '🗑');
+            showToast('Everything saved was wiped', 'trash');
         }
 
         function xmlAttr(v) { return esc(v); }
         function exportPinsFile() {
-            if (pinsCache.length === 0) { showToast('No pins to export', 'ℹ'); return; }
+            if (pinsCache.length === 0) { showToast('No pins to export', 'info'); return; }
             const blob = new Blob([JSON.stringify(pinsCache, null, 2)], { type: 'application/json' });
             downloadBlob(blob, 'signalsweep-pins-' + Date.now() + '.json');
         }
         // OSM: exporting CAMERA locations is the DeFlock use case, not a movement
         // leak — the pins are devices you consented to mark, never a track of you.
         function exportPinsOSM() {
-            if (pinsCache.length === 0) { showToast('No pins to export', 'ℹ'); return; }
+            if (pinsCache.length === 0) { showToast('No pins to export', 'info'); return; }
             let xml = '<?xml version="1.0" encoding="UTF-8"?>\n<osm version="0.6" generator="SignalSweep">\n';
             pinsCache.forEach((p, i) => {
                 xml += '  <node id="-' + (i + 1) + '" lat="' + p.lat.toFixed(7) + '" lon="' + p.lng.toFixed(7) + '">\n';
@@ -2258,7 +2280,7 @@
             if (a.flockDetected) {
                 // Only ever the detector's own rule (listed Flock OUI + wildcard
                 // probe + IE), so the phone never cries wolf where the board wouldn't.
-                el.innerHTML = '<div style="color:var(--accent-red,#ef4444);font-weight:700;font-size:1.05rem;">⚠ Flock signature</div>' +
+                el.innerHTML = '<div style="color:var(--accent-red);font-weight:700;font-size:1.05rem;">' + ico('alert') + ' Flock signature</div>' +
                     '<p class="set-note">' + a.flockMacs + ' device(s) on a known Flock MAC prefix sending wildcard probes with the Flock IE, ' +
                     'strongest <strong>' + a.flockStrongest + ' dBm</strong>. This is the same rule the detector beeps on.</p>';
             } else {
@@ -2311,16 +2333,16 @@
                 await savePins();
                 try { localStorage.removeItem(PENDING_FIND_KEY); } catch (e) {}
                 renderFinds();
-                showToast('Device logged — getting GPS…', '📷');
+                showToast('Device logged — getting GPS…', 'camera');
                 // GPS in the background; the find is already saved.
                 try {
                     const fix = await getFix();
                     find.lat = fix.lat; find.lng = fix.lng; find.acc = fix.acc;
                     await savePins();
                     renderFinds();
-                    showToast('Location added (±' + Math.round(fix.acc) + 'm)', '📍');
+                    showToast('Location added (±' + Math.round(fix.acc) + 'm)', 'pin');
                 } catch (e) {
-                    showToast('Saved without GPS — add location later', '⚠');
+                    showToast('Saved without GPS — add location later', 'alert');
                 }
         }
 
@@ -2334,7 +2356,7 @@
                 let ctx = {};
                 try { ctx = JSON.parse(localStorage.getItem(PENDING_FIND_KEY)) || {}; } catch (e) {}
                 openFinder();
-                showToast('Android restarted the app — unlock to save the photo', '📷');
+                showToast('Android restarted the app — unlock to save the photo', 'camera');
                 ensurePinUnlocked(() => saveFindFromShot(r.data.base64String, ctx.sig || null, ctx.capture || null, ctx.category || 'Unconfirmed'));
             });
         }
@@ -2364,7 +2386,7 @@
         async function exportEvidenceBundle() {
             if (!capNativeFs()) { showToast('File storage unavailable', '✕'); return; }
             ensurePinUnlocked(async () => {
-                if (!findsCache.length) { showToast('Nothing to export yet — tap a survey, then 📷 Log this device', 'ℹ'); return; }
+                if (!findsCache.length) { showToast('Nothing to export yet — tap a survey, then Log this device', 'info'); return; }
                 const dir = 'signalsweep-evidence-' + capStamp();
                 const D = window.CapDirectory.Documents, U = window.CapEncoding.UTF8;
                 let csv = 'ts,lat,lng,acc_m,category,signature,sample_mac,photo,capture\n';
@@ -2439,8 +2461,8 @@
             if (!locked) findsCache.forEach((f, i) => { (byCap[f.capture] = byCap[f.capture] || []).push(i); });
             const photoLine = i => {
                 const f = findsCache[i];
-                const loc = f.lat != null ? f.lat.toFixed(5) + ', ' + f.lng.toFixed(5) + ' · ±' + Math.round(f.acc) + 'm' : '⚠ no location yet';
-                return '<div class="scope-sub">📷 ' + loc + ' · <a href="#" onclick="event.stopPropagation();deleteFind(' + i + ');return false">remove</a></div>';
+                const loc = f.lat != null ? f.lat.toFixed(5) + ', ' + f.lng.toFixed(5) + ' · ±' + Math.round(f.acc) + 'm' : ico('alert') + ' no location yet';
+                return '<div class="scope-sub">' + ico('camera') + ' ' + loc + ' · <a href="#" onclick="event.stopPropagation();deleteFind(' + i + ');return false">remove</a></div>';
             };
             let html = locked
                 ? '<div class="scope-empty">Photos and locations are locked. ' +
@@ -2450,7 +2472,7 @@
                 const mine = byCap[s.name] || [];
                 return '<div class="scope-row" style="border-left:4px solid var(--accent-cyan)">' +
                     '<div class="scope-main" data-survey="' + esc(s.name) + '" style="cursor:pointer">' +
-                        '<div class="scope-title">📡 ' + esc(surveyWhen(s.name)) + (mine.length ? ' · 📷 ' + mine.length : '') + '</div>' +
+                        '<div class="scope-title">' + ico('antenna') + ' ' + esc(surveyWhen(s.name)) + (mine.length ? ' · ' + ico('camera') + ' ' + mine.length : '') + '</div>' +
                         '<div class="scope-sub">' + (s.size ? Math.round(s.size / 1024) + ' KB · ' : '') + 'tap to analyze</div>' +
                         mine.map(photoLine).join('') +
                     '</div>' +
@@ -2468,13 +2490,13 @@
                 const cat = categoryOf(f.category);
                 const loc = (f.lat != null)
                     ? (f.lat.toFixed(5) + ', ' + f.lng.toFixed(5) + ' · ±' + Math.round(f.acc) + 'm')
-                    : '⚠ no location yet';
+                    : ico('alert') + ' no location yet';
                 const sig = f.signature
                     ? esc(f.signature.label) + (f.signature.randomMacs ? ' · ' + f.signature.randomMacs + ' random MACs' : '')
                     : 'no signature';
                 return '<div class="scope-row" style="border-left:4px solid ' + cat.color + '">' +
                     '<div class="scope-main">' +
-                        '<div class="scope-title">' + cat.icon + ' ' + esc(f.category) + (f.photo ? ' 📷' : '') + '</div>' +
+                        '<div class="scope-title">' + ico(cat.icon) + ' ' + esc(f.category) + (f.photo ? ' ' + ico('camera') : '') + '</div>' +
                         '<div class="scope-sub">' + sig + '<br>' + loc + ' · ' + new Date(f.ts).toLocaleString() + '</div>' +
                     '</div>' +
                     '<button class="scope-del" onclick="deleteFind(' + i + ')">✕</button>' +
@@ -2574,8 +2596,8 @@
             if (!lastCrash) return;
             const s = JSON.stringify(Object.assign({ board: devName }, lastCrash));
             (navigator.clipboard ? navigator.clipboard.writeText(s) : Promise.reject())
-                .then(() => showToast('Crash report copied', '📋'))
-                .catch(() => showToast(s, '⚠'));
+                .then(() => showToast('Crash report copied', 'clipboard'))
+                .catch(() => showToast(s, 'alert'));
         }
         // ---- Device identity (name / random address) ------------------------
         // Both live in the firmware's NVS and are read at boot before the BLE
@@ -2605,7 +2627,7 @@
                 paintIgnoreList();
                 renderScope();
             }
-            if (cfg.ignore_full) showToast('Ignore list full (' + IGNORE_MAX + ')', '⚠');
+            if (cfg.ignore_full) showToast('Ignore list full (' + IGNORE_MAX + ')', 'alert');
             devName = (typeof cfg.ble_name === 'string' && cfg.ble_name) || 'SignalSweep';
             if (typeof cfg.uptime === 'number') bootAt = Date.now() - cfg.uptime * 1000;
             setClockUi(cfg.epoch);
@@ -2630,7 +2652,7 @@
             const bootKey = devName + '@' + Math.round(bootAt / 10000);
             if (crash && crashNotedBoot !== bootKey) {
                 crashNotedBoot = bootKey;
-                showToast(devName + ' restarted: it ' + crash, '⚠');
+                showToast(devName + ' restarted: it ' + crash, 'alert');
             }
             // Keep the reset reason alongside the crash detail -- crashText()
             // leads the line with it, and Copy JSON should carry it too.
@@ -2756,7 +2778,7 @@
 
         // What is currently muted, on the Alerts heading itself, so the
         // section says what it is set to before you scroll into it.
-        // The icon says how (🔔 both, 🔊 sound only, 💡 lights only, 🔕 nothing
+        // The icon says how (bell both, volume sound only, bulb lights only, bell-off nothing
         // can alert), the word says how many categories.
         function setSoundsSummary() {
             const btn = document.getElementById('alerts-summary');
@@ -2769,13 +2791,13 @@
             const keys = Object.keys(BEEP_BITS);
             const n = keys.filter(k => (deviceBeepMask & BEEP_BITS[k]) !== 0).length;
             const sound = buzzerOn, light = ledMode !== 0;
-            const icon = n === 0 || (!sound && !light) ? '🔕'
-                       : sound && light ? '🔔' : sound ? '🔊' : '💡';
+            const icon = n === 0 || (!sound && !light) ? 'bell-off'
+                       : sound && light ? 'bell' : sound ? 'volume' : 'bulb';
             const one = { alpr: 'cameras', tracker: 'trackers', drone: 'drones' }[lensOfMask(deviceBeepMask)];
             const what = !sound && !light ? 'off'
                        : n === 0 ? 'none' : n === keys.length ? 'all' : one || n + '/' + keys.length;
-            btn.textContent = icon + ' ' + what;
-            btn.classList.toggle('on', icon !== '🔕');
+            btn.innerHTML = ico(icon) + ' ' + esc(what);
+            btn.classList.toggle('on', icon !== 'bell-off');
         }
 
         // The device is the authority on the radios too: the toggles never
@@ -3136,7 +3158,7 @@
                     if (n && n % 512 === 0) showToast('Read ' + n + '…', '…');
                 });
             } catch (e) {
-                showToast('Could not read the log: ' + e.message, '⚠');
+                showToast('Could not read the log: ' + e.message, 'alert');
                 return;
             }
             const recs = parseLogRecords(got.recs, got.names);
@@ -3164,7 +3186,7 @@
                     });
                     saved = name;
                 } catch (e) {
-                    showToast('Could not write the file: ' + e.message, '⚠');
+                    showToast('Could not write the file: ' + e.message, 'alert');
                 }
             }
             showLogSummary(sum, saved, recs);
@@ -3180,7 +3202,7 @@
                     if (!sum.by[k]) continue;
                     const c = categoryOf(k);
                     html += '<div class="logsum-row"><span style="color:' + esc(c.color) + '">'
-                          + esc(c.icon || '•') + ' ' + esc(k) + '</span><strong>'
+                          + (c.icon ? ico(c.icon) : '•') + ' ' + esc(k) + '</span><strong>'
                           + sum.by[k] + '</strong></div>';
                 }
                 html += '</div>';
@@ -3815,7 +3837,7 @@
                 const strength = ruleStrength(r);
                 const strengthNote = ruleStrengthNote(r);
                 return '<div class="sig-row">'
-                    + '<span class="sig-i">' + cat.icon + '</span>'
+                    + '<span class="sig-i">' + ico(cat.icon, cat.color) + '</span>'
                     + '<span class="sig-t">'
                     + '<span class="sig-cat" style="color:' + cat.color + '">' + esc(cat.label) + '</span>'
                     + '<strong>' + esc(r.name || '(unnamed rule)') + '</strong>'
@@ -3863,7 +3885,7 @@
         function saveSignatures() {
             if (!sigsLoaded) { showToast('Device rules not loaded yet', '…'); return; }
             const txt = document.getElementById('sig-input').value.trim();
-            if (!txt) { showToast('Nothing to send', 'ℹ'); return; }
+            if (!txt) { showToast('Nothing to send', 'info'); return; }
             let arr;
             try { arr = JSON.parse(txt); } catch (e) { showToast('Invalid JSON', '✕'); return; }
             if (!Array.isArray(arr)) { showToast('Expected a JSON array of rules', '✕'); return; }
@@ -4066,7 +4088,7 @@
                 if (!(await window.BleClient.isEnabled())) {
                     try { await window.BleClient.requestEnable(); } catch (e) { /* declined */ }
                     if (!(await window.BleClient.isEnabled())) {
-                        showToast('Bluetooth is off. Turn it on, then tap Connect.', '⚠');
+                        showToast('Bluetooth is off. Turn it on, then tap Connect.', 'alert');
                         try { await window.BleClient.openBluetoothSettings(); } catch (e) {}
                         updateConnectionUI(false);
                         return;
@@ -4107,7 +4129,7 @@
                 // every Connect failed with a raw "Permission denied." The only
                 // way back is the app's own settings page.
                 if (/permission/i.test(msg)) {
-                    showToast('SignalSweep needs the Nearby devices permission. Allow it, then tap Connect.', '⚠');
+                    showToast('SignalSweep needs the Nearby devices permission. Allow it, then tap Connect.', 'alert');
                     try { await window.BleClient.openAppSettings(); } catch (e) {}
                     return;
                 }
@@ -4703,7 +4725,7 @@
             const toastIcon = document.getElementById('toast-icon');
             if (toast && toastMsg && toastIcon) {
                 toastMsg.textContent = msg;
-                toastIcon.textContent = icon;
+                if (/^[a-z-]+$/.test(icon)) toastIcon.innerHTML = ico(icon); else toastIcon.textContent = icon;
                 toast.classList.add('show');
                 setTimeout(() => toast.classList.remove('show'), 3000);
             }

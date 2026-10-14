@@ -1,4 +1,6 @@
-<h1 align="center">SignalSweep</h1>
+<p align="center">
+  <img src="docs/img/banner.png" alt="SignalSweep: the app's Sweep, Survey and Settings tabs on a phone, a drone, a Flock probe and trackers in the live list">
+</p>
 
 <p align="center">
   <strong>It beeps at the gear that's watching you.</strong><br>
@@ -8,13 +10,16 @@
 
 <p align="center">
   <a href="https://github.com/B0z0dcl0wn/SignalSweep/releases/latest"><img src="https://img.shields.io/github/v/release/B0z0dcl0wn/SignalSweep?label=release" alt="Latest release"></a>
-  <a href="https://b0z0dcl0wn.github.io/SignalSweep/"><img src="https://img.shields.io/badge/flash-in%20your%20browser-2ea44f" alt="Web flasher"></a>
+  <a href="https://b0z0dcl0wn.github.io/SignalSweep/"><img src="https://img.shields.io/badge/flash-in%20your%20browser-3ddc84" alt="Web flasher"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue" alt="GPL-3.0"></a>
 </p>
 
-<p align="center">
-  <img src="docs/img/hero-pumpkin.jpg" width="560" alt="A SignalSweep in its 3D-printed case standing on a log beside a pumpkin, antenna up, LED bar lit red">
-</p>
+> **But wait, there's more.** It decodes the drone **and where the pilot is
+> standing**. It hunts a tracker by ear, beeping faster as you close in. It
+> catches a fake-AirTag spam storm and **stops crying wolf**. It names your
+> neighbour's pwnagotchi. And when you want it quiet, it stops advertising
+> entirely, so the gear it's hunting can't hunt it back. One small board,
+> flashed from a browser tab. No app store, no account, no cloud.
 
 ---
 
@@ -22,7 +27,7 @@
 
 |  | **SignalSweep** | **SignalSweep Kit** | **Build your own** |
 |---|---|---|---|
-| **What** | Assembled, flashed and tested, in a 3D-printed case. Plug in USB and go. | Every part plus the printed case. You put it together. | Bring a bare XIAO ESP32-C5 (about $13). Flash it from your browser. |
+| **What** | Assembled, flashed and tested, in a 3D-printed case. Plug in USB and go. | Every part plus the printed case. You put it together. | Bring a bare XIAO ESP32-C5. Flash it from your browser. |
 | **Inside** | XIAO ESP32-C5, dual-band external antenna, buzzer, LED bar, microSD reader | Same parts, loose | Just the board. Add parts as you go |
 | **Status** | Coming soon | Coming soon | **[Available now](#build-your-own)** |
 
@@ -51,7 +56,7 @@ And you don't need either one: the board beeps on its own.
 ### The fast way: flash it from your browser
 
 <p align="center">
-  <a href="https://b0z0dcl0wn.github.io/SignalSweep/"><img src="https://img.shields.io/badge/Flash%20it%20in%20your%20browser-b0z0dcl0wn.github.io%2FSignalSweep-2ea44f?style=for-the-badge" alt="Flash it in your browser"></a>
+  <a href="https://b0z0dcl0wn.github.io/SignalSweep/"><img src="https://img.shields.io/badge/Flash%20it%20in%20your%20browser-b0z0dcl0wn.github.io%2FSignalSweep-3ddc84?style=for-the-badge" alt="Flash it in your browser"></a>
 </p>
 
 Chrome or Edge, a USB-C cable, one button. It works out which board is
@@ -96,13 +101,16 @@ Mute any category you don't care about. It's still detected and listed, just qui
 - **Drones, in full.** ASTM F3411 Remote ID over Bluetooth, Wi-Fi beacons and Wi-Fi NAN: ID, altitude, speed, heading, and where the pilot is standing. Often before you hear the props.
 - **Trackers.** Apple Find My, Google, Samsung and Tile. And when someone floods the area with fake ones, it gives a handful of beeps, then one row that says what's going on, and goes quiet. A real tag still in range sounds once the storm passes.
 - **Surveillance hardware.** Flock Safety gear when it's talking, Axon body cams, smart glasses, and anything else on a signature list you can edit from the app: OUI, company ID, name, service UUID or SSID. No recompile.
+- **Cop-only gear, on sight.** Axon, Flock, SoundThinking (ShotSpotter), Genetec, Neology, WatchGuard Video and Digital Ally addresses beep on their own. Nobody but an agency buys that hardware, so hearing it is the news.
 - **Attack gear** (opt-in). BLE popup spam, deauth bursts, Pineapple-style karma, Flipper Zero hints, and pwnagotchis by name.
 
 **Built for the field**
 - **Runs headless.** Battery bank, car USB port, or a phone on a cable. It scans and beeps with nothing connected.
 - **Survives the plug-pull.** Mute, categories, hunt target, filter, name and rules all come back after a power cut. Yanking the cable is how you're supposed to use it.
 - **Hunts by ear.** Lock one device and walk it down. The beeps speed up as you close in. Keyfob tags that advertise an alert service can be made to ring; the button only appears on those. (AirTags can't be rung by anything but their owner's phone.)
-- **Both bands.** The C5 sweeps 2.4 and 5 GHz Wi-Fi, where a growing share of cameras and access points live.
+- **Both bands.** The C5 sweeps 2.4 and 5 GHz Wi-Fi, where a growing share of cameras and access points live. Every Wi-Fi row shows its band and channel, and a dual-band router is one row, not four.
+- **Site Survey.** Park next to something suspicious, capture the raw air, and the app pulls out its signature. Snap a photo, and it's logged to an encrypted finds database you can export for DeFlock.
+- **Ignore the neighbours.** Something you own keeps setting it off? Ignore that one device (fixed addresses only, up to 16). It stays listed, it just stops beeping, and the board remembers through a power cut.
 - **Logs if you ask.** What it beeped at and when, on its own flash or the SD card, for a drive with no phone along. Off by default. Never where.
 - **Lights on your terms.** Off, one LED, dim or full, plus five themes, so a parked car doesn't glow like a beacon.
 
@@ -112,6 +120,10 @@ Mute any category you don't care about. It's still detected and listed, just qui
 - **Pins only when you say yes.** One device at a time, AES-GCM encrypted behind a PIN. Off by default, and detection never asks for the PIN.
 
 ## The full build
+
+<p align="center">
+  <img src="docs/img/hero-pumpkin.jpg" width="420" alt="A SignalSweep in its 3D-printed case standing on a log beside a pumpkin, antenna up, LED bar lit red">
+</p>
 
 | Part | What you get |
 |---|---|
@@ -150,7 +162,7 @@ local law isn't everyone's. Go and read it.
 
 | Board | Hears | Price | How you flash it |
 |---|---|---|---|
-| Seeed Studio XIAO ESP32-C5 | 2.4 **and** 5 GHz | ~$13 | Web flasher, `install.py`, or source |
+| Seeed Studio XIAO ESP32-C5 | 2.4 **and** 5 GHz | — | Web flasher, `install.py`, or source |
 | [Seeed Studio XIAO ESP32-S3](https://www.seeedstudio.com/XIAO-ESP32S3-p-5627.html) | 2.4 GHz | ~$15 | Web flasher, `install.py`, or source |
 
 Plus a USB-C cable. Both boards run the same detector and the same app; the C5

@@ -74,6 +74,24 @@ def main():
     assert "default-src 'none'" in py.group(1), "report.html lost its no-network CSP"
     assert "pull.html" in (ROOT / "site/assemble.sh").read_text() and "pull.py" in (ROOT / "site/assemble.sh").read_text()
 
+    # One set of brand colours. The app and the flasher link signalsweep.css; pull.html
+    # and report.html load nothing, so they inline it verbatim, and no copy may drift.
+    def norm(t):
+        return t.replace("\r\n", "\n").strip()
+    tokens = norm((ROOT / "site/signalsweep.css").read_text(encoding="utf-8"))
+    assert norm((ROOT / "app/public/signalsweep.css").read_text(encoding="utf-8")) == tokens, \
+        "app/public/signalsweep.css and site/signalsweep.css differ"
+    assert tokens in norm(pull) and tokens in norm(py.group(1)), \
+        "pull.html / report.html no longer inline signalsweep.css verbatim"
+    assemble = (ROOT / "site/assemble.sh").read_text()
+    assert "site/signalsweep.css" in assemble and "site/favicon-32.png" in assemble, "assemble.sh dropped a brand file"
+    # No raw hex colours in the app outside the token file. The LED theme swatches
+    # (the bar's own colours) and the easter egg's phosphor terminal are deliberate.
+    app_src = (ROOT / "app/index.html").read_text(encoding="utf-8") + (ROOT / "app/public/app.js").read_text(encoding="utf-8")
+    app_src = re.sub(r"\.sw-[a-z]+ *\{[^}]*\}|\.egg-term[^{]*\{[^}]*\}|&#\d+;|href=\"#[^\"]*\"", "", app_src)
+    stray = sorted(set(re.findall(r"(?<![\w&])#(?:[0-9a-fA-F]{6}|[0-9a-fA-F]{3})(?![\w-])", app_src)))
+    assert not stray, f"raw hex colours in the app (use a --ss-* token): {stray}"
+
     parse = install.board_from_chip_output
     assert parse("Chip type:          ESP32-C5 (QFN32) (revision v1.0)") == "c5"   # esptool 5
     assert parse("Chip is ESP32-S3 (QFN56) (revision v0.2)") == "s3"              # esptool 4

@@ -33,7 +33,7 @@ case "${1:-}" in
   s3) stage tier1 "" "${PLATFORMIO_CORE_DIR:-$HOME/.platformio}" ;;
   c5) stage c5 "c5-" "${PLATFORMIO_CORE_DIR:?set PLATFORMIO_CORE_DIR to the C5 core dir}" ;;
   site)
-    cp site/index.html site/pull.html site/manifest.json site/favicon.svg pull.py _site/
+    cp site/index.html site/pull.html site/manifest.json site/favicon.svg site/favicon-32.png site/signalsweep.css site/touch-180.png site/lockup.svg site/share-tech-mono.woff2 site/share-tech-mono-OFL.txt pull.py _site/
     rm -rf _site/app && cp -r app/dist _site/app
     # Fail loudly if the manifest references a file we did not produce.
     python - <<'PY'

@@ -4,6 +4,75 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Changed -- One brand everywhere: SignalSweep brand kit v1.0
+
+The app, the web flasher, the data-pull page and its `report.html` now follow
+the SignalSweep brand kit.
+
+- **Logo.** The header's old radar-in-a-circle icon (a full circle with a hand
+  reads as a clock) and the hand-typed two-colour "Signal**Sweep**" wordmarks
+  are gone; the app, flasher and pull page show the kit's outlined lockup. New
+  favicon (the small mark) and home-screen icon on the app and site, inlined as
+  a `data:` URI in `pull.html`. New Android launcher icon and splash screen.
+- **Colour.** Every page carries the same `--ss-*` token block, and `app.js`
+  reads category colours from it instead of hard-coding hex (canvas and Leaflet
+  resolve the token at draw time, since they cannot take `var()`). Drift fixed:
+  body cam `#ff5a1a` is now `#ff7a1a` like everywhere else, the flasher's
+  tracker purple is now the app's pink, every green is `#3ddc84`, the older
+  cyans and the purple background glow are gone.
+- **Type.** Share Tech Mono for headings, labels and readouts (MACs, dBm);
+  paragraphs and controls keep the system font. The font ships *with* the app
+  and site (`share-tech-mono.woff2`, OFL licence beside it, credited in
+  `CREDITS.md`) and is inlined into `pull.html` -- never a hosted font service.
+  `pull.html`'s CSP now allows `img-src data:` and `font-src data:` for that;
+  `connect-src` and `default-src` stay `'none'`.
+- **`report.html`** is dark-only now, in brand colours. Its light-mode palette
+  needed a second, darker green the brand does not have.
+- **Name.** Page titles read just "SignalSweep". Machine identifiers are
+  unchanged on purpose: the Android app id (changing it would orphan every
+  encrypted pin store), release asset names, export filenames, NVS namespaces
+  and the default BLE name `SignalSweep` the app searches for.
+- Dead CSS from the old mode-selector UI (mode cards, radar blip, status badge)
+  was deleted along the way; nothing referenced it.
+- **README and flasher, rewritten loud.** The README opens on a new banner (the
+  lockup over the Sweep, Survey and Settings tabs, shot on the bench with the
+  emitter, so every row is staged) and gains Site Survey, per-device Ignore,
+  one-row dual-band routers and "cop-only gear beeps on sight". The flasher page
+  had not moved since the C5 landed; it now covers the same ground, plus a
+  "Straight answers" block that says plainly what it can't hear (a deployed
+  Flock camera on LTE, an AirTag beside its owner).
+- **Connect modal.** Its heading spelled "Connect SignalSweep" in a white-to-cyan
+  gradient in the logo's own typeface, a home-made wordmark. It reads "Connect
+  your board" in plain text now.
+- **Fixed: a sliver of the hidden toast showed at the top of the screen.** It
+  was parked at `-150%` of its own height from `top: 2rem`, which left its
+  bottom edge and glow on screen at all times. A screenshot caught it.
+
+### Changed -- Brand pass, round two: one token file, line icons, cyan for "selected"
+
+- **One token file.** The app and the flasher now link the kit's
+  `signalsweep.css` byte for byte instead of carrying their own copies;
+  `pull.html` and `report.html` (which load nothing) inline it verbatim.
+  `test_distribution.py` fails if any copy drifts, and fails on any raw hex
+  colour in the app outside two deliberate exceptions: the LED theme swatches
+  (the bar's own colours) and the easter egg's phosphor terminal. Neutrals the
+  kit doesn't name are mixed from its tokens (`color-mix`), never new hex.
+- **No emoji in the UI.** Settings, the Alerts rows, category labels on rows,
+  the map, Survey, toasts and the flasher's beep list use one set of line
+  icons in the bottom tab bar's style (an inline SVG sprite, `ico(name)` in
+  `app.js`). A category icon takes its category colour; everything else is
+  muted grey, cyan when active.
+- **Green means live or success, nothing else.** Primary buttons and
+  selections (the Survey duration, Capture, theme chips, segmented pickers, an
+  active Hunt) are cyan. On/Off switches, the connection dot and "OK" badges
+  stay green. The Wi-Fi radio badge was green for no reason; it's grey now.
+- **Header logo.** It drew about 25px of artwork because the lockup SVG carries
+  its own clear space; the box is 58px now, so the logo itself is 36px+.
+- **Logo files ship exactly as the kit has them**, including the signed
+  content credential each SVG carries (Anthropic's, recording that Claude
+  made the file). `.gitattributes` marks `*.svg` `-text` so a line-ending
+  conversion can't rewrite those bytes. `favicon-32.png` joins the SVG favicon.
+
 ### Added -- Self-test refuses hosted font services
 
 `node app/selftest.js` now fails if the app (`index.html`, `app.js`,
