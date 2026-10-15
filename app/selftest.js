@@ -509,6 +509,8 @@ if (!/UsbSerial\.hasPermission\(/.test(appSrc)) usbFail.push('connect no longer 
 if (!/addListener\('error'[\s\S]{0,400}?onDeviceDisconnected\(\)/.test(appSrc)) usbFail.push('USB stream error no longer disconnects');
 if (!/sendCommand\(\{ raw: 'CMD:CAP:START:' \+ capReqSecs \+ \(capToSd \? ':SD' : ''\) \}\);\s*capArmAck\(false\)/.test(appSrc)) usbFail.push('capture start watchdog not armed');
 if (!/function handleCapStat\(cap\) \{\s*(\/\/[^\n]*\n\s*)*if \(!capturing\) return;\s*clearTimeout\(capAckTimer\)/.test(appSrc)) usbFail.push('cap frames no longer disarm the watchdog');
+// A board that reboots mid-capture goes silent; the app froze on its timer until force-quit.
+if (!/if \(!cap\.done\) capAckTimer = setTimeout\([\s\S]{0,300}?capAbort\([\s\S]{0,300}?CAP_STALL_MS\)/.test(appSrc)) usbFail.push('capture stall watchdog gone (frozen timer on a board reboot)');
 if (!/function onDeviceDisconnected\(\)[\s\S]{0,1200}?if \(capturing\) capAbort\(/.test(appSrc)) usbFail.push('disconnect no longer ends a running capture');
 // Back used to exitApp(): the page died, the BLE link and USB port did not, and
 // the reopened app could not re-adopt them (reconcile queried before initialize).
