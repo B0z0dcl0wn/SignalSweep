@@ -115,7 +115,11 @@ static const char *SIG_FILE_PATH = "/data/signatures.json";
 //        ALPR"), Neology, WatchGuard Video, Digital Ally. List only (60):
 //        Motorola Solutions (+2 prefixes), Verkada, Avigilon Alta, Axis
 //        (+2), Ubicquia. Fleet routers stay at 30.
-#define SIG_SCHEMA_VERSION 16
+//   v17: attack-firmware default SSIDs, each read from the tool's own source
+//        (70, Hacking gear): Bruce "BruceNet", GhostESP "GhostNet", Marauder's
+//        updater "MarauderOTA", and the beacon-spam lists "01 Never gonna give
+//        you up" (Marauder + Bruce Rick Roll) and "Yell BRUCE for Password".
+#define SIG_SCHEMA_VERSION 17
 
 static SemaphoreHandle_t watchersMutex = NULL;
 static bool watchersRunning = false;
@@ -476,6 +480,14 @@ static void ensureSignaturesFileExists() {
             addRule("OUI-Spy Foxhunter AP", HACKING_GEAR_CATEGORY, "", "", "", "", 70, "foxhunter");
             addRule("OUI-Spy capture AP (PCAP / BLE Sniff)", HACKING_GEAR_CATEGORY, "", "", "", "", 70, "ouispy-");
             addRule("'pwned' SSID (ESP deauther default)", HACKING_GEAR_CATEGORY, "", "", "", "", 60, "pwned");
+            // Attack-firmware factory SSIDs, from each project's source. Only
+            // the defaults: a renamed AP is not caught. The joke-SSID spam
+            // lists are skipped except one line no home router carries.
+            addRule("Bruce default AP", HACKING_GEAR_CATEGORY, "", "", "", "", 70, "BruceNet");
+            addRule("GhostESP default AP", HACKING_GEAR_CATEGORY, "", "", "", "", 70, "GhostNet");
+            addRule("Marauder OTA updater AP", HACKING_GEAR_CATEGORY, "", "", "", "", 70, "MarauderOTA");
+            addRule("Rick Roll beacon spam (Marauder / Bruce)", HACKING_GEAR_CATEGORY, "", "", "", "", 70, "01 Never gonna give you up");
+            addRule("Bruce joke-SSID beacon spam", HACKING_GEAR_CATEGORY, "", "", "", "", 70, "Yell BRUCE for Password");
 
             // Trackers (planted-on-you category). Keyed on service UUID, which
             // the matcher already handles. AirTag is matched in code (its Find

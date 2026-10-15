@@ -812,7 +812,7 @@ for (const call of defaults.match(/addRule\([^;]*\);/g) || []) {
     const hasLux = /0x0D53/i.test(call);
     if (hasFd5f !== hasLux) regFail.push(`glasses rule states fd5f/0x0D53 without the other: ${call.replace(/\s+/g, ' ')}`);
 }
-if (!/#define SIG_SCHEMA_VERSION 16\b/.test(wwSrc)) regFail.push('SIG_SCHEMA_VERSION not bumped to 16');
+if (!/#define SIG_SCHEMA_VERSION 17\b/.test(wwSrc)) regFail.push('SIG_SCHEMA_VERSION not bumped to 17');
 // v14/v15, the "no consumer owns this" rule: surveillance-only vendors beep on
 // their registered address alone (70). At 60 two Axon APs at a traffic stop
 // listed and stayed silent (field, 2026-10-12).
@@ -863,7 +863,7 @@ for (const oui of ['80:e1:26', '80:e1:27']) {
         regFail.push(`${oui} rule must be Hacking gear, weight 60, named STM32WB, not "Flipper...": ${call.replace(/\s+/g, ' ')}`);
 }
 // The attack-gear defaults exist, all under "Hacking gear".
-for (const want of ['"3081"', '"3082"', '"3083"', '"0x0E29"', '"0c:fa:22"', '"flipper"', '"Pineapple_"', '"pwned"', '"oui-spy"', '"snoopuntothem"', '"foxhunter"', '"ouispy-"'])
+for (const want of ['"3081"', '"3082"', '"3083"', '"0x0E29"', '"0c:fa:22"', '"flipper"', '"Pineapple_"', '"pwned"', '"oui-spy"', '"snoopuntothem"', '"foxhunter"', '"ouispy-"', '"BruceNet"', '"GhostNet"', '"MarauderOTA"', '"01 Never gonna give you up"', '"Yell BRUCE for Password"'])
     if (!new RegExp(`addRule\\([^;]*HACKING_GEAR_CATEGORY[^;]*${want.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i').test(defaults))
         regFail.push(`no "Hacking gear" default rule carries ${want}`);
 if (regFail.length) { console.log('FAIL: registry:', regFail); process.exit(1); }
