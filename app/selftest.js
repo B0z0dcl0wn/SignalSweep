@@ -590,6 +590,8 @@ if (collectAt < 0 || writeAt < 0 || writeAt < collectAt ||
     !wwSrc.slice(collectAt, writeAt).includes('xSemaphoreGive(watchersMutex)')) {
     logFail.push('alert log flush no longer happens after xSemaphoreGive -- flash I/O under the detection mutex');
 }
+// A fitted card logs every alert whatever `log` says; `log` gates the flash ring only.
+if (!/if \(alertLogOn\) alertLogWrite\(p\.mac/.test(wwSrc) || /if \(alertLogOn\) t\.logPending/.test(wwSrc)) logFail.push('the card log follows the log switch again (a drive with log off records nothing)');
 if (!/alertLogTick\(\);/.test(wwSrc)) logFail.push('the 1 Hz task no longer ticks the log clock (millis rollover would rewind the ordering key)');
 
 if (logFail.length) { console.log('FAIL: alert log:', logFail); process.exit(1); }
