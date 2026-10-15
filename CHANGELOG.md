@@ -4,6 +4,29 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Fixed -- Site Survey froze on its timer when the board went quiet
+
+A field capture sat at a full countdown with no error until the app was
+force-quit and the board power-cycled. Bench stress (back-to-back captures on
+the C5) found two board failures that both stop the 1 Hz `{"cap"}` frames:
+
+- **The open C5 BT-controller assert** (`bt.c:562`), 1 start in 11 on a phone.
+  Decoded: `r_ble_ll_task` -> `r_ble_lll_recycle_sch_in_task` -> `r_ll_assert`,
+  the controller failing to re-insert a preempted scan event into its schedule.
+  All Espressif ROM/closed code; the board reboots and resumes detecting.
+- **A hang at the end of a capture** (1 in 137): no output, USB not even read,
+  dead until power was pulled. Nothing fired because the C5 core's task
+  watchdog watches no task of ours.
+
+Fixes:
+- **App:** any 6 s gap in the capture frames ends the capture and says so
+  ("The board stopped answering mid-capture. What reached the card is kept.").
+  It cannot tell a reboot from a hang, so it does not claim either.
+- **C5:** `loop()` is under a 30 s task watchdog. A hang now panics, writes a
+  coredump naming where it stuck and reboots (bench: `CMD:HANG` in a
+  `SWEEP_CRASH_TEST` build fires at 30.0 s, `reset` 6, reason recorded). The
+  longest legitimate `loop()` block is a bulk reply, ~3 s. `selftest.js` pins it.
+
 ### Added -- Drone brand names and a tap-to-open Remote ID card
 
 **First real drone in the field (2026-10-14).** All three bench detectors (S3,

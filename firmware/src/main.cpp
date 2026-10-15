@@ -12,6 +12,9 @@
 #include "alert_log.h"
 #include "sd_store.h"
 #include "crash_report.h"
+#if CONFIG_IDF_TARGET_ESP32C5
+#include <esp_task_wdt.h>
+#endif
 
 #if CONFIG_IDF_TARGET_ESP32C5
 #define BOOT_BUTTON_PIN BOOT_PIN   // GPIO28 on the XIAO ESP32-C5 (esp32-hal.h)
@@ -79,6 +82,16 @@ void setup() {
 
     // 2. Persist hardware tier and start the always-on detector.
     modeManagerInit();
+
+#if CONFIG_IDF_TARGET_ESP32C5
+    // A C5 hung at the end of a capture (2026-10-14): no output, USB not even
+    // read, dead until power was pulled -- the core's TWDT watches no task of
+    // ours, so nothing fired. A stuck loop() now panics (coredump says where)
+    // and reboots. 30 s: the longest legit loop() block (a bulk reply) is ~3 s.
+    esp_task_wdt_config_t wdt = { .timeout_ms = 30000, .idle_core_mask = 0, .trigger_panic = true };
+    esp_task_wdt_reconfigure(&wdt);
+    enableLoopWDT();
+#endif
 }
 
 // Hold BOOT for this long to wipe the device back to factory defaults.
@@ -196,6 +209,8 @@ void loop() {
             // The shape of the C5's bt.c:562 panic: an abort() carries a panic
             // message (crash "reason"); an illegal instruction does not.
             abort();
+        } else if (cmd == "CMD:HANG") {
+            for (;;) delay(1000);   // a blocked loop(): the C5 loop watchdog must fire
 #endif
         } else if (cmd.length() > 0) {
             processIncomingCommand(cmd);

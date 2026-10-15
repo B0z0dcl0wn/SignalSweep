@@ -932,6 +932,9 @@ const crashScan = ['main.cpp', 'ble_serial.cpp', 'mode_watchers_watch.cpp', 'cra
     .map(f => { try { return readFileSync(new URL('../firmware/src/' + f, import.meta.url), 'utf8'); } catch { return ''; } })
     .join('\n').replace(/\r\n/g, '\n')
     .replace(/^[ \t]*#ifdef[ \t]+SWEEP_CRASH_TEST\b[\s\S]*?^[ \t]*#endif\b/gm, '');
+if (/CMD:HANG/.test(crashScan)) crFail.push('CMD:HANG exists outside #ifdef SWEEP_CRASH_TEST -- it would ship');
+// A C5 hung at the end of a capture until power was pulled: loop() must stay watched.
+if (!/esp_task_wdt_reconfigure\(&wdt\);\s*enableLoopWDT\(\);/.test(crashScan)) crFail.push('the C5 loop() watchdog is gone (a hang needs a power pull again)');
 if (/CMD:CRASH/.test(crashScan)) crFail.push('CMD:CRASH exists outside #ifdef SWEEP_CRASH_TEST -- it would ship');
 const pioIni = readFileSync(new URL('../firmware/platformio.ini', import.meta.url), 'utf8');
 if (/SWEEP_CRASH_TEST/.test(pioIni)) crFail.push('platformio.ini sets SWEEP_CRASH_TEST -- the crash hook would ship');
