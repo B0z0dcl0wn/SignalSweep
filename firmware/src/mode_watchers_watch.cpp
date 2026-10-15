@@ -683,8 +683,9 @@ static void noteAlertForTarget(WatcherTargetInfo& t, int bestWeight, const Strin
         // for a muted category and during a hunt, so what reaches flash is what
         // you actually heard. Only the flag is set here -- this runs on both
         // radio callbacks, and a LittleFS write is tens of milliseconds. The
-        // 1 Hz task does the I/O.
-        if (alertLogOn) t.logPending = true;
+        // 1 Hz task does the I/O. Always flagged: a fitted card logs every
+        // alert (user decision 2026-10-14); `log` gates only the flash ring.
+        t.logPending = true;
     }
 }
 
@@ -2453,7 +2454,7 @@ static void watchersPeriodicTask(void *pvParameters) {
         // Flash, then the optional card, deliberately outside the mutex and off
         // both radio callbacks. Typically zero or one record per second.
         for (const auto& p : toLog) {
-            alertLogWrite(p.mac, p.cat, p.rule.c_str(), p.rssi);
+            if (alertLogOn) alertLogWrite(p.mac, p.cat, p.rule.c_str(), p.rssi);
             SdLogFields f;
             f.secs = alertLogSecs();
             memcpy(f.mac, p.mac, 6);

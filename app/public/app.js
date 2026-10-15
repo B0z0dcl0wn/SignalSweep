@@ -2946,7 +2946,9 @@
             const note = document.getElementById('log-note');
             if (note) {
                 if (!on) {
-                    note.textContent = 'Off. The board keeps no record of what it beeped at.';
+                    note.textContent = 'Off. ' + (sdState === 1
+                        ? 'The SD card still logs every alert; this is the copy in the board\'s own memory.'
+                        : 'Without an SD card the board keeps no record of what it beeped at.');
                 } else {
                     const pct = Math.min(100, Math.round((logHeld / LOG_MAX_RECS) * 1000) / 10);
                     note.textContent = 'Recording every alert on the board, with or without the phone. '

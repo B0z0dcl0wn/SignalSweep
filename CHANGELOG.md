@@ -4,6 +4,14 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Changed -- A fitted SD card logs every alert
+
+The card log used to follow the "Log alerts on the board" switch, which is off by
+default, so a drive with a card in could come home with no log at all. Now a
+fitted card records every alert the buzzer sounds (same rules: a muted category
+or a hunt logs nothing); the switch controls only the copy in the board's own
+memory. Settings says so when the switch is off and a card is in.
+
 ### Fixed -- A new boot no longer appends to an old card log
 
 The card log was named by boot number (`LOG<boot>.CSV`). The boot counter lives
