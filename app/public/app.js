@@ -1577,6 +1577,7 @@
         // nothing on this side ever gave up. Any {"cap"} frame (the board acks
         // immediately) disarms it; silence gets one resend, then an abort.
         let capAckTimer = null;
+        const CAP_STALL_MS = 6000;
         function capArmAck(retried) {
             clearTimeout(capAckTimer);
             capAckTimer = setTimeout(() => {
@@ -1624,6 +1625,14 @@
             if (!capturing) return;
             clearTimeout(capAckTimer); capAckTimer = null;
             if (cap.error) { capAbort('Capture: ' + cap.error, !capToSd); return; }
+            // Stall watchdog: the board sends a frame every second. Silence
+            // means it rebooted (C5 BT-controller assert) or hung (2026-10-14);
+            // without this the timer froze with no error until a force-quit.
+            if (!cap.done) capAckTimer = setTimeout(() => {
+                if (capturing) capAbort(capToSd
+                    ? 'The board stopped answering mid-capture. What reached the card is kept.'
+                    : 'The board stopped answering mid-capture. The partial capture was kept.', false);
+            }, CAP_STALL_MS);
             if ('started' in cap) { if (cap.file) capSdFile = cap.file; return; }
             capStat.wifi = cap.wifi || 0;
             capStat.ble = cap.ble || 0;

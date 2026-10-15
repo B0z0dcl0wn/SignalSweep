@@ -509,6 +509,8 @@ if (!/UsbSerial\.hasPermission\(/.test(appSrc)) usbFail.push('connect no longer 
 if (!/addListener\('error'[\s\S]{0,400}?onDeviceDisconnected\(\)/.test(appSrc)) usbFail.push('USB stream error no longer disconnects');
 if (!/sendCommand\(\{ raw: 'CMD:CAP:START:' \+ capReqSecs \+ \(capToSd \? ':SD' : ''\) \}\);\s*capArmAck\(false\)/.test(appSrc)) usbFail.push('capture start watchdog not armed');
 if (!/function handleCapStat\(cap\) \{\s*(\/\/[^\n]*\n\s*)*if \(!capturing\) return;\s*clearTimeout\(capAckTimer\)/.test(appSrc)) usbFail.push('cap frames no longer disarm the watchdog');
+// A board that reboots mid-capture goes silent; the app froze on its timer until force-quit.
+if (!/if \(!cap\.done\) capAckTimer = setTimeout\([\s\S]{0,300}?capAbort\([\s\S]{0,300}?CAP_STALL_MS\)/.test(appSrc)) usbFail.push('capture stall watchdog gone (frozen timer on a board reboot)');
 if (!/function onDeviceDisconnected\(\)[\s\S]{0,1200}?if \(capturing\) capAbort\(/.test(appSrc)) usbFail.push('disconnect no longer ends a running capture');
 // Back used to exitApp(): the page died, the BLE link and USB port did not, and
 // the reopened app could not re-adopt them (reconcile queried before initialize).
@@ -930,6 +932,9 @@ const crashScan = ['main.cpp', 'ble_serial.cpp', 'mode_watchers_watch.cpp', 'cra
     .map(f => { try { return readFileSync(new URL('../firmware/src/' + f, import.meta.url), 'utf8'); } catch { return ''; } })
     .join('\n').replace(/\r\n/g, '\n')
     .replace(/^[ \t]*#ifdef[ \t]+SWEEP_CRASH_TEST\b[\s\S]*?^[ \t]*#endif\b/gm, '');
+if (/CMD:HANG/.test(crashScan)) crFail.push('CMD:HANG exists outside #ifdef SWEEP_CRASH_TEST -- it would ship');
+// A C5 hung at the end of a capture until power was pulled: loop() must stay watched.
+if (!/esp_task_wdt_reconfigure\(&wdt\);\s*enableLoopWDT\(\);/.test(crashScan)) crFail.push('the C5 loop() watchdog is gone (a hang needs a power pull again)');
 if (/CMD:CRASH/.test(crashScan)) crFail.push('CMD:CRASH exists outside #ifdef SWEEP_CRASH_TEST -- it would ship');
 const pioIni = readFileSync(new URL('../firmware/platformio.ini', import.meta.url), 'utf8');
 if (/SWEEP_CRASH_TEST/.test(pioIni)) crFail.push('platformio.ini sets SWEEP_CRASH_TEST -- the crash hook would ship');
