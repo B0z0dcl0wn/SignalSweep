@@ -4,6 +4,21 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Fixed -- Tag flood no longer trips on passing AirTags
+
+- **A tag flood only counts addresses heard at -80 dBm or stronger**
+  (`TAGFLOOD_MIN_RSSI`, the same floor BLE popup spam uses). Every field capture
+  we hold (178) was replayed through the firmware's own `attack_detectors.h`:
+  8 drives tripped the Apple Find My flood on real AirTags in passing cars, each
+  heard a couple of times at -81 to -99 dBm, which looks exactly like a
+  throwaway fake. With the floor, none trips; at -85 one still does, so the
+  margin is one 5 dB step. Weak adverts still count as hits, so a real tag at
+  the edge of range never looks short-lived. A spammer close enough to matter
+  is well above the floor; no capture of a real one exists yet, so the floor is
+  a tuning knob (`-D` overrides it for a bench build).
+- **BLE popup spam held:** 0 of the same 178 captures trip it (peak 2 distinct
+  addresses against a threshold of 8). Not changed.
+
 ### Added -- "Yes, always" pins, and pins land where the device was seen
 
 - **The pin prompt has a fourth answer, "Yes -- always for <category>".** Every

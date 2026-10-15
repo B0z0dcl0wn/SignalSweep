@@ -132,36 +132,37 @@ static void test_titles_keyword_clean() {
         for (const char* k : kw) assert(strstr(lc, k) == nullptr); }
 }
 
+#define NEAR (-60)
 static void addrs(TagFloodState* st, int n, uint8_t base, uint32_t t0, uint32_t gap) {
-    for (int i = 0; i < n; i++) tagFloodNote(st, mac((uint8_t)(base + i)), t0 + i * gap);
+    for (int i = 0; i < n; i++) tagFloodNote(st, mac((uint8_t)(base + i)), NEAR, t0 + i * gap);
 }
 static void test_tagflood_stable_never_evidence() {
     TagFloodState st; memset(&st, 0, sizeof(st));
-    for (int i = 0; i < 1800; i++) tagFloodNote(&st, mac(1), 1000 + i * 2000);  // 1 h at 2 s
+    for (int i = 0; i < 1800; i++) tagFloodNote(&st, mac(1), NEAR, 1000 + i * 2000);  // 1 h at 2 s
     assert(st.total == 0 && !tagFloodActive(&st, 1000 + 1800 * 2000));
 }
 static void test_tagflood_six_trips_five_doesnt() {
     TagFloodState st; memset(&st, 0, sizeof(st));
     addrs(&st, 5, 10, 1000, 10000);                    // 5 one-shot addresses
-    tagFloodNote(&st, mac(200), 200000);               // sweep: all 5 quiet >= 30 s
+    tagFloodNote(&st, mac(200), NEAR, 200000);               // sweep: all 5 quiet >= 30 s
     assert(st.total == 5 && !tagFloodActive(&st, 200000));
     TagFloodState s2; memset(&s2, 0, sizeof(s2));
     addrs(&s2, 6, 10, 1000, 10000);
-    tagFloodNote(&s2, mac(200), 200000);
+    tagFloodNote(&s2, mac(200), NEAR, 200000);
     assert(s2.total == 6 && tagFloodActive(&s2, 200000));
 }
 static void test_tagflood_five_no_trip() {             // spread beyond the 5-min window
     TagFloodState st; memset(&st, 0, sizeof(st));
     // one one-shot passer every 70 s; each is swept by the next, so 6 stamps
     // span 350 s > WINDOW and it never trips
-    for (int i = 0; i < 12; i++) tagFloodNote(&st, mac((uint8_t)(10 + i)), 1000 + i * 70000);
+    for (int i = 0; i < 12; i++) tagFloodNote(&st, mac((uint8_t)(10 + i)), NEAR, 1000 + i * 70000);
     assert(st.total == 11);
     assert(!tagFloodActive(&st, 1000 + 12 * 70000));
 }
 static void test_tagflood_hold_expires() {
     TagFloodState st; memset(&st, 0, sizeof(st));
     addrs(&st, 6, 10, 1000, 1000);
-    tagFloodNote(&st, mac(200), 60000);
+    tagFloodNote(&st, mac(200), NEAR, 60000);
     assert(tagFloodActive(&st, 60000));
     // Evidence is dated when the address went quiet (last + QUIET), not when
     // the lazy sweep noticed: the last fake was heard at 6000.
@@ -179,7 +180,7 @@ static void test_tagflood_stale_ring_no_retrip() {
     addrs(&st, 45, 10, 1000, 4000);                    // 3 min, one fake per 4 s
     assert(tagFloodActive(&st, 1000 + 44 * 4000));
     uint32_t later = 1000 + 44 * 4000 + 3u * 3600u * 1000u;
-    tagFloodNote(&st, mac(250), later);                // a real tag, 3 h on
+    tagFloodNote(&st, mac(250), NEAR, later);                // a real tag, 3 h on
     assert(!tagFloodActive(&st, later));
 }
 // Review finding: one weak real tag heard every 44 s went quiet >= 30 s each
@@ -187,8 +188,8 @@ static void test_tagflood_stale_ring_no_retrip() {
 static void test_tagflood_same_key_counts_once() {
     TagFloodState st; memset(&st, 0, sizeof(st));
     for (uint32_t t = 1000; t < 1000 + 600000; t += 2000) {
-        tagFloodNote(&st, mac(1), t);                  // strong stable tag
-        if ((t - 1000) % 44000 == 0) tagFloodNote(&st, mac(2), t);   // weak one
+        tagFloodNote(&st, mac(1), NEAR, t);                  // strong stable tag
+        if ((t - 1000) % 44000 == 0) tagFloodNote(&st, mac(2), NEAR, t);   // weak one
         assert(!tagFloodActive(&st, t));
     }
 }
@@ -201,8 +202,24 @@ static void test_tagflood_wrap_safe() {
     TagFloodState st; memset(&st, 0, sizeof(st));
     uint32_t t0 = 0xFFFFFFFFu - 20000;
     addrs(&st, 6, 10, t0, 1000);
-    tagFloodNote(&st, mac(200), t0 + 60000);           // wraps
+    tagFloodNote(&st, mac(200), NEAR, t0 + 60000);           // wraps
     assert(tagFloodActive(&st, t0 + 60000));
+}
+
+// 2026-10-15 replay: drives past real AirTags tripped on short-lived addresses
+// at -81..-99. A weak flood must not trip; one strong advert makes it count.
+static void test_tagflood_weak_fakes_ignored() {
+    TagFloodState st; memset(&st, 0, sizeof(st));
+    for (int i = 0; i < 40; i++) tagFloodNote(&st, mac((uint8_t)(10 + i)), TAGFLOOD_MIN_RSSI - 1, 1000 + i * 5000);
+    tagFloodNote(&st, mac(200), NEAR, 400000);
+    assert(!tagFloodActive(&st, 400000));
+    TagFloodState s2; memset(&s2, 0, sizeof(s2));
+    for (int i = 0; i < 6; i++) {
+        tagFloodNote(&s2, mac((uint8_t)(10 + i)), -95, 1000 + i * 1000);
+        tagFloodNote(&s2, mac((uint8_t)(10 + i)), TAGFLOOD_MIN_RSSI, 1500 + i * 1000);
+    }
+    tagFloodNote(&s2, mac(200), NEAR, 60000);
+    assert(tagFloodActive(&s2, 60000));
 }
 
 int main() {
@@ -225,6 +242,7 @@ int main() {
     test_tagflood_wrap_safe();
     test_tagflood_stale_ring_no_retrip();
     test_tagflood_same_key_counts_once();
+    test_tagflood_weak_fakes_ignored();
     printf("attack_detectors_test: all passed\n");
     return 0;
 }

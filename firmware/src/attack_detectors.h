@@ -157,6 +157,11 @@ static inline uint32_t bleSpamNote(BleSpamState* st, uint64_t mac, int rssi, uin
 // next advert of that type, maybe hours later, and dating them "now" re-tripped
 // the gate on the first real tag. One address counts once per WINDOW_MS, or a
 // weak real tag heard every ~40 s counts on every gap.
+// Only an address heard at TAGFLOOD_MIN_RSSI or stronger can be evidence:
+// replaying 178 captures (2026-10-15), 8 drives tripped on real AirTags in
+// passing cars, and their short-lived addresses were nearly all -81..-99 dBm;
+// at -80 no capture holds more than 4 in a window. Weak adverts still count as
+// hits, so a real tag at the edge of range never looks short-lived.
 #define TAGFLOOD_TYPES      4          // Apple Find My, Google FMDN, Samsung, Tile
 #define TAGFLOOD_ADDRS      32
 #define TAGFLOOD_EVIDENCE   6
@@ -165,8 +170,11 @@ static inline uint32_t bleSpamNote(BleSpamState* st, uint64_t mac, int rssi, uin
 #define TAGFLOOD_WINDOW_MS  300000u
 #define TAGFLOOD_HOLD_MS    300000u
 #define TAGFLOOD_TITLE      "Tag flood"
+#ifndef TAGFLOOD_MIN_RSSI                // -D overrides it for a bench build
+#define TAGFLOOD_MIN_RSSI   (-80)        // tuning knob: fitted to drive captures, no real spammer capture yet
+#endif
 
-typedef struct { uint8_t used; uint8_t hits; uint64_t key; uint32_t last; } TagFloodAddr;
+typedef struct { uint8_t used; uint8_t hits; int8_t best; uint64_t key; uint32_t last; } TagFloodAddr;
 typedef struct {
     TagFloodAddr a[TAGFLOOD_ADDRS];
     uint32_t ev[TAGFLOOD_EVIDENCE]; uint64_t evKey[TAGFLOOD_EVIDENCE]; uint8_t evN;
@@ -194,22 +202,30 @@ static inline void tagFloodEvidence(TagFloodState* st, uint64_t key, uint32_t st
     if (oldest - newest <= TAGFLOOD_WINDOW_MS) st->tripped = 1;
 }
 
-static inline void tagFloodNote(TagFloodState* st, uint64_t key, uint32_t now) {
+#define TAGFLOOD_FAKE(e) ((e)->hits <= TAGFLOOD_MAX_HITS && (e)->best >= TAGFLOOD_MIN_RSSI)
+static inline void tagFloodNote(TagFloodState* st, uint64_t key, int rssi, uint32_t now) {
+    if (rssi < -128) rssi = -128;
+    if (rssi > 127) rssi = 127;
     int hit = -1, empty = -1, oldest = -1;
     for (int i = 0; i < TAGFLOOD_ADDRS; i++) {
         TagFloodAddr* e = &st->a[i];
         if (!e->used) { if (empty < 0) empty = i; continue; }
         if (e->key == key) { hit = i; continue; }
         if ((uint32_t)(now - e->last) >= TAGFLOOD_QUIET_MS) {
-            if (e->hits <= TAGFLOOD_MAX_HITS) tagFloodEvidence(st, e->key, e->last + TAGFLOOD_QUIET_MS, now);
+            if (TAGFLOOD_FAKE(e)) tagFloodEvidence(st, e->key, e->last + TAGFLOOD_QUIET_MS, now);
             e->used = 0; if (empty < 0) empty = i; continue;
         }
         if (oldest < 0 || (uint32_t)(now - e->last) > (uint32_t)(now - st->a[oldest].last)) oldest = i;
     }
-    if (hit >= 0) { st->a[hit].last = now; if (st->a[hit].hits < 255) st->a[hit].hits++; return; }
+    if (hit >= 0) {
+        TagFloodAddr* h = &st->a[hit];
+        h->last = now; if (h->hits < 255) h->hits++;
+        if (rssi > h->best) h->best = (int8_t)rssi;
+        return;
+    }
     int put = empty;
-    if (put < 0) { put = oldest; if (st->a[put].hits <= TAGFLOOD_MAX_HITS) tagFloodEvidence(st, st->a[put].key, now, now); }
-    st->a[put].used = 1; st->a[put].hits = 1; st->a[put].key = key; st->a[put].last = now;
+    if (put < 0) { put = oldest; if (TAGFLOOD_FAKE(&st->a[put])) tagFloodEvidence(st, st->a[put].key, now, now); }
+    st->a[put].used = 1; st->a[put].hits = 1; st->a[put].best = (int8_t)rssi; st->a[put].key = key; st->a[put].last = now;
 }
 
 // ponytail: expiry is checked lazily, on the next advert of this type; a type
