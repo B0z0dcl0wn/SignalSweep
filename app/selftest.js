@@ -637,11 +637,13 @@ console.log('[signalsweep self-test] alert log record + write path: ok');
     const ad = readFileSync(new URL('../firmware/src/attack_detectors.h', import.meta.url), 'utf8');
     const ww = readFileSync(new URL('../firmware/src/mode_watchers_watch.cpp', import.meta.url), 'utf8');
     for (const c of ['TAGFLOOD_QUIET_MS\\s+30000u', 'TAGFLOOD_MAX_HITS\\s+3\\b', 'TAGFLOOD_EVIDENCE\\s+6\\b',
-                     'TAGFLOOD_WINDOW_MS\\s+300000u', 'TAGFLOOD_HOLD_MS\\s+300000u'])
+                     'TAGFLOOD_WINDOW_MS\\s+300000u', 'TAGFLOOD_HOLD_MS\\s+300000u', 'TAGFLOOD_MIN_RSSI\\s+\\(-80\\)'])
         if (!new RegExp('#define ' + c).test(ad)) rs.push('tag-flood constant drifted: ' + c);
     if (!/upsertAttackTarget\(String\(TAGFLOOD_TITLE ": "\)[^;]*"Tracker"\);/.test(ww)) rs.push('the tag-flood row no longer files under Tracker');
     // Driving past real AirTags trips the flood; it must never mute trackers again (2026-10-14).
     if (/floodMuted/.test(ww)) rs.push('tag flood mutes real trackers again');
+    // Replay of 178 captures (2026-10-15): weak passing AirTags tripped 8 drives. The floor needs the advert's rssi.
+    if (!/tagFloodNote\(fs, [^;]*, rssi, now\);/.test(ww)) rs.push('tag flood no longer passes rssi (the -80 dBm floor)');
     if (/attackDetect[^\n]*tagFlood|tagFlood[^\n]*attackDetect/.test(ww)) rs.push('tag flood must not be Attack-gated');
     // A sentinel row's "mac" is a name, so alertLogParseMac rejects it and the
     // one alert the flood row sounds never reached the flash log or the card.

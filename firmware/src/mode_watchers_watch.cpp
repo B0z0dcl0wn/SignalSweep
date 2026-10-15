@@ -1180,7 +1180,7 @@ class WatchersScanCallbacks : public NimBLEAdvertisedDeviceCallbacks {
         int ft = tagFloodType(advertisedDevice);
         if (ft >= 0) {
             TagFloodState* fs = &tagFloodState[ft];
-            tagFloodNote(fs, attackHash((const uint8_t*)mac.c_str(), mac.length()), now);
+            tagFloodNote(fs, attackHash((const uint8_t*)mac.c_str(), mac.length()), rssi, now);
             if (tagFloodActive(fs, now)) {
                 char title[80];
                 snprintf(title, sizeof(title), "%s \xC2\xB7 %s \xC2\xB7 %u fake",
