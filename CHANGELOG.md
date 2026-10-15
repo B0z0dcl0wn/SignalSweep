@@ -2,7 +2,7 @@
 
 All notable changes to SignalSweep are recorded here.
 
-## [Unreleased]
+## [0.10.0] — 2026-10-15 — Pin it where you saw it
 
 ### Fixed -- Tag flood no longer trips on passing AirTags
 
