@@ -1299,6 +1299,10 @@
                 <!-- Undo for the consent prompt's third answer. A mute made in
                      one tap in the field must be visible somewhere, or it is a
                      prompt that mysteriously stopped working weeks later. -->
+                <div id="pin-auto-row" hidden>
+                    <p class="set-note" style="margin:0.5rem 0 0.4rem;">Pinning these without asking &mdash; tap to ask again:</p>
+                    <div class="btn-row" id="pin-auto-list"></div>
+                </div>
                 <div id="pin-mute-row" hidden>
                     <p class="set-note" style="margin:0.5rem 0 0.4rem;">Not asking about these any more &mdash; tap to start again:</p>
                     <div class="btn-row" id="pin-mute-list"></div>
@@ -1482,6 +1486,9 @@
             <div class="modal-actions" style="display:flex;gap:10px;">
                 <button class="ctrl-btn" onclick="consentDismiss()">No</button>
                 <button class="ctrl-btn on" onclick="consentYes()">Yes, pin it</button>
+                <!-- Saying yes to every tracker on a drive is the same answer
+                     forty times. Undo: the chips in Settings > Recording. -->
+                <button class="consent-mute" id="consent-auto" onclick="consentAutoCat()">Yes</button>
                 <!-- The moment you know you do not care about a whole category
                      is this one. Making it a dead end sends you to Settings to
                      say what you already decided here. -->
