@@ -2443,7 +2443,13 @@ static void watchersPeriodicTask(void *pvParameters) {
                 }
                 if (heard != huntAudible) {
                     huntAudible = heard;
-                    setGeigerTargetLock(heard, -90);
+                    // Seed with the sample the radio callback just wrote, not
+                    // -90: that overwrote it and flashed the gauge red on
+                    // every re-lock.
+                    uint32_t rssiMs = huntLastRssiMs;
+                    int seed = (rssiMs != 0 && now - rssiMs <= HUNT_SILENCE_MS)
+                                   ? huntLastRssi : -90;
+                    setGeigerTargetLock(heard, seed);
                     ESP_LOGI(TAG, "Hunt %s: %s", huntMac.c_str(),
                              heard ? "target heard, clicking" : "target lost, silent");
                 }

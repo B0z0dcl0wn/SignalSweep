@@ -2,6 +2,19 @@
 
 All notable changes to SignalSweep are recorded here.
 
+## [Unreleased]
+
+### Fixed -- The hunt gauge no longer flashes red when a target comes back
+
+- **Re-locking a hunt seeds the clicker with the sample just heard, not
+  -90 dBm.** When a hunted target was heard again after silence,
+  `watchersPeriodicTask()` called `setGeigerTargetLock(true, -90)`, overwriting
+  the RSSI the scan callback had written a moment before -- a "very far away"
+  flash before the real level. It now seeds from `huntLastRssi` when that sample
+  is inside `HUNT_SILENCE_MS`, else -90. Bench (S3 hunting the C5, target taken
+  off air 14 s and back, three times): seeds -32, -33 and -8 dBm against the
+  next hunt frames' -8, -33 and -32; never -90. 60 of 60 pushes after.
+
 ## [0.10.0] — 2026-10-15 — Pin it where you saw it
 
 ### Fixed -- Tag flood no longer trips on passing AirTags
