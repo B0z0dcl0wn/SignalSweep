@@ -4,6 +4,13 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Added -- Site Survey says what card the board has
+
+Survey now shows the board's card under the capture controls: `SD card · N GB
+free`, `No SD card`, `SD card full` or `SD card error` (a dash when nothing is
+connected). Opening the tab asks the board again (`CMD:CFG`), so a card pulled or
+filled since you connected doesn't show stale.
+
 ### Changed -- Band tabs only filter the view
 
 The Everything / Cameras / Trackers / Drones tabs used to send a preset beep

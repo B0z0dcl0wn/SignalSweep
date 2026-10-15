@@ -265,6 +265,9 @@
             // display:none (Leaflet measures a hidden container as 0x0).
             if (name === 'survey') {
                 if (!capturing) capStat = { wifi: 0, ble: 0, drops: 0, remain: capReqSecs };
+                // Card state is read on open: a card pulled or filled since
+                // connect would otherwise show stale. The reply repaints.
+                if (connectionType && !capturing) sendCommand({ raw: 'CMD:CFG' });
                 paintCapture();
                 renderFinds();
                 renderPins();
@@ -1454,6 +1457,11 @@
             if (warn) warn.style.display = (usbOk || cardOk) ? 'none' : 'block';
             const sdRow = document.getElementById('cap-to-sd-row');
             if (sdRow) sdRow.style.display = (usbOk && cardOk) ? 'block' : 'none';
+            // The card is what a capture lands on, so say what the board has.
+            const sdLine = document.getElementById('cap-sd-status');
+            if (sdLine) sdLine.textContent = !connectionType || sdState === null ? '—'
+                : sdState === 1 ? 'SD card' + (sdFree !== null ? ' · ' + (sdFree / 1024).toFixed(1) + ' GB free' : '')
+                : sdState === 3 ? 'SD card full' : sdState === 2 ? 'SD card error' : 'No SD card';
             // Never disable Start: a disabled button swallows the tap, and then
             // nothing says why. startCapture() explains instead.
             if (capturing) {
@@ -3383,6 +3391,7 @@
             const el = document.getElementById('sd-status');
             if (typeof state !== 'number') { sdState = null; if (el) el.textContent = 'Card not reported by this firmware'; return; }
             sdState = state; sdFree = typeof free === 'number' ? free : null;
+            if (currentTab === 'survey' && !capturing) paintCapture();
             if (!el) return;
             const gb = sdFree !== null ? (sdFree / 1024).toFixed(1) + ' GB free' : '';
             // A card pushed in while the board is powered often does not answer
