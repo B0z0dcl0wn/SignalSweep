@@ -4,6 +4,21 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Added -- Attack-firmware default SSIDs (signatures v17)
+
+- **Five factory SSIDs from popular ESP32 attack firmware, each read from the
+  project's own source rather than a write-up:** Bruce's `BruceNet`
+  (`config.h`), GhostESP's `GhostNet` (its `apcred` reset), Marauder's updater
+  `MarauderOTA`, the Rick Roll beacon-spam list both Marauder and Bruce ship
+  (`01 Never gonna give you up`), and Bruce's joke-SSID spam line `Yell BRUCE
+  for Password`. All 70, "Hacking gear", matched only while Attack is on, All
+  tab only. A renamed AP is not caught -- these catch the operator who never
+  changed the default.
+- **Deliberately left out:** Marauder's Evil Portal `PORTAL` (a placeholder; the
+  portal will not start until it is given a name, usually a cloned nearby
+  network) and the rest of the joke-SSID lists ("FBI Surveillance Van",
+  "Pretty Fly for a Wi-Fi"), which people really do name home routers.
+
 ### Fixed -- The hunt gauge no longer flashes red when a target comes back
 
 - **Re-locking a hunt seeds the clicker with the sample just heard, not
