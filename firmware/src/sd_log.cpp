@@ -15,12 +15,11 @@ static uint32_t anchorOnCard = 0;   // anchor last written into this boot's file
 // until it has there is nothing for sdLogTick() to anchor -- and no reason to
 // ask the card every second.
 static bool     logFileSeen  = false;
-
-String sdLogFileName(uint16_t boot) {
-    char n[13];
-    snprintf(n, sizeof(n), "LOG%05u.CSV", (unsigned)boot);
-    return String(n);
-}
+// This boot's file. NOT named by boot number: the NVS boot counter can be reset
+// below the card's files (a factory reset, a reflash), and boots then appended
+// to old files -- LOG00063 held Sep 26 and Oct 10. The first write takes the
+// next free number; the CSV's boot column still says which boot.
+static char     logName[13]  = "";
 
 // Device-chosen text is data: quote when needed, double quotes, and turn line
 // breaks into spaces so one alert is always one line.
@@ -79,8 +78,10 @@ static void writeAnchorLine(const char* name, uint32_t anchor) {
 void sdLogWrite(const SdLogFields& f) {
     if (sdState() != SD_OK) return;
     uint16_t boot = alertLogBoot();
-    String name = sdLogFileName(boot);
-    if (!sdExists(name.c_str())) {
+    // Gone (first write, or the card was swapped): a fresh file, never an old one.
+    if (!logName[0] || !sdExists(logName)) {
+        if (!sdNextName("LOG", "CSV", logName)) { logName[0] = 0; return; }
+        String name = logName;
         if (!sdAppend(name.c_str(), (const uint8_t*)SD_LOG_HEADER, strlen(SD_LOG_HEADER))) return;
         anchorOnCard = 0;
         uint32_t anchor = alertLogAnchorEpoch();
@@ -88,7 +89,7 @@ void sdLogWrite(const SdLogFields& f) {
     }
     logFileSeen = true;
     String line = sdLogCsvLine(boot, f, hostTimeNow());
-    sdAppend(name.c_str(), (const uint8_t*)line.c_str(), line.length());
+    sdAppend(logName, (const uint8_t*)line.c_str(), line.length());
 }
 
 void sdLogTick() {
@@ -96,6 +97,5 @@ void sdLogTick() {
     if (!logFileSeen || !anchor || anchor == anchorOnCard || sdState() != SD_OK) return;
     // Still checked: a card swapped since would otherwise get a headerless
     // file that starts with the anchor. Reached only when the anchor moves.
-    String name = sdLogFileName(alertLogBoot());
-    if (sdExists(name.c_str())) writeAnchorLine(name.c_str(), anchor);
+    if (sdExists(logName)) writeAnchorLine(logName, anchor);
 }

@@ -4,6 +4,17 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Fixed -- A new boot no longer appends to an old card log
+
+The card log was named by boot number (`LOG<boot>.CSV`). The boot counter lives
+in NVS and can be reset below the card's files (a factory reset, a reflash), and
+then each new boot appended to an old file: LOG00063 held both Sep 26 and Oct 10.
+A boot's first write now takes the next free number (highest `LOGnnnnn.CSV` + 1,
+the same rule capture files use); the CSV's `boot` column still says which boot.
+A card swapped mid-boot gets a fresh file too. Bench: power-on boot 97 wrote
+LOG00127 (the card's highest was LOG00126), and a phone connecting later dated it
+with `#anchor` in the already-open file.
+
 ### Added -- Site Survey says what card the board has
 
 Survey now shows the board's card under the capture controls: `SD card · N GB

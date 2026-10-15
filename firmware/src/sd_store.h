@@ -59,8 +59,8 @@ bool sdRemove(const char* name);
 /** @brief True if `name` is the capture stream being written right now. */
 bool sdIsOpen(const char* name);
 
-/** @brief One past the highest CAPnnnnn.SSC on the card. */
-bool sdNextCaptureName(char out[13]);
+/** @brief One past the highest <pre>nnnnn.<ext> on the card (CAP/SSC, LOG/CSV). */
+bool sdNextName(const char* pre, const char* ext, char out[13]);
 
 /** @brief One long-lived write stream (captures). Only one open at a time. */
 bool sdStreamOpen(const char* name);
