@@ -195,6 +195,9 @@ console.log('[signalsweep self-test] app reads every CMD:CFG field: ok');
     // A capture file that is never synced is 0 bytes after a power cut.
     const msrc = readFileSync(new URL('../firmware/src/mode_capture.cpp', import.meta.url), 'utf8');
     if (!/sdStreamSync\(/.test(msrc)) fail.push('the capture drain loop never syncs the card stream');
+    // Naming by boot number appended new boots to old files once NVS reset the counter.
+    const lsrc = readFileSync(new URL('../firmware/src/sd_log.cpp', import.meta.url), 'utf8');
+    if (!/sdNextName\("LOG", "CSV", logName\)/.test(lsrc) || /LOG%05u/.test(lsrc)) fail.push('the card log is named by boot number again (boots append to old files)');
     // A download page is trusted only if its decoded bytes add up to `next`.
     if (!/pageBytes !== o\.next - st\.pageOff/.test(appSrc)) fail.push('SD download no longer checks each page for holes');
     if (fail.length) { console.log('FAIL:', fail.join('; ')); process.exit(1); }

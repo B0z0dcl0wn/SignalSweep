@@ -229,7 +229,7 @@ bool sdRemove(const char* name) {
 
 // One directory pass for the highest CAPnnnnn.SSC, then one past it. The old
 // probe-each-number loop was an exists() per capture already on the card.
-bool sdNextCaptureName(char out[13]) {
+bool sdNextName(const char* pre, const char* ext, char out[13]) {
     SdLock l;
     if (state != SD_OK) return false;
     File dir = SD.open(SD_DIR);
@@ -240,14 +240,14 @@ bool sdNextCaptureName(char out[13]) {
         const char* full = e.name();
         const char* base = strrchr(full, '/');
         base = base ? base + 1 : full;
-        if (!sdValidName(base) || !hasPrefixExt(base, "CAP", "SSC")) continue;
+        if (!sdValidName(base) || !hasPrefixExt(base, pre, ext)) continue;
         uint32_t n = 0;
         const char* p = base + 3;
         for (; *p >= '0' && *p <= '9'; p++) n = n * 10 + (uint32_t)(*p - '0');
         if (*p == '.' && n > maxN) maxN = n;
     }
     if (maxN >= 99999) return false;
-    snprintf(out, 13, "CAP%05u.SSC", (unsigned)(maxN + 1));
+    snprintf(out, 13, "%s%05u.%s", pre, (unsigned)(maxN + 1), ext);
     return true;
 }
 

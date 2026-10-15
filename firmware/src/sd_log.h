@@ -30,7 +30,6 @@ struct SdLogFields {
     int      confidence; // 0-100
 };
 
-String sdLogFileName(uint16_t boot);
 String sdLogCsvLine(uint16_t boot, const SdLogFields& f, uint32_t utcEpoch);
 /** @brief Append one line to this boot's file (header on first write). Card only; call off the radio callbacks and outside watchersMutex. */
 void sdLogWrite(const SdLogFields& f);

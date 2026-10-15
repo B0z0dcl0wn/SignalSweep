@@ -359,7 +359,7 @@ static void startCapture(uint32_t durationSecs, bool toSd) {
     if (toSd) {
         // Open the file before stopping the detector, so "no card" costs nothing.
         if (sdState() != SD_OK) sdProbe();
-        if (sdState() != SD_OK || !sdNextCaptureName(sdName) || !sdStreamOpen(sdName)) {
+        if (sdState() != SD_OK || !sdNextName("CAP", "SSC", sdName) || !sdStreamOpen(sdName)) {
             uint8_t st = sdState();
             const char* err = st == SD_NONE ? "no card" : st == SD_FULL ? "card full" : "card error";
             char e[48];
