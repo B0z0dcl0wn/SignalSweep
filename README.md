@@ -104,7 +104,7 @@ Mute any category you don't care about. It's still detected and listed, just qui
 
 **Detects**
 - **Drones, in full.** ASTM F3411 Remote ID over Bluetooth, Wi-Fi beacons and Wi-Fi NAN: ID, altitude, speed, heading, and where the pilot is standing. Often before you hear the props.
-- **Trackers.** Apple Find My, Google, Samsung and Tile. And when someone floods the area with fake ones, it gives a handful of beeps, then one row that says what's going on, and goes quiet. A real tag still in range sounds once the storm passes.
+- **Trackers.** Apple Find My, Google, Samsung and Tile. And when someone floods the area with fake ones, one row says what's going on. It keeps beeping at trackers, because a real one hiding in the storm matters more than the noise.
 - **Surveillance hardware.** Flock Safety gear when it's talking, Axon body cams, smart glasses, and anything else on a signature list you can edit from the app: OUI, company ID, name, service UUID or SSID. No recompile.
 - **Cop-only gear, on sight.** Axon, Flock, SoundThinking (ShotSpotter), Genetec, Neology, WatchGuard Video and Digital Ally addresses beep on their own. Nobody but an agency buys that hardware, so hearing it is the news.
 - **Attack gear** (opt-in). BLE popup spam, deauth bursts, Pineapple-style karma, Flipper Zero hints, and pwnagotchis by name.

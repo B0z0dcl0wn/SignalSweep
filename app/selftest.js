@@ -635,7 +635,8 @@ console.log('[signalsweep self-test] alert log record + write path: ok');
                      'TAGFLOOD_WINDOW_MS\\s+300000u', 'TAGFLOOD_HOLD_MS\\s+300000u'])
         if (!new RegExp('#define ' + c).test(ad)) rs.push('tag-flood constant drifted: ' + c);
     if (!/upsertAttackTarget\(String\(TAGFLOOD_TITLE ": "\)[^;]*"Tracker"\);/.test(ww)) rs.push('the tag-flood row no longer files under Tracker');
-    if ((ww.match(/if \(!floodMuted\) noteAlertForTarget/g) || []).length !== 2) rs.push('tag flood must gate exactly the two BLE noteAlertForTarget calls');
+    // Driving past real AirTags trips the flood; it must never mute trackers again (2026-10-14).
+    if (/floodMuted/.test(ww)) rs.push('tag flood mutes real trackers again');
     if (/attackDetect[^\n]*tagFlood|tagFlood[^\n]*attackDetect/.test(ww)) rs.push('tag flood must not be Attack-gated');
     // A sentinel row's "mac" is a name, so alertLogParseMac rejects it and the
     // one alert the flood row sounds never reached the flash log or the card.

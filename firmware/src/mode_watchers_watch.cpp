@@ -1173,18 +1173,16 @@ class WatchersScanCallbacks : public NimBLEAdvertisedDeviceCallbacks {
         }
 
         // Tag flood (always on): a spammer's fake trackers each live for an
-        // advert or two. Once a type floods, its targets stay listed but skip
-        // the beep and the log (Ignore-style, alerted stays clear so a real tag
-        // still here sounds when the hold ends); one Tracker row speaks for them.
-        bool floodMuted = false;
+        // advert or two, and one Tracker row names the flood. It no longer
+        // mutes trackers (2026-10-14): driving past real AirTags trips it too,
+        // and a muted real tracker is worse than a noisy fake one.
         int ft = tagFloodType(advertisedDevice);
         if (ft >= 0) {
             TagFloodState* fs = &tagFloodState[ft];
             tagFloodNote(fs, attackHash((const uint8_t*)mac.c_str(), mac.length()), now);
             if (tagFloodActive(fs, now)) {
-                floodMuted = true;
                 char title[80];
-                snprintf(title, sizeof(title), "%s \xC2\xB7 %s \xC2\xB7 %u fake \xC2\xB7 real tags muted",
+                snprintf(title, sizeof(title), "%s \xC2\xB7 %s \xC2\xB7 %u fake",
                          TAGFLOOD_TITLE, TAGFLOOD_NAMES[ft], (unsigned)fs->total);
                 upsertAttackTarget(String(TAGFLOOD_TITLE ": ") + TAGFLOOD_NAMES[ft], rssi, "BLE", String(title), 0, "Tracker");
             }
@@ -1300,7 +1298,7 @@ class WatchersScanCallbacks : public NimBLEAdvertisedDeviceCallbacks {
                             target.matchedRule = matchedRule;
                         }
                         if (droneDecoded) applyDroneData(target, bleUas);
-                        if (!floodMuted) noteAlertForTarget(target, bestWeight, matchedCategory);
+                        noteAlertForTarget(target, bestWeight, matchedCategory);
                         found = true;
                         break;
                     }
@@ -1334,7 +1332,7 @@ class WatchersScanCallbacks : public NimBLEAdvertisedDeviceCallbacks {
                                  mac.c_str(), matchedRule.c_str(), matchedCategory.c_str(),
                                  confidence, newTarget.tier.c_str(), rssi);
                     }
-                    if (!floodMuted) noteAlertForTarget(trackedTargets.back(), bestWeight, matchedCategory);
+                    noteAlertForTarget(trackedTargets.back(), bestWeight, matchedCategory);
                 }
             }
             xSemaphoreGive(watchersMutex);
