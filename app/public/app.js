@@ -1626,12 +1626,11 @@
             clearTimeout(capAckTimer); capAckTimer = null;
             if (cap.error) { capAbort('Capture: ' + cap.error, !capToSd); return; }
             // Stall watchdog: the board sends a frame every second. Silence
-            // means it restarted mid-capture (the C5 BT-controller assert,
-            // 2026-10-14) and is back to detecting -- without this the timer
-            // froze with no error until a force-quit.
+            // means it rebooted (C5 BT-controller assert) or hung (2026-10-14);
+            // without this the timer froze with no error until a force-quit.
             if (!cap.done) capAckTimer = setTimeout(() => {
                 if (capturing) capAbort(capToSd
-                    ? 'The board restarted mid-capture. The partial capture is on the card.'
+                    ? 'The board stopped answering mid-capture. What reached the card is kept.'
                     : 'The board stopped answering mid-capture. The partial capture was kept.', false);
             }, CAP_STALL_MS);
             if ('started' in cap) { if (cap.file) capSdFile = cap.file; return; }
