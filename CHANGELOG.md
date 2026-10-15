@@ -4,6 +4,26 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Changed -- Band tabs only filter the view
+
+The Everything / Cameras / Trackers / Drones tabs used to send a preset beep
+mask to the board and set which category asked to be pinned. Nothing on screen
+said so: on a drive, tapping Everything quietly turned tracker beeps back on
+after they had been muted in Alerts. Tabs now filter the list and the map and
+do nothing else. **Settings > Alerts is the only beep control**, and the
+"No -- stop asking about X" chips are the only pin filter (the Record bar says
+"pinning everything" or "pinning all but ..."). The board's mask no longer
+moves the tab either.
+
+### Changed -- A tag flood no longer mutes trackers
+
+The tag-flood detector (fake-tracker spam) used to hold every tracker beep of
+that type while it was tripped. Driving trips it: real AirTags passed in traffic
+are heard a few times and gone, exactly like fakes. A real tracker muted by a
+false flood is the worse failure, so the flood now only shows its row
+("Tag flood · Apple Find My · N fake"); trackers beep as usual. The pin prompt
+still skips trackers while a flood row is live, or every fake would ask.
+
 ### Fixed -- Site Survey froze on its timer when the board went quiet
 
 A field capture sat at a full countdown with no error until the app was

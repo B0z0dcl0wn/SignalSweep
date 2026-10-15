@@ -221,11 +221,11 @@
         // ---- Lens: a filter over what the detector already found -----------
         // This is what replaces the old four-mode selector. The firmware is one
         // always-on detector watching every category at once, and a lens
-        // cannot make it miss anything. A tab tap does set one thing on the
-        // device: a preset beep mask (LENS_MASK), so the board alerts only for
-        // what you are looking at. That is the same persisted mask the Alerts
-        // sheet edits. It gates the beep and the light, never detection or
-        // the list, so every band still counts what it hears.
+        // cannot make it miss anything. Tabs are VIEW ONLY (2026-10-14): they
+        // used to send a preset beep mask and set the pin filter too, which was
+        // invisible -- tapping Everything quietly turned trackers back on mid
+        // drive. Settings > Alerts is the only beep control; the "stop asking"
+        // chips (pinMute) the only pin filter.
         let lens = 'all';
         let viewMode = 'list';   // 'list' | 'map'
 
@@ -239,19 +239,9 @@
         }
 
         // Tab tap. Tapping the selected tab again goes back to Everything.
-        // The tab paints now, and the mask goes through the same pendingMask
-        // echo window as toggleBeep(), so a push that lands before the echo
-        // cannot flip it back. If the write never lands, intent expires and
-        // the next push repaints what the device actually has.
         function setLens(key) {
             if (key === lens && key !== 'all') key = 'all';
             paintLens(key);
-            setPinLens(key);
-            if (deviceBeepMask === null) return;   // not connected: view only
-            pendingMask = LENS_MASK[key];
-            pendingSince = Date.now();
-            sendCommand({ beep_mask: pendingMask });
-            setSoundsSummary();
         }
 
         // ---- Tabs ------------------------------------------------------------
@@ -451,7 +441,7 @@
             // words ALPR and body cam (Axon counts as mass surveillance here).
             // NOT 'other' -- fleet routers, and any category with no keyword,
             // are Everything only, or a police-car router reads as a camera.
-            // Not 'weak' either -- see bandOf(). LENS_MASK.alpr mirrors this.
+            // Not 'weak' either -- see bandOf().
             if (k === 'alpr') return c === 'alpr' || c === 'bodycam';
             return c === k;
         }
@@ -1709,11 +1699,6 @@
         const RECORD_PREF_KEY = 'recordEnabled';
         const PIN_STORE_KEY   = 'pinStoreV1';
         let recordEnabled = false;
-        // Which band asks to be pinned. App-side, because pins are: looking
-        // for Flock cameras should not mean being asked about every AirTag.
-        // A band tab sets it; the Pins sheet can override it.
-        let pinLens = 'all';
-        try { pinLens = localStorage.getItem('pinLens') || 'all'; } catch (e) {}
         let pinKey = null;            // CryptoKey, set once unlocked this session
         let pinSalt = null;            // Uint8Array, persisted with the store
         let pinsCache = [];            // decrypted pins, in memory only while unlocked
@@ -1950,19 +1935,8 @@
             paintPinMute();
         }
 
-        // Which categories ask to be pinned. There is no separate picker for
-        // it any more: the band tab you are looking at is the one you are
-        // deciding about, and two controls for one state only ever disagree.
-        // The Record bar states the current one.
-        function setPinLens(key) {
-            pinLens = key;
-            try { localStorage.setItem('pinLens', key); } catch (e) {}
-            paintLogSession();
-        }
-
-        // Categories the pin prompt must stop asking about. This composes with
-        // pinLens rather than replacing it: the band tab picks ONE category to
-        // ask about, this subtracts categories from Everything. The names are
+        // Categories the pin prompt must stop asking about -- the only pin
+        // filter (band tabs are view only). The names are
         // fixed per key, never taken from cat.label -- 'other' labels itself
         // with whatever vendor string tripped it ("Hacking gear"), and a button
         // reading "stop asking about Hacking gear" would quietly mute every
@@ -1986,12 +1960,11 @@
             if (!match.type && !match.rule) return;
             // Before handledMacs, so a device the filter skipped is still
             // offered if the filter widens later.
-            if (!inLens(match, pinLens)) return;
             // Before handledMacs for the same reason: un-muting a category must
             // bring its devices back, not skip them for the rest of the session.
             if (pinMute.has(categoryOf(match.type || match.rule).key)) return;
             // A sentinel row has no place to pin, and while a tag flood is live
-            // the board has muted trackers, so no prompt for them either. Before
+            // every fake tag would be a prompt, so none for trackers. Before
             // handledMacs, so a real tag is still offered once the flood ends.
             // ponytail: mutes every tracker type, not just the flooded one; the
             // fakes' rows don't say which network they belong to.
@@ -2750,21 +2723,6 @@
         // hardware_manager.h's enum; change one, change both.
         const BEEP_BITS = { alpr: 1, bodycam: 2, drone: 4, tracker: 8, generic: 16 };
 
-        // The mask each band tab sets. Cameras is the same set inLens() uses:
-        // ALPR + body cam, never GENERIC (that is Everything only).
-        const LENS_MASK = {
-            all:     31,
-            alpr:    BEEP_BITS.alpr | BEEP_BITS.bodycam,
-            tracker: BEEP_BITS.tracker,
-            drone:   BEEP_BITS.drone
-        };
-        // The tab a mask corresponds to, or null for a custom mix from the
-        // Alerts sheet (the tab then stays where it is).
-        function lensOfMask(mask) {
-            for (const k in LENS_MASK) if (LENS_MASK[k] === mask) return k;
-            return null;
-        }
-
         // Device is the authority, same as the radios: the boxes paint from the
         // last CMD:CFG, never optimistically. The mask persists on the board, so
         // one that ran headless comes back with its own idea of what beeps.
@@ -2801,12 +2759,6 @@
             }
             paintAlertRows();
             setSoundsSummary();
-            // Adopt the board's tab. This is what makes a board set headless
-            // (or from another phone) open on the right tab. It follows what
-            // we asked for while that is in flight, so the echo gap cannot
-            // flip a fresh tap back.
-            const k = lensOfMask(pendingMask !== null ? pendingMask : deviceBeepMask);
-            if (k && k !== lens) { paintLens(k); setPinLens(k); }
         }
 
         // Flip one bit off the device-confirmed mask and send the whole mask.
@@ -2864,7 +2816,7 @@
             const sound = buzzerOn, light = ledMode !== 0;
             const icon = n === 0 || (!sound && !light) ? 'bell-off'
                        : sound && light ? 'bell' : sound ? 'volume' : 'bulb';
-            const one = { alpr: 'cameras', tracker: 'trackers', drone: 'drones' }[lensOfMask(deviceBeepMask)];
+            const one = n === 1 ? { alpr: 'ALPR', bodycam: 'body cams', drone: 'drones', tracker: 'trackers', generic: 'other' }[keys.find(k => deviceBeepMask & BEEP_BITS[k])] : null;
             const what = !sound && !light ? 'off'
                        : n === 0 ? 'none' : n === keys.length ? 'all' : one || n + '/' + keys.length;
             btn.innerHTML = ico(icon) + ' ' + esc(what);
@@ -3030,8 +2982,9 @@
             const bits = [el];
             if (alerts !== null) bits.push(alerts + (alerts === 1 ? ' alert' : ' alerts'));
             if (pins) bits.push(pins + (pins === 1 ? ' pin' : ' pins'));
-            const lensName = { all: 'everything', alpr: 'cameras', tracker: 'trackers', drone: 'drones' }[pinLens] || pinLens;
-            read.textContent = bits.join(' · ') + ' — pinning ' + lensName;
+            const muted = [...pinMute].map(k => PIN_MUTE_NAME[k] || k);
+            read.textContent = bits.join(' · ') + ' — pinning ' +
+                (muted.length ? 'all but ' + muted.join(', ') : 'everything');
         }
 
         function toggleAlertLog() {
@@ -4894,10 +4847,8 @@
                 results.lensDrone   = liveRows('drone').length === 1;
                 results.lensTracker = liveRows('tracker').length === 1;
                 // Surveillance is the umbrella over ALPR + body cam.
-                // Strictly: a fleet router (category 'other') stays out, and the
-                // tab's beep preset carries no GENERIC bit.
-                results.lensAlpr    = liveRows('alpr').length === 2 &&
-                    (LENS_MASK.alpr & BEEP_BITS.generic) === 0;
+                // Strictly: a fleet router (category 'other') stays out.
+                results.lensAlpr    = liveRows('alpr').length === 2;
                 // Strongest-first ordering is what the list relies on.
                 results.lensSorted  = liveRows('all')[0].mac === 'AA:00:01';
                 const drone = liveMatches['AA:00:04'];
@@ -4984,36 +4935,19 @@
                 results.filterOnHidesUnmatched = liveRows('all').length === 1 &&
                                                  liveRows('all')[0].mac === 'BB:00:02';
 
-                // Pin filter: looking at cameras must not ask about trackers,
-                // and a skipped tracker is still offered once the filter widens.
-                pinLens = 'alpr';
-                consentQueue = [];
-                handledMacs.clear();
-                ingestTargets([
-                    { mac: 'DD:00:01', type: 'Flock Safety', rssi: -50, confidence: 80 },
-                    { mac: 'DD:00:02', type: 'Tracker',      rssi: -60, confidence: 80 }
-                ]);
-                results.pinFilterSkips = consentQueue.length === 1 && consentQueue[0].mac === 'DD:00:01';
-                pinLens = 'all';
-                ingestTargets([{ mac: 'DD:00:02', type: 'Tracker', rssi: -60, confidence: 80 }]);
-                results.pinFilterWidens = consentQueue.length === 2 && consentQueue[1].mac === 'DD:00:02';
-
-                // Band tabs <-> device mask. Every preset maps back to its tab,
-                // Everything is every bit, and a custom mix is no tab at all.
-                results.lensMaskRoundTrip =
-                    Object.keys(LENS_MASK).every(k => lensOfMask(LENS_MASK[k]) === k) &&
-                    LENS_MASK.all === Object.values(BEEP_BITS).reduce((a, b) => a | b, 0) &&
-                    lensOfMask(LENS_MASK.tracker | LENS_MASK.drone) === null;
-                // A board set headless opens on its tab; a custom mix leaves
-                // the tab alone; tapping the selected tab goes back to all.
-                setBeepUi(LENS_MASK.tracker);
-                const adopted = lens === 'tracker' && pinLens === 'tracker';
-                setBeepUi(LENS_MASK.tracker | LENS_MASK.drone);
-                const kept = lens === 'tracker';
-                setBeepUi(null);
-                setLens('drone'); setLens('drone');
-                results.lensAdoptsDevice = adopted && kept && lens === 'all';
-                pinLens = 'all';
+                // Tabs are view only: a tap sends nothing to the board, and
+                // a device mask that equals a preset does not move the tab.
+                {
+                    const sent = []; const sc = sendCommand;
+                    sendCommand = c => { sent.push(c); };
+                    setLens('tracker');
+                    setBeepUi(BEEP_BITS.drone);
+                    results.tabsViewOnly = sent.length === 0 && lens === 'tracker';
+                    setLens('tracker');
+                    results.tabsViewOnly = results.tabsViewOnly && lens === 'all';
+                    setBeepUi(null);
+                    sendCommand = sc;
+                }
 
                 recordEnabled = false;
                 consentQueue = [];
