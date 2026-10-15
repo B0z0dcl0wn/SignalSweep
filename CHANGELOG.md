@@ -4,6 +4,21 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Added -- "Yes, always" pins, and pins land where the device was seen
+
+- **The pin prompt has a fourth answer, "Yes -- always for <category>".** Every
+  later match of that kind is pinned without asking. Undo is a chip row in
+  Settings > Recording, beside the "stop asking" chips; a category is in one
+  list or neither.
+- **The location is taken when the device is first seen**, not when you tap Yes.
+  At driving speed a fix taken after the tap put the pin a block past the camera.
+  Still one-shot (never a track), shared for 10 s across a burst of matches, held
+  only with the waiting prompt and dropped on No or disconnect.
+- **Record asks for the PIN up front when any category auto-pins**, because an
+  auto-pin writes to the encrypted store with no prompt to unlock it. Skip it and
+  that drive simply asks as before. A fix vaguer than 50 m never auto-pins; it
+  goes to the normal prompt, which asks before saving it.
+
 ### Changed -- A fitted SD card logs every alert
 
 The card log used to follow the "Log alerts on the board" switch, which is off by

@@ -283,6 +283,8 @@
             if (si) { showSetting(si.dataset.set); return; }
             const um = e.target.closest('[data-unmute]');
             if (um) unmuteCat(um.dataset.unmute);
+            const ua = e.target.closest('[data-unauto]');
+            if (ua) unautoCat(ua.dataset.unauto);
             const ui = e.target.closest('[data-unignore]');
             if (ui) sendCommand({ unignore: ui.dataset.unignore });
         });
@@ -1957,7 +1959,40 @@
         try { pinMute = new Set(JSON.parse(localStorage.getItem('pinMute') || '[]')); } catch (e) {}
         function savePinMute() {
             try { localStorage.setItem('pinMute', JSON.stringify([...pinMute])); } catch (e) {}
+            try { localStorage.setItem('pinAuto', JSON.stringify([...pinAuto])); } catch (e) {}
             paintPinMute();
+        }
+        // Categories pinned without asking ("Yes, always for trackers"). The
+        // opposite of pinMute; a category is in one or neither. Auto-pinning
+        // needs the store unlocked -- Record asks for the PIN up front -- and a
+        // tight fix; otherwise the normal prompt asks. Nothing is held in clear.
+        let pinAuto = new Set();
+        try { pinAuto = new Set(JSON.parse(localStorage.getItem('pinAuto') || '[]')); } catch (e) {}
+
+        // The fix is taken when the device is FIRST SEEN, not when you answer:
+        // at driving speed a pin taken after the tap lands a block past the
+        // camera. One-shot (getFix, never watchPosition), shared for 10 s so a
+        // burst of matches is one request, and held only on the queued prompt:
+        // a No, or a disconnect, drops it.
+        let sightFix = null, sightFixAt = 0;
+        function sightingFix() {
+            if (!sightFix || Date.now() - sightFixAt > 10000) {
+                sightFixAt = Date.now();
+                sightFix = getFix().catch(() => null);
+            }
+            return sightFix;
+        }
+        function dropSightingFixes() {
+            sightFix = null;
+            consentQueue.forEach(m => { m.fixP = null; });
+        }
+
+        async function autoPin(m) {
+            const fix = await m.fixP;
+            if (fix && fix.acc <= FIX_ACCURACY_MAX_M && pinKey) { await writePin(m, fix, true); return; }
+            // No fix, a vague one, or the store locked since: ask instead.
+            consentQueue.push(m);
+            if (consentQueue.length === 1) showNextConsent();
         }
 
         function maybeOfferRecord(match) {
@@ -1983,7 +2018,10 @@
                 })) return;
             if (handledMacs.has(match.mac)) return;
             handledMacs.add(match.mac);
-            consentQueue.push(match);
+            // A copy: the fix must not ride the live row (liveMatches).
+            const m = Object.assign({}, match, { fixP: sightingFix() });
+            if (pinAuto.has(categoryOf(match.type || match.rule).key) && pinKey) { autoPin(m); return; }
+            consentQueue.push(m);
             if (consentQueue.length === 1) showNextConsent();
         }
 
@@ -2007,8 +2045,24 @@
                 mb.dataset.cat = cat.key;
                 mb.textContent = 'No — and stop asking about ' + (PIN_MUTE_NAME[cat.key] || 'these');
             }
+            const ab = document.getElementById('consent-auto');
+            if (ab) {
+                ab.dataset.cat = cat.key;
+                ab.textContent = 'Yes — always for ' + (PIN_MUTE_NAME[cat.key] || 'these');
+            }
             const modal = document.getElementById('consent-modal');
             if (modal) modal.classList.add('active');
+        }
+
+        // Yes for this one and every later one of its kind. Queued devices of
+        // the same kind are pinned too once the store is open.
+        async function consentAutoCat() {
+            const key = document.getElementById('consent-auto').dataset.cat;
+            if (!key) return;
+            pinAuto.add(key); pinMute.delete(key);
+            savePinMute();
+            showToast('Pinning ' + (PIN_MUTE_NAME[key] || 'these') + ' without asking — undo in Settings › Recording', 'pin');
+            await consentYes();
         }
 
         // Answering for the whole category drops every queued device of that
@@ -2018,7 +2072,7 @@
             const btn = document.getElementById('consent-mute');
             const key = btn && btn.dataset.cat;
             if (!key) return;
-            pinMute.add(key);
+            pinMute.add(key); pinAuto.delete(key);
             savePinMute();
             document.getElementById('consent-modal').classList.remove('active');
             consentQueue = consentQueue.filter(
@@ -2039,6 +2093,18 @@
             list.innerHTML = [...pinMute].map(k =>
                 '<button class="ctrl-btn" data-unmute="' + esc(k) + '">'
                 + esc(PIN_MUTE_NAME[k] || k) + ' ✕</button>').join('');
+            const arow = document.getElementById('pin-auto-row');
+            const alist = document.getElementById('pin-auto-list');
+            if (!arow || !alist) return;
+            arow.hidden = pinAuto.size === 0;
+            alist.innerHTML = [...pinAuto].map(k =>
+                '<button class="ctrl-btn" data-unauto="' + esc(k) + '">'
+                + esc(PIN_MUTE_NAME[k] || k) + ' ✕</button>').join('');
+        }
+        function unautoCat(key) {
+            pinAuto.delete(key);
+            savePinMute();
+            showToast('Asking before pinning ' + (PIN_MUTE_NAME[key] || key) + ' again', 'pin');
         }
         function unmuteCat(key) {
             pinMute.delete(key);
@@ -2054,9 +2120,12 @@
 
         async function consentYes() {
             const m = consentQueue[0];
-            document.getElementById('consent-modal').classList.remove('active');
+            const cm = document.getElementById('consent-modal');
+            if (cm) cm.classList.remove('active');
             try {
-                const fix = await getFix();
+                // The fix from when it was seen; a fresh one only if that failed
+                // or a disconnect dropped it.
+                const fix = (m && await m.fixP) || await getFix();
                 if (fix.acc > FIX_ACCURACY_MAX_M && !confirm(
                         'This fix is only accurate to about ' + Math.round(fix.acc) +
                         ' m, so the pin could land on the wrong block. Save it anyway?')) {
@@ -2076,10 +2145,15 @@
                 showToast('No GPS fix — pin not saved', '✕');
             }
             consentQueue.shift();
+            // Same-kind devices queued behind a "Yes, always" go now.
+            while (consentQueue.length && pinKey &&
+                   pinAuto.has(categoryOf(consentQueue[0].type || consentQueue[0].rule).key)) {
+                autoPin(consentQueue.shift());
+            }
             if (consentQueue.length) setTimeout(showNextConsent, 300);
         }
 
-        async function writePin(m, fix) {
+        async function writePin(m, fix, auto) {
             const cat = categoryOf(m.type || m.rule);
             pinsCache.push({
                 mac: m.mac, category: cat.label, rule: m.rule || '', name: m.name || '',
@@ -2087,7 +2161,7 @@
             });
             await savePins();
             paintLogSession();
-            showToast('Pin saved (' + pinsCache.length + ' total)', 'pin');
+            showToast((auto ? 'Auto-pinned ' + cat.label + ' (' : 'Pin saved (') + pinsCache.length + ' total)', 'pin');
         }
 
         // ---- PIN gate modal ----
@@ -3043,6 +3117,9 @@
             paintRecord();
             paintLogSession();
             showToast('Recording — the board is logging', '●');
+            // Auto-pin writes without a prompt, so the store must already be
+            // open. Ask now, while parked; skip it and this drive just asks.
+            if (pinAuto.size && !pinKey) openPinGate(pinStoreExists() ? 'unlock' : 'create');
         }
 
         function stopLogSession() {
@@ -4705,6 +4782,7 @@
                 ? 'Link lost — the board keeps capturing to the card. Download it from Settings › Recording › SD card when it\'s done.'
                 : 'Board disconnected — capture stopped, partial file kept', false);
             clearLiveState();
+            dropSightingFixes();
             updateConnectionUI(false);
             if (wantConnection) scheduleReconnect();
         }
@@ -5308,6 +5386,33 @@
                 pinKey = null; pinsCache = []; findsCache = [];
                 await unlockPins('1234');
                 results.findsRoundTrip = findsCache.length === 1 && findsCache[0].signature.label === 'Flock IE' && pinsCache.length === 1;
+
+                // Pins: "Yes, always" pins a category without a prompt, and every
+                // pin carries the fix from FIRST SIGHTING, not from the tap.
+                {
+                    const realFix = getFix; let fixN = 0;
+                    getFix = () => Promise.resolve({ lat: 10 + (++fixN), lng: 20, acc: 5 });
+                    recordEnabled = true; consentQueue = []; handledMacs.clear(); sightFix = null;
+                    pinsCache = []; pinAuto = new Set(['tracker']); pinMute = new Set();
+                    ingestTargets([{ mac: 'EE:00:01', type: 'Tracker', rssi: -60, confidence: 80 }]);
+                    ingestTargets([{ mac: 'EE:00:02', type: 'Flock Safety', rssi: -50, confidence: 80 }]);
+                    await new Promise(r => setTimeout(r, 30));
+                    const autoOk = pinsCache.length === 1 && pinsCache[0].mac === 'EE:00:01' &&
+                                   consentQueue.length === 1 && consentQueue[0].mac === 'EE:00:02';
+                    fixN = 100;                  // a fix taken at the tap would read 101
+                    await consentYes();
+                    results.pinAutoSightingFix = autoOk && pinsCache.length === 2 && pinsCache[1].lat === 11;
+                    // A vague fix, or a locked store, falls back to asking.
+                    sightFix = null; getFix = () => Promise.resolve({ lat: 1, lng: 2, acc: 500 });
+                    ingestTargets([{ mac: 'EE:00:03', type: 'Tracker', rssi: -60, confidence: 80 }]);
+                    await new Promise(r => setTimeout(r, 30));
+                    const k = pinKey; pinKey = null; sightFix = null;
+                    getFix = () => Promise.resolve({ lat: 1, lng: 2, acc: 5 });
+                    ingestTargets([{ mac: 'EE:00:04', type: 'Tracker', rssi: -60, confidence: 80 }]);
+                    results.pinAutoFallsBack = pinsCache.length === 2 && consentQueue.length === 2;
+                    pinKey = k; getFix = realFix; sightFix = null; pinAuto = new Set();
+                    recordEnabled = false; consentQueue = []; handledMacs.clear();
+                }
                 // Only confirmed cameras with a fix become OSM nodes.
                 results.findOsmTags =
                     findOsmNode({ category: 'ALPR / Camera', lat: 1, lng: 2 }, 0, 's', '').indexOf('surveillance:type" v="ALPR"') > 0 &&
