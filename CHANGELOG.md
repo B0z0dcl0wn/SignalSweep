@@ -4,6 +4,22 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Fixed -- Hunt is offered on any stable address, not just trackers
+
+- **A field drive past a traffic stop listed an Axon body cam (public BLE
+  address `00:25:df:…`, -92 dBm) with Ignore and no Hunt.** The app offered
+  Hunt only on tracker rows, or on every row with the filter off, so whether
+  the button appeared depended on the category and the filter switch rather
+  than on whether the device could actually be walked down. The board never
+  had that limit: `{"hunt":"<mac>"}` takes any MAC, BLE or Wi-Fi.
+- **The test is now the address, the same `stableMac()` test Ignore uses**
+  (public BLE, Wi-Fi with the locally-administered bit clear, BLE random
+  static). Hunt follows one MAC, so it belongs wherever that MAC holds still.
+  Trackers keep Hunt unconditionally (an AirTag away from its owner keeps its
+  random address for about a day), and the filter-off "hunt anything" path is
+  unchanged. A rotating random address still gets no Hunt. In-app checks
+  `huntOnStableNonTracker` and `noHuntOnRotatingCam`.
+
 ### Added -- Attack-firmware default SSIDs (signatures v17)
 
 - **Five factory SSIDs from popular ESP32 attack firmware, each read from the
