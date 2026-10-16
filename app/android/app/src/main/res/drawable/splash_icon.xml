@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 12+ splash icon: vector copy of assets/icon-foreground.svg so it stays sharp
+     (the default is the launcher's PNG foreground, scaled up and fuzzy). Viewport is the
+     SVG's 1024 grown to 1536 to keep the launcher's 16.7% inset. ponytail: the SVG's
+     glow filter is dropped, VectorDrawable has no blur. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="288dp"
+    android:height="288dp"
+    android:viewportWidth="1536"
+    android:viewportHeight="1536">
+    <group android:translateX="418" android:translateY="418" android:scaleX="7" android:scaleY="7">
+        <path android:fillColor="#19d3b8" android:fillAlpha="0.4"
+            android:pathData="M18,82 L28.8,20.9 A62,62 0 0,1 61.8,38.2 Z" />
+        <path android:strokeColor="#0aa6c2" android:strokeWidth="6" android:strokeLineCap="round"
+            android:pathData="M18,60 A22,22 0 0,1 40,82 M18,40 A42,42 0 0,1 60,82 M18,20 A62,62 0 0,1 80,82" />
+        <path android:fillColor="#ffe600" android:fillAlpha="0.45"
+            android:pathData="M22.3,53.5 a5,5 0 1,0 10,0 a5,5 0 1,0 -10,0" />
+        <path android:fillColor="#ffe600"
+            android:pathData="M40.2,41 a6.5,6.5 0 1,0 13,0 a6.5,6.5 0 1,0 -13,0" />
+        <path android:strokeColor="#00f2fe" android:strokeWidth="7" android:strokeLineCap="round"
+            android:pathData="M18,82 L61.8,38.2" />
+        <path android:fillColor="#00f2fe"
+            android:pathData="M10,82 a8,8 0 1,0 16,0 a8,8 0 1,0 -16,0" />
+    </group>
+</vector>
