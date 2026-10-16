@@ -636,10 +636,13 @@
                 ? '<button class="scope-act" data-act="' + (ignored ? 'unignore' : 'ignore') +
                   '" data-mac="' + esc(m.mac) + '">' + (ignored ? ico('bell') + ' Unignore' : ico('bell-off') + ' Ignore') + '</button>'
                 : '';
-            // Trackers always offer hunt. With the filter off, anything does --
-            // that is the whole point of turning the filter off: find something
-            // interesting that is on no list, then go and physically find it.
-            if (cat.key !== 'tracker' && !foxhuntMode) return ign ? '<div class="scope-actions">' + ign + '</div>' : '';
+            // Hunt follows one MAC, so it is offered wherever that MAC will hold
+            // still long enough to walk down: any stable address (the Ignore
+            // test), plus trackers always (an AirTag away from its owner keeps
+            // its random address ~a day). With the filter off, anything -- find
+            // something on no list, then go and physically find it. Gating on
+            // category alone hid Hunt on a public-address Axon body cam.
+            if (cat.key !== 'tracker' && !foxhuntMode && !stableMac(m)) return ign ? '<div class="scope-actions">' + ign + '</div>' : '';
             const hunting = !!huntMac && huntMac.toUpperCase() === String(m.mac).toUpperCase();
             // Ring writes the standard Immediate Alert characteristic, which
             // only Find Me / Proximity keyfobs have. AirTags, Tiles and phones
@@ -5203,6 +5206,14 @@
                 results.noIgnoreOnRotating  = actionRow(rotRow, categoryOf('Tracker')).indexOf('ignore"') === -1;
                 results.ignoreOnStaticBle   = actionRow(staticRow, categoryOf('Tracker')).indexOf('data-act="ignore"') > 0;
                 results.noIgnoreUnmatched   = actionRow(pubRow, categoryOf('')).indexOf('ignore"') === -1;
+                // Hunt: any stable address with the filter on, not just trackers.
+                {
+                    const fm = foxhuntMode; foxhuntMode = false;
+                    const camRot = { mac: '4A:11:22:33:44:55', type: 'Axon', protocol: 'BLE', rssi: -60, confidence: 70 };
+                    results.huntOnStableNonTracker = actionRow(pubRow, categoryOf('Axon')).indexOf('data-act="hunt"') > 0;
+                    results.noHuntOnRotatingCam    = actionRow(camRot, categoryOf('Axon')).indexOf('data-act="hunt"') === -1;
+                    foxhuntMode = fm;
+                }
                 ignoredMacs = savedIg;
 
                 // The hunted row is pinned to the top of the list even when it
