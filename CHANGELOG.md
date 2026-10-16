@@ -4,6 +4,16 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Fixed -- The Android splash icon is sharp
+
+- **Android 12+ draws the launcher icon on its system splash, and ours is a
+  raster PNG foreground, so the phone scaled it up and it looked fuzzy.** The
+  splash now has its own vector drawable (`res/drawable/splash_icon.xml`, a copy
+  of `assets/icon-foreground.svg`) via `windowSplashScreenAnimatedIcon`. The
+  viewport is 1536 so the logo sits at the launcher's 16.7% inset, the same size
+  as before. VectorDrawable has no blur, so the SVG's soft glow is not on the
+  splash. The launcher icon itself is unchanged.
+
 ### Fixed -- Hunt is offered on any stable address, not just trackers
 
 - **A field drive past a traffic stop listed an Axon body cam (public BLE
