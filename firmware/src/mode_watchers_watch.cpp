@@ -2341,6 +2341,7 @@ static void watchersPeriodicTask(void *pvParameters) {
         // it); not worth a lock on the 1 Hz path. Gap: this task is deleted
         // during a capture, so the breadcrumb freezes at the capture start.
         crashBreadcrumbTick((uint32_t)trackedTargets.size());
+        bleScanTick();   // S3: restarts a scan round that failed to (mode_manager.cpp)
 
         // Sound anything the radios flagged since the last tick. Done here, off
         // the detection callbacks, so the Wi-Fi promiscuous handler stays fast
@@ -2601,14 +2602,8 @@ void startWatchersWatch() {
     // with the tracked-target count flat at 41-44, so it is not target churn.
     // 0 = callbacks only; a scannable device is still held for its scan response,
     // so name matching is unaffected. 1.4 and 2.x behave the same here.
-    pScan->setMaxResults(0);
-
-    
-#if CONFIG_IDF_TARGET_ESP32C5
-    pScan->start(0, false, true);
-#else
-    pScan->start(0, nullptr, false);
-#endif
+    // bleScanStart() sets setMaxResults(0) and, on the S3, scans in rounds.
+    bleScanStart();
     
     // Start WiFi Promiscuous
     WiFi.mode(WIFI_STA);
@@ -2676,10 +2671,7 @@ void stopWatchersWatch() {
 
     ESP_LOGI(TAG, "Stopping Watcher's Watch BLE scan...");
     NimBLEScan* pScan = NimBLEDevice::getScan();
-    if (pScan) {
-        pScan->stop();
-        pScan->clearResults();
-    }
+    if (pScan) bleScanStop();   // clears on the next start, never here (stop race)
 
     // This mode used to leave promiscuous mode and the rx callback running
     // after a mode switch; only watchersRunning=false kept the callback quiet.

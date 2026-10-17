@@ -49,20 +49,77 @@ void modeManagerInit() {
     ESP_LOGI(TAG, "Detector started.");
 }
 
-void pauseBle(bool pause) {
-    NimBLEScan* pScan = NimBLEDevice::getScan();
-    if (pScan) {
-        if (pause) {
-            pScan->stop();
-            ESP_LOGI(TAG, "BLE Scanning paused");
-        } else {
-#if CONFIG_IDF_TARGET_ESP32C5
-            pScan->start(0, false, true);
-#else
-            pScan->start(0, nullptr, false);
+// Every scan start/stop goes through these two, on both boards.
+//
+// Stop: with setMaxResults(0), NimBLE's stop() deletes every stored device on
+// the CALLER's task (loop() for a USB command, the 1 Hz task for a ring) while
+// the host task can be inside onResult reading one of them -- a use-after-free
+// that panicked an S3 in findAdvField (2026-10-15). Raising the limit first
+// makes stop() keep them; bleScanStart() clears them once nothing is scanning.
+//
+// Start (S3 only): scan in BLE_SCAN_ROUND_S rounds, restarted from the
+// round-end callback. NimBLE 1.4 erases a device only after its callback fires,
+// and for a scannable advert that waits for the scan response -- one that never
+// comes (weak, MAC-rotating) stayed in the result vector for ever under a scan
+// that never completes: -1.9 KB/h, 21 stuck devices in 1.45 h, BLE-only soak,
+// leak followed the radio across boards. A round's end clears the vector on
+// the host task, so no race. 2.x (C5) times those out itself: stays continuous.
+#if !CONFIG_IDF_TARGET_ESP32C5
+#define BLE_SCAN_ROUND_S 30
+static volatile bool bleScanWanted = false;
+static uint8_t bleScanIdleTicks = 0;
+
+static void onScanRoundEnd(NimBLEScanResults) {
+    // Also called by stop() on the caller's task; bleScanWanted is false then.
+    if (bleScanWanted) NimBLEDevice::getScan()->start(BLE_SCAN_ROUND_S, onScanRoundEnd, true);
+}
 #endif
-            ESP_LOGI(TAG, "BLE Scanning resumed");
-        }
+
+void bleScanStart() {
+    NimBLEScan* sc = NimBLEDevice::getScan();
+    sc->clearResults();          // safe: nothing is scanning yet
+    sc->setMaxResults(0);
+#if CONFIG_IDF_TARGET_ESP32C5
+    sc->start(0, true, true);
+#else
+    bleScanWanted = true;
+    bleScanIdleTicks = 0;
+    sc->start(BLE_SCAN_ROUND_S, onScanRoundEnd, true);
+#endif
+}
+
+void bleScanStop() {
+    NimBLEScan* sc = NimBLEDevice::getScan();
+#if !CONFIG_IDF_TARGET_ESP32C5
+    bleScanWanted = false;
+#endif
+    sc->setMaxResults(0xFF);
+    sc->stop();
+    // ponytail: lets an in-flight onResult finish before anyone clears; a
+    // handler is well under a millisecond.
+    vTaskDelay(pdMS_TO_TICKS(20));
+}
+
+// 1 Hz safety net: a round restart that failed from the callback would leave
+// the S3 BLE-deaf with nothing to say so. Two idle seconds in a row (a round
+// boundary is microseconds) restarts it from here, where it is not scanning.
+void bleScanTick() {
+#if !CONFIG_IDF_TARGET_ESP32C5
+    if (!bleScanWanted || NimBLEDevice::getScan()->isScanning()) { bleScanIdleTicks = 0; return; }
+    if (++bleScanIdleTicks >= 2) {
+        ESP_LOGW(TAG, "BLE scan round did not restart; restarting");
+        bleScanStart();
+    }
+#endif
+}
+
+void pauseBle(bool pause) {
+    if (pause) {
+        bleScanStop();
+        ESP_LOGI(TAG, "BLE Scanning paused");
+    } else {
+        bleScanStart();
+        ESP_LOGI(TAG, "BLE Scanning resumed");
     }
 }
 

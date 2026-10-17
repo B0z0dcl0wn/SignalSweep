@@ -45,6 +45,7 @@
 #include "mbedtls/base64.h"
 #include "mode_capture.h"
 #include "mode_watchers_watch.h"
+#include "mode_manager.h"
 #include "c5_radio.h"
 #include "sd_store.h"
 #include "host_time.h"
@@ -319,7 +320,7 @@ static void captureDrainTask(void*) {
             esp_wifi_set_promiscuous(false);
             esp_wifi_set_promiscuous_rx_cb(NULL);
             NimBLEScan* sc = NimBLEDevice::getScan();
-            if (sc) { sc->stop(); sc->clearResults(); }
+            if (sc) bleScanStop();   // no clearResults() here: stop race, see mode_manager.cpp
             // Flush whatever is still queued before freeing.
             while (wifiRing.tail != wifiRing.head) drainRing(&wifiRing, 512);
             while (bleRing.tail  != bleRing.head)  drainRing(&bleRing, 512);
@@ -427,7 +428,6 @@ static void startCapture(uint32_t durationSecs, bool toSd) {
 #if CONFIG_IDF_TARGET_ESP32C5
     sc->setInterval(50);   // the detector's measured C5 BLE timing (c5_radio.h rationale)
     sc->setWindow(25);
-    sc->start(0, false, true);
 #else
     // The S3 time-slices ONE radio between BLE and WiFi, so the BLE scan window
     // is stolen straight from WiFi promiscuous. A near-100% window starved WiFi
@@ -435,8 +435,8 @@ static void startCapture(uint32_t durationSecs, bool toSd) {
     // only ~40% -- still plenty of adverts, and WiFi actually gets heard.
     sc->setInterval(100);
     sc->setWindow(40);
-    sc->start(0, nullptr, false);
 #endif
+    bleScanStart();
 
 #if CONFIG_IDF_TARGET_ESP32C5
     // Single core: xTaskCreatePinnedToCore(..., 1) asserts at boot. Same value as

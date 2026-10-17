@@ -47,6 +47,13 @@ void modeManagerInit();
 void pauseBle(bool pause);
 
 /**
+ * @brief The only way to start/stop the BLE scan (see mode_manager.cpp: stop race, S3 scan rounds).
+ */
+void bleScanStart();
+void bleScanStop();
+void bleScanTick();   // 1 Hz, from the detector task
+
+/**
  * @brief Pause/resume Wi-Fi scanning globally
  */
 void pauseWifi(bool pause);
