@@ -2,7 +2,7 @@
 
 All notable changes to SignalSweep are recorded here.
 
-## [Unreleased]
+## [0.10.1] — 2026-10-17 — Drives all night
 
 ### Fixed -- The C5 no longer runs out of memory on a busy road
 
