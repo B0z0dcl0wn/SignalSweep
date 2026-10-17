@@ -396,6 +396,12 @@ const flockFail = [];
 const ver = Number((fw.match(/#define SIG_SCHEMA_VERSION\s+(\d+)/) || [])[1]);
 if (!(ver >= 8)) flockFail.push('SIG_SCHEMA_VERSION is ' + ver + ', expected >= 8');
 
+// Target cap (2026-10-16): every insert must make room first, or a busy road
+// grows the list until the C5's internal heap runs out (bench: 58 KB -> 0.2 KB).
+const pushes = (fw.match(/trackedTargets\.push_back\(/g) || []).length;
+const capped = (fw.match(/makeRoomLocked\(\);\s*trackedTargets\.push_back\(/g) || []).length;
+if (pushes === 0 || capped !== pushes) flockFail.push('trackedTargets.push_back without makeRoomLocked() first: ' + capped + '/' + pushes);
+
 // Registry vendors (v16, "could an ordinary person own this?"): OUI-only rules,
 // never heard on the air. Police/ALPR-only makers beep (70) and must route to
 // their tab; business security makers list at 60 and must route to 'other'
