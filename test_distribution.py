@@ -94,6 +94,7 @@ def main():
 
     parse = install.board_from_chip_output
     assert parse("Chip type:          ESP32-C5 (QFN32) (revision v1.0)") == "c5"   # esptool 5
+    assert parse("Chip type:          ESP32-C5HR8 (revision v1.0)") == "c5"          # C5 package variant
     assert parse("Chip is ESP32-S3 (QFN56) (revision v0.2)") == "s3"              # esptool 4
     assert parse("Chip type:          ESP32-C3 (QFN32)") is None
     assert parse("A fatal error occurred: Failed to connect") is None
