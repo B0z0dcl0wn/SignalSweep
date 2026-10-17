@@ -588,6 +588,39 @@ static void ensureSignaturesFileExists() {
 // Now that the mode harvests everything rather than only signature hits, the
 // target list needs the same lifecycle every other mode already had.
 #define WATCHERS_STALE_MS    120000  // drop devices unheard for 2 min
+
+// Hard cap on the tracked list. Every device heard is held until it has been
+// silent for WATCHERS_STALE_MS, and each one costs ~50 B of INTERNAL heap (its
+// Strings; the vector itself is in PSRAM past 4 KB on the C5). A C5 on a busy
+// road ran out of internal heap ~2 min into a boot (2026-10-16: abort in the
+// alert-log fopen lock); the bench flood took it from 58 KB free to 0.2 KB at
+// ~1,900 devices. 400 bounds that at ~20 KB, far above a quiet street (~100).
+#ifndef WATCHERS_MAX_TARGETS
+#define WATCHERS_MAX_TARGETS 400
+#endif
+
+// Caller holds watchersMutex and is about to push_back one target. Evicts the
+// least-recently-heard UNMATCHED target; never the hunted one, never one with
+// an unwritten log record. ponytail: a full list of 400 matches evicts the
+// oldest match instead -- not a real case; add a skip-the-newcomer path at the
+// four call sites if one ever is.
+static void makeRoomLocked() {
+    if (trackedTargets.size() < WATCHERS_MAX_TARGETS) return;
+    uint32_t now = millis();
+    int victim = -1, victimMatched = 2;
+    uint32_t victimAge = 0;
+    for (size_t i = 0; i < trackedTargets.size(); i++) {
+        const WatcherTargetInfo& t = trackedTargets[i];
+        if (t.logPending || (huntMac.length() > 0 && t.mac.equalsIgnoreCase(huntMac))) continue;
+        int matched = t.confidence >= CONF_LIST_MIN ? 1 : 0;
+        uint32_t age = now - t.lastSeenMs;
+        if (matched < victimMatched || (matched == victimMatched && age > victimAge)) {
+            victim = (int)i; victimMatched = matched; victimAge = age;
+        }
+    }
+    if (victim >= 0) trackedTargets.erase(trackedTargets.begin() + victim);
+}
+
 // How long the hunted target may go unheard before the clicker falls silent.
 // Long enough to survive a few missed advertising intervals while you turn a
 // corner; short enough that walking out of range stops the noise promptly.
@@ -1335,6 +1368,7 @@ class WatchersScanCallbacks : public NimBLEAdvertisedDeviceCallbacks {
                     newTarget.tier = tierForConfidence(confidence);
                     newTarget.lastReportedMs = 0;
                     if (droneDecoded) applyDroneData(newTarget, bleUas);
+                    makeRoomLocked();
                     trackedTargets.push_back(newTarget);
 
                     // Log only on a signature hit; everything else is tracked
@@ -1482,6 +1516,7 @@ static void upsertDroneTarget(const String& mac, int rssi, const char* proto,
         t.lastReportedMs = 0;
         if (ch > 0) t.wifiCh = ch;
         applyDroneData(t, d);
+        makeRoomLocked();
         trackedTargets.push_back(t);
         ESP_LOGI(TAG, "[DRONE - %s] MAC: %s, UAS: %s, RSSI: %d",
                  proto, mac.c_str(), t.uasId.c_str(), rssi);
@@ -1519,6 +1554,7 @@ static void upsertAttackTarget(const String& mac, int rssi, const char* proto,
         t.rssi = rssi; t.firstSeenMs = now; t.lastSeenMs = now; t.count = 1;
         t.protocol = proto; t.confidence = W_ATTACK; t.tier = tierForConfidence(W_ATTACK);
         t.lastReportedMs = 0; if (ch > 0) t.wifiCh = ch;
+        makeRoomLocked();
         trackedTargets.push_back(t);
         noteAlertForTarget(trackedTargets.back(), W_ATTACK, category);
     }
@@ -1992,6 +2028,7 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
                 newTarget.tier = tierForConfidence(wifiConfidence);
                 newTarget.lastReportedMs = 0;
                 if (droneDecoded) applyDroneData(newTarget, wifiUas);
+                makeRoomLocked();
                 trackedTargets.push_back(newTarget);
 
                 if (wifiConfidence >= CONF_LIST_MIN) {

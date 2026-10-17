@@ -4,6 +4,28 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Fixed -- The C5 no longer runs out of memory on a busy road
+
+- **A C5 crashed on a drive about two minutes after power-up**: an alert
+  sounded, then the 1 Hz task's alert-log write aborted creating the file
+  lock (`lock_init_generic`). The file object it had just allocated sat in
+  PSRAM, which a small allocation only falls back to once **internal** RAM is
+  full. The cause was the tracked-device list: it had no limit, every device
+  heard stays in it until it has been silent for two minutes, and each one
+  costs about 50 B of internal RAM. On a road, with Bluetooth plus both Wi-Fi
+  bands and phones probing on fresh random addresses, that adds up fast, and
+  a C5 starts with only ~58 KB free.
+- **Reproduced on the bench** with a flood of ~40 new fake devices a second
+  (a bench-only emitter persona): 58 KB free at 100 devices fell to **0.2 KB**
+  at 1,939, with serial output stalling. **The list is now capped at 400**
+  (`WATCHERS_MAX_TARGETS`, both boards). A full list evicts the
+  least-recently-heard device that matched nothing; the hunted target and any
+  device with an unwritten log record are never evicted. Same flood with the
+  cap: steady at 400 devices, 40-43 KB free, low point 26.3 KB, and a real
+  Tile stayed listed in all 67 pushes while the flood churned around it. A
+  quiet street holds about 100. `selftest.js` fails if any
+  `trackedTargets.push_back` is not preceded by `makeRoomLocked()`.
+
 ### Fixed -- The S3's slow Bluetooth memory leak, and a crash when the scan pauses
 
 - **The leak was NimBLE 1.4 holding devices that never sent a scan response.**
