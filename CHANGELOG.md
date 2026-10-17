@@ -2,6 +2,25 @@
 
 All notable changes to SignalSweep are recorded here.
 
+## [Unreleased]
+
+### Fixed -- `install.py` accepts ESP32-C5 module variants
+
+- **`install.py` refused an ESP32-C5-N16R8 dev board** (issue #1): esptool
+  reports the module variant as `ESP32-C5HR8`, and the chip check demanded the
+  bare name `ESP32-C5` followed by a word break. The suffix is the package, not
+  a different chip, so it is the same die and the same image. The check now
+  accepts any suffix that does not start with a digit, so a genuinely different
+  part such as the ESP32-S31 is still refused. `test_distribution.py` pins both.
+
+### Added -- The v1 case STLs
+
+- **`hardware/case-v1/`** ships the printable v1 case (base, lid, LED diffuser)
+  for the XIAO board (issue #3). The rest of `hardware/` stays local. `*.stl` is
+  marked binary in `.gitattributes`, because Windows line-ending normalisation
+  rewrites `0D 0A` inside binary files on commit, the same damage that once
+  corrupted every Android icon.
+
 ## [0.10.1] — 2026-10-17 — Drives all night
 
 ### Fixed -- The C5 no longer runs out of memory on a busy road

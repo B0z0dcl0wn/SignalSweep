@@ -188,8 +188,10 @@ def choose(items, label, fmt):
 
 
 def board_from_chip_output(text):
-    """esptool 5 prints 'Chip type: ESP32-C5 ...', esptool 4 'Chip is ESP32-S3 ...'."""
-    m = re.search(r"(?:Chip type:|Chip is)\s*ESP32-(S3|C5)\b", text)
+    """esptool 5 prints 'Chip type: ESP32-C5 ...', esptool 4 'Chip is ESP32-S3 ...'.
+    Module variants append a package suffix ('ESP32-C5HR8'): same die, same image.
+    A following digit is a different chip (ESP32-S31), not a variant."""
+    m = re.search(r"(?:Chip type:|Chip is)\s*ESP32-(S3|C5)(?!\d)", text)
     return m.group(1).lower() if m else None
 
 

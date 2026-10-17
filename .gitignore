@@ -60,7 +60,8 @@ __pycache__/
 # Agent instructions and planning notes — kept local, not published
 CLAUDE.md
 docs/plans/
-hardware/
+hardware/*
+!hardware/case-v1/
 
 # Local-only bench programs and side-configs — never published
 firmware/src/bench/

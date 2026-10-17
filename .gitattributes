@@ -32,6 +32,7 @@
 *.zip  binary
 *.gz   binary
 *.pdf  binary
+*.stl  binary
 
 # Brand logo SVGs ship byte-for-byte from the kit: each carries a signed
 # content credential over its exact bytes, so no line-ending conversion.
