@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SignalSweep</title>
+<meta name="description" content="It beeps at the gear that's watching you. A pocket ESP32 that hears cameras, body cams, drones, trackers and attack gear, and tells you which by ear. No cloud, no history, no trail.">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon-32.png" sizes="32x32">
+<link rel="apple-touch-icon" href="touch-180.png">
+<!-- Brand tokens: the kit's signalsweep.css, verbatim. -->
+<link rel="stylesheet" href="signalsweep.css">
+<style>
+  /* Share Tech Mono (OFL, share-tech-mono-OFL.txt), served from this site:
+     never a hosted font service. */
+  @font-face{font-family:'Share Tech Mono';src:url('share-tech-mono.woff2') format('woff2');font-display:swap}
+  :root{
+    --line:rgba(140,170,210,.14);
+    --mono:'Share Tech Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:var(--ss-bg); color:var(--ss-text); line-height:1.6;
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+    background-image:radial-gradient(circle at 12% 10%,rgba(0,242,254,.07) 0%,transparent 42%),
+                     radial-gradient(circle at 88% 82%,var(--ss-glow-ambient) 0%,transparent 42%);
+    background-attachment:fixed;
+  }
+  .wrap{max-width:760px;margin:0 auto;padding:0 1.25rem}
+  header{padding:5rem 0 3rem;text-align:center}
+  h1 img{display:block;margin:0 auto;width:min(340px,80vw);height:auto}
+  .hook{font-family:var(--mono);font-size:clamp(1.3rem,4vw,1.7rem);color:var(--ss-text);margin-top:1.4rem}
+  .more{border:1px solid var(--ss-glow-hover);border-radius:14px;padding:1.4rem 1.6rem;background:var(--ss-panel);box-shadow:0 0 24px var(--ss-glow-ambient)}
+  .more p{margin:0}
+  .tag{color:var(--ss-text-muted);font-size:1.12rem;margin-top:.9rem;max-width:34rem;margin-inline:auto}
+  h2{font-family:var(--mono);font-weight:400;font-size:1.35rem;margin:0 0 1rem;letter-spacing:-.01em}
+  section{padding:2.5rem 0;border-top:1px solid var(--line)}
+  p{margin-bottom:1rem;color:var(--ss-text)}
+  a{color:var(--ss-cyan)}
+  code{font-family:var(--mono);font-size:.9em;background:rgba(255,255,255,.06);
+    padding:.15rem .4rem;border-radius:4px}
+  .flash{background:var(--ss-panel);border:1px solid var(--line);border-radius:14px;
+    padding:2rem;text-align:center;margin:2.5rem 0}
+  .flash h2{margin-bottom:.4rem}
+  .flash .sub{color:var(--ss-text-muted);font-size:.95rem;margin-bottom:1.5rem}
+  .btn{display:inline-block;background:var(--ss-cyan);color:var(--ss-bg);font-weight:650;
+    text-decoration:none;padding:.8rem 1.6rem;border-radius:9px;border:0;
+    font-size:1rem;cursor:pointer}
+  .btn.ghost{background:transparent;color:var(--ss-cyan);border:1px solid rgba(0,242,254,.45)}
+  .row{display:flex;gap:.7rem;justify-content:center;flex-wrap:wrap;margin-top:1rem}
+  .nope{font-size:.85rem;color:var(--ss-text-muted);margin-top:1.1rem}
+  ul.beeps{list-style:none;display:grid;gap:.55rem}
+  ul.beeps li{display:flex;align-items:baseline;gap:.8rem;background:var(--ss-panel);
+    border:1px solid var(--line);border-left:3px solid var(--c);border-radius:9px;
+    padding:.75rem 1rem}
+  .ico{width:1.15em;height:1.15em;vertical-align:-.2em;fill:none;stroke:var(--c,currentColor);stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+  ul.beeps b{flex:0 0 9.5rem;font-weight:600}
+  ul.beeps span{color:var(--ss-text-muted);font-family:var(--mono);font-size:.88rem}
+  ul.plain{list-style:none;display:grid;gap:.5rem;margin-bottom:1rem}
+  ul.plain li{padding-left:1.4rem;position:relative;color:var(--ss-text)}
+  ul.plain li::before{content:"—";position:absolute;left:0;color:var(--ss-text-muted)}
+  footer{padding:3rem 0 4rem;border-top:1px solid var(--line);color:var(--ss-text-muted);font-size:.9rem}
+  footer a{color:var(--ss-text-muted)}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+        <symbol id="i-camera" viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></symbol>
+        <symbol id="i-video" viewBox="0 0 24 24"><rect x="2" y="6" width="14" height="12" rx="2"/><path d="M16 10l6-4v12l-6-4"/></symbol>
+        <symbol id="i-drone" viewBox="0 0 24 24"><circle cx="5" cy="5" r="3"/><circle cx="19" cy="5" r="3"/><circle cx="5" cy="19" r="3"/><circle cx="19" cy="19" r="3"/><rect x="9" y="9" width="6" height="6" rx="1"/><path d="M7.2 7.2L9 9"/><path d="M16.8 7.2L15 9"/><path d="M7.2 16.8L9 15"/><path d="M16.8 16.8L15 15"/></symbol>
+        <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 22s7-6.5 7-12a7 7 0 0 0-14 0c0 5.5 7 12 7 12z"/><circle cx="12" cy="10" r="2.5"/></symbol>
+</svg>
+<div class="wrap">
+
+<header>
+  <h1><img src="lockup.svg" alt="SignalSweep" width="433" height="112"></h1>
+  <p class="hook">It beeps at the gear that's watching you.</p>
+  <p class="tag">A pocket-sized ESP32 sweeps Bluetooth and Wi-Fi nonstop, matches what
+  it hears against surveillance hardware, drone Remote ID, trackers and attack gear,
+  and tells you which one by ear. Plug it in and walk away. The phone is optional.</p>
+</header>
+
+<div class="flash">
+  <h2>Flash it from this page</h2>
+  <p class="sub">No Python, no PlatformIO, no drivers. Plug a XIAO ESP32-C5 or
+  ESP32-S3 in with a data-capable USB-C cable. The flasher works out which
+  one it is.</p>
+  <esp-web-install-button manifest="manifest.json">
+    <button slot="activate" class="btn">Connect &amp; flash</button>
+    <span slot="unsupported">Your browser can't do this. Use desktop Chrome, Edge or Opera.</span>
+    <span slot="not-allowed">Serial access was blocked. Check site permissions and reload.</span>
+  </esp-web-install-button>
+  <div class="row">
+    <a class="btn ghost" href="app/">Open the app</a>
+    <!-- Points at the releases page rather than a file: the APK filename
+         carries its version, so any direct link would go stale on the next
+         tag. There is no Play Store listing -- sideloading is the channel. -->
+    <a class="btn ghost" href="https://github.com/B0z0dcl0wn/SignalSweep/releases/latest">Download the Android app</a>
+    <a class="btn ghost" href="pull.html">Get your data off</a>
+  </div>
+  <p class="nope">Flashing needs Web Serial: desktop Chrome, Edge or Opera.
+  The app runs in the same browsers over Bluetooth or the cable, or on Android as an APK.</p>
+</div>
+
+<section>
+  <h2>Hear it, don't read it</h2>
+  <p>Every category gets <strong>its own sound and its own light</strong>, so it
+  works face-down in a cupholder, a backpack or a jacket pocket. No screen required.</p>
+  <ul class="beeps">
+    <li style="--c:var(--ss-cat-alpr)"><b><svg class="ico" aria-hidden="true"><use href="#i-camera"/></svg> ALPR / camera</b> <span>two long beeps</span></li>
+    <li style="--c:var(--ss-cat-bodycam)"><b><svg class="ico" aria-hidden="true"><use href="#i-video"/></svg> Body cam</b> <span>long · short · short</span></li>
+    <li style="--c:var(--ss-cat-drone)"><b><svg class="ico" aria-hidden="true"><use href="#i-drone"/></svg> Drone</b> <span>rising trill</span></li>
+    <li style="--c:var(--ss-cat-tracker)"><b><svg class="ico" aria-hidden="true"><use href="#i-pin"/></svg> Tracker</b> <span>fast ticking</span></li>
+  </ul>
+  <p style="margin-top:1rem">Mute any category you don't care about. It's still
+  detected and listed, just quiet. Three volumes, four LED modes, five themes.</p>
+</section>
+
+<section class="more">
+  <p><strong>But wait, there's more.</strong> It decodes the drone <strong>and
+  where the pilot is standing</strong>. It hunts a tracker by ear, beeping faster
+  as you close in. It catches a fake-AirTag spam storm and <strong>stops crying
+  wolf</strong>. It names your neighbour's pwnagotchi. And when you want it quiet,
+  it stops advertising entirely, so the gear it's hunting can't hunt it back.</p>
+</section>
+
+<section>
+  <h2>What it catches</h2>
+  <ul class="plain">
+    <li><strong>Drones, in full.</strong> ASTM F3411 Remote ID over Bluetooth, Wi-Fi
+        beacon and Wi-Fi NAN: ID, altitude, speed, heading, and the pilot's position.
+        Often before you hear the props.</li>
+    <li><strong>Trackers.</strong> Apple Find My, Google, Samsung and Tile. When
+        someone floods the area with fakes, you get a handful of beeps, one row that
+        says what's going on, and then quiet.</li>
+    <li><strong>Surveillance hardware.</strong> Flock Safety gear when it's talking,
+        Axon body cams, smart glasses. Axon, Flock, ShotSpotter, Genetec, WatchGuard
+        Video and Digital Ally addresses beep on sight: nobody but an agency buys that.</li>
+    <li><strong>Attack gear</strong> (opt-in). Deauth bursts, Pineapple-style karma,
+        BLE popup spam, Flipper Zero hints, pwnagotchis by name.</li>
+    <li><strong>Whatever you add.</strong> The signature list is editable from the app:
+        OUI, company ID, name, service UUID or SSID. No recompile.</li>
+  </ul>
+</section>
+
+<section>
+  <h2>Built for the field</h2>
+  <ul class="plain">
+    <li><strong>Runs headless.</strong> Battery bank or car USB. It scans and beeps
+        with nothing connected.</li>
+    <li><strong>Survives the plug-pull.</strong> Mute, categories, hunt target,
+        filter, name and rules all come back after a power cut.</li>
+    <li><strong>Both bands.</strong> The C5 sweeps 2.4 and 5 GHz. Every Wi-Fi row
+        shows its band and channel, and a dual-band router is one row, not four.</li>
+    <li><strong>Site Survey.</strong> Capture the raw air next to something
+        suspicious, read its signature, photograph it, and export it for DeFlock.</li>
+    <li><strong>Logs if you ask.</strong> What it beeped at and when, on its own flash
+        or an SD card. Off by default. Never where. Pull it off with
+        <a href="pull.html">the export page</a>; the card never leaves the case.</li>
+  </ul>
+</section>
+
+<section>
+  <h2>What it won't do</h2>
+  <p><em>The only winning move is not to transmit.</em></p>
+  <ul class="plain">
+    <li>No jamming, no deauth, no packet injection.</li>
+    <li>No advertisement spoofing. The <code>ble_spoof</code> primitive was cut.</li>
+    <li>No arbitrary GATT writes. Ringing a tracker is one fixed Immediate Alert
+        write, with a MAC as its only parameter.</li>
+    <li>No cloud, no telemetry, no analytics, no account.</li>
+  </ul>
+  <p>It keeps <strong>no trail</strong>. The app shows what's here right now and
+  forgets it on disconnect. Vendor names are looked up offline, so no MAC leaves
+  your phone. The one location it ever keeps is a pin you say yes to, one device at
+  a time, AES-GCM encrypted behind a PIN, and detecting and beeping never ask for it.</p>
+  <p>Receive-only stops it advertising <code>SignalSweep</code> to every scanner in
+  range, including the hardware it is hunting. It keeps listening and beeping.</p>
+</section>
+
+<section>
+  <h2>Straight answers</h2>
+  <ul class="plain">
+    <li><strong>Every Flock camera?</strong> No. It catches Flock gear when it's
+        talking. A deployed camera on LTE with its Wi-Fi off says nothing to anyone,
+        and nothing can hear that.</li>
+    <li><strong>An AirTag right beside its owner?</strong> Not flagged. It sends the
+        short form every iPhone sends, and treating those as AirTags is how a corner
+        store reads as 22 trackers.</li>
+    <li><strong>Legal?</strong> It's a receiver. It transmits a Bluetooth advert you
+        can switch off, the scan requests that ask devices their names, and one write
+        when you press Ring. Know your local law.</li>
+  </ul>
+</section>
+
+<section>
+  <h2>Get the hardware</h2>
+  <p>One Seeed Studio XIAO ESP32-C5 (hears 2.4 <em>and</em> 5 GHz) or
+  ESP32-S3 (about $15, 2.4 GHz only). Add a U.FL antenna, a buzzer, a WS2812 LED
+  bar and a microSD reader for the full build. See
+  <a href="https://github.com/B0z0dcl0wn/SignalSweep/blob/main/firmware/WIRING.md">WIRING.md</a>.
+  On the C5, use a dual-band antenna so it hears 5 GHz as well as 2.4.</p>
+</section>
+
+<section>
+  <h2>Standing on other people's work</h2>
+  <p>SignalSweep exists because of
+  <a href="https://github.com/colonelpanichacks/oui-spy-unified-blue">Colonel Panic's OUI Spy</a>,
+  and everything it knows about Flock Safety hardware comes from the OUI
+  research of <a href="https://github.com/nitekry">OrdoOuroborous / @NitekryDPaul</a>.
+  The full list is in
+  <a href="https://github.com/B0z0dcl0wn/SignalSweep/blob/main/CREDITS.md">CREDITS.md</a>.
+  Read it, then go read their repos.</p>
+</section>
+
+<footer>
+  <p>GPL-3.0-or-later ·
+  <a href="https://github.com/B0z0dcl0wn/SignalSweep">Source on GitHub</a> ·
+  <a href="https://github.com/B0z0dcl0wn/SignalSweep/blob/main/CREDITS.md">Credits</a></p>
+  <p style="margin-top:.6rem"><em>Hack the planet.</em></p>
+</footer>
+
+</div>
+<script type="module" src="https://unpkg.com/esp-web-tools@10.4.0/dist/web/install-button.js?module"></script>
+</body>
+</html>
