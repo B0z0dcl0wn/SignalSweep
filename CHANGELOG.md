@@ -4,6 +4,36 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Fixed -- The S3's slow Bluetooth memory leak, and a crash when the scan pauses
+
+- **The leak was NimBLE 1.4 holding devices that never sent a scan response.**
+  With `setMaxResults(0)` a device is erased only after its callback fires, and
+  for a scannable advert that waits for the scan response. One that never comes
+  (weak, or rotating its address) stayed in the result vector for ever, because
+  a scan that runs continuously never completes and never clears. Isolated by
+  soaking one S3 per radio, then swapping the boards: the loss followed the
+  radio, not the board (Bluetooth-only -1.2 and -1.9 KB/h, Wi-Fi-only flat),
+  and NimBLE's own stored-device count climbed 5 -> 26 in 1.45 h, about 130 B
+  each. **The S3 now scans in 30-second rounds**, restarted from NimBLE's
+  round-end callback; the round's end clears the stuck devices on the host task.
+  2.87 h soak of both S3s, Bluetooth only: +0.49 and -0.54 KB/h, stored-device
+  count never above 12. A 1 Hz check restarts the scan if a round ever fails to,
+  so a board cannot go Bluetooth-deaf in silence. The C5 (NimBLE 2.x) times
+  those devices out itself and stays a continuous scan.
+- **Trap: NimBLE's `stop()` deletes every stored device on the calling task.**
+  With `maxResults == 0`, `stop()` runs `clearResults()` on whoever called it --
+  `loop()` for a USB `CMD:BLE_SCAN:OFF`, the 1 Hz task for a Ring -- while the
+  host task can be inside our scan callback reading one of those devices. A
+  use-after-free: 300 scan off/on toggles over USB panicked an S3 on `main`
+  about 8 times (`LoadProhibited` in `findAdvField`, `nimble_host`); with the
+  fix, 0 of 300. Every start and stop now goes through `bleScanStart()` /
+  `bleScanStop()` (`mode_manager.cpp`): stop raises the result limit first so
+  nothing is deleted, and start clears the vector while nothing is scanning.
+  `start(..., is_continue=false)` is not used -- 1.4 clears *after* the scan is
+  already running, the same race in a smaller window. The C5 has the same
+  `stop()` but a single core; it survived 300 toggles before the fix and 150
+  after, and gets the same safe path.
+
 ### Fixed -- The Android splash icon is sharp
 
 - **Android 12+ draws the launcher icon on its system splash, and ours is a
