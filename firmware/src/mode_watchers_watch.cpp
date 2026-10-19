@@ -119,7 +119,18 @@ static const char *SIG_FILE_PATH = "/data/signatures.json";
 //        (70, Hacking gear): Bruce "BruceNet", GhostESP "GhostNet", Marauder's
 //        updater "MarauderOTA", and the beacon-spam lists "01 Never gonna give
 //        you up" (Marauder + Bruce Rick Roll) and "Yell BRUCE for Password".
-#define SIG_SCHEMA_VERSION 17
+//   v18: upstream review 2026-10-19 (SquachWatch-CYD, OUI-Spy AXEOFF,
+//        Fieldwatch; every ID registry-checked). Removed Flipper Devices
+//        0x0E29 + 0c:fa:22: they are the BUSY Bar desk sign's, and real
+//        Zeros send neither. Added: Axon company 0x034D + UUIDs fc81/fe6b,
+//        BodyWorn / Wolfcom / Reveal Media / FirstVu body-cam names, Flock's
+//        "Flock Camera" hotspot SSID and "FS Ext Battery" name, Iteris
+//        (BlueTOAD) + BLIP Systems roadside Bluetooth sensors, Tile fd84,
+//        Chipolo, the DULT unwanted-tracker UUID fcb2, Meta glasses 0x01AB
+//        AND fd5f, Meta feb7/feb8 (listed only), Snap fe45, Vuzix 0x060C,
+//        PorkChop's "PORKCHOP" web-remote AP. UUID rules now also match
+//        service data.
+#define SIG_SCHEMA_VERSION 18
 
 static SemaphoreHandle_t watchersMutex = NULL;
 static bool watchersRunning = false;
@@ -357,6 +368,12 @@ static void ensureSignaturesFileExists() {
             for (const char* name : bleNames) {
                 addRule("Flock BLE Name", "Flock Safety", "", "", name, "");
             }
+            // Flock's external battery by name, and a camera's own hotspot,
+            // "Flock Camera net." (Flock-You issue #43), which the 12-char
+            // "Flock-XXXXXX" check misses. "FS-<hex>" names are matched in
+            // code (bleFlockFsName).
+            addRule("Flock external battery", "Flock Safety", "", "", "fs ext battery", "");
+            addRule("Flock camera hotspot", "Flock Safety", "", "", "", "", 0, "Flock Camera");
             
             // NOTE: a rule matching manufacturer ID 0x01 was removed here.
             // Bluetooth Company ID 0x0001 is Nokia's, not Flock's, and once the
@@ -379,6 +396,19 @@ static void ensureSignaturesFileExists() {
             addRule("Axon device hotspot", "Axon", "", "", "", "", 0, "AXON-");
             addRule("Axon Signal System", "Axon", "", "", "", "fe6c");
             addRule("Axon Signal System", "Axon", "", "", "", "fe6d");
+            // TASER International (= Axon) company ID and Axon's other two
+            // SIG UUIDs (OUI-Spy AXEOFF 2026-10-09, SquachWatch-CYD). The
+            // "BWCDEVICE" advert tag is matched in code (bleAxonBwc).
+            addRule("Axon (TASER company ID)", "Axon", "", "0x034D", "", "", 70);
+            addRule("Axon service UUID", "Axon", "", "", "", "fc81");
+            addRule("Axon service UUID", "Axon", "", "", "", "fe6b");
+            // Other police body cams, by the names their gear advertises
+            // (Fieldwatch catalog; BodyWorn is Utility Inc.'s activation remote,
+            // field-captured). Specific product names, so they beep (W_NAME).
+            addRule("Utility BodyWorn body cam", "BodyWorn body cam", "", "", "bodyworn", "");
+            addRule("Wolfcom body cam", "Wolfcom body cam", "", "", "wolfcom", "");
+            addRule("Reveal Media body cam", "Reveal Media body cam", "", "", "reveal media", "");
+            addRule("Digital Ally FirstVu body cam", "Digital Ally body cam", "", "", "firstvu", "");
             addRule("Cradlepoint Router", "Fleet / Infrastructure", "00:30:44", "", "", "");
             addRule("Peplink Router", "Fleet / Infrastructure", "00:1a:dd", "", "", "");
             // The six MA-L blocks the IEEE registers to "Sierra Wireless, ULC".
@@ -410,6 +440,10 @@ static void ensureSignaturesFileExists() {
             // firewall company.
             addRule("WatchGuard Video camera", "WatchGuard body cam", "00:1d:96", "", "", "", 70);
             addRule("Digital Ally camera", "Digital Ally body cam", "00:23:bd", "", "", "", 70);
+            // Roadside Bluetooth travel-time sensors: they log passing phones
+            // and cars by address. Road agencies own them, consumers do not.
+            addRule("Iteris (BlueTOAD roadside sensor)", "Roadside surveillance", "00:14:7b", "", "", "", 70);
+            addRule("BLIP Systems (BlipTrack sensor)", "Roadside surveillance", "00:0e:a5", "", "", "", 70);
 
             // Listed, never beeping (60). The categories avoid every routing
             // keyword ("cam" would file Verkada under body cams), so these sit
@@ -445,6 +479,16 @@ static void ensureSignaturesFileExists() {
             // the rule's own weight 70 -- only when both are present.
             addRule("Ray-Ban / Oakley Meta glasses", "Smart glasses", "", "0x0D53", "", "fd5f", 70);
             addRule("Snap Spectacles", "Smart glasses", "", "0x03C2", "", "", 70);
+            // v18: two independent captures (SquachWatch-CYD) show real Ray-Ban
+            // Meta sending Meta Platforms' ID WITH fd5f; Quest headsets send a
+            // different Meta ID (still never a rule). Both required, as above.
+            addRule("Ray-Ban / Oakley Meta glasses (Meta ID)", "Smart glasses", "", "0x01AB", "", "fd5f", 70);
+            // Meta's other two UUIDs could be on any Meta hardware: listed only.
+            addRule("Meta device (glasses?)", "Smart glasses", "", "", "", "feb7", 60);
+            addRule("Meta device (glasses?)", "Smart glasses", "", "", "", "feb8", 60);
+            // Snap's and Vuzix's only hardware is glasses.
+            addRule("Snap Spectacles", "Smart glasses", "", "", "", "fe45", 70);
+            addRule("Vuzix smart glasses", "Smart glasses", "", "0x060C", "", "", 70);
 
             // Attack gear. Category HACKING_GEAR_CATEGORY: matched only while
             // Attack is on (ruleGatedOff), All tab only, generic beep.
@@ -453,18 +497,16 @@ static void ensureSignaturesFileExists() {
             addRule("Flipper Zero (service UUID)", HACKING_GEAR_CATEGORY, "", "", "", "3081", 80);
             addRule("Flipper Zero (service UUID)", HACKING_GEAR_CATEGORY, "", "", "", "3082", 80);
             addRule("Flipper Zero (service UUID)", HACKING_GEAR_CATEGORY, "", "", "", "3083", 80);
-            // Registry-checked: SIG company 0x0E29 and IEEE MA-L 0c:fa:22 are
-            // both Flipper Devices. 0c:fa:22 is unproven on the air: a Flipper
-            // Zero reportedly builds its BLE address from ST's STM32WB
-            // derivation (80:E1:26/27...), which is real on a Flipper but shared
-            // with other STM32WB hardware -- so those two are listed-only (60)
-            // hints named for what they prove, not "Flipper". In no IEEE
-            // registry (selftest allowlists them). Marauder's "Flipper"
-            // company ID 0x0FBA is a headset maker.
+            // Flipper Devices' own company ID and MAC block were removed at
+            // v18: they are what the BUSY Bar (Flipper's desk sign) sends, and
+            // three real Zeros on SquachWatch-CYD's bench sent neither. A Zero
+            // builds its BLE address from ST's STM32WB derivation
+            // (80:E1:26/27...), which is shared with other STM32WB hardware --
+            // so those two are listed-only (60) hints named for what they
+            // prove, not "Flipper". In no IEEE registry (selftest allowlists
+            // them). Marauder's "Flipper" company ID 0x0FBA is a headset maker.
             addRule("STM32WB address (Flipper Zero uses this)", HACKING_GEAR_CATEGORY, "80:e1:26", "", "", "", 60);
             addRule("STM32WB address (Flipper Zero uses this)", HACKING_GEAR_CATEGORY, "80:e1:27", "", "", "", 60);
-            addRule("Flipper Devices (company ID)", HACKING_GEAR_CATEGORY, "", "0x0E29", "", "", 70);
-            addRule("Flipper Devices (MAC)", HACKING_GEAR_CATEGORY, "0c:fa:22", "", "", "", 70);
             // The default name, but anyone can type it: listed, never beeps
             // alone (a real Flipper also carries the UUID and beeps from that).
             addRule("Name contains Flipper", HACKING_GEAR_CATEGORY, "", "", "flipper", "", 60);
@@ -488,6 +530,8 @@ static void ensureSignaturesFileExists() {
             addRule("Marauder OTA updater AP", HACKING_GEAR_CATEGORY, "", "", "", "", 70, "MarauderOTA");
             addRule("Rick Roll beacon spam (Marauder / Bruce)", HACKING_GEAR_CATEGORY, "", "", "", "", 70, "01 Never gonna give you up");
             addRule("Bruce joke-SSID beacon spam", HACKING_GEAR_CATEGORY, "", "", "", "", 70, "Yell BRUCE for Password");
+            // PorkChop (M5PORKCHOP and its CYD port): the web-remote AP default.
+            addRule("PorkChop web-remote AP", HACKING_GEAR_CATEGORY, "", "", "", "", 70, "PORKCHOP");
 
             // Trackers (planted-on-you category). Keyed on service UUID, which
             // the matcher already handles. AirTag is matched in code (its Find
@@ -498,6 +542,15 @@ static void ensureSignaturesFileExists() {
             addRule("Tile Tracker", "Tracker", "", "", "", "feed");
             addRule("Tile Tracker", "Tracker", "", "", "", "feec");
             addRule("Samsung SmartTag", "Tracker", "", "", "", "fd5a");
+            // v18 (SquachWatch-CYD / AirGuard, SIG-assigned): Tile's third
+            // UUID; Chipolo, who make only trackers; and DULT fcb2, the
+            // cross-maker "unwanted tracker" UUID a tag announces when it is
+            // away from its owner.
+            addRule("Tile Tracker", "Tracker", "", "", "", "fd84");
+            addRule("Chipolo Tracker", "Tracker", "", "", "", "fe33");
+            addRule("Chipolo Tracker", "Tracker", "", "", "", "fe65");
+            addRule("Chipolo Tracker", "Tracker", "", "0x08C3", "", "", 70);
+            addRule("Unwanted-tracker alert (DULT)", "Tracker", "", "", "", "fcb2");
 
             serializeJsonPretty(doc, file);
             file.close();
@@ -556,6 +609,10 @@ static void ensureSignaturesFileExists() {
 // Flock's solar battery pack. Two facts at once (0x09C8 + a serial, or the full
 // "Penguin-<10 digits>" name), so it identifies on its own. See blePenguin().
 #define W_PENGUIN    80
+// Axon's "BWCDEVICE" advert tag (bleAxonBwc): police-only, so it beeps.
+#define W_AXON_BWC   80
+// Flock "FS-<hex>" accessory name (bleFlockFsName): one source, lists only.
+#define W_FLOCK_FS   60
 // Pwnagotchi (pwngrid) presence: a beacon from the fixed source MAC
 // de:ad:be:ef:de:ad carrying JSON in vendor IE id 222. The JSON fields
 // (pwnd_tot/pwnd_run/grid_version) are the real tell — the MAC is trivially
@@ -832,18 +889,17 @@ static int matchDeviceAgainstRule(SWEEP_ADV* dev, const WatcherSignature& sig, S
     }
 
     // 4. Check Service UUID
+    // A UUID counts in the UUID list OR as the key of a service-data AD
+    // (0x16/0x20/0x21): most trackers advertise only the latter, so a rule
+    // that read the list alone never fired on them (v18, after SquachWatch-CYD).
     if (sig.serviceUuid.length() > 0) {
-        if (!dev->haveServiceUUID()) {
-            return 0;
-        }
         bool uuidMatched = false;
-        size_t count = dev->getServiceUUIDCount();
-        for (size_t i = 0; i < count; i++) {
-            if (uuidMatches(dev->getServiceUUID(i), sig.serviceUuid)) {
-                uuidMatched = true;
-                break;
-            }
-        }
+        size_t count = dev->haveServiceUUID() ? dev->getServiceUUIDCount() : 0;
+        for (size_t i = 0; i < count && !uuidMatched; i++)
+            uuidMatched = uuidMatches(dev->getServiceUUID(i), sig.serviceUuid);
+        size_t sdCount = dev->getServiceDataCount();
+        for (size_t i = 0; i < sdCount && !uuidMatched; i++)
+            uuidMatched = uuidMatches(dev->getServiceDataUUID(i), sig.serviceUuid);
         if (!uuidMatched) {
             return 0;
         }
@@ -902,14 +958,33 @@ static void odidDecodeInto(ODID_UAS_Data& out, const uint8_t* data, size_t len) 
     }
 }
 
+// Which Basic ID to keep when a drone sends more than one (see applyDroneData).
+// 0 (none stored yet) ranks below everything.
+static uint8_t basicIdRank(uint8_t idType) {
+    if (idType == ODID_IDTYPE_SERIAL_NUMBER) return 3;
+    if (idType == ODID_IDTYPE_CAA_REGISTRATION_ID) return 2;
+    return idType == ODID_IDTYPE_NONE ? 0 : 1;
+}
+
 // Copy a decoded frame onto a target. Fields are only overwritten when this
 // frame actually carried them — Remote ID arrives as a stream of different
 // message types, so a Location-only frame must not blank the serial we learned
 // from an earlier Basic ID frame.
 static void applyDroneData(WatcherTargetInfo& t, const ODID_UAS_Data& d) {
     t.hasDrone = true;
-    if (d.BasicIDValid[0] && d.BasicID[0].UASID[0]) t.uasId = String(d.BasicID[0].UASID);
-    if (d.BasicIDValid[0] && d.BasicID[0].UAType)   t.uaType = d.BasicID[0].UAType;
+    // ASTM allows several Basic IDs, and EU drones commonly alternate the
+    // serial with a CAA registration. The decode buffer is cleared per frame,
+    // so taking whichever arrived last flipped uas_id (and droneMaker()'s
+    // brand, which reads the serial) on every other frame. Keep the best
+    // kind heard: serial > CAA registration > anything else.
+    for (int i = 0; i < ODID_BASIC_ID_MAX_MESSAGES; i++) {
+        if (!d.BasicIDValid[i] || !d.BasicID[i].UASID[0]) continue;
+        uint8_t ty = (uint8_t)d.BasicID[i].IDType;
+        if (basicIdRank(ty) < basicIdRank(t.uasIdType)) continue;
+        t.uasId = String(d.BasicID[i].UASID);
+        t.uasIdType = ty;
+        if (d.BasicID[i].UAType) t.uaType = d.BasicID[i].UAType;
+    }
     if (d.OperatorIDValid && d.OperatorID.OperatorId[0])  t.operatorId = String(d.OperatorID.OperatorId);
     if (d.SelfIDValid && d.SelfID.Desc[0])                t.selfId = String(d.SelfID.Desc);
     if (d.LocationValid) {
@@ -1028,6 +1103,46 @@ static bool blePenguin(SWEEP_ADV* dev) {
     for (size_t i = 2; i + 2 < mfg.length(); i++)
         if (mfg[i] == 'T' && mfg[i + 1] == 'N' && mfg[i + 2] >= '0' && mfg[i + 2] <= '9') return true;
     return false;
+}
+
+// An Axon body cam puts ASCII "BWCDEVICE" in its advert, usually inside a
+// 128-bit UUID (little-endian on air, so it reads "ECIVEDCWB"). It survives
+// address rotation, so it is the BLE tell that does not need Axon's OUI.
+// Five owner-confirmed field captures (all-cameras-are-beacons, via
+// SquachWatch-CYD 2026-10-14). Searched in the raw payload, both orders.
+static bool bleAxonBwc(SWEEP_ADV* dev) {
+#if CONFIG_IDF_TARGET_ESP32C5
+    const std::vector<uint8_t>& raw = dev->getPayload();
+    const uint8_t* p = raw.data();
+    size_t len = raw.size();
+#else
+    const uint8_t* p = dev->getPayload();
+    size_t len = dev->getPayloadLength();
+#endif
+    static const char F[] = "BWCDEVICE";
+    const size_t n = 9;
+    if (!p) return false;
+    for (size_t i = 0; i + n <= len; i++) {
+        bool fw = true, bw = true;
+        for (size_t k = 0; k < n && (fw || bw); k++) {
+            if (p[i + k] != (uint8_t)F[k]) fw = false;
+            if (p[i + k] != (uint8_t)F[n - 1 - k]) bw = false;
+        }
+        if (fw || bw) return true;
+    }
+    return false;
+}
+
+// "FS-" plus 4-12 hex digits and nothing else (e.g. FS-BEC46A): a Flock
+// accessory name seen at real Flock sites (all-cameras-are-beacons, 2026-06).
+// One source, and a short hex name is not unthinkable elsewhere, so it lists
+// at W_FLOCK_FS (60) without beeping. "FS-Living Room" is not one.
+static bool bleFlockFsName(SWEEP_ADV* dev) {
+    if (!dev->haveName()) return false;
+    std::string name = dev->getName();
+    if (name.length() < 7 || name.length() > 15 || name.compare(0, 3, "FS-") != 0) return false;
+    for (size_t i = 3; i < name.length(); i++) if (!isxdigit((unsigned char)name[i])) return false;
+    return true;
 }
 
 // What an Apple device is DOING, from the Continuity message type — or nullptr
@@ -1296,6 +1411,20 @@ class WatchersScanCallbacks : public NimBLEAdvertisedDeviceCallbacks {
                 if (W_PENGUIN > bestWeight) {
                     bestWeight = W_PENGUIN;
                     matchedRule = "Flock Battery (Penguin)";
+                    matchedCategory = "Flock Safety";
+                }
+            } else if (bleAxonBwc(advertisedDevice)) {
+                confidence += W_AXON_BWC;
+                if (W_AXON_BWC > bestWeight) {
+                    bestWeight = W_AXON_BWC;
+                    matchedRule = "Axon body cam (BWCDEVICE)";
+                    matchedCategory = "Axon";
+                }
+            } else if (bleFlockFsName(advertisedDevice)) {
+                confidence += W_FLOCK_FS;
+                if (W_FLOCK_FS > bestWeight) {
+                    bestWeight = W_FLOCK_FS;
+                    matchedRule = "Flock accessory name (FS-)";
                     matchedCategory = "Flock Safety";
                 }
             } else if (matchedRule.length() == 0) {

@@ -86,6 +86,7 @@ struct WatcherTargetInfo {
     // stack garbage — and garbage in hasDrone puts junk coordinates on the wire.
     bool   hasDrone = false;
     String uasId;                    // Basic ID / serial
+    uint8_t uasIdType = 0;           // ODID_idtype_t of uasId, 0 == none yet
     String operatorId;               // Operator ID (registration)
     String selfId;                   // free-text description the operator chose
     double droneLat = 0, droneLng = 0;  // 0/0 == no value (ODID's own "unknown")
