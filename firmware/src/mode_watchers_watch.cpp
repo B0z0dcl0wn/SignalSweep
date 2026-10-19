@@ -130,7 +130,22 @@ static const char *SIG_FILE_PATH = "/data/signatures.json";
 //        AND fd5f, Meta feb7/feb8 (listed only), Snap fe45, Vuzix 0x060C,
 //        PorkChop's "PORKCHOP" web-remote AP. UUID rules now also match
 //        service data.
-#define SIG_SCHEMA_VERSION 18
+//   v19: second pass, 14 more upstreams (alpr_detector, all-cameras-are-beacons,
+//        FlipDeFlock, Bruce, GhostESP...), every prefix checked against the
+//        IEEE MA-L/MA-M/MA-S/IAB files and every 16-bit UUID against the SIG.
+//        Removed: fe6d (the SIG gives it to the University of Tokyo, not
+//        Axon), and the feed / fd5a UUID-list tracker rules (Skullcandy
+//        headsets advertise FEED; bleTrackerNetwork already scores Tile and
+//        SmartTag service data at 80). Added police vendors: body cams
+//        (Utility, VIEVU, Digital Barriers, Zepcam, PRO-VISION, L-3
+//        Mobile-Vision), plate readers (Redflex, ELSAG, Perceptics, Ekin,
+//        Genetec IAB) and radar / lightbars (Applied Concepts-Stalker, Kustom,
+//        Decatur, Federal Signal) at 70; Jenoptik, Kapsch, Elsag Datamat,
+//        Selex ES, Havis, Gamber-Johnson, public-safety radio makers, police
+//        drone makers and Motorola Solutions' BLE IDs at 60. Raven 3100-3500
+//        back, exact-match, at 60. Glasses names + the HeyCyan UUID at 60.
+//        Bruce and GhostESP default SSIDs / BLE names (Attack only).
+#define SIG_SCHEMA_VERSION 19
 
 static SemaphoreHandle_t watchersMutex = NULL;
 static bool watchersRunning = false;
@@ -280,10 +295,13 @@ static void ensureSignaturesFileExists() {
                 JsonObject s = sigs.add<JsonObject>();
                 s["name"] = name;
                 s["category"] = cat;
-                s["oui"] = oui;
-                s["mfg_id"] = mfg;
-                s["device_name"] = dev;
-                s["service_uuid"] = uuid;
+                // Matchers are written only when set (the loader and the app
+                // read a missing one as empty): six empty strings per rule were
+                // half the CMD:SIGS reply, which holds the BLE link while it sends.
+                if (oui[0]) s["oui"] = oui;
+                if (mfg[0]) s["mfg_id"] = mfg;
+                if (dev[0]) s["device_name"] = dev;
+                if (uuid[0]) s["service_uuid"] = uuid;
                 if (weight > 0) s["weight"] = weight;
                 if (ssid[0]) s["ssid_prefix"] = ssid;
             };
@@ -356,6 +374,12 @@ static void ensureSignaturesFileExists() {
             // nothing else carries them. The battery only shows these if its
             // link to the camera has dropped (the camera holds it open): 0 in
             // 173 captures so far. A sighting is a Flock pole, so it beeps.
+            // v19: back, at 60 (listed, never beeps alone). Exact match fixed
+            // the v5 problem; the values are field captures of Raven units
+            // (all-cameras-are-beacons, Flock-You), not a registry.
+            for (const char* u : {"3100", "3200", "3300", "3400", "3500"})
+                addRule("Flock Raven service UUID", "Flock Safety", "", "", "", u, 60);
+
             addRule("Flock battery (auth service)", "Flock Safety", "", "", "",
                     "e8ccbb38-9532-46a8-9fe5-1814df172e6f", 80);
             addRule("Flock battery (safety service)", "Flock Safety", "", "", "",
@@ -395,7 +419,8 @@ static void ensureSignaturesFileExists() {
             addRule("Axon Body 4 camera (pairing)", "Axon", "", "", "", "", 0, "AB4-");
             addRule("Axon device hotspot", "Axon", "", "", "", "", 0, "AXON-");
             addRule("Axon Signal System", "Axon", "", "", "", "fe6c");
-            addRule("Axon Signal System", "Axon", "", "", "", "fe6d");
+            // fe6d was here too until v19: the SIG registers it to the
+            // University of Tokyo.
             // TASER International (= Axon) company ID and Axon's other two
             // SIG UUIDs (OUI-Spy AXEOFF 2026-10-09, SquachWatch-CYD). The
             // "BWCDEVICE" advert tag is matched in code (bleAxonBwc).
@@ -444,6 +469,29 @@ static void ensureSignaturesFileExists() {
             // and cars by address. Road agencies own them, consumers do not.
             addRule("Iteris (BlueTOAD roadside sensor)", "Roadside surveillance", "00:14:7b", "", "", "", 70);
             addRule("BLIP Systems (BlipTrack sensor)", "Roadside surveillance", "00:0e:a5", "", "", "", 70);
+            // v19, from datafx/alpr_detector's police-vendor table (GPL-3.0),
+            // re-checked against the IEEE files. A prefix may be a sub-block
+            // (MA-M 7 hex digits, MA-S/IAB 9): the matcher compares hex digits,
+            // so "1c:82:59:d" matches only that /28.
+            // Police body / in-car cameras (no consumer line): beep.
+            addRule("Utility Inc. (BodyWorn) camera", "Utility body cam", "00:09:bc", "", "", "", 70);
+            addRule("Utility Inc. (BodyWorn) camera", "Utility body cam", "00:16:ed", "", "", "", 70);
+            addRule("VIEVU camera", "VIEVU body cam", "fc:01:9e", "", "", "", 70);
+            addRule("Digital Barriers camera", "Digital Barriers body cam", "00:24:39", "", "", "", 70);
+            addRule("Zepcam camera", "Zepcam body cam", "48:46:8d", "", "", "", 70);
+            addRule("PRO-VISION camera", "PRO-VISION body cam", "9c:83:bf", "", "", "", 70);
+            addRule("L-3 Mobile-Vision camera", "Mobile-Vision body cam", "38:73:ea:0", "", "", "", 70);
+            // Plate-reader makers whose registered block is the ALPR business.
+            addRule("Redflex (traffic enforcement)", "Redflex ALPR", "00:30:7e", "", "", "", 70);
+            addRule("ELSAG (plate reader)", "ELSAG ALPR", "70:b3:d5:1c:5", "", "", "", 70);
+            addRule("Perceptics (plate reader)", "Perceptics ALPR", "70:b3:d5:88:a", "", "", "", 70);
+            addRule("Ekin (plate reader / traffic)", "Ekin ALPR", "04:c3:e6:9", "", "", "", 70);
+            addRule("Genetec (AutoVu / Sharp)", "Genetec ALPR", "00:50:c2:be:7", "", "", "", 70);
+            // Police traffic radar and lightbars. All tab, generic beep.
+            addRule("Stalker radar (Applied Concepts)", "Police radar", "1c:82:59:d", "", "", "", 70);
+            addRule("Kustom Signals radar", "Police radar", "58:e8:76:c", "", "", "", 70);
+            addRule("Decatur Electronics radar", "Police radar", "6c:18:11", "", "", "", 70);
+            addRule("Federal Signal (lightbar / siren)", "Police lightbar", "08:3c:03:0", "", "", "", 70);
 
             // Listed, never beeping (60). The categories avoid every routing
             // keyword ("cam" would file Verkada under body cams), so these sit
@@ -465,6 +513,44 @@ static void ensureSignaturesFileExists() {
             addRule("Axis Communications camera", "Axis Communications", "b8:a4:4f", "", "", "", 60);
             addRule("Axis Communications camera", "Axis Communications", "ac:cc:8e", "", "", "", 60);
             addRule("Axis Communications camera", "Axis Communications", "e8:27:25", "", "", "", 60);
+            // v19. Traffic-tech makers whose blocks also cover industrial,
+            // telecom or defence products: a hit names the maker, not an ALPR.
+            addRule("Jenoptik device", "Jenoptik", "00:04:4c", "", "", "", 60);
+            addRule("Jenoptik device", "Jenoptik", "48:e3:c3", "", "", "", 60);
+            addRule("Kapsch device", "Kapsch", "00:e0:6a", "", "", "", 60);
+            addRule("Elsag Datamat device", "Elsag Datamat", "00:40:de", "", "", "", 60);
+            addRule("Selex ES device", "Selex ES", "70:b3:d5:52:1", "", "", "", 60);
+            addRule("Selex ES device", "Selex ES", "70:b3:d5:f5:e", "", "", "", 60);
+            // Patrol-car mounts and docks; also in utility and delivery fleets.
+            addRule("Havis (vehicle dock)", "Police vehicle gear", "00:1f:9c", "", "", "", 60);
+            addRule("Gamber-Johnson (vehicle dock)", "Police vehicle gear", "68:da:73:b", "", "", "", 60);
+            // Public-safety radio makers; taxis, utilities and security firms
+            // buy the same radios.
+            addRule("Harris radio", "Two-way radio", "00:00:c3", "", "", "", 60);
+            addRule("Harris radio", "Two-way radio", "00:06:ec", "", "", "", 60);
+            addRule("Harris radio", "Two-way radio", "00:17:f3", "", "", "", 60);
+            addRule("EF Johnson radio", "Two-way radio", "00:08:b8", "", "", "", 60);
+            addRule("Tait radio", "Two-way radio", "00:0d:ca", "", "", "", 60);
+            addRule("Sepura radio", "Two-way radio", "00:1e:96", "", "", "", 60);
+            addRule("Hytera radio", "Two-way radio", "64:69:bc", "", "", "", 60);
+            addRule("Hytera radio", "Two-way radio", "9c:06:6e", "", "", "", 60);
+            addRule("Codan radio", "Two-way radio", "00:12:e0", "", "", "", 60);
+            addRule("Codan (Daniels) radio", "Two-way radio", "00:14:91", "", "", "", 60);
+            // Motorola Solutions over Bluetooth (company ID + its two SIG UUIDs).
+            addRule("Motorola Solutions device", "Motorola Solutions", "", "0x04EC", "", "", 60);
+            addRule("Motorola Solutions device", "Motorola Solutions", "", "", "", "fd8e", 60);
+            addRule("Motorola Solutions device", "Motorola Solutions", "", "", "", "fe04", 60);
+            // Police / first-responder drone makers. Remote ID still does the
+            // real work; this names the maker when a unit is heard without it.
+            addRule("Skydio drone", "Drone maker", "38:1d:14", "", "", "", 60);
+            addRule("Teal drone", "Drone maker", "b0:30:c8", "", "", "", 60);
+            addRule("AeroVironment drone", "Drone maker", "00:1a:f9", "", "", "", 60);
+            addRule("AeroVironment drone", "Drone maker", "8c:1f:64:b0:7", "", "", "", 60);
+            addRule("Shield AI drone", "Drone maker", "14:dd:48", "", "", "", 60);
+            // IEEE says "Private"; field-attributed to Axon body cams (9 MACs,
+            // 8 also carrying BWCDEVICE, all-cameras-are-beacons). Unverified,
+            // so listed only and named for what it proves.
+            addRule("Private block seen on Axon cams", "Axon", "d8:1f:65", "", "", "", 60);
 
             // Smart glasses: a camera on someone's face, counted like a body
             // cam (category keyword "glasses" routes to it on both sides).
@@ -483,12 +569,20 @@ static void ensureSignaturesFileExists() {
             // Meta sending Meta Platforms' ID WITH fd5f; Quest headsets send a
             // different Meta ID (still never a rule). Both required, as above.
             addRule("Ray-Ban / Oakley Meta glasses (Meta ID)", "Smart glasses", "", "0x01AB", "", "fd5f", 70);
-            // Meta's other two UUIDs could be on any Meta hardware: listed only.
-            addRule("Meta device (glasses?)", "Smart glasses", "", "", "", "feb7", 60);
-            addRule("Meta device (glasses?)", "Smart glasses", "", "", "", "feb8", 60);
+            // Meta's other two UUIDs could be on any Meta hardware: listed only,
+            // All tab only (v19: a Quest 2 headset matched them on the bench).
+            addRule("Meta device (glasses or headset)", "Meta device", "", "", "", "feb7", 60);
+            addRule("Meta device (glasses or headset)", "Meta device", "", "", "", "feb8", 60);
             // Snap's and Vuzix's only hardware is glasses.
             addRule("Snap Spectacles", "Smart glasses", "", "", "", "fe45", 70);
             addRule("Vuzix smart glasses", "Smart glasses", "", "0x060C", "", "", 70);
+            // v19: product names (OVERWATCH, NearbyGlasses) and the HeyCyan
+            // SDK service (Nilox and other rebrands; shares Apple ANCS's base,
+            // so exact 128-bit only). Names can be typed by anyone: listed.
+            for (const char* n : {"ray-ban", "rayneo", "rokid", "spectacles"})
+                addRule("Smart glasses (by name)", "Smart glasses", "", "", n, "", 60);
+            addRule("HeyCyan smart glasses", "Smart glasses", "", "", "",
+                    "7905fff0-b5ce-4e99-a40f-4b1e122d00d0", 60);
 
             // Attack gear. Category HACKING_GEAR_CATEGORY: matched only while
             // Attack is on (ruleGatedOff), All tab only, generic beep.
@@ -532,6 +626,17 @@ static void ensureSignaturesFileExists() {
             addRule("Bruce joke-SSID beacon spam", HACKING_GEAR_CATEGORY, "", "", "", "", 70, "Yell BRUCE for Password");
             // PorkChop (M5PORKCHOP and its CYD port): the web-remote AP default.
             addRule("PorkChop web-remote AP", HACKING_GEAR_CATEGORY, "", "", "", "", 70, "PORKCHOP");
+            // v19: Bruce's other fixed APs and BLE names, GhostESP's portals.
+            addRule("Bruce attack-mode AP", HACKING_GEAR_CATEGORY, "", "", "", "", 70, "BruceKarma");
+            addRule("Bruce attack-mode AP", HACKING_GEAR_CATEGORY, "", "", "", "", 70, "BruceShell");
+            addRule("Bruce attack-mode AP", HACKING_GEAR_CATEGORY, "", "", "", "", 70, "BRUCE-UDP");
+            addRule("Bruce attack-mode AP", HACKING_GEAR_CATEGORY, "", "", "", "", 70, "BruceSniffer");
+            addRule("Bruce BLE attack mode", HACKING_GEAR_CATEGORY, "", "", "brucesniffer", "", 70);
+            addRule("Bruce BLE attack mode", HACKING_GEAR_CATEGORY, "", "", "bruce-spammer", "", 70);
+            addRule("Bruce BLE attack mode", HACKING_GEAR_CATEGORY, "", "", "bruce-flooder", "", 70);
+            addRule("Bruce BLE attack mode", HACKING_GEAR_CATEGORY, "", "", "bruce-pn532-ble", "", 70);
+            addRule("GhostESP evil portal AP", HACKING_GEAR_CATEGORY, "", "", "", "", 70, "EvilPortal");
+            addRule("GhostESP evil portal AP", HACKING_GEAR_CATEGORY, "", "", "", "", 70, "EvilAP");
 
             // Trackers (planted-on-you category). Keyed on service UUID, which
             // the matcher already handles. AirTag is matched in code (its Find
@@ -539,9 +644,10 @@ static void ensureSignaturesFileExists() {
             // byte the rule schema can't express). Headless can only say "a
             // tracker is near", not "it's following you" — that needed the
             // geospatial history removed for opsec. Still worth the beep.
-            addRule("Tile Tracker", "Tracker", "", "", "", "feed");
+            // feed (Tile) and fd5a (SmartTag) were rules here until v19:
+            // Skullcandy headsets list FEED, and bleTrackerNetwork already
+            // scores both as service data (W_TRACKER).
             addRule("Tile Tracker", "Tracker", "", "", "", "feec");
-            addRule("Samsung SmartTag", "Tracker", "", "", "", "fd5a");
             // v18 (SquachWatch-CYD / AirGuard, SIG-assigned): Tile's third
             // UUID; Chipolo, who make only trackers; and DULT fcb2, the
             // cross-maker "unwanted tracker" UUID a tag announces when it is
@@ -3130,10 +3236,11 @@ bool updateWatchersSignaturesJson(const String& jsonContent) {
         JsonObject ns = outSigs.add<JsonObject>();
         ns["name"] = s["name"] | "Unnamed Rule";
         ns["category"] = s["category"] | "Surveillance";
-        ns["oui"] = s["oui"] | "";
-        ns["mfg_id"] = s["mfg_id"] | "";
-        ns["device_name"] = s["device_name"] | "";
-        ns["service_uuid"] = s["service_uuid"] | "";
+        // Matchers too, like the defaults: a missing one reads as empty.
+        for (const char* k : {"oui", "mfg_id", "device_name", "service_uuid"}) {
+            const char* v = s[k] | "";
+            if (v[0]) ns[k] = v;
+        }
         // Both optional; written only when set so the file stays readable.
         if (s["weight"].is<int>() && s["weight"].as<int>() > 0) ns["weight"] = s["weight"].as<int>();
         if (s["ssid_prefix"].is<const char*>() && strlen(s["ssid_prefix"].as<const char*>()) > 0)

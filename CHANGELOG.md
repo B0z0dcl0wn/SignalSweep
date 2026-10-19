@@ -4,6 +4,51 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Changed -- Signatures v19: police gear from fourteen more projects
+
+A second review, this time of fourteen detectors and attack tools we had not
+watched before (alpr_detector, all-cameras-are-beacons, FlipDeFlock,
+OVERWATCH, Flock-You, AirGuard, Bruce, GhostESP and others). Every MAC prefix
+was checked against the IEEE's full registry, including the small MA-M, MA-S
+and IAB sub-blocks most police vendors use, and every 16-bit UUID against the
+Bluetooth SIG's member list. Boards pick the new defaults up on their next boot.
+
+- **Removed `fe6d`.** We had it as an Axon UUID; the SIG registers it to the
+  University of Tokyo. Axon keeps `fe6c`, `fc81`, `fe6b` and its company ID.
+- **Removed the `feed` and `fd5a` UUID-list tracker rules.** Skullcandy
+  headsets list FEED, and the built-in tracker detector already scores Tile and
+  SmartTag service data at 80 (the bench Tile still lists at 80 without them).
+- **Police body and in-car cameras (beep):** Utility Inc. (BodyWorn), VIEVU,
+  Digital Barriers, Zepcam, PRO-VISION, L-3 Mobile-Vision.
+- **Plate readers (beep, Cameras tab):** Redflex, ELSAG, Perceptics, Ekin, and
+  Genetec's IAB block.
+- **Traffic radar and lightbars (beep, All tab):** Stalker (Applied Concepts),
+  Kustom Signals, Decatur, Federal Signal.
+- **Listed without beeping (60):** Jenoptik, Kapsch, Elsag Datamat and Selex
+  ES (their blocks also cover telecom, industrial and defence products); Havis
+  and Gamber-Johnson patrol-car docks; Harris, EF Johnson, Tait, Sepura,
+  Hytera and Codan radios (taxis and security firms buy them too); Skydio,
+  Teal, AeroVironment and Shield AI drones; Motorola Solutions' Bluetooth
+  company ID and its two SIG UUIDs; and `d8:1f:65`, a block the IEEE lists as
+  "Private" that field captures tie to Axon body cams, named for exactly that.
+- **Flock Raven's five service UUIDs are back, at 60.** They were dropped at v5
+  when UUIDs were substring-matched and one hit beeped; matching is exact now.
+- **Smart glasses:** the names Ray-Ban, RayNeo, Rokid and Spectacles, and the
+  HeyCyan glasses SDK's 128-bit UUID (full match only: it shares Apple's
+  notification service base), all listed without beeping.
+- **Meta's `feb7` / `feb8` moved off the Cameras tab.** On the bench a
+  neighbour's Quest 2 matched them and listed as smart glasses. They now list
+  as "Meta device" under All.
+- **Attack gear (Attack toggle only):** Bruce's other fixed APs (`BruceKarma`,
+  `BruceShell`, `BRUCE-UDP`, `BruceSniffer`) and BLE names (`BruceSniffer`,
+  `Bruce-Spammer`, `Bruce-Flooder`, `BRUCE-PN532-BLE`); GhostESP's portal APs
+  `EvilPortal` and `EvilAP`.
+- **The stored rule file drops empty fields.** Six empty strings per rule were
+  half of the Settings > Signatures reply, which holds the Bluetooth link while
+  it sends. With 181 rules it measured 16 KB, down from 24 KB with the empty
+  fields kept, and smaller than v18's. The rules cost about 56 bytes of
+  internal RAM each on the C5 (10 KB for all 181, measured).
+
 ### Changed -- Signatures v18: what the other detectors learned this month
 
 A review of the projects we learn from (SquachWatch-CYD, OUI-Spy's new AXEOFF
