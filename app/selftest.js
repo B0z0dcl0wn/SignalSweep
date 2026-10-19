@@ -412,13 +412,25 @@ const REGISTRY_VENDORS = {          // name fragment -> [weight, routing keyword
     'WatchGuard Video': [70, 'body'], 'Digital Ally': [70, 'body'],
     'Ubicquia': [60, null], 'Motorola Solutions': [60, null], 'Verkada': [60, null],
     'Avigilon Alta': [60, null], 'Axis Communications': [60, null],
-    'Iteris': [70, 'surveil'], 'BLIP Systems': [70, 'surveil']
+    'Iteris': [70, 'surveil'], 'BLIP Systems': [70, 'surveil'],
+    // v19 (alpr_detector's table, IEEE-checked; sub-blocks included)
+    'Utility Inc.': [70, 'body'], 'VIEVU': [70, 'body'], 'Digital Barriers': [70, 'body'],
+    'Zepcam': [70, 'body'], 'PRO-VISION': [70, 'body'], 'L-3 Mobile-Vision': [70, 'body'],
+    'Redflex': [70, 'alpr'], 'ELSAG': [70, 'alpr'], 'Perceptics': [70, 'alpr'], 'Ekin': [70, 'alpr'],
+    'Stalker': [70, null], 'Kustom': [70, null], 'Decatur': [70, null], 'Federal Signal': [70, null],
+    'Jenoptik': [60, null], 'Kapsch': [60, null], 'Elsag Datamat': [60, null], 'Selex ES': [60, null],
+    'Havis': [60, null], 'Gamber-Johnson': [60, null], 'Harris': [60, null], 'EF Johnson': [60, null],
+    'Tait': [60, null], 'Sepura': [60, null], 'Hytera': [60, null], 'Codan': [60, null],
+    'Skydio': [60, 'drone'], 'Teal drone': [60, 'drone'], 'AeroVironment': [60, 'drone'], 'Shield AI': [60, 'drone'],
+    'seen on Axon': [60, 'axon']
 };
 for (const [v, [w, route]] of Object.entries(REGISTRY_VENDORS)) {
     const rules = [...fw.matchAll(new RegExp('addRule\\("[^"]*' + v + '[^"]*", "([^"]*)", "([^"]*)", "([^"]*)", "([^"]*)", "([^"]*)", (\\d+)\\);', 'g'))];
     if (!rules.length) flockFail.push(v + ' registry rule missing (or lost its explicit weight)');
     for (const [r, cat, oui, mfg, name, uuid, weight] of rules) {
-        if (!oui || mfg || name || uuid) flockFail.push(v + ' rule is not OUI-only: ' + r);
+        // One registry ID per rule: an OUI, or (Motorola Solutions, v19) a
+        // SIG company ID / member UUID.
+        if ([oui, mfg, name, uuid].filter(Boolean).length !== 1 || name) flockFail.push(v + ' rule is not a single registry ID: ' + r);
         if (Number(weight) !== w) flockFail.push(`${v} rule weight ${weight}, expected ${w}: ${r}`);
         const hit = [...catKw].find(k => cat.toLowerCase().includes(k));
         if (route ? hit !== route : (!catKw.size || hit))
@@ -796,7 +808,17 @@ const OUI_OWNER = {
     'Avigilon Alta device': 'Avigilon Alta',
     'Axis Communications camera': 'Axis Communications',
     'Iteris (BlueTOAD roadside sensor)': 'Iteris',
-    'BLIP Systems (BlipTrack sensor)': 'BLIP Systems'
+    'BLIP Systems (BlipTrack sensor)': 'BLIP Systems',
+    'Utility Inc. (BodyWorn) camera': 'Utility', 'VIEVU camera': 'VIEVU',
+    'Digital Barriers camera': 'Digital Barriers', 'Zepcam camera': 'Zepcam',
+    'PRO-VISION camera': 'PRO-VISION', 'Redflex (traffic enforcement)': 'Redflex',
+    'Decatur Electronics radar': 'Decatur', 'Jenoptik device': 'Jenoptik',
+    'Kapsch device': 'Kapsch', 'Elsag Datamat device': 'Elsag Datamat',
+    'Havis (vehicle dock)': 'Havis', 'Harris radio': 'Harris', 'EF Johnson radio': 'E.F. Johnson',
+    'Tait radio': 'Tait', 'Sepura radio': 'Sepura', 'Hytera radio': 'Hytera',
+    'Codan radio': 'Codan', 'Codan (Daniels) radio': 'Daniels Electronics',
+    'Skydio drone': 'Skydio', 'Teal drone': 'Teal', 'AeroVironment drone': 'AeroVironment',
+    'Shield AI drone': 'Shield AI'
 };
 const defaults = (wwSrc.match(/auto addRule = [\s\S]*?serializeJsonPretty\(doc, file\)/) || [''])[0];
 let ouiRules = 0;
@@ -808,9 +830,13 @@ for (const [, name, oui] of defaults.matchAll(/addRule\("([^"]+)",\s*(?:"[^"]*"|
     // and never above "listed, no beep" (checked below).
     const UNREGISTERED_OK = {
         '80:e1:26': 'ST STM32WB derived BLE address; a Flipper Zero uses it, so do other STM32WB devices',
-        '80:e1:27': 'ST STM32WB derived BLE address; a Flipper Zero uses it, so do other STM32WB devices'
+        '80:e1:27': 'ST STM32WB derived BLE address; a Flipper Zero uses it, so do other STM32WB devices',
+        'd8:1f:65': 'IEEE "Private"; field-attributed to Axon body cams (all-cameras-are-beacons, 9 MACs)'
     };
-    if (UNREGISTERED_OK[oui.toLowerCase()] && !owner) continue;
+    if (UNREGISTERED_OK[oui.toLowerCase()] && (!owner || owner === 'Private')) {
+        if (!new RegExp(`"${oui}", "", "", "", 60\\)`, 'i').test(defaults)) regFail.push(`unregistered ${oui} must list at 60, never beep`);
+        continue;
+    }
     const want = OUI_OWNER[name];
     if (!want) regFail.push(`OUI rule "${name}" (${oui}) has no registrant pinned in OUI_OWNER`);
     else if (!owner || !owner.toLowerCase().includes(want.toLowerCase()))
@@ -832,7 +858,7 @@ for (const call of defaults.match(/addRule\([^;]*\);/g) || []) {
     const hasLux = /0x0D53|0x01AB/i.test(call);
     if (hasFd5f !== hasLux) regFail.push(`glasses rule states fd5f/0x0D53 without the other: ${call.replace(/\s+/g, ' ')}`);
 }
-if (!/#define SIG_SCHEMA_VERSION 18\b/.test(wwSrc)) regFail.push('SIG_SCHEMA_VERSION not bumped to 18');
+if (!/#define SIG_SCHEMA_VERSION 19\b/.test(wwSrc)) regFail.push('SIG_SCHEMA_VERSION not bumped to 19');
 // v14/v15, the "no consumer owns this" rule: surveillance-only vendors beep on
 // their registered address alone (70). At 60 two Axon APs at a traffic stop
 // listed and stayed silent (field, 2026-10-12).
@@ -857,6 +883,7 @@ const sigCo = new Map(readFileSync(new URL('./public/bt-company.txt', import.met
     .map(([k, v]) => [parseInt(k, 10), v.trim()]));
 const MFG_OWNER = {
     'Axon (TASER company ID)': 'TASER International',
+    'Motorola Solutions device': 'Motorola Solutions',
     'Ray-Ban / Oakley Meta glasses (Meta ID)': 'Meta Platforms',
     'Vuzix smart glasses': 'Vuzix',
     'Chipolo Tracker': 'CHIPOLO',
@@ -879,6 +906,21 @@ if (/0x0FBA/i.test(ruleCalls)) regFail.push('0x0FBA added as Flipper -- it is a 
 // v18: Flipper Devices' 0x0E29 and 0c:fa:22 are the BUSY Bar desk sign's; real
 // Zeros send neither (SquachWatch-CYD bench, three Zeros). Never a rule again.
 if (/0x0E29|0c:fa:22/i.test(ruleCalls)) regFail.push('Flipper Devices 0x0E29 / 0c:fa:22 is back -- it flags the BUSY Bar, not a Zero');
+// v19: fe6d is the University of Tokyo's (SIG), not Axon's; feed/fd5a as UUID
+// rules beep on Skullcandy headsets, and bleTrackerNetwork covers both tags.
+for (const u of ['fe6d', 'feed', 'fd5a'])
+    if (new RegExp(`"${u}"`, 'i').test(ruleCalls)) regFail.push(`UUID rule "${u}" is back (v19 removed it)`);
+if (!/getServiceData\(NimBLEUUID\(\(uint16_t\)0xFEED\)\)/.test(wwSrc) || !/getServiceData\(NimBLEUUID\(\(uint16_t\)0xFD5A\)\)/.test(wwSrc))
+    regFail.push('bleTrackerNetwork lost Tile FEED / SmartTag FD5A service data -- the v19 rule removal relied on it');
+// Raven (v19): exact 16-bit UUIDs, listed only (60) -- at 70 one hit beeped (v5).
+if (!/\{"3100", "3200", "3300", "3400", "3500"\}\)\s*addRule\("Flock Raven service UUID", "Flock Safety", "", "", "", u, 60\);/.test(defaults))
+    regFail.push('Raven 3100-3500 rule must be exact UUIDs at 60');
+// HeyCyan shares Apple ANCS's 96-bit base: only the full 128-bit UUID is safe.
+if (!/"7905fff0-b5ce-4e99-a40f-4b1e122d00d0", 60\)/.test(defaults)) regFail.push('HeyCyan rule must be the full 128-bit UUID at 60');
+// feb7/feb8 are on Quest headsets too (a Quest 2 matched on the bench, v19):
+// never filed under a category that routes to glasses / the Cameras tab.
+for (const call of ruleCalls.match(/addRule\([^;]*"feb[78]"[^;]*\);/gi) || [])
+    if (/glasses|cam|body/i.test(call.split(',')[1])) regFail.push(`feb7/feb8 routed to glasses: ${call}`);
 // 80:E1:26/27 is ST's STM32WB address derivation: a Flipper Zero uses it, but
 // so does other STM32WB hardware. Allowed only as a listed-no-beep (60)
 // "Hacking gear" hint whose name says what the signal proves -- never "Flipper".
@@ -889,7 +931,7 @@ for (const oui of ['80:e1:26', '80:e1:27']) {
         regFail.push(`${oui} rule must be Hacking gear, weight 60, named STM32WB, not "Flipper...": ${call.replace(/\s+/g, ' ')}`);
 }
 // The attack-gear defaults exist, all under "Hacking gear".
-for (const want of ['"3081"', '"3082"', '"3083"', '"flipper"', '"Pineapple_"', '"pwned"', '"oui-spy"', '"snoopuntothem"', '"foxhunter"', '"ouispy-"', '"BruceNet"', '"GhostNet"', '"MarauderOTA"', '"01 Never gonna give you up"', '"Yell BRUCE for Password"', '"PORKCHOP"'])
+for (const want of ['"3081"', '"3082"', '"3083"', '"flipper"', '"Pineapple_"', '"pwned"', '"oui-spy"', '"snoopuntothem"', '"foxhunter"', '"ouispy-"', '"BruceNet"', '"GhostNet"', '"MarauderOTA"', '"01 Never gonna give you up"', '"Yell BRUCE for Password"', '"PORKCHOP"', '"BruceKarma"', '"BruceShell"', '"BRUCE-UDP"', '"BruceSniffer"', '"brucesniffer"', '"bruce-spammer"', '"bruce-flooder"', '"bruce-pn532-ble"', '"EvilPortal"', '"EvilAP"'])
     if (!new RegExp(`addRule\\([^;]*HACKING_GEAR_CATEGORY[^;]*${want.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i').test(defaults))
         regFail.push(`no "Hacking gear" default rule carries ${want}`);
 if (regFail.length) { console.log('FAIL: registry:', regFail); process.exit(1); }
