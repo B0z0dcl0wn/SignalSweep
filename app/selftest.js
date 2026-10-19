@@ -411,7 +411,8 @@ const REGISTRY_VENDORS = {          // name fragment -> [weight, routing keyword
     'Genetec': [70, 'alpr'], 'Neology': [70, 'alpr'],
     'WatchGuard Video': [70, 'body'], 'Digital Ally': [70, 'body'],
     'Ubicquia': [60, null], 'Motorola Solutions': [60, null], 'Verkada': [60, null],
-    'Avigilon Alta': [60, null], 'Axis Communications': [60, null]
+    'Avigilon Alta': [60, null], 'Axis Communications': [60, null],
+    'Iteris': [70, 'surveil'], 'BLIP Systems': [70, 'surveil']
 };
 for (const [v, [w, route]] of Object.entries(REGISTRY_VENDORS)) {
     const rules = [...fw.matchAll(new RegExp('addRule\\("[^"]*' + v + '[^"]*", "([^"]*)", "([^"]*)", "([^"]*)", "([^"]*)", "([^"]*)", (\\d+)\\);', 'g'))];
@@ -738,6 +739,14 @@ if (/indexOf/.test(uuidFn) || /Check Service UUID[\s\S]*?indexOf[\s\S]*?W_UUID/.
     sigFail.push('service UUID matched as a substring again');
 if (!/bitSize\(\)\s*==\s*16/.test(uuidFn)) sigFail.push('uuidMatches() has no exact 16-bit arm');
 if (!/uuidMatches\(/.test(matchFn)) sigFail.push('matchDeviceAgainstRule() does not use uuidMatches()');
+// v18: most trackers send their UUID only as service data; a rule that reads
+// the UUID list alone never fires on them.
+if (!/uuidMatches\(dev->getServiceDataUUID\(i\)/.test(matchFn)) sigFail.push('UUID rules no longer match service data');
+// Axon's BWCDEVICE tag must be searched both ways round (it rides a little-endian 128-bit UUID).
+if (!/F\[n - 1 - k\]/.test(wwSrc) || !/bleAxonBwc\(advertisedDevice\)/.test(wwSrc)) sigFail.push('BWCDEVICE detector missing or forward-only');
+// A drone alternating serial and CAA registration must keep the serial.
+if (!/basicIdRank\(ty\) < basicIdRank\(t\.uasIdType\)/.test(wwSrc) || !/ODID_IDTYPE_SERIAL_NUMBER\) return 3/.test(wwSrc))
+    sigFail.push('applyDroneData() no longer prefers the serial Basic ID');
 if (!/sig\.ssidPrefix\.length\(\)\s*>\s*0\)\s*return 0;/.test(matchFn)) sigFail.push('SSID rules can match on BLE');
 if (!/if \(sig\.weight > 0\) weight = sig\.weight;/.test(matchFn)) sigFail.push('BLE matcher ignores rule weight');
 
@@ -786,7 +795,8 @@ const OUI_OWNER = {
     'Verkada camera': 'Verkada',
     'Avigilon Alta device': 'Avigilon Alta',
     'Axis Communications camera': 'Axis Communications',
-    'Flipper Devices (MAC)': 'Flipper Devices'
+    'Iteris (BlueTOAD roadside sensor)': 'Iteris',
+    'BLIP Systems (BlipTrack sensor)': 'BLIP Systems'
 };
 const defaults = (wwSrc.match(/auto addRule = [\s\S]*?serializeJsonPretty\(doc, file\)/) || [''])[0];
 let ouiRules = 0;
@@ -807,18 +817,22 @@ for (const [, name, oui] of defaults.matchAll(/addRule\("([^"]+)",\s*(?:"[^"]*"|
         regFail.push(`"${name}" ${oui} is registered to "${owner || 'nobody'}", not ${want}`);
 }
 if (ouiRules < 20) regFail.push(`only ${ouiRules} literal OUI rules parsed -- the regex drifted`);
-// Meta's company IDs are on Quest headsets too; they must never name a row "Smart glasses".
-if (/0x01AB|0x058E/i.test(defaults)) regFail.push('Meta company ID 0x01AB/0x058E added as a default rule');
+// 0x058E is what Quest headsets send: never a rule. Meta Platforms' 0x01AB is
+// on real Ray-Ban Meta (two captures, SquachWatch-CYD, v18) but only ever
+// together with fd5f, in the same call -- alone it could be any Meta hardware.
+if (/0x058E/i.test(defaults)) regFail.push('Meta company ID 0x058E (Quest headsets) added as a default rule');
+for (const call of defaults.match(/addRule\([^;]*0x01AB[^;]*\);/gi) || [])
+    if (!/fd5f/i.test(call)) regFail.push(`0x01AB without fd5f: ${call.replace(/\s+/g, ' ')}`);
 // Ray-Ban/Oakley Meta glasses: each signal alone is a false-positive magnet
 // (fd5f is plausibly on Meta's own Quest headsets too; the Luxottica company
 // ID alone is weak), so the combined rule must carry BOTH in the same
 // addRule call -- no default rule may state either one without the other.
 for (const call of defaults.match(/addRule\([^;]*\);/g) || []) {
     const hasFd5f = /fd5f/i.test(call);
-    const hasLux = /0x0D53/i.test(call);
+    const hasLux = /0x0D53|0x01AB/i.test(call);
     if (hasFd5f !== hasLux) regFail.push(`glasses rule states fd5f/0x0D53 without the other: ${call.replace(/\s+/g, ' ')}`);
 }
-if (!/#define SIG_SCHEMA_VERSION 17\b/.test(wwSrc)) regFail.push('SIG_SCHEMA_VERSION not bumped to 17');
+if (!/#define SIG_SCHEMA_VERSION 18\b/.test(wwSrc)) regFail.push('SIG_SCHEMA_VERSION not bumped to 18');
 // v14/v15, the "no consumer owns this" rule: surveillance-only vendors beep on
 // their registered address alone (70). At 60 two Axon APs at a traffic stop
 // listed and stayed silent (field, 2026-10-12).
@@ -842,7 +856,10 @@ const sigCo = new Map(readFileSync(new URL('./public/bt-company.txt', import.met
     .split(/\r?\n/).map(l => l.split('\t')).filter(p => p.length >= 2)
     .map(([k, v]) => [parseInt(k, 10), v.trim()]));
 const MFG_OWNER = {
-    'Flipper Devices (company ID)': 'Flipper Devices',
+    'Axon (TASER company ID)': 'TASER International',
+    'Ray-Ban / Oakley Meta glasses (Meta ID)': 'Meta Platforms',
+    'Vuzix smart glasses': 'Vuzix',
+    'Chipolo Tracker': 'CHIPOLO',
     'Ray-Ban / Oakley Meta glasses': 'Luxottica',
     'Snap Spectacles': 'Snapchat'
 };
@@ -859,6 +876,9 @@ if (mfgRules < 3) regFail.push(`only ${mfgRules} literal company-ID rules parsed
 // Scan the rule calls only: the comments above them name these values on purpose.
 const ruleCalls = (defaults.match(/addRule\([^;]*\);/g) || []).join('\n');
 if (/0x0FBA/i.test(ruleCalls)) regFail.push('0x0FBA added as Flipper -- it is a headset maker');
+// v18: Flipper Devices' 0x0E29 and 0c:fa:22 are the BUSY Bar desk sign's; real
+// Zeros send neither (SquachWatch-CYD bench, three Zeros). Never a rule again.
+if (/0x0E29|0c:fa:22/i.test(ruleCalls)) regFail.push('Flipper Devices 0x0E29 / 0c:fa:22 is back -- it flags the BUSY Bar, not a Zero');
 // 80:E1:26/27 is ST's STM32WB address derivation: a Flipper Zero uses it, but
 // so does other STM32WB hardware. Allowed only as a listed-no-beep (60)
 // "Hacking gear" hint whose name says what the signal proves -- never "Flipper".
@@ -869,7 +889,7 @@ for (const oui of ['80:e1:26', '80:e1:27']) {
         regFail.push(`${oui} rule must be Hacking gear, weight 60, named STM32WB, not "Flipper...": ${call.replace(/\s+/g, ' ')}`);
 }
 // The attack-gear defaults exist, all under "Hacking gear".
-for (const want of ['"3081"', '"3082"', '"3083"', '"0x0E29"', '"0c:fa:22"', '"flipper"', '"Pineapple_"', '"pwned"', '"oui-spy"', '"snoopuntothem"', '"foxhunter"', '"ouispy-"', '"BruceNet"', '"GhostNet"', '"MarauderOTA"', '"01 Never gonna give you up"', '"Yell BRUCE for Password"'])
+for (const want of ['"3081"', '"3082"', '"3083"', '"flipper"', '"Pineapple_"', '"pwned"', '"oui-spy"', '"snoopuntothem"', '"foxhunter"', '"ouispy-"', '"BruceNet"', '"GhostNet"', '"MarauderOTA"', '"01 Never gonna give you up"', '"Yell BRUCE for Password"', '"PORKCHOP"'])
     if (!new RegExp(`addRule\\([^;]*HACKING_GEAR_CATEGORY[^;]*${want.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i').test(defaults))
         regFail.push(`no "Hacking gear" default rule carries ${want}`);
 if (regFail.length) { console.log('FAIL: registry:', regFail); process.exit(1); }

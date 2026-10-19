@@ -4,6 +4,59 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Changed -- Signatures v18: what the other detectors learned this month
+
+A review of the projects we learn from (SquachWatch-CYD, OUI-Spy's new AXEOFF
+mode, Fieldwatch, PorkChop, ESP32 Marauder), with every value checked against
+the IEEE and Bluetooth SIG registries before it went in. Boards pick the new
+defaults up on their next boot (the signature version is bumped).
+
+- **Removed: Flipper Devices' company ID `0x0E29` and MAC block `0c:fa:22`.**
+  SquachWatch-CYD flagged a user's BUSY Bar (Flipper's desk sign) as hacking
+  gear: its Wi-Fi uses `0c:fa:22` and its unpaired advert carries `0x0E29`.
+  Three real Flipper Zeros on their bench sent neither. A Zero is still caught
+  by its three service UUIDs and its name; selftest fails if either value
+  returns.
+- **Axon over Bluetooth.** TASER International's company ID `0x034D` (beeps),
+  Axon's other two SIG UUIDs `fc81` / `fe6b`, and a new built-in detector for
+  the ASCII tag `BWCDEVICE` that Axon body cams put in their advert -- read
+  both ways round, because in the field it rides inside a little-endian
+  128-bit UUID. It survives address rotation, so it catches a body cam without
+  Axon's OUI. Five owner-confirmed field captures (all-cameras-are-beacons).
+- **More police body cams by name:** Utility's BodyWorn remote, Wolfcom,
+  Reveal Media, Digital Ally FirstVu.
+- **Flock:** a camera's own hotspot "Flock Camera net." (Flock-You issue #43),
+  which the 12-character `Flock-XXXXXX` check never matched; the external
+  battery's "FS Ext Battery" name; and a built-in detector for `FS-` plus 4-12
+  hex digits, an accessory name seen at real Flock sites. That last one rests
+  on a single source, so it lists without beeping.
+- **Roadside Bluetooth sensors:** Iteris (BlueTOAD) `00:14:7b` and BLIP
+  Systems (BlipTrack) `00:0e:a5`. They log every passing phone and car by
+  address, and no consumer owns one, so they beep and sit on the Cameras tab.
+- **Trackers:** Tile's third UUID `fd84`, Chipolo (`fe33`, `fe65`, company
+  `0x08C3`), and `fcb2`, the cross-maker "unwanted tracker" UUID a tag
+  announces when it is away from its owner.
+- **UUID rules now match service data, not only the UUID list.** Most trackers
+  put their UUID only in a service-data field, so a UUID rule never fired on
+  them; Tile, Samsung and Google worked only because they have built-in
+  detectors. Exact matching is unchanged.
+- **Smart glasses:** real Ray-Ban Meta glasses send Meta Platforms' company ID
+  `0x01AB` together with `fd5f` (two independent captures), so that pair is a
+  rule now. Both are required, the same shape as the Luxottica rule; Quest
+  headsets send a different Meta ID, which stays out. Meta's `feb7` / `feb8`
+  list without beeping (any Meta hardware could carry them). Snap `fe45` and
+  Vuzix `0x060C` beep -- those companies make no other hardware.
+- **Attack gear:** PorkChop's web-remote AP default, `PORKCHOP`.
+
+### Fixed -- A drone sending two IDs no longer flips its serial
+
+- Remote ID allows more than one Basic ID, and EU drones commonly alternate
+  the serial with a CAA registration. The decoder starts fresh for every frame,
+  so the row took whichever ID arrived last: `uas_id`, and the brand read from
+  it, flipped on every other frame. The row now keeps the best ID it has heard
+  (serial, then registration, then anything else). Found while reading
+  Marauder's Remote ID fixes; selftest pins it.
+
 ### Fixed -- `install.py` accepts ESP32-C5 module variants
 
 - **`install.py` refused an ESP32-C5-N16R8 dev board** (issue #1): esptool
