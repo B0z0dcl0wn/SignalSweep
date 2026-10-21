@@ -932,8 +932,11 @@ static int matchDeviceAgainstRule(SWEEP_ADV* dev, const WatcherSignature& sig, S
 
     int weight = 0;
 
-    // 1. Check OUI (MAC Prefix)
+    // 1. Check OUI (MAC Prefix). Public addresses only: a random BLE address
+    // can start with any vendor's prefix by chance (a driveway "Iteris" on
+    // 2026-10-21), the same reason the app's vendorOf() skips random ones.
     if (sig.oui.length() > 0) {
+        if (dev->getAddress().getType() != BLE_ADDR_PUBLIC) return 0;
         String mac = String(dev->getAddress().toString().c_str());
         String cleanMac = "";
         for (size_t i = 0; i < mac.length(); i++) {

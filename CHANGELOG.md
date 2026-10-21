@@ -4,6 +4,18 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Fixed -- Bluetooth prefix rules matched random addresses
+
+A car pulling out of a driveway beeped "ALPR": the C5 matched the Iteris
+roadside-sensor prefix `00:14:7b` on a Bluetooth device at -60 dBm with no name
+and no company ID, and it was gone on the way home. Bluetooth addresses are
+mostly random, and a random address can start with any vendor's prefix by
+chance, so every prefix rule (Axon, Flock, the police vendors) could do this.
+Prefix rules now match public Bluetooth addresses only, the same rule the app's
+vendor lookup already followed. Wi-Fi was never affected: a randomized Wi-Fi
+address sets a bit no registered prefix has. Rules that match a company ID,
+name or UUID are unchanged. `selftest.js` fails if the check goes.
+
 ### Changed -- Signatures v19: police gear from fourteen more projects
 
 A second review, this time of fourteen detectors and attack tools we had not
