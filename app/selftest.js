@@ -754,6 +754,10 @@ if (!/uuidMatches\(/.test(matchFn)) sigFail.push('matchDeviceAgainstRule() does 
 // v18: most trackers send their UUID only as service data; a rule that reads
 // the UUID list alone never fires on them.
 if (!/uuidMatches\(dev->getServiceDataUUID\(i\)/.test(matchFn)) sigFail.push('UUID rules no longer match service data');
+// A random BLE address can start with any vendor prefix by chance (a driveway
+// "Iteris" beep, 2026-10-21): OUI rules match public addresses only.
+if (!/sig\.oui\.length\(\) > 0\) \{\s*if \(dev->getAddress\(\)\.getType\(\) != BLE_ADDR_PUBLIC\) return 0;/.test(matchFn))
+    sigFail.push('BLE OUI rules match random addresses again');
 // Axon's BWCDEVICE tag must be searched both ways round (it rides a little-endian 128-bit UUID).
 if (!/F\[n - 1 - k\]/.test(wwSrc) || !/bleAxonBwc\(advertisedDevice\)/.test(wwSrc)) sigFail.push('BWCDEVICE detector missing or forward-only');
 // A drone alternating serial and CAA registration must keep the serial.
