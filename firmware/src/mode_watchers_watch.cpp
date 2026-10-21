@@ -145,7 +145,10 @@ static const char *SIG_FILE_PATH = "/data/signatures.json";
 //        drone makers and Motorola Solutions' BLE IDs at 60. Raven 3100-3500
 //        back, exact-match, at 60. Glasses names + the HeyCyan UUID at 60.
 //        Bruce and GhostESP default SSIDs / BLE names (Attack only).
-#define SIG_SCHEMA_VERSION 19
+//   v20: "Flock BLE Name" no longer beeps alone: "flock" and "pigvision"
+//        drop to 60, and "fs_" is gone (any name containing it, the BLE
+//        twin of "Chiefs_Guest"; bleFlockFsName covers FS-<hex> properly).
+#define SIG_SCHEMA_VERSION 20
 
 static SemaphoreHandle_t watchersMutex = NULL;
 static bool watchersRunning = false;
@@ -388,10 +391,10 @@ static void ensureSignaturesFileExists() {
             // Device Name Keywords. "raven" and "penguin" were dropped at v5:
             // ordinary words, matched as substrings, scoring W_NAME (70) — i.e.
             // self-sufficient to sound the alarm on someone's bluetooth speaker.
-            const char* bleNames[] = {"flock", "pigvision", "fs_"};
-            for (const char* name : bleNames) {
-                addRule("Flock BLE Name", "Flock Safety", "", "", name, "");
-            }
+            // v20: substrings anyone can type, so listed, not beeped; "fs_"
+            // dropped (bleFlockFsName matches the real FS-<hex> form).
+            addRule("Flock BLE Name", "Flock Safety", "", "", "flock", "", 60);
+            addRule("Flock BLE Name", "Flock Safety", "", "", "pigvision", "", 60);
             // Flock's external battery by name, and a camera's own hotspot,
             // "Flock Camera net." (Flock-You issue #43), which the 12-char
             // "Flock-XXXXXX" check misses. "FS-<hex>" names are matched in

@@ -4,6 +4,17 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Changed -- Signatures v20: Flock name rules list instead of beeping
+
+Hunting for more bugs like the driveway "Iteris" turned up the same flaw in
+the Bluetooth name rules: `flock`, `pigvision` and `fs_` matched anywhere in a
+device name and beeped on their own as an ALPR. `fs_` is three letters (the
+Wi-Fi SSID path already learned that from a network called "Chiefs_Guest"), and
+anyone can name a speaker "Flocker". Flock's Bluetooth names went quiet in
+spring 2026, so the rules were all risk. `fs_` is gone (the `FS-<hex>` detector
+from v18 covers the real form) and the other two list at 60 without beeping.
+The bench emitter's Flock persona now lists rather than beeps.
+
 ### Fixed -- Bluetooth prefix rules matched random addresses
 
 A car pulling out of a driveway beeped "ALPR": the C5 matched the Iteris
