@@ -186,7 +186,12 @@
         // Keyed by MAC, dropped when the device stops reporting it (the firmware
         // prunes at 120 s and only reports matches, so this list IS the matches).
         let liveMatches = {};       // mac -> { mac, name, type, rule, rssi, protocol, confidence, tier, ts }
-        const LIVE_STALE_MS = 8000; // hide a match we haven't heard in 8 s
+        // A row is dated from when the BOARD last heard it (`age`), not from
+        // when the push arrived -- the board reports a device for 30 s after
+        // its last advert, and stamping every push "now" kept a camera half a
+        // mile back on screen at the RSSI it had beside you.
+        const LIVE_STALE_MS = 30000; // board stops reporting at 30 s too
+        const LIVE_FADE_MS = 8000;   // unheard this long: dimmed, sunk, "Ns ago"
 
         function ingestTargets(targets) {
             const now = Date.now();
@@ -202,7 +207,7 @@
                     // a BLE sighting of a BLE+WiFi device) must not blank the badge.
                     ch: t.ch != null ? t.ch : (prev ? prev.ch : undefined),
                     confidence: t.confidence || 0,
-                    tier: t.tier || '', ts: now,
+                    tier: t.tier || '', ts: now - (Number(t.age) || 0) * 1000,
                     // Decoded ASTM Remote ID, present only on drones. The
                     // firmware omits any field it does not actually know, so
                     // undefined here means "unknown", never "zero".
@@ -476,6 +481,9 @@
                     // a flood is 90 fakes at one RSSI, and its own row sank among them.
                     const sa = /\s/.test(String(a.mac)), sb = /\s/.test(String(b.mac));
                     if (sa !== sb) return sa ? -1 : 1;
+                    // Something you have left behind sinks below what is here now.
+                    const fa = now - a.ts >= LIVE_FADE_MS, fb = now - b.ts >= LIVE_FADE_MS;
+                    if (fa !== fb) return fa ? 1 : -1;
                     const ba = Math.round((Number(a.rssi) || -999) / 5);
                     const bb = Math.round((Number(b.rssi) || -999) / 5);
                     if (ba !== bb) return bb - ba;
@@ -747,7 +755,9 @@
                 // say so rather than leave the blank unexplained.
                 const vendor = vendorOf(m) || (publicMac(m) || m.cid != null ? '' : 'random MAC');
                 const expandable = cat.key === 'drone' && !/\s/.test(String(m.mac));
-                return '<div class="scope-row' + (unmatched ? ' unmatched' : '') + (expandable ? ' expandable' : '') +
+                const agoS = Math.floor((Date.now() - m.ts) / 1000);
+                const faded = agoS * 1000 >= LIVE_FADE_MS && !isHunted;
+                return '<div class="scope-row' + (unmatched ? ' unmatched' : '') + (faded ? ' faded' : '') + (expandable ? ' expandable' : '') +
                         (ignoredMacs.has(String(m.mac).toUpperCase()) ? ' ignored' : '') +
                         (isHunted ? ' hunted' : '') +
                         '"' + (expandable ? ' data-expand="' + esc(m.mac) + '"' : '') +
@@ -762,6 +772,7 @@
                             (unmatched ? '<span class="unmatched-tag">no match</span>' : '') +
                             (weak ? '<span class="unmatched-tag">weak hint</span>' : '') +
                             (ignoredMacs.has(String(m.mac).toUpperCase()) ? '<span class="unmatched-tag">ignored</span>' : '') +
+                            (faded ? '<span class="unmatched-tag">' + agoS + ' s ago</span>' : '') +
                             (m.tier && !unmatched && !weak ? '<span class="tier-badge" style="color:' + cat.color + '">' + esc(m.tier) + '</span>' : '') +
                         '</div>' +
                         // Don't print the address twice when it is also the title.

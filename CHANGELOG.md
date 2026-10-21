@@ -4,6 +4,20 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Fixed -- the list let go of nothing you drove away from
+
+Half a mile and five minutes past a "camera", it still sat near the top of the
+list at the signal it had beside the car. The board reported every device it
+was tracking until it pruned it at 2 minutes, carrying the last RSSI it heard,
+and the app stamped each report "seen now", so its 8-second fade never fired.
+Now the board stops reporting a device 30 seconds after it last heard it
+(tracking still runs to 2 minutes, so a drive-by still beeps once) and sends
+`age`, seconds since last heard, on anything older than 2 seconds. The app dates
+each row from that: after 8 seconds a row dims, says "12 s ago" and sinks below
+what is around you now, and at 30 seconds it is gone. The hunted row never
+fades. Bench, C5 with the filter off: 61 devices over 50 s, oldest report 29 s.
+`selftest.js` pins both halves.
+
 ### Changed -- Signatures v20: Flock name rules list instead of beeping
 
 Hunting for more bugs like the driveway "Iteris" turned up the same flaw in

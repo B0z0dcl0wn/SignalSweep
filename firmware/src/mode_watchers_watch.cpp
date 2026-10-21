@@ -754,6 +754,10 @@ static void ensureSignaturesFileExists() {
 // Now that the mode harvests everything rather than only signature hits, the
 // target list needs the same lifecycle every other mode already had.
 #define WATCHERS_STALE_MS    120000  // drop devices unheard for 2 min
+// Stop REPORTING a device unheard this long. It stays tracked to the 2 min
+// above (so a drive-by still beeps once), but listing it was the phone showing
+// a camera half a mile back at the RSSI it had beside it.
+#define WATCHERS_REPORT_FRESH_MS 30000
 
 // Hard cap on the tracked list. Every device heard is held until it has been
 // silent for WATCHERS_STALE_MS, and each one costs ~50 B of INTERNAL heap (its
@@ -3023,7 +3027,9 @@ String getWatchersTargetsJson() {
         // scanAll lifts the listing gate only (see setScanAll). Everything is
         // tracked either way; this decides what gets sent.
         std::vector<size_t> order;
+        uint32_t freshNow = millis();
         for (size_t i = 0; i < trackedTargets.size(); i++) {
+            if (freshNow - trackedTargets[i].lastSeenMs > WATCHERS_REPORT_FRESH_MS) continue;
             if (scanAll || trackedTargets[i].confidence >= CONF_LIST_MIN) order.push_back(i);
         }
         std::sort(order.begin(), order.end(), [](size_t a, size_t b) {
@@ -3070,6 +3076,10 @@ String getWatchersTargetsJson() {
             if (t.type.length() > 0)        obj["type"] = t.type;
             if (t.matchedRule.length() > 0) obj["matched_rule"] = t.matchedRule;
             obj["rssi"] = t.rssi;
+            // Seconds since last heard, only once it is worth saying: the app
+            // ages the row from this, not from when the push arrived.
+            uint32_t ageS = (nowMs - t.lastSeenMs) / 1000;
+            if (ageS >= 2) obj["age"] = ageS;
             // first_seen_ms / last_seen_ms deliberately not sent: the app
             // tracks its own wall-clock timing and ignored these, and at ~40
             // targets they were about a quarter of the payload.
