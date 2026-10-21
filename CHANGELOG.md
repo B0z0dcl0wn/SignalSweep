@@ -2,7 +2,7 @@
 
 All notable changes to SignalSweep are recorded here.
 
-## [Unreleased]
+## [0.10.2] — 2026-10-21 — Out of sight, off the list
 
 ### Fixed -- the list let go of nothing you drove away from
 
