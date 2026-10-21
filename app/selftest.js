@@ -758,6 +758,12 @@ if (!/uuidMatches\(dev->getServiceDataUUID\(i\)/.test(matchFn)) sigFail.push('UU
 // "Iteris" beep, 2026-10-21): OUI rules match public addresses only.
 if (!/sig\.oui\.length\(\) > 0\) \{\s*if \(dev->getAddress\(\)\.getType\(\) != BLE_ADDR_PUBLIC\) return 0;/.test(matchFn))
     sigFail.push('BLE OUI rules match random addresses again');
+// A device you drove away from must leave the list (2026-10-21: a "camera"
+// held its roadside RSSI for minutes): the board stops reporting it after
+// WATCHERS_REPORT_FRESH_MS and sends `age`; the app dates rows from `age`.
+if (!/lastSeenMs > WATCHERS_REPORT_FRESH_MS\) continue;/.test(wwSrc) || !/obj\["age"\] = ageS;/.test(wwSrc))
+    sigFail.push('push reports unheard devices as fresh again');
+if (!/ts: now - \(Number\(t\.age\) \|\| 0\) \* 1000/.test(appSrc)) sigFail.push('app stamps rows with push time, not the board age');
 // Axon's BWCDEVICE tag must be searched both ways round (it rides a little-endian 128-bit UUID).
 if (!/F\[n - 1 - k\]/.test(wwSrc) || !/bleAxonBwc\(advertisedDevice\)/.test(wwSrc)) sigFail.push('BWCDEVICE detector missing or forward-only');
 // A drone alternating serial and CAA registration must keep the serial.
