@@ -862,7 +862,12 @@ for (const call of defaults.match(/addRule\([^;]*\);/g) || []) {
     const hasLux = /0x0D53|0x01AB/i.test(call);
     if (hasFd5f !== hasLux) regFail.push(`glasses rule states fd5f/0x0D53 without the other: ${call.replace(/\s+/g, ' ')}`);
 }
-if (!/#define SIG_SCHEMA_VERSION 19\b/.test(wwSrc)) regFail.push('SIG_SCHEMA_VERSION not bumped to 19');
+if (!/#define SIG_SCHEMA_VERSION 20\b/.test(wwSrc)) regFail.push('SIG_SCHEMA_VERSION not bumped to 20');
+// v20: BLE name substrings anyone can type never beep alone as Flock, and
+// "fs_" (it matches "Chiefs_...") is gone.
+for (const m of wwSrc.matchAll(/addRule\("Flock BLE Name"[^;]*;/g))
+    if (!/, 60\);$/.test(m[0])) regFail.push('Flock BLE Name rule beeps alone again: ' + m[0]);
+if (/"fs_"/.test(wwSrc.replace(/\/\/.*$/gm, ''))) regFail.push('"fs_" name rule is back');
 // v14/v15, the "no consumer owns this" rule: surveillance-only vendors beep on
 // their registered address alone (70). At 60 two Axon APs at a traffic stop
 // listed and stayed silent (field, 2026-10-12).
