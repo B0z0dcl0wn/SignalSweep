@@ -75,15 +75,22 @@ void setBuzzerEnabled(bool enabled);
  */
 bool isBuzzerEnabled();
 
-// How much of the LED bar may light. Applied as the last step of every frame,
-// so every animation, the hunt meter and the heartbeat obey it. Persisted.
-enum LedMode : uint8_t { LED_OFF = 0, LED_ONE = 1, LED_DIM = 2, LED_FULL = 3 };
+// LedMode and Brightness, and the rules between them, live in led_brightness.h
+// (pure, host-tested).
+#include "led_brightness.h"
 
-/** @brief Set the LED mode (clamped to LED_FULL) and persist it. */
+/** @brief Set the LED mode (clamped to LED_BAR_KEEP; 2/3 also set brightness) and persist it. */
 void setLedMode(uint8_t mode);
 
-/** @brief Current LED mode; no mutex, reported by CMD:CFG and the 1 Hz push. */
+/** @brief Legacy reported LED mode (0 off, 1 one, 2 bar at Low, 3 bar otherwise);
+ *  no mutex, reported by CMD:CFG and the 1 Hz push. */
 uint8_t getLedMode();
+
+/** @brief Set the brightness (clamped to BRI_HIGH) and persist it. */
+void setBrightness(uint8_t bri);
+
+/** @brief Current brightness; no mutex, reported by CMD:CFG and the 1 Hz push. */
+uint8_t getBrightness();
 
 // A named look + sound. Recolours the finished frame and scales buzzer pitch;
 // animation shapes and jingle rhythms -- the alert ID -- never change. One LED

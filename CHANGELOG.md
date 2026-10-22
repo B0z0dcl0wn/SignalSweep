@@ -2,6 +2,32 @@
 
 All notable changes to SignalSweep are recorded here.
 
+## [Unreleased]
+
+### Changed -- Brightness is its own setting
+
+Lights was Off / One / Dim / Full, so how bright the bar was came bundled with
+how much of it lit. Lights is now Off / One / Bar, and Brightness is a separate
+row: Low (8/255, the old Dim), Med (20) and High (50, the old Full). Brightness
+applies to every Lights option, One included; Night Ops still holds the bar at
+Low, except under One. Because One now follows brightness, an old app that
+picks Dim and then One gets a dim single LED, which it has no way to show.
+Requested in B0z0dcl0wn/SignalSweep#5.
+
+Wire contract: `{"bri":0..2}` sets brightness only and is answered with
+`CMD:CFG`. `{"led":2}` is Bar + Low and `{"led":3}` is Bar + High, so old apps'
+Dim and Full act as before; `{"led":4}` is Bar at the current brightness, which
+is what the new app sends (old firmware clamps it to Full). The reported `led`
+stays 0..3 for old apps (Bar reports 2 at Low, 3 otherwise), and `bri` joins
+`CMD:CFG` and the 1 Hz push (~8 B). The app shows the old four Lights buttons
+and no Brightness row when the board reports no `bri`.
+
+Persistence: new NVS key `bri` in `sweep-bz`, written with every Lights or
+Brightness change; `led` stores Bar as 3. A board with no `bri` key loads a
+stored Dim (2) as Bar + Low and Full (3) as Bar + High. `selftest.js` checks
+that there are three levels and three Brightness buttons, and that the app
+adopts `bri` from both frames.
+
 ## [0.10.2] — 2026-10-21 — Out of sight, off the list
 
 ### Fixed -- the list let go of nothing you drove away from
