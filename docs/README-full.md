@@ -217,7 +217,7 @@ per line, plus a few raw ones:
 ```
 CMD:CFG            name, address mode, hunt target, filter, receive-only,
                    per-radio scan state, beep mask, buzzer, LED mode,
-                   alert count, uptime (seconds)
+                   brightness, alert count, uptime (seconds)
 CMD:SIGS:RESET     restore the built-in signature rules
 CMD:RXONLY:ON|OFF  enter / leave receive-only
 CMD:BLE_SCAN:ON|OFF    pause / resume one radio; each replies with a fresh CMD:CFG
@@ -227,8 +227,11 @@ CMD:HOST:BYE       app is closing the port; chirps
 ```
 
 JSON settings include `{"beep_mask":N}` (one bit per alert category, 0x1F =
-all) and `{"led":0..3}` (lights off / one LED / dim / full). Both survive a
-power cycle.
+all), `{"led":0..4}` (lights off / one LED / bar at Low / bar at High / bar at
+the current brightness) and `{"bri":0..2}` (brightness Low / Med / High, for
+every lights setting). All three survive a power cycle. The reported `led` is
+0..3 (bar reports 2 at Low, 3 otherwise), so apps that predate `bri` still read
+it as off / one / dim / full.
 
 A paused radio is reported as `ble_scan` / `wifi_scan` in `CMD:CFG`, and the
 flag is set by these commands only — ringing a tracker pauses the BLE scan for

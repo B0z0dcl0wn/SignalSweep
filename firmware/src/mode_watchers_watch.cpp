@@ -3001,13 +3001,15 @@ String getWatchersTargetsJson() {
     // these three without re-measuring the 60 s push soak. (The LED mode
     // joined for the same reason as the other two, ~8 B. The alert count joined
     // so the header's "alerts since power-on" ticks live, ~12 B. The theme
-    // joined like the LED mode, ~10 B.)
+    // joined like the LED mode, ~10 B. Brightness joined like the LED mode,
+    // ~8 B.)
     //
     // Unconditional, unlike scan_all: "absent" must not be ambiguous between
     // "the default" and "firmware too old to send it".
     doc["beep_mask"] = beepMask;
     doc["buzzer"] = isBuzzerEnabled();
     doc["led"] = getLedMode();
+    doc["bri"] = getBrightness();
     doc["theme"] = getTheme();
     doc["vol"] = getVolume();
 #if CONFIG_IDF_TARGET_ESP32C5

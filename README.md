@@ -117,7 +117,7 @@ Mute any category you don't care about. It's still detected and listed, just qui
 - **Site Survey.** Park next to something suspicious, capture the raw air, and the app pulls out its signature. Snap a photo, and it's logged to an encrypted finds database you can export for DeFlock.
 - **Ignore the neighbours.** Something you own keeps setting it off? Ignore that one device (fixed addresses only, up to 16). It stays listed, it just stops beeping, and the board remembers through a power cut.
 - **Logs if you ask.** What it beeped at and when, on its own flash or the SD card, for a drive with no phone along. Off by default. Never where.
-- **Lights on your terms.** Off, one LED, dim or full, plus five themes, so a parked car doesn't glow like a beacon.
+- **Lights on your terms.** Off, one LED or the whole bar, three brightness levels and five themes, so a parked car doesn't glow like a beacon.
 
 **Private by design**
 - **Keeps its mouth shut.** Receive-only stops its Bluetooth advertising, so it isn't announcing itself to the gear it's hunting. It keeps listening and beeping.

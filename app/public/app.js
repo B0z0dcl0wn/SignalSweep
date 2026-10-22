@@ -1077,6 +1077,8 @@
             if (rt) { setRadioChip(rt.getAttribute('data-radio')); return; }
             const lm = ev.target.closest('#led-modes .radio-tab');
             if (lm) { setLed(Number(lm.getAttribute('data-led'))); return; }
+            const bri = ev.target.closest('#bri-modes .radio-tab');
+            if (bri) { setBri(Number(bri.getAttribute('data-bri'))); return; }
             const vm = ev.target.closest('#sound-modes .radio-tab[data-vol]');
             if (vm) { setVol(Number(vm.getAttribute('data-vol'))); return; }
             const tc = ev.target.closest('#theme-modes .theme-chip');
@@ -2757,6 +2759,7 @@
             if (typeof cfg.beep_mask === 'number') setBeepUi(cfg.beep_mask);
             setBuzzerUi(cfg.buzzer);
             setLedUi(cfg.led);
+            setBriUi(cfg.bri);
             setThemeUi(cfg.theme);
             setVolUi(cfg.vol);
             setBandUi(cfg.band);
@@ -3415,6 +3418,7 @@
             if (typeof data.beep_mask === 'number') setBeepUi(data.beep_mask);
             if (typeof data.buzzer === 'boolean') setBuzzerUi(data.buzzer);
             if (typeof data.led === 'number') setLedUi(data.led);
+            if (typeof data.bri === 'number') setBriUi(data.bri);
             if (typeof data.theme === 'number') setThemeUi(data.theme);
             if (typeof data.vol === 'number') setVolUi(data.vol);
             if (typeof data.band === 'number') setBandUi(data.band);
@@ -3701,27 +3705,73 @@
             setSoundsSummary();
         }
 
-        // LED mode: 0 off, 1 one LED, 2 dim, 3 full (firmware LedMode). Same
-        // contract as the buzzer -- painted only from device frames, a tap
-        // just asks and marks the button pending until the reply lands.
+        // LED mode as reported: 0 off, 1 one LED, 2 bar at Low, 3 bar at any
+        // other brightness (firmware getLedMode). Same contract as the buzzer --
+        // painted only from device frames, a tap just asks and marks the
+        // button pending until the reply lands. Firmware that reports `bri`
+        // gets Off / One / Bar, and Bar is sent as 4 (keep the brightness);
+        // older firmware gets its own four buttons, Dim (2) and Full (3).
         let ledMode = null;
-        function setLedUi(n) {
-            ledMode = (typeof n === 'number') ? n : null;
+        let briLevel = null;   // see setBriUi
+        // One Lights button's state. v = its data-led, led = reported led,
+        // split = the board reports `bri` (Off / One / Bar instead of the
+        // legacy Off / One / Dim / Full).
+        function ledButtonState(v, led, split) {
+            if (v === 4) return { hidden: !split, on: led !== null && led >= 2 };
+            if (v >= 2) return { hidden: split, on: led === v };
+            return { hidden: false, on: led === v };
+        }
+        // Whether tapping data-led n changes nothing: Bar (4) is already on
+        // when the board reports Bar at either level (2 or 3).
+        function ledTapIsNoop(n, led) {
+            return n === led || (n === 4 && led >= 2);
+        }
+        function paintLed() {
+            const split = briLevel !== null;
             document.querySelectorAll('#led-modes .radio-tab').forEach(function (el) {
-                const on = ledMode !== null && Number(el.getAttribute('data-led')) === ledMode;
-                el.setAttribute('aria-pressed', on ? 'true' : 'false');
+                const st = ledButtonState(Number(el.getAttribute('data-led')), ledMode, split);
+                el.hidden = st.hidden;
+                el.setAttribute('aria-pressed', st.on ? 'true' : 'false');
                 el.classList.remove('pending');
             });
+        }
+        function setLedUi(n) {
+            ledMode = (typeof n === 'number') ? n : null;
+            paintLed();
             paintAlertRows();
             setSoundsSummary();
             paintThemeNote();
         }
         function setLed(n) {
             if (ledMode === null) { showToast('Waiting for the device', '…'); return; }
-            if (n === ledMode) return;
+            if (ledTapIsNoop(n, ledMode)) return;
             const el = document.querySelector('#led-modes .radio-tab[data-led="' + n + '"]');
             if (el) el.classList.add('pending');
             sendCommand({ led: n });
+        }
+
+        // Brightness: 0 low, 1 med, 2 high (firmware BRI_LEVEL order; selftest
+        // pins the count). Applies to every Lights option. Same contract as the
+        // LED mode -- painted only from device frames. The row stays hidden,
+        // and Lights keeps its legacy Dim / Full, for firmware that does not
+        // report it.
+        function setBriUi(n) {
+            briLevel = (typeof n === 'number') ? n : null;
+            const row = document.getElementById('bri-row');
+            if (row) row.hidden = briLevel === null;
+            document.querySelectorAll('#bri-modes .radio-tab').forEach(function (el) {
+                const on = briLevel !== null && Number(el.getAttribute('data-bri')) === briLevel;
+                el.setAttribute('aria-pressed', on ? 'true' : 'false');
+                el.classList.remove('pending');
+            });
+            paintLed();
+        }
+        function setBri(n) {
+            if (briLevel === null) { showToast('Waiting for the device', '…'); return; }
+            if (n === briLevel) return;
+            const el = document.querySelector('#bri-modes .radio-tab[data-bri="' + n + '"]');
+            if (el) el.classList.add('pending');
+            sendCommand({ bri: n });
         }
 
         // Volume: 0 low, 1 med, 2 high (firmware VOL_DUTY order; selftest pins
@@ -4137,6 +4187,7 @@
                 // wrong device.
                 setBuzzerUi(null);
                 setLedUi(null);
+                setBriUi(null);
                 setThemeUi(null);
                 setVolUi(null);
                 setBandUi(null);
@@ -5179,6 +5230,22 @@
                     themeNote(0, 1) === '' &&
                     themeNote(2, 3) === '' &&
                     themeNote(null, 1) === '';
+                // Lights: with `bri` reported, Bar paints for led 2 and 3 and
+                // the legacy Dim / Full hide; without it, Bar hides and they show.
+                results.ledBarOnForDimAndFull =
+                    ledButtonState(4, 2, true).on && ledButtonState(4, 3, true).on &&
+                    !ledButtonState(4, 1, true).on && !ledButtonState(4, 0, true).on &&
+                    !ledButtonState(4, null, true).on;
+                results.ledLegacyHiddenWithBri =
+                    ledButtonState(2, 2, true).hidden && ledButtonState(3, 3, true).hidden &&
+                    !ledButtonState(4, 3, true).hidden;
+                results.ledLegacyShownWithoutBri =
+                    !ledButtonState(2, 2, false).hidden && ledButtonState(2, 2, false).on &&
+                    !ledButtonState(3, 3, false).hidden && ledButtonState(3, 3, false).on &&
+                    ledButtonState(4, 3, false).hidden;
+                results.ledBarTapNoop =
+                    ledTapIsNoop(4, 2) && ledTapIsNoop(4, 3) &&
+                    !ledTapIsNoop(4, 0) && !ledTapIsNoop(4, 1) && !ledTapIsNoop(1, 3);
 
                 // Ring only where the firmware heard Immediate Alert / Link Loss
                 // advertised: never on Wi-Fi, never on an AirTag.
