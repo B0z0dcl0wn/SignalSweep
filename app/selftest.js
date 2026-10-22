@@ -44,7 +44,7 @@ import { spawnSync } from 'node:child_process';
         console.log('FAIL: firmware/test/run.sh:\n' + (cxx.stdout || '') + (cxx.stderr || ''));
         process.exit(1);
     } else {
-        console.log('[signalsweep self-test] attack_detectors host tests: ok');
+        console.log('[signalsweep self-test] attack_detectors + led_brightness host tests: ok');
     }
 }
 
@@ -326,6 +326,44 @@ if (volBtns !== volDuty.length) volFail.push('#vol-modes has ' + volBtns + ' but
 if (!/setVolUi\(cfg\.vol\)/.test(appSrc) || !/setVolUi\(data\.vol\)/.test(appSrc)) volFail.push('app does not adopt vol from CMD:CFG and the push');
 if (volFail.length) { console.log('FAIL: volume:', volFail); process.exit(1); }
 console.log('[signalsweep self-test] buzzer volume is LEDC duty, 3 levels: ok');
+
+// Brightness is its own setting, indexed by the {"bri"} wire value. The table,
+// the app's buttons and the adoption from both frames move together, like the
+// volume above.
+const briFail = [];
+const briLevels = ((hwSrc.match(/static const uint8_t BRI_LEVEL\[\] = \{([^}]*)\}/) || [])[1] || '').split(',').filter(s => s.trim());
+if (briLevels.length !== 3) briFail.push('BRI_LEVEL must have 3 levels, has ' + briLevels.length);
+const briBtns = (htmlSrc.match(/data-bri="\d"/g) || []).length;
+if (briBtns !== briLevels.length) briFail.push('#bri-modes has ' + briBtns + ' buttons, BRI_LEVEL has ' + briLevels.length);
+if (!/setBriUi\(cfg\.bri\)/.test(appSrc) || !/setBriUi\(data\.bri\)/.test(appSrc)) briFail.push('app does not adopt bri from CMD:CFG and the push');
+// The Bar button sends LED_BAR_KEEP, and the legacy Dim / Full buttons stay
+// for firmware that reports no brightness.
+const ledHdr = readFileSync(new URL('../firmware/src/led_brightness.h', import.meta.url), 'utf8');
+const barKeep = (ledHdr.match(/LED_BAR_KEEP = (\d+)/) || [])[1];
+if (!barKeep || !htmlSrc.includes('data-led="' + barKeep + '"')) briFail.push('no Bar button with data-led = LED_BAR_KEEP (' + barKeep + ')');
+for (const v of ['2', '3']) if (!htmlSrc.includes('data-led="' + v + '"')) briFail.push('legacy data-led="' + v + '" button missing');
+// The Brightness description lives inside #bri-row, so it hides with the row
+// on firmware that reports no `bri`.
+const briRowTag = htmlSrc.match(/<div[^>]*\sid="bri-row"[^>]*>/);
+const briRowAt = briRowTag ? briRowTag.index : -1;
+const briNoteRel = briRowAt < 0 ? -1 : htmlSrc.slice(briRowAt).search(/\sid="bri-note"/);
+const briNoteAt = briNoteRel < 0 ? -1 : briRowAt + briNoteRel;
+// #bri-row must start hidden: that keeps the row and its description out of
+// view before the first device frame and on firmware without `bri`.
+if (briRowTag && !/\shidden(\s|>|=)/.test(briRowTag[0])) briFail.push('#bri-row does not start hidden');
+if (briRowAt < 0 || briNoteAt < 0) briFail.push('#bri-row or #bri-note missing');
+else {
+    let depth = 0, end = -1;
+    const tagRe = /<\/?div\b[^>]*>/g;
+    tagRe.lastIndex = briRowAt;
+    for (let m; (m = tagRe.exec(htmlSrc));) {
+        depth += m[0].startsWith('</') ? -1 : 1;
+        if (depth === 0) { end = m.index; break; }
+    }
+    if (end < 0 || briNoteAt < briRowAt || briNoteAt > end) briFail.push('#bri-note is not inside the #bri-row element');
+}
+if (briFail.length) { console.log('FAIL: brightness:', briFail); process.exit(1); }
+console.log('[signalsweep self-test] brightness is its own setting, 3 levels: ok');
 
 // The easter egg is another shared index, with no reply to catch a drift: the
 // device deliberately does not report `egg` anywhere, so a scene added on one

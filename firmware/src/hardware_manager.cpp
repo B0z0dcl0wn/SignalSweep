@@ -18,9 +18,14 @@ static const char *TAG = "HardwareManager";
 // and a new one would be one more thing a rename could orphan.
 #define BUZZER_NVS_NS "sweep-bz"
 
+// Indexed by Brightness (the {"bri"} wire value): Low / Med / High out of 255.
+// Low is the old Dim and High the old Full.
+// ponytail: 8/255 is a guess for the bench bars; raise it if Low reads as off.
+// Med is a first guess between the two.
+static const uint8_t BRI_LEVEL[] = {8, 20, 50};
+// The egg's "sit next to it" lights keep the old Full level regardless of the
+// brightness setting -- the egg's own rules are not the operator's.
 #define LED_FULL_BRIGHTNESS 50
-// ponytail: 8/255 is a guess for the bench bars; raise it if Dim reads as off.
-#define LED_DIM_BRIGHTNESS  8
 
 static Adafruit_NeoPixel strip(NEOPIXEL_COUNT, NEOPIXEL_PIN, NEO_GRB + NEO_KHZ800);
 static SemaphoreHandle_t hwMutex = NULL;
@@ -39,6 +44,8 @@ static volatile bool buzzerEnabled = true;
 // Same contract as buzzerEnabled: one byte, read by the render loop and written
 // by the command handler without hwMutex, so changing it can never fail on a lock.
 static volatile uint8_t ledMode = LED_FULL;
+// Same contract as ledMode: one byte, no hwMutex. Index into BRI_LEVEL.
+static volatile uint8_t brightness = BRI_HIGH;
 // Same contract as ledMode: one byte, no hwMutex.
 static volatile uint8_t themeId = THEME_CLASSIC;
 // Easter-egg scene. Same volatile/no-mutex contract as ledMode, and the same
@@ -522,16 +529,14 @@ static void HardwareManagerTask(void *pvParameters) {
             if (eggScene && (int32_t)(now - eggUntil) >= 0) eggScene = EGG_OFF;
             // No-op when unchanged. Its rescale of the stored pixels is lossy,
             // which doesn't matter: the frame is rebuilt from scratch below.
-            // Night Ops is capped at Dim: red light for dark-adapted eyes.
-            // One is exempt -- it's Classic-only, so Night Ops must not dim it.
+            // Brightness and the Night Ops cap: ledRenderBri() (led_brightness.h).
             // The egg overrides both: a flashlight the theme dimmed is not one.
             // The two "sit next to it" lights are the exception -- a campfire
             // at 255 is a searchlight, which is not what either is for.
             strip.setBrightness(
                 eggScene ? ((eggScene == EGG_LANTERN || eggScene == EGG_CAMPFIRE)
                                 ? LED_FULL_BRIGHTNESS : EGG_BRIGHTNESS)
-                : (ledMode == LED_DIM || (themeId == THEME_NIGHT && ledMode != LED_ONE))
-                                    ? LED_DIM_BRIGHTNESS : LED_FULL_BRIGHTNESS);
+                : BRI_LEVEL[ledRenderBri(ledMode, brightness, themeId == THEME_NIGHT)]);
             strip.clear();
 
             if (flashActive && now >= flashEndTime) flashActive = false;
@@ -682,8 +687,13 @@ void hardwareInit() {
     Preferences prefs;
     if (prefs.begin(BUZZER_NVS_NS, true)) {
         buzzerEnabled = prefs.getBool("on", true);
-        uint8_t led = prefs.getUChar("led", LED_FULL);
-        ledMode = led > LED_FULL ? LED_FULL : led;
+        // Migration from boards saved before "bri" existed: ledLoadNvs().
+        // Read "bri" only when it exists: a missing key logs a NOT_FOUND error.
+        bool hasBri = prefs.isKey("bri");
+        LedState ls = ledLoadNvs(prefs.getUChar("led", LED_FULL), hasBri,
+                                 hasBri ? prefs.getUChar("bri", BRI_HIGH) : (uint8_t)BRI_HIGH);
+        ledMode = ls.led;
+        brightness = ls.bri;
         uint8_t th = prefs.getUChar("theme", THEME_CLASSIC);
         themeId = th > THEME_PARTY ? THEME_CLASSIC : th;
         uint8_t v = prefs.getUChar("vol", VOL_HIGH);
@@ -824,19 +834,43 @@ bool isBuzzerEnabled() {
 }
 
 void setLedMode(uint8_t mode) {
-    ledMode = mode > LED_FULL ? LED_FULL : mode;   // the render loop picks it up next tick
+    // The 2/3/4 mapping and the clamp: ledApplyCommand() (led_brightness.h).
+    LedState ls = ledApplyCommand(mode, brightness);
+    brightness = ls.bri;
+    ledMode = ls.led;   // the render loop picks it up next tick
     // Outside hwMutex, for the same reason as setBuzzerEnabled(): NVS is slow.
+    // "bri" is written with "led" every time, so a board migrated from the old
+    // Dim keeps Low once it has a "led" that no longer says so.
     Preferences prefs;
     if (prefs.begin(BUZZER_NVS_NS, false)) {
         prefs.putUChar("led", ledMode);
+        prefs.putUChar("bri", brightness);
         prefs.end();
     } else {
         ESP_LOGW(TAG, "Could not open %s — LED mode will not survive a reboot", BUZZER_NVS_NS);
     }
 }
 
+// Derived, never stored: ledReported() (led_brightness.h).
 uint8_t getLedMode() {
-    return ledMode;
+    return ledReported(ledMode, brightness);
+}
+
+void setBrightness(uint8_t bri) {
+    LedState cur = {ledMode, brightness};
+    brightness = briApplyCommand(cur, bri).bri;   // the render loop picks it up next tick
+    // Outside hwMutex, for the same reason as setLedMode(): NVS is slow.
+    Preferences prefs;
+    if (prefs.begin(BUZZER_NVS_NS, false)) {
+        prefs.putUChar("bri", brightness);
+        prefs.end();
+    } else {
+        ESP_LOGW(TAG, "Could not open %s — brightness will not survive a reboot", BUZZER_NVS_NS);
+    }
+}
+
+uint8_t getBrightness() {
+    return brightness;
 }
 
 void setTheme(uint8_t theme) {

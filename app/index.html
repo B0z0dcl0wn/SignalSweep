@@ -678,6 +678,9 @@
         .out-row { display:flex; align-items:center; justify-content:space-between; gap:12px; }
         .out-row + .out-row { margin-top:8px; }
         .alert-note { margin-top:10px; }
+        /* The Brightness row follows the Lights description, not another
+           .out-row, so the .out-row + .out-row gap does not reach it. */
+        #bri-row { margin-top:14px; }
         /* End-of-session summary: the count is the payoff, so it is the size of
            the payoff. Rows are the per-category breakdown in category colours. */
         .logsum-big { font-size:3rem; font-weight:800; line-height:1; text-align:center; }
@@ -813,7 +816,9 @@
            layout class they had no business in. */
         /* Off + On, or Off + three volume levels: one column per visible button. */
         #sound-modes { grid-template-columns:none; grid-auto-flow:column; grid-auto-columns:1fr; }
-        #led-modes { grid-template-columns:repeat(4,1fr); }
+        /* Off / One / Bar (three columns), or Off / One / Dim / Full for firmware
+           that reports no brightness: one column per visible button. */
+        #led-modes, #bri-modes { grid-template-columns:none; grid-auto-flow:column; grid-auto-columns:1fr; }
         /* Theme chips: a sideways strip, not a grid -- five names don't fit a
            phone row, and scrolling keeps every tap target 44 px. */
         #theme-modes { display:flex; gap:6px; overflow-x:auto; margin-top:8px;
@@ -1222,11 +1227,26 @@
                     <div class="radios seg" id="led-modes" role="group" aria-label="Lights">
                         <button class="radio-tab" data-led="0" aria-pressed="false">Off</button>
                         <button class="radio-tab" data-led="1" aria-pressed="false">One</button>
-                        <button class="radio-tab" data-led="2" aria-pressed="false">Dim</button>
-                        <button class="radio-tab" data-led="3" aria-pressed="false">Full</button>
+                        <button class="radio-tab" data-led="4" aria-pressed="false">Bar</button>
+                        <!-- Firmware that reports no brightness has Dim / Full in place of Bar. -->
+                        <button class="radio-tab" data-led="2" aria-pressed="false" hidden>Dim</button>
+                        <button class="radio-tab" data-led="3" aria-pressed="false" hidden>Full</button>
                     </div>
                 </div>
-                <p class="set-note alert-note">One lights a single LED in the alert&rsquo;s colour. Off stays dark, even during an alert.</p>
+                <p class="set-note alert-note">What the LED bar shows. Bar lights the whole bar for alerts; One lights a single LED in the alert&rsquo;s color; Off keeps the bar dark, even during an alert.</p>
+                <!-- Shown once the board reports `bri`; older firmware keeps brightness inside Lights.
+                     The row and its description hide together. -->
+                <div id="bri-row" hidden>
+                    <div class="out-row">
+                        <span class="snd-label"><strong><svg class="ico" aria-hidden="true"><use href="#i-bulb"/></svg> Brightness</strong></span>
+                        <div class="radios seg" id="bri-modes" role="group" aria-label="Brightness">
+                            <button class="radio-tab" data-bri="0" aria-pressed="false">Low</button>
+                            <button class="radio-tab" data-bri="1" aria-pressed="false">Med</button>
+                            <button class="radio-tab" data-bri="2" aria-pressed="false">High</button>
+                        </div>
+                    </div>
+                    <p class="set-note alert-note" id="bri-note">How bright the LEDs are.</p>
+                </div>
 
                 <div class="alert-sec">Alert for</div>
                 <p class="set-note" id="alerts-dead" style="color:var(--accent-amber);margin-bottom:8px;" hidden>Sound and lights are both off, so nothing will alert.</p>
