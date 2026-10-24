@@ -2,6 +2,19 @@
 
 All notable changes to SignalSweep are recorded here.
 
+## [Unreleased]
+
+### Changed -- the app says when a card needs to be FAT32
+
+A 64 GB card fresh from Windows reported plain "No card" on the first carrier
+board. Windows formats anything over 32 GB as exFAT, and both Arduino cores
+ship FatFs precompiled with `FF_FS_EXFAT 0` hard-coded in `ffconf.h`, so an
+exFAT card fails the mount exactly like an empty slot. The board cannot tell
+the two apart, so the Settings card status now says it: the card must be
+FAT32, and cards over 32 GB come exFAT. Real exFAT support needs a rebuilt
+framework or a different SD library, so reformat big cards FAT32 (guiformat
+or the SD Association formatter) for now.
+
 ## [0.10.2] — 2026-10-21 — Out of sight, off the list
 
 ### Fixed -- the list let go of nothing you drove away from

@@ -3489,10 +3489,14 @@
             const gb = sdFree !== null ? (sdFree / 1024).toFixed(1) + ' GB free' : '';
             // A card pushed in while the board is powered often does not answer
             // until a power cycle, and nothing on the board can tell you that.
-            const replug = ' If a card is fitted, unplug and replug the board — a card inserted while it\'s powered may not answer until a power cycle.';
+            // An exFAT card fails the mount exactly like an empty slot (the
+            // prebuilt FatFs has FF_FS_EXFAT 0), and Windows formats anything
+            // over 32 GB exFAT, so say so here.
+            const replug = ' If a card is fitted, unplug and replug the board — a card inserted while it\'s powered may not answer until a power cycle.'
+                         + ' The card must be FAT32: cards over 32 GB come exFAT, which the board can\'t read.';
             el.textContent = state === 1 ? 'SD card' + (gb ? ' · ' + gb : '')
                            : state === 3 ? 'Card full: download and delete files to make room'
-                           : state === 2 ? 'Card error: check it is FAT32 and seated.' + replug
+                           : state === 2 ? 'Card error: check it is seated.' + replug
                            : 'No card.' + replug;
         }
 
