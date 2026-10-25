@@ -151,7 +151,8 @@ static const char *SIG_FILE_PATH = "/data/signatures.json";
 //   v21: speed / red-light camera makers from wardrive-go, IEEE-checked:
 //        Sensys Traffic 00:22:9f and Gatsometer 00:18:29 at 70, filed like
 //        Redflex. (Sensys Traffic AB, now Sensys Gatso -- not Sensys
-//        Networks, the US road-sensor company.)
+//        Networks, the US road-sensor company.) Flipper Zero UUID rules
+//        name the case colour: 3081 black, 3082 white, 3083 transparent.
 #define SIG_SCHEMA_VERSION 21
 
 static SemaphoreHandle_t watchersMutex = NULL;
@@ -597,9 +598,9 @@ static void ensureSignaturesFileExists() {
             // Attack is on (ruleGatedOff), All tab only, generic beep.
             // Flipper Zero advertises one 16-bit service UUID per case colour
             // (its firmware's own constants -- there is no registry for them).
-            addRule("Flipper Zero (service UUID)", HACKING_GEAR_CATEGORY, "", "", "", "3081", 80);
-            addRule("Flipper Zero (service UUID)", HACKING_GEAR_CATEGORY, "", "", "", "3082", 80);
-            addRule("Flipper Zero (service UUID)", HACKING_GEAR_CATEGORY, "", "", "", "3083", 80);
+            addRule("Flipper Zero (black)", HACKING_GEAR_CATEGORY, "", "", "", "3081", 80);
+            addRule("Flipper Zero (white)", HACKING_GEAR_CATEGORY, "", "", "", "3082", 80);
+            addRule("Flipper Zero (transparent)", HACKING_GEAR_CATEGORY, "", "", "", "3083", 80);
             // Flipper Devices' own company ID and MAC block were removed at
             // v18: they are what the BUSY Bar (Flipper's desk sign) sends, and
             // three real Zeros on SquachWatch-CYD's bench sent neither. A Zero
