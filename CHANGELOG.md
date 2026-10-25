@@ -4,7 +4,7 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
-### Changed -- Signatures v21: two more speed-camera makers
+### Changed -- Signatures v21: two more speed-camera makers, and the Flipper's colour
 
 Sensys Traffic (`00:22:9f`, now Sensys Gatso) and Gatsometer (`00:18:29`)
 make speed and red-light cameras and nothing a consumer buys, so both beep
@@ -12,6 +12,11 @@ and file under Cameras, like Redflex. Both prefixes are checked against the
 IEEE registry; Sensys Traffic is not Sensys Networks, the US road-sensor
 maker. Found reviewing RocketGod's wardrive-go. Boards pick them up on their
 next boot.
+
+A Flipper Zero advertises one service UUID per case colour, so its row now
+says which: "Flipper Zero (black)" for `3081`, "(white)" for `3082`,
+"(transparent)" for `3083` (Wall of Flippers and wardrive-go agree on the
+mapping). Still Attack-only, still 80.
 
 ### Changed -- the app says when a card needs to be FAT32
 
