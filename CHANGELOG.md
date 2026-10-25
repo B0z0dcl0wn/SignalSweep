@@ -4,6 +4,15 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Changed -- Signatures v21: two more speed-camera makers
+
+Sensys Traffic (`00:22:9f`, now Sensys Gatso) and Gatsometer (`00:18:29`)
+make speed and red-light cameras and nothing a consumer buys, so both beep
+and file under Cameras, like Redflex. Both prefixes are checked against the
+IEEE registry; Sensys Traffic is not Sensys Networks, the US road-sensor
+maker. Found reviewing RocketGod's wardrive-go. Boards pick them up on their
+next boot.
+
 ### Changed -- the app says when a card needs to be FAT32
 
 A 64 GB card fresh from Windows reported plain "No card" on the first carrier

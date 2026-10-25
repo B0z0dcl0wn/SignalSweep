@@ -148,7 +148,11 @@ static const char *SIG_FILE_PATH = "/data/signatures.json";
 //   v20: "Flock BLE Name" no longer beeps alone: "flock" and "pigvision"
 //        drop to 60, and "fs_" is gone (any name containing it, the BLE
 //        twin of "Chiefs_Guest"; bleFlockFsName covers FS-<hex> properly).
-#define SIG_SCHEMA_VERSION 20
+//   v21: speed / red-light camera makers from wardrive-go, IEEE-checked:
+//        Sensys Traffic 00:22:9f and Gatsometer 00:18:29 at 70, filed like
+//        Redflex. (Sensys Traffic AB, now Sensys Gatso -- not Sensys
+//        Networks, the US road-sensor company.)
+#define SIG_SCHEMA_VERSION 21
 
 static SemaphoreHandle_t watchersMutex = NULL;
 static bool watchersRunning = false;
@@ -486,6 +490,8 @@ static void ensureSignaturesFileExists() {
             addRule("L-3 Mobile-Vision camera", "Mobile-Vision body cam", "38:73:ea:0", "", "", "", 70);
             // Plate-reader makers whose registered block is the ALPR business.
             addRule("Redflex (traffic enforcement)", "Redflex ALPR", "00:30:7e", "", "", "", 70);
+            addRule("Sensys Traffic (traffic enforcement)", "Sensys ALPR", "00:22:9f", "", "", "", 70);
+            addRule("Gatsometer (traffic enforcement)", "Gatso ALPR", "00:18:29", "", "", "", 70);
             addRule("ELSAG (plate reader)", "ELSAG ALPR", "70:b3:d5:1c:5", "", "", "", 70);
             addRule("Perceptics (plate reader)", "Perceptics ALPR", "70:b3:d5:88:a", "", "", "", 70);
             addRule("Ekin (plate reader / traffic)", "Ekin ALPR", "04:c3:e6:9", "", "", "", 70);

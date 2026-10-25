@@ -416,6 +416,7 @@ const REGISTRY_VENDORS = {          // name fragment -> [weight, routing keyword
     // v19 (alpr_detector's table, IEEE-checked; sub-blocks included)
     'Utility Inc.': [70, 'body'], 'VIEVU': [70, 'body'], 'Digital Barriers': [70, 'body'],
     'Zepcam': [70, 'body'], 'PRO-VISION': [70, 'body'], 'L-3 Mobile-Vision': [70, 'body'],
+    'Sensys Traffic': [70, 'alpr'], 'Gatsometer': [70, 'alpr'],
     'Redflex': [70, 'alpr'], 'ELSAG': [70, 'alpr'], 'Perceptics': [70, 'alpr'], 'Ekin': [70, 'alpr'],
     'Stalker': [70, null], 'Kustom': [70, null], 'Decatur': [70, null], 'Federal Signal': [70, null],
     'Jenoptik': [60, null], 'Kapsch': [60, null], 'Elsag Datamat': [60, null], 'Selex ES': [60, null],
@@ -822,6 +823,7 @@ const OUI_OWNER = {
     'Utility Inc. (BodyWorn) camera': 'Utility', 'VIEVU camera': 'VIEVU',
     'Digital Barriers camera': 'Digital Barriers', 'Zepcam camera': 'Zepcam',
     'PRO-VISION camera': 'PRO-VISION', 'Redflex (traffic enforcement)': 'Redflex',
+    'Sensys Traffic (traffic enforcement)': 'Sensys Traffic', 'Gatsometer (traffic enforcement)': 'Gatsometer',
     'Decatur Electronics radar': 'Decatur', 'Jenoptik device': 'Jenoptik',
     'Kapsch device': 'Kapsch', 'Elsag Datamat device': 'Elsag Datamat',
     'Havis (vehicle dock)': 'Havis', 'Harris radio': 'Harris', 'EF Johnson radio': 'E.F. Johnson',
@@ -868,7 +870,7 @@ for (const call of defaults.match(/addRule\([^;]*\);/g) || []) {
     const hasLux = /0x0D53|0x01AB/i.test(call);
     if (hasFd5f !== hasLux) regFail.push(`glasses rule states fd5f/0x0D53 without the other: ${call.replace(/\s+/g, ' ')}`);
 }
-if (!/#define SIG_SCHEMA_VERSION 20\b/.test(wwSrc)) regFail.push('SIG_SCHEMA_VERSION not bumped to 20');
+if (!/#define SIG_SCHEMA_VERSION 21\b/.test(wwSrc)) regFail.push('SIG_SCHEMA_VERSION not bumped to 21');
 // v20: BLE name substrings anyone can type never beep alone as Flock, and
 // "fs_" (it matches "Chiefs_...") is gone.
 for (const m of wwSrc.matchAll(/addRule\("Flock BLE Name"[^;]*;/g))
