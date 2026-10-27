@@ -10,7 +10,7 @@
 
 <p align="center">
   <a href="https://github.com/B0z0dcl0wn/SignalSweep/releases/latest"><img src="https://img.shields.io/github/v/release/B0z0dcl0wn/SignalSweep?label=release" alt="Latest release"></a>
-  <a href="https://b0z0dcl0wn.github.io/SignalSweep/"><img src="https://img.shields.io/badge/flash-in%20your%20browser-3ddc84" alt="Web flasher"></a>
+  <a href="https://flash.signalsweep.net/"><img src="https://img.shields.io/badge/flash-in%20your%20browser-3ddc84" alt="Web flasher"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue" alt="GPL-3.0"></a>
 </p>
 
@@ -34,9 +34,10 @@
 |---|---|---|---|
 | **What** | Assembled, flashed and tested, in a 3D-printed case. Plug in USB and go. | Every part plus the printed case. You put it together. | Bring a bare XIAO ESP32-C5. Flash it from your browser. |
 | **Inside** | XIAO ESP32-C5, dual-band external antenna, buzzer, LED bar, microSD reader | Same parts, loose | Just the board. Add parts as you go |
-| **Status** | Coming soon | Coming soon | **[Available now](#build-your-own)** |
+| **Price** | $75 | $40 | About $13 for the board |
+| **Status** | **[Reserve one](https://signalsweep.net)** | **[Reserve one](https://signalsweep.net)** | **[Available now](#build-your-own)** |
 
-Want one when they're ready? **Watch → Custom → Releases** on this repo and you'll hear first.
+Kits and built units are at **[signalsweep.net](https://signalsweep.net)**: join the waitlist, no money down, US only for now. First batch is small.
 
 ## The app
 
@@ -48,7 +49,7 @@ Want one when they're ready? **Watch → Custom → Releases** on this repo and 
 One app, two ways to run it:
 
 - **In your browser, nothing to install.** Open the
-  **[web app](https://b0z0dcl0wn.github.io/SignalSweep/app/)** in Chrome or Edge
+  **[web app](https://flash.signalsweep.net/app/)** in Chrome or Edge
   on a laptop or desktop and connect over Bluetooth or a USB cable.
 - **On Android.** The same app as an APK, over Bluetooth or a USB cable. Grab
   it from [Releases](https://github.com/B0z0dcl0wn/SignalSweep/releases/latest)
@@ -61,12 +62,12 @@ And you don't need either one: the board beeps on its own.
 ### The fast way: flash it from your browser
 
 <p align="center">
-  <a href="https://b0z0dcl0wn.github.io/SignalSweep/"><img src="https://img.shields.io/badge/Flash%20it%20in%20your%20browser-b0z0dcl0wn.github.io%2FSignalSweep-3ddc84?style=for-the-badge" alt="Flash it in your browser"></a>
+  <a href="https://flash.signalsweep.net/"><img src="https://img.shields.io/badge/Flash%20it%20in%20your%20browser-flash.signalsweep.net-3ddc84?style=for-the-badge" alt="Flash it in your browser"></a>
 </p>
 
 Chrome or Edge, a USB-C cable, one button. It works out which board is
 plugged in (C5 or S3) and flashes the matching image. The app runs on the same
-site at [`/app/`](https://b0z0dcl0wn.github.io/SignalSweep/app/) and talks to the
+site at [`/app/`](https://flash.signalsweep.net/app/) and talks to the
 board over Bluetooth, so a laptop needs nothing but the browser.
 
 ### The script: board and Android phone
@@ -181,7 +182,7 @@ Then flash it the same way as everyone else: see [Getting started](#getting-star
 ## Getting your data off
 
 The SD card stays in the case. Pull it over the cable instead: plug in, open the
-[data pull page](https://b0z0dcl0wn.github.io/SignalSweep/pull.html), hit
+[data pull page](https://flash.signalsweep.net/pull.html), hit
 **Export**, pick a folder. You get `alerts.txt` (what it beeped at, readable),
 `report.html` (the same, sortable), a `.pcap` per capture for Wireshark, and the
 untouched originals in `raw/`. The page is one file, and its security policy

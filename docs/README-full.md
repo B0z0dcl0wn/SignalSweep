@@ -32,7 +32,7 @@ You need one Seeed Studio XIAO ESP32-C5 (about $13, 2.4 and 5 GHz) or
 [XIAO ESP32-S3](https://www.seeedstudio.com/XIAO-ESP32S3-p-5627.html) (about
 $15, 2.4 GHz) and a USB-C cable that carries data.
 
-1. **Flash it** — open <https://b0z0dcl0wn.github.io/SignalSweep/> in desktop
+1. **Flash it** — open <https://flash.signalsweep.net/> in desktop
    Chrome, Edge or Opera and press **Connect & flash**. No Python, no
    PlatformIO, no drivers.
 2. **Open the app** — same site, `/app/`. Desktop Chrome or Android Chrome, over
