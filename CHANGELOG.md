@@ -4,6 +4,17 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Changed -- The flasher moves to flash.signalsweep.net
+
+The web flasher and hosted app now live at `flash.signalsweep.net`, and the
+landing page points hardware buyers at `signalsweep.net`. `site/assemble.sh`
+writes the `CNAME` file into `_site/` on every build. The trap it avoids:
+`gh-pages` is force-pushed each release, so a custom domain set only in the
+repository settings would be wiped by the next push and the flasher would fall
+back to the github.io address. GitHub redirects the old
+`b0z0dcl0wn.github.io/SignalSweep/` links, so existing bookmarks and installer
+copies keep working.
+
 ### Changed -- Signatures v21: two more speed-camera makers, and the Flipper's colour
 
 Sensys Traffic (`00:22:9f`, now Sensys Gatso) and Gatsometer (`00:18:29`)
