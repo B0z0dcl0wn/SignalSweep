@@ -2,7 +2,7 @@
 
 All notable changes to SignalSweep are recorded here.
 
-## [Unreleased]
+## [0.10.3] — 2026-10-27 — New address, same beeps
 
 ### Fixed -- The flasher showed version 0.9.1 between releases
 
