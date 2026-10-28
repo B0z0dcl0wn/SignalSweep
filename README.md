@@ -15,8 +15,8 @@
 </p>
 
 <p align="center">
-  <img src="docs/img/hero-pumpkin.jpg" width="480" alt="A SignalSweep in its 3D-printed case standing on a log beside a pumpkin, antenna up, LED bar lit red"><br>
-  <sub><b>Hardware</b> you carry · <b>open firmware</b> you flash from a browser · an <b>app</b> if you want one. It beeps without it.</sub>
+  <img src="docs/img/hero-render.jpg" width="600" alt="Render of a SignalSweep in its black 3D-printed case standing on end on a wooden table, antenna up, LED bar lit cyan"><br>
+  <sub><b>Hardware</b> you carry · <b>open firmware</b> you flash from a browser · an <b>app</b> if you want one. It beeps without it.<br><i>Render from the production CAD; photos once the first batch is built.</i></sub>
 </p>
 
 > **But wait, there's more.** It decodes the drone **and where the pilot is
