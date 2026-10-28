@@ -4,6 +4,16 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Fixed -- The flasher showed version 0.9.1 between releases
+
+The version ESP Web Tools shows in the install prompt was stamped into
+`manifest.json` only on tagged releases. Every push to `main` republishes the
+flasher with freshly built firmware, but kept the hand-typed version in
+`site/manifest.json`, which had gone stale at 0.9.1, so the newest firmware
+was offered as the oldest. CI now stamps `git describe --tags` on every run
+(the checkout fetches tags for it): a release reads `0.10.3`, a build between
+releases reads `0.10.2-9-g2a2965a`.
+
 ### Changed -- The flasher moves to flash.signalsweep.net
 
 The web flasher and hosted app now live at `flash.signalsweep.net`, and the
