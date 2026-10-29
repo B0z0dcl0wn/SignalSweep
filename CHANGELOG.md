@@ -23,7 +23,11 @@ writes the `CNAME` file into `_site/` on every build. The trap it avoids:
 repository settings would be wiped by the next push and the flasher would fall
 back to the github.io address. GitHub redirects the old
 `b0z0dcl0wn.github.io/SignalSweep/` links, so existing bookmarks and installer
-copies keep working. The README and the flasher header now link the kit and
+copies keep working. What the redirect cannot carry is browser storage: it
+belongs to the address, so pins, pin-prompt choices and the paired device saved
+in the hosted web app stayed behind at github.io, where they can no longer be
+reached, and Bluetooth must be paired again. The Android app is unaffected. The
+README and the flasher header now link the kit and
 built-unit waitlist at `signalsweep.net`.
 
 ### Changed -- Signatures v21: two more speed-camera makers, and the Flipper's colour
