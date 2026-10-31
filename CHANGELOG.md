@@ -2,7 +2,7 @@
 
 All notable changes to SignalSweep are recorded here.
 
-## [Unreleased]
+## [0.11.0] — 2026-10-30 — Quiet about trackers
 
 ### Changed -- A new board stays quiet about trackers and always keeps a log
 
