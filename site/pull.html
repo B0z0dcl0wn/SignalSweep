@@ -473,7 +473,7 @@ function when([t, boot, secs]) {
 function alertsTxt(rows, made) {
   const out = ['SignalSweep export, made ' + made + ". Times are this computer's local time.", ''];
   if (!rows.length) {
-    out.push("The board's alert log is empty. It is off by default: in the app,",
+    out.push("The board's alert log is empty. Nothing has beeped, or logging is off: in the app,",
              'Settings > Recording > Log alerts on the board (or Record on the Sweep screen).');
     return out.join('\n') + '\n';
   }
@@ -610,7 +610,7 @@ function draw() {
   $('more').textContent = rows.length > MAX ? 'Showing ' + MAX + ' of ' + rows.length + '. Filter to narrow it down.' : rows.length + ' shown.';
 }
 $('sub').textContent = R.length ? R.length + " alert(s) from the board's own log. Exported " + D.made + ". Times are local to whoever opens this page."
-  : "The board's alert log is empty. It is off by default: in the app, Settings > Recording > Log alerts on the board.";
+  : "The board's alert log is empty. Nothing has beeped, or logging is off: in the app, Settings > Recording > Log alerts on the board.";
 var counts = {};
 R.forEach(function (r) { counts[r[4]] = (counts[r[4]] || 0) + 1; });
 [''].concat(Object.keys(counts).sort(function (a, b) { return counts[b] - counts[a]; })).forEach(function (c) {

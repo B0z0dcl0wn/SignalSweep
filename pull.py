@@ -232,7 +232,7 @@ def alerts_txt(rows, made):
     """The human-readable report. pull.html's alertsTxt() writes the same text."""
     out = ["SignalSweep export, made %s. Times are this computer's local time." % made, ""]
     if not rows:
-        out += ["The board's alert log is empty. It is off by default: in the app,",
+        out += ["The board's alert log is empty. Nothing has beeped, or logging is off: in the app,",
                 "Settings > Recording > Log alerts on the board (or Record on the Sweep screen)."]
         return "\n".join(out) + "\n"
     out += ["%d alert(s) from the board's own log, boots %d to %d." % (len(rows), rows[0][1], rows[-1][1]), "",
@@ -337,7 +337,7 @@ function draw() {
   $('more').textContent = rows.length > MAX ? 'Showing ' + MAX + ' of ' + rows.length + '. Filter to narrow it down.' : rows.length + ' shown.';
 }
 $('sub').textContent = R.length ? R.length + " alert(s) from the board's own log. Exported " + D.made + ". Times are local to whoever opens this page."
-  : "The board's alert log is empty. It is off by default: in the app, Settings > Recording > Log alerts on the board.";
+  : "The board's alert log is empty. Nothing has beeped, or logging is off: in the app, Settings > Recording > Log alerts on the board.";
 var counts = {};
 R.forEach(function (r) { counts[r[4]] = (counts[r[4]] || 0) + 1; });
 [''].concat(Object.keys(counts).sort(function (a, b) { return counts[b] - counts[a]; })).forEach(function (c) {

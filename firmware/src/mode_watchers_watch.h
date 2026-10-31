@@ -182,6 +182,9 @@ bool getAttackDetect();
 // bit 0 = ALERT_ALPR ... bit 4 = ALERT_GENERIC. The app mirrors this bit order
 // in BEEP_BITS (app/public/app.js) — keep the two in step.
 #define BEEP_MASK_ALL 0x1F
+// Fresh board: everything but trackers (bit 3). In a crowd every passing AirTag
+// beeps, so trackers are an opt-in, like hacking gear. Still detected and listed.
+#define BEEP_MASK_DEFAULT 0x17
 
 /**
  * @brief Choose which device categories are allowed to sound the buzzer.
@@ -196,7 +199,7 @@ uint8_t getBeepMask();
 
 /**
  * @brief Record every alert the buzzer sounds to the board's own flash.
- * Off by default and persisted (sweep-st/log), like every other operator
+ * On by default and persisted (sweep-st/log), like every other operator
  * setting: a detector wired into a car must keep logging across the engine
  * stopping, or the feature only works while tethered to the phone you were
  * trying to walk away from. Follows the buzzer exactly — a muted beep_mask

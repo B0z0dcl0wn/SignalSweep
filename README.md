@@ -105,7 +105,7 @@ Mute any category you don't care about. It's still detected and listed, just qui
 
 **Detects**
 - **Drones, in full.** ASTM F3411 Remote ID over Bluetooth, Wi-Fi beacons and Wi-Fi NAN: ID, altitude, speed, heading, and where the pilot is standing. Often before you hear the props.
-- **Trackers.** Apple Find My, Google, Samsung and Tile. And when someone floods the area with fake ones, one row says what's going on. It keeps beeping at trackers, because a real one hiding in the storm matters more than the noise.
+- **Trackers.** Apple Find My, Google, Samsung and Tile. And when someone floods the area with fake ones, one row says what's going on. Tracker beeps are off out of the box, because in a crowd every passing AirTag sets it off. Turn them on in Settings > Alerts, and they stay on through a flood, because a real one hiding in the storm matters more than the noise.
 - **Surveillance hardware.** Flock Safety gear when it's talking, Axon body cams, smart glasses, and anything else on a signature list you can edit from the app: OUI, company ID, name, service UUID or SSID. No recompile.
 - **Cop-only gear, on sight.** Axon, Flock, SoundThinking (ShotSpotter), Genetec, Neology, WatchGuard Video and Digital Ally addresses beep on their own. Nobody but an agency buys that hardware, so hearing it is the news.
 - **Attack gear** (opt-in). BLE popup spam, deauth bursts, Pineapple-style karma, Flipper Zero hints, and pwnagotchis by name.
@@ -117,7 +117,7 @@ Mute any category you don't care about. It's still detected and listed, just qui
 - **Both bands.** The C5 sweeps 2.4 and 5 GHz Wi-Fi, where a growing share of cameras and access points live. Every Wi-Fi row shows its band and channel, and a dual-band router is one row, not four.
 - **Site Survey.** Park next to something suspicious, capture the raw air, and the app pulls out its signature. Snap a photo, and it's logged to an encrypted finds database you can export for DeFlock.
 - **Ignore the neighbours.** Something you own keeps setting it off? Ignore that one device (fixed addresses only, up to 16). It stays listed, it just stops beeping, and the board remembers through a power cut.
-- **Logs if you ask.** What it beeped at and when, on its own flash or the SD card, for a drive with no phone along. Off by default. Never where.
+- **Keeps a log.** What it beeped at and when, on its own flash and the SD card if one's fitted, for a drive with no phone along. You can turn it off. Never where.
 - **Lights on your terms.** Off, one LED, dim or full, plus five themes, so a parked car doesn't glow like a beacon.
 
 **Private by design**

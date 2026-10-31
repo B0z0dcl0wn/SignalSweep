@@ -2,6 +2,20 @@
 
 All notable changes to SignalSweep are recorded here.
 
+## [Unreleased]
+
+### Changed -- A new board stays quiet about trackers and always keeps a log
+
+Tracker beeps are now off on a new or factory-reset board (`beep_mask` default
+`0x17`); turn them on in Settings > Alerts. In a crowd every passing AirTag
+beeps, which is more noise than signal. Trackers are still detected
+and listed, and the tag flood row goes quiet with them.
+
+The flash alert log is now on by default. A new board with no SD card and no
+Record tap used to record nothing, however much it beeped. It still logs only
+what actually sounded, so a muted tracker leaves no record. A board that has
+already saved its settings keeps them.
+
 ## [0.10.3] — 2026-10-27 — New address, same beeps
 
 ### Fixed -- The flasher showed version 0.9.1 between releases
