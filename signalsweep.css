@@ -1,0 +1,25 @@
+/* SignalSweep brand tokens v1.0. Source of truth: brand-guidelines.html */
+:root {
+  /* core */
+  --ss-bg:            #090d16;
+  --ss-panel:         #0d1320;
+  --ss-panel-raised:  #141c2c;
+  --ss-text:          #f3f4f6;
+  --ss-text-muted:    #9ca3af;
+  --ss-cyan:          #00f2fe;
+
+  /* glow (cyan only) */
+  --ss-glow-ambient:  rgba(0, 242, 254, .15);
+  --ss-glow-hover:    rgba(0, 242, 254, .35);
+  --ss-glow-active:   rgba(0, 242, 254, .60);
+
+  /* detection categories */
+  --ss-cat-alpr:      #ef4444;
+  --ss-cat-bodycam:   #ff7a1a;
+  --ss-cat-drone:     #3aa0ff;
+  --ss-cat-tracker:   #ff3ac8;
+  --ss-cat-other:     #f59e0b;
+
+  /* status */
+  --ss-live:          #3ddc84;
+}
