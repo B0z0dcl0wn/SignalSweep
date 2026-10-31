@@ -572,6 +572,12 @@ if (!maxRecs || maxRecs !== appMax) logFail.push(`ring capacity drifted: firmwar
 // The bench env shrinks it with -D, so it has to stay overridable.
 if (!/#ifndef ALERT_LOG_MAX_RECS/.test(logSrc)) logFail.push('ALERT_LOG_MAX_RECS is no longer overridable (the logtest bench env cannot shrink the ring)');
 
+// Fresh-board defaults: trackers silent (0x17 = all but bit 3), flash log on.
+const wwDefaults = readFileSync(new URL('../firmware/src/mode_watchers_watch.cpp', import.meta.url), 'utf8');
+if (!/static uint8_t beepMask = BEEP_MASK_DEFAULT;/.test(wwDefaults) || !/getUChar\("beepmask", BEEP_MASK_DEFAULT\)/.test(wwDefaults)) logFail.push('beep mask no longer boots to BEEP_MASK_DEFAULT');
+if (!/static bool alertLogOn = true;/.test(wwDefaults) || !/getBool\("log", true\)/.test(wwDefaults)) logFail.push('flash alert log no longer defaults on');
+if (!/#define BEEP_MASK_DEFAULT 0x17/.test(readFileSync(new URL('../firmware/src/mode_watchers_watch.h', import.meta.url), 'utf8'))) logFail.push('BEEP_MASK_DEFAULT is not all-but-trackers');
+
 // Category byte order == AlertCategory order, or every logged alert reads back
 // as the wrong kind of device.
 const enumOrder = (hwSrc2.match(/enum AlertCategory \{([\s\S]*?)\}/) || [, ''])[1]

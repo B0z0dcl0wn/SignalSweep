@@ -844,11 +844,12 @@ static volatile AlertCategory pendingAlertCat = ALERT_GENERIC;
 // fully silent — no beep, no LED flash, and it does not count in getAlertCount()
 // — but it is still tracked and still reported to the app.
 // Persisted (sweep-st/beepmask): headless means a power cycle must not undo it.
-static uint8_t beepMask = BEEP_MASK_ALL;
+static uint8_t beepMask = BEEP_MASK_DEFAULT;
 
-// Write every sounded alert to flash (alert_log.h). Off by default and
-// persisted (sweep-st/log) -- headless means a power cycle must not undo it.
-static bool alertLogOn = false;
+// Write every sounded alert to flash (alert_log.h). On by default, so a board
+// with no card still keeps a record, and persisted (sweep-st/log) -- headless
+// means a power cycle must not undo it.
+static bool alertLogOn = true;
 
 // Returns true if the alert was recorded (i.e. it will actually sound).
 static bool noteAlert(int weight, const char* category) {
@@ -2324,8 +2325,8 @@ void restoreWatchersState() {
     String mac = prefs.getString("hunt", "");
     bool all = prefs.getBool("scanall", false);
     bool atk = prefs.getBool("attack", false);
-    uint8_t mask = prefs.getUChar("beepmask", BEEP_MASK_ALL);
-    bool logOn = prefs.getBool("log", false);
+    uint8_t mask = prefs.getUChar("beepmask", BEEP_MASK_DEFAULT);
+    bool logOn = prefs.getBool("log", true);
 #if CONFIG_IDF_TARGET_ESP32C5
     uint8_t band = prefs.getUChar("band", BAND_BOTH);
     sweepBand = (band <= BAND_5) ? band : BAND_BOTH;
@@ -2359,7 +2360,7 @@ void restoreWatchersState() {
     }
     if (scanAll) ESP_LOGI(TAG, "Restored report filter: OFF (reporting everything)");
     if (attackDetect) ESP_LOGI(TAG, "Restored attack-gear detection ON");
-    if (beepMask != BEEP_MASK_ALL) ESP_LOGI(TAG, "Restored beep mask 0x%02X", beepMask);
+    if (beepMask != BEEP_MASK_DEFAULT) ESP_LOGI(TAG, "Restored beep mask 0x%02X", beepMask);
     if (alertLogOn) ESP_LOGI(TAG, "Restored alert logging ON (%u records held)",
                              (unsigned)alertLogCount());
     // Copy the restored ignore list in under the mutex. If it can't be taken,

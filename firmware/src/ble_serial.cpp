@@ -887,7 +887,7 @@ void processIncomingCommand(const String& rawCommand) {
             sendConfigReply();
         }
 
-        // 3c''. Alert logging: {"log":bool}. Off by default, persisted. Writes
+        // 3c''. Alert logging: {"log":bool}. On by default, persisted. Writes
         // every sounded alert to the board's flash so a headless drive can be
         // read back later -- see alert_log.h. Config reply so the app paints
         // from the device.
