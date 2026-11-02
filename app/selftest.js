@@ -423,7 +423,9 @@ const REGISTRY_VENDORS = {          // name fragment -> [weight, routing keyword
     'Havis': [60, null], 'Gamber-Johnson': [60, null], 'Harris': [60, null], 'EF Johnson': [60, null],
     'Tait': [60, null], 'Sepura': [60, null], 'Hytera': [60, null], 'Codan': [60, null],
     'Skydio': [60, 'drone'], 'Teal drone': [60, 'drone'], 'AeroVironment': [60, 'drone'], 'Shield AI': [60, 'drone'],
-    'seen on Axon': [60, 'axon']
+    'seen on Axon': [60, 'axon'],
+    // v22
+    'Fusus': [70, 'fusus'], 'Luxottica Tristar': [60, 'glasses']
 };
 for (const [v, [w, route]] of Object.entries(REGISTRY_VENDORS)) {
     const rules = [...fw.matchAll(new RegExp('addRule\\("[^"]*' + v + '[^"]*", "([^"]*)", "([^"]*)", "([^"]*)", "([^"]*)", "([^"]*)", (\\d+)\\);', 'g'))];
@@ -836,7 +838,8 @@ const OUI_OWNER = {
     'Tait radio': 'Tait', 'Sepura radio': 'Sepura', 'Hytera radio': 'Hytera',
     'Codan radio': 'Codan', 'Codan (Daniels) radio': 'Daniels Electronics',
     'Skydio drone': 'Skydio', 'Teal drone': 'Teal', 'AeroVironment drone': 'AeroVironment',
-    'Shield AI drone': 'Shield AI'
+    'Shield AI drone': 'Shield AI',
+    'Luxottica Tristar device': 'Luxottica Tristar'
 };
 const defaults = (wwSrc.match(/auto addRule = [\s\S]*?serializeJsonPretty\(doc, file\)/) || [''])[0];
 let ouiRules = 0;
@@ -876,7 +879,7 @@ for (const call of defaults.match(/addRule\([^;]*\);/g) || []) {
     const hasLux = /0x0D53|0x01AB/i.test(call);
     if (hasFd5f !== hasLux) regFail.push(`glasses rule states fd5f/0x0D53 without the other: ${call.replace(/\s+/g, ' ')}`);
 }
-if (!/#define SIG_SCHEMA_VERSION 21\b/.test(wwSrc)) regFail.push('SIG_SCHEMA_VERSION not bumped to 21');
+if (!/#define SIG_SCHEMA_VERSION 22\b/.test(wwSrc)) regFail.push('SIG_SCHEMA_VERSION not bumped to 22');
 // v20: BLE name substrings anyone can type never beep alone as Flock, and
 // "fs_" (it matches "Chiefs_...") is gone.
 for (const m of wwSrc.matchAll(/addRule\("Flock BLE Name"[^;]*;/g))
@@ -1066,7 +1069,7 @@ if (ssidAt < 0 || !/ruleGatedOff\(sig\)/.test(wwSrc.slice(ssidAt - 300, ssidAt +
     agFail.push('SSID-prefix pass ignores the Attack toggle');
 if (!/matchedCategory = HACKING_GEAR_CATEGORY;/.test(wwSrc)) agFail.push('pwnagotchi detector no longer uses HACKING_GEAR_CATEGORY');
 // The category must route to generic (All tab only) -- no routing keyword in it.
-for (const kw of ['tag', 'track', 'beacon', 'cam', 'surveil', 'drone', 'uas', 'body', 'axon', 'glasses', 'flock', 'alpr', 'plate', 'shotspotter', 'soundthinking'])
+for (const kw of ['tag', 'track', 'beacon', 'cam', 'surveil', 'drone', 'uas', 'body', 'axon', 'glasses', 'flock', 'alpr', 'plate', 'shotspotter', 'soundthinking', 'fusus'])
     if ('hacking gear'.includes(kw)) agFail.push(`"Hacking gear" contains the routing keyword "${kw}"`);
 if (agFail.length) { console.log('FAIL: attack-gear rules:', agFail); process.exit(1); }
 console.log('[signalsweep self-test] attack-gear rules gated by the Attack toggle: ok');

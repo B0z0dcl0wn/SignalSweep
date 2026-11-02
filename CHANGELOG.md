@@ -2,6 +2,24 @@
 
 All notable changes to SignalSweep are recorded here.
 
+## [Unreleased]
+
+### Added -- Signatures v22: Fusus, a second Cradlepoint block, Luxottica Tristar
+
+From the 2026-11-02 upstream review, every prefix checked against the IEEE
+registry.
+
+- **Fusus** `84:b3:86:5` and `7c:83:34:4` beep at 70 and sit under the Cameras
+  tab. Fusus hubs feed real-time crime centers and no consumer owns one, the
+  same test as Axon and SoundThinking. From OVERWATCH, which notes these are
+  registry entries with no field sighting yet. Both are MA-M sub-blocks, so
+  they match on nine hex digits only: the rest of each /24 belongs to others.
+- **Cradlepoint** `00:e0:1c`, the second block registered to CradlePoint (via
+  ouispy-detector), at the same weight as `00:30:44`.
+- **Luxottica Tristar** `80:aa:1c` and `38:47:12`, the factory behind Ray-Ban /
+  Oakley Meta glasses (via ouispy-detector), list at 60 under Smart glasses.
+  The address proves the maker, not the product, so the rule says "device".
+
 ## [0.11.0] — 2026-10-30 — Quiet about trackers
 
 ### Changed -- A new board stays quiet about trackers and always keeps a log
