@@ -153,7 +153,12 @@ static const char *SIG_FILE_PATH = "/data/signatures.json";
 //        Redflex. (Sensys Traffic AB, now Sensys Gatso -- not Sensys
 //        Networks, the US road-sensor company.) Flipper Zero UUID rules
 //        name the case colour: 3081 black, 3082 white, 3083 transparent.
-#define SIG_SCHEMA_VERSION 21
+//   v22: IEEE-checked. Fusus (Axon's real-time crime center hubs) MA-M blocks
+//        84:b3:86:5 and 7c:83:34:4 at 70, filed so they route to the Cameras
+//        tab (from OVERWATCH). Cradlepoint's second block 00:e0:1c, same weight
+//        as 00:30:44. Luxottica Tristar 80:aa:1c and 38:47:12, the maker of
+//        Ray-Ban / Oakley Meta glasses, listed at 60 (from ouispy-detector).
+#define SIG_SCHEMA_VERSION 22
 
 static SemaphoreHandle_t watchersMutex = NULL;
 static bool watchersRunning = false;
@@ -368,6 +373,12 @@ static void ensureSignaturesFileExists() {
             // its registered address beeps alone (70, v15).
             addRule("SoundThinking", "SoundThinking", "d4:11:d6", "", "", "", 70);
 
+            // Fusus: real-time crime center hubs, sold to police and the
+            // businesses feeding them. No consumer owns one, so it beeps alone
+            // (70, v22). MA-M sub-blocks, checked in the IEEE file by hand.
+            addRule("Fusus device", "Fusus", "84:b3:86:5", "", "", "", 70);
+            addRule("Fusus device", "Fusus", "7c:83:34:4", "", "", "", 70);
+
             // NOTE: the Raven service-UUID rules (3100/3200/3300/3400/3500)
             // were removed at v5, when service_uuid was substring-matched
             // against every UUID a device advertises, so a four-hex-digit
@@ -443,6 +454,7 @@ static void ensureSignaturesFileExists() {
             addRule("Reveal Media body cam", "Reveal Media body cam", "", "", "reveal media", "");
             addRule("Digital Ally FirstVu body cam", "Digital Ally body cam", "", "", "firstvu", "");
             addRule("Cradlepoint Router", "Fleet / Infrastructure", "00:30:44", "", "", "");
+            addRule("Cradlepoint Router", "Fleet / Infrastructure", "00:e0:1c", "", "", "");
             addRule("Peplink Router", "Fleet / Infrastructure", "00:1a:dd", "", "", "");
             // The six MA-L blocks the IEEE registers to "Sierra Wireless, ULC".
             // The old three were Fiberblaze (00:21:b2), Bitworks (00:07:e2) and
@@ -586,6 +598,10 @@ static void ensureSignaturesFileExists() {
             // Snap's and Vuzix's only hardware is glasses.
             addRule("Snap Spectacles", "Smart glasses", "", "", "", "fe45", 70);
             addRule("Vuzix smart glasses", "Smart glasses", "", "0x060C", "", "", 70);
+            // v22: the factory behind Ray-Ban / Oakley Meta. The address proves
+            // the maker, not the product, so it lists and the name says so.
+            addRule("Luxottica Tristar device", "Smart glasses", "80:aa:1c", "", "", "", 60);
+            addRule("Luxottica Tristar device", "Smart glasses", "38:47:12", "", "", "", 60);
             // v19: product names (OVERWATCH, NearbyGlasses) and the HeyCyan
             // SDK service (Nilox and other rebrands; shares Apple ANCS's base,
             // so exact 128-bit only). Names can be typed by anyone: listed.

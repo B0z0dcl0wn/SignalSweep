@@ -41,11 +41,11 @@
                 return { key: 'tracker', label: 'Tracker',    color: 'var(--ss-cat-tracker)', icon: 'pin' };
             // ALPR before body cam, as in the firmware's alertCategoryFromName():
             // "ALPR / Camera" and "Surveillance Camera" both contain "cam".
-            // SoundThinking (ShotSpotter) is named here because the Cameras tab
+            // SoundThinking (ShotSpotter) and Fusus are named here because the Cameras tab
             // is strictly ALPR + mass surveillance: anything without a keyword
             // lands in 'other', which is under Everything only.
             if (c.indexOf('flock') >= 0 || c.indexOf('alpr') >= 0 || c.indexOf('plate') >= 0 || c.indexOf('surveil') >= 0 ||
-                c.indexOf('soundthinking') >= 0 || c.indexOf('shotspotter') >= 0)
+                c.indexOf('soundthinking') >= 0 || c.indexOf('shotspotter') >= 0 || c.indexOf('fusus') >= 0)
                 return { key: 'alpr',    label: 'ALPR / Camera', color: 'var(--ss-cat-alpr)', icon: 'camera' };
             // Smart glasses count as a body cam (same tab, same beep, same
             // toggle), but the chip says what the device is.
