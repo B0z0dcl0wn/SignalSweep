@@ -62,6 +62,9 @@ CLAUDE.md
 docs/plans/
 hardware/*
 !hardware/case-v1/
+!hardware/case-v3/
+hardware/case-v3/*
+!hardware/case-v3/*.stl
 
 # Local-only bench programs and side-configs — never published
 firmware/src/bench/
