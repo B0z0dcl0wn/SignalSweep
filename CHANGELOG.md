@@ -4,6 +4,17 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Added -- The v3 case STLs
+
+- **`hardware/case-v3/`** ships the printable case for the carrier v3 board
+  (main body, lid, clear LED diffuser), next to the v1 case. Only the three
+  STLs are published; the parametric source stays local. The body's corner
+  posts take M3 heat-set inserts in a 4.3 mm bore, 10 mm deep, which seats them
+  straight; close the lid with M3x10 screws (an M3x8 bites only ~2.5 mm). Print
+  the lid top-down so it needs no supports. A short tube under the lid carries
+  the buzzer to its hole, and the microSD slot is 2.8 mm tall so a card comes
+  out by fingernail.
+
 ### Added -- Signatures v22: Fusus, a second Cradlepoint block, Luxottica Tristar
 
 From the 2026-11-02 upstream review, every prefix checked against the IEEE
