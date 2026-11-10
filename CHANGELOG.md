@@ -64,6 +64,17 @@ Also not in v23: the Axon Fleet `axon<n>-5g` SSID and Meta `0x058E` +
 IMSI-catcher makers (skipped); the DJI DroneID IE `26:37:12`, the French
 `6A:5C:35` beacon and the GhostLink BLE UUID (planned for v24).
 
+**Bench-proven over the air** on the C5, from a Kali Pi sending crafted raw
+HCI adverts and injected beacons, each case on its own address so a ratcheted
+rule name can't leak between cases. Checked against the board's own alert log,
+not just the counter. All ten came out as intended: the IDO-watch squatter
+lists with no rule and logs nothing, while the same own-address payload without
+a watch tell still beeps at 70 (the tell is load-bearing). A bare `fe6c` lists at
+60, a serial beeps (100, Confirmed), and `X87002FP4` is silent with Attack off
+and Hacking gear with it on. Parrot `90:3A:E6` decodes as a drone with type
+`0x0D` and lists as nothing with `0x0E`, and the ASTM `FA:0B:BC` control still
+decodes. Pushes stayed at 74 in 75 s.
+
 ### Added -- The v3 case STLs
 
 - **`hardware/case-v3/`** ships the printable case for the carrier v3 board
