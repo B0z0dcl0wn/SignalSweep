@@ -65,6 +65,11 @@ turns into something useful. Verify with your own eyes before you submit.
   the smart-glasses company IDs, the Flipper Zero, Pineapple and ESP-deauther signatures, the per-device ignore list, and the crash breadcrumb. No code taken; every value re-checked against the IEEE and
   Bluetooth SIG registries, which is how we also caught two of their Axon OUIs (one unregistered,
   one a module maker) and three of our own mislabelled "Sierra Wireless" prefixes.
+- **[RF Sentinel](https://github.com/CIS-C0/RFSentinel)** (GPL-3.0) by CIS-C0 — the TASER
+  company-ID squatter check (IDO / VeryFit smartwatches), ported into `firmware/src/axon_checks.h`
+  with its unit-test case, and the Raven `3101`/`3102` UUIDs.
+- **[OVERWATCH](https://github.com/KaraZajac/OVERWATCH)** (BSD-3-Clause) by Kara Zajac — the Fusus
+  blocks, the Axon `fe6c` Signal trigger layout, and AxonCadabra's replayed serial. Values only.
 
 ## Tile
 

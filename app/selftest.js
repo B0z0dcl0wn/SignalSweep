@@ -44,7 +44,7 @@ import { spawnSync } from 'node:child_process';
         console.log('FAIL: firmware/test/run.sh:\n' + (cxx.stdout || '') + (cxx.stderr || ''));
         process.exit(1);
     } else {
-        console.log('[signalsweep self-test] attack_detectors host tests: ok');
+        console.log('[signalsweep self-test] attack_detectors + axon_checks host tests: ok');
     }
 }
 
@@ -879,7 +879,8 @@ for (const call of defaults.match(/addRule\([^;]*\);/g) || []) {
     const hasLux = /0x0D53|0x01AB/i.test(call);
     if (hasFd5f !== hasLux) regFail.push(`glasses rule states fd5f/0x0D53 without the other: ${call.replace(/\s+/g, ' ')}`);
 }
-if (!/#define SIG_SCHEMA_VERSION 22\b/.test(wwSrc)) regFail.push('SIG_SCHEMA_VERSION not bumped to 22');
+if (!/#define SIG_SCHEMA_VERSION 23\b/.test(wwSrc)) regFail.push('SIG_SCHEMA_VERSION not bumped to 23');
+if (!/\/\/   v23:/.test(wwSrc)) regFail.push('no v23 line in the SIG_SCHEMA_VERSION comment block');
 // v20: BLE name substrings anyone can type never beep alone as Flock, and
 // "fs_" (it matches "Chiefs_...") is gone.
 for (const m of wwSrc.matchAll(/addRule\("Flock BLE Name"[^;]*;/g))
@@ -939,7 +940,8 @@ for (const u of ['fe6d', 'feed', 'fd5a'])
 if (!/getServiceData\(NimBLEUUID\(\(uint16_t\)0xFEED\)\)/.test(wwSrc) || !/getServiceData\(NimBLEUUID\(\(uint16_t\)0xFD5A\)\)/.test(wwSrc))
     regFail.push('bleTrackerNetwork lost Tile FEED / SmartTag FD5A service data -- the v19 rule removal relied on it');
 // Raven (v19): exact 16-bit UUIDs, listed only (60) -- at 70 one hit beeped (v5).
-if (!/\{"3100", "3200", "3300", "3400", "3500"\}\)\s*addRule\("Flock Raven service UUID", "Flock Safety", "", "", "", u, 60\);/.test(defaults))
+// v23 adds 3101/3102 (RF Sentinel, ACAB capture) to the same loop.
+if (!/\{"3100", "3101", "3102", "3200", "3300", "3400", "3500"\}\)\s*addRule\("Flock Raven service UUID", "Flock Safety", "", "", "", u, 60\);/.test(defaults))
     regFail.push('Raven 3100-3500 rule must be exact UUIDs at 60');
 // HeyCyan shares Apple ANCS's 96-bit base: only the full 128-bit UUID is safe.
 if (!/"7905fff0-b5ce-4e99-a40f-4b1e122d00d0", 60\)/.test(defaults)) regFail.push('HeyCyan rule must be the full 128-bit UUID at 60');
@@ -960,6 +962,27 @@ for (const oui of ['80:e1:26', '80:e1:27']) {
 for (const want of ['"3081"', '"3082"', '"3083"', '"flipper"', '"Pineapple_"', '"pwned"', '"oui-spy"', '"snoopuntothem"', '"foxhunter"', '"ouispy-"', '"BruceNet"', '"GhostNet"', '"MarauderOTA"', '"01 Never gonna give you up"', '"Yell BRUCE for Password"', '"PORKCHOP"', '"BruceKarma"', '"BruceShell"', '"BRUCE-UDP"', '"BruceSniffer"', '"brucesniffer"', '"bruce-spammer"', '"bruce-flooder"', '"bruce-pn532-ble"', '"EvilPortal"', '"EvilAP"'])
     if (!new RegExp(`addRule\\([^;]*HACKING_GEAR_CATEGORY[^;]*${want.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i').test(defaults))
         regFail.push(`no "Hacking gear" default rule carries ${want}`);
+// v23. 0x034D: the IDO / VeryFit watch squatter (RF Sentinel) is dropped in the
+// matcher itself, so pushed rules are covered too; the byte test is host-tested
+// in firmware/test/axon_checks_test.cpp (the DetectionTest.kt:56 watch).
+{
+    const mf = (wwSrc.match(/static int matchDeviceAgainstRule\([\s\S]*?\r?\n\}/) || [''])[0];
+    if (!/targetMfgId == TASER_COMPANY_ID && bleTaserIdSquatter\(dev\)\) \{\s*return 0;/.test(mf))
+        regFail.push('0x034D squatter (IDO watch) is no longer dropped in matchDeviceAgainstRule()');
+    if (!/axon_checks_test/.test(readFileSync(new URL('../firmware/test/run.sh', import.meta.url), 'utf8')))
+        regFail.push('firmware/test/run.sh no longer runs axon_checks_test');
+    // fe6c: the bare UUID lists (60); only a serial in its service data beeps,
+    // and AxonCadabra's replayed serial never counts as Axon.
+    for (const call of ruleCalls.match(/addRule\([^;]*"fe6c"[^;]*\);/gi) || [])
+        if (!/,\s*60\);$/.test(call)) regFail.push('bare fe6c rule beeps again: ' + call);
+    if (!/bleAxonSignal\(dev\) == AXON_SIG_CADABRA/.test(mf)) regFail.push('fe6c rules can name AxonCadabra as Axon');
+    if (!/#define AXONCADABRA_SERIAL "X87002FP4"/.test(readFileSync(new URL('../firmware/src/axon_checks.h', import.meta.url), 'utf8')))
+        regFail.push('AxonCadabra serial missing from axon_checks.h');
+    // 90:3A:E6 is Parrot's MA-L: only its Remote ID vendor type 0x0D is a drone.
+    if (!/body\[b\+2\] == 0x90 && body\[b\+3\] == 0x3A && body\[b\+4\] == 0xE6 && body\[b\+5\] == 0x0D/.test(wwSrc))
+        regFail.push('Parrot 90:3A:E6 vendor IE scores W_DRONE without vendor type 0x0D');
+    if (/ASTM \(90:3A:E6\)/.test(wwSrc)) regFail.push('90:3A:E6 called ASTM again (it is Parrot)');
+}
 if (regFail.length) { console.log('FAIL: registry:', regFail); process.exit(1); }
 console.log(`[signalsweep self-test] ${ouiRules} default OUI rules match the IEEE registry: ok`);
 

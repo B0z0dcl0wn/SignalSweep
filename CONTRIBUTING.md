@@ -35,6 +35,14 @@ cache, no sighting store. The absence of these is the product.
 an ignored detector is worse than none. See the signature-rule section in the
 README before adding a rule.
 
+**A registry entry is not a detection.** An IEEE or Bluetooth SIG lookup proves
+who owns an ID, not that the gear transmits Wi-Fi or BLE or that anyone has
+heard it. A new rule needs a field sighting (yours, or a capture an upstream
+cites), or a protocol fact that holds on its own. Upstream detector projects
+often ship big registry-derived lists; treat a new source as a lead to verify,
+not a list to import. Its value is a catalogue, and it may be overselling its
+detection. v23 turned down about 110 registry-only prefixes for this reason.
+
 ## Before you open a PR
 
 ```bash

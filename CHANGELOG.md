@@ -4,6 +4,77 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Changed -- Signatures v23: a smartwatch is not a TASER, and fe6c needs a serial
+
+From the 2026-11-09 upstream scan. Boards pick the new rules up on their next
+boot.
+
+**Fixes**
+
+- **TASER company ID `0x034D` no longer flags cheap smartwatches.** IDO /
+  VeryFit watches (IDW26, ID205...) send `0x034D` with their own address as the
+  first six payload bytes, plus service `0x0AF0`, and the rule beeped at 70 on
+  the ID alone. The matcher now drops a `0x034D` hit when the payload repeats
+  the advertiser's address and the watch's `0x0AF0` service or an
+  `ID<digits>` model name is present. Everything else keeps the 70. The check
+  is a port of RF Sentinel's `isTaserIdSquatter()` (CIS-C0/RFSentinel 843c738,
+  `SignatureEngine.kt:195-229`, GPL-3.0). It lives in `firmware/src/axon_checks.h`
+  and is host-tested with their `DetectionTest.kt:56` watch ("IDW26" at
+  `F4:FD:16:03:54:5B`) in `firmware/test/axon_checks_test.cpp`, which
+  `selftest.js` runs. Because the check sits in the matcher, it also covers a
+  pushed `0x034D` rule.
+- **Axon `fe6c` beeps only on a serial.** "Axon Signal System" beeped on the bare
+  UUID, which any phone app can advertise. The bare UUID now lists at 60, as
+  "Axon service UUID (fe6c)". Only `fe6c` service data that carries an ASCII
+  serial (a run of six or more uppercase letters and digits, the Signal trigger
+  layout) beeps, as "Axon Signal trigger (fe6c serial)" at 70. AxonCadabra
+  replays one captured trigger byte for byte, serial `X87002FP4`, so that serial
+  is excluded explicitly: no Axon rule names it. With Attack on, it is reported
+  as Hacking gear, "AxonCadabra (replayed Axon Signal)". The payload layout and
+  the replay serial come from OVERWATCH (KaraZajac/OVERWATCH, BSD-3,
+  `AxonSignatures.kt` and `HackerTargets.kt`).
+- **`90:3A:E6` is Parrot, not ASTM.** The Wi-Fi Remote ID comment had the two
+  OUIs backwards. `FA:0B:BC` is the ASD-STAN / ASTM OUI (as `odid_wifi.c`
+  says), and `90:3A:E6` is Parrot's MA-L. The Parrot branch now also requires
+  the Remote ID vendor type `0x0D`, so an unrelated Parrot vendor IE no longer
+  scores as a drone. The Remote ID entry further down this file is corrected
+  to match.
+
+**Added**
+
+- **Raven** `3101` and `3102` join the exact-match Raven UUID list at 60 (RF
+  Sentinel 843c738 `SignatureEngine.kt:73`, GPL-3.0, crediting an
+  all-cameras-are-beacons field capture).
+
+**Reviewed and not added.** RF Sentinel ships about 110 more MAC prefixes we
+lack: ALPR makers (Tattile, Quercus, Selea, Vitronic, Robot), police in-car
+video, TETRA / P25 makers, tactical mesh radios, fleet gear, and more blocks
+for vendors we already list. Every sub-block was re-checked against the IEEE
+`mam.csv`, `oui36.csv` and `iab.csv`, and every one is registered to the vendor
+it names. That proves who owns the block, not that the gear transmits Wi-Fi or
+BLE, or that anyone has heard it. None has a field sighting. RF Sentinel itself
+tags many of them "candidate". Most of the hardware is wired, or talks on its
+own radio band, and Tattile alone is 48 blocks, several from the 1990s. A rule
+set 60% larger, matched against every advert, for rules that would likely never
+fire is the wrong trade, and a registry entry is not a detection. Any of them
+can come back with a sighting.
+
+Also not in v23: the Axon Fleet `axon<n>-5g` SSID and Meta `0x058E` +
+`META_RB_GLASS` (both wait for a field capture); Cellebrite, GrayKey and
+IMSI-catcher makers (skipped); the DJI DroneID IE `26:37:12`, the French
+`6A:5C:35` beacon and the GhostLink BLE UUID (planned for v24).
+
+**Bench-proven over the air** on the C5, from a Kali Pi sending crafted raw
+HCI adverts and injected beacons, each case on its own address so a ratcheted
+rule name can't leak between cases. Checked against the board's own alert log,
+not just the counter. All ten came out as intended: the IDO-watch squatter
+lists with no rule and logs nothing, while the same own-address payload without
+a watch tell still beeps at 70 (the tell is load-bearing). A bare `fe6c` lists at
+60, a serial beeps (100, Confirmed), and `X87002FP4` is silent with Attack off
+and Hacking gear with it on. Parrot `90:3A:E6` decodes as a drone with type
+`0x0D` and lists as nothing with `0x0E`, and the ASTM `FA:0B:BC` control still
+decodes. Pushes stayed at 74 in 75 s.
+
 ### Added -- The v3 case STLs
 
 - **`hardware/case-v3/`** ships the printable case for the carrier v3 board
@@ -3427,8 +3498,10 @@ the point of the exercise.
   latitude/longitude/altitude/AGL/speed/heading, and the **operator's**
   position. Remote ID is a broadcast standard whose whole purpose is to be
   readable, so this is all handed to us in the clear.
-- Three paths: BLE service data `0xFFFA`, Wi-Fi beacon vendor IE (`90:3A:E6`
-  ASTM / `FA:0B:BC`), and Wi-Fi NAN action frames to `51:6F:9A:01:00:00`. The
+- Three paths: BLE service data `0xFFFA`, Wi-Fi beacon vendor IE (`FA:0B:BC`,
+  the ASD-STAN / ASTM OUI, or `90:3A:E6`, Parrot's MA-L, which early Parrot
+  beacons used; corrected in v23, this line once called `90:3A:E6` "ASTM"),
+  and Wi-Fi NAN action frames to `51:6F:9A:01:00:00`. The
   vendored upstream `opendroneid.c` + `odid_wifi.c` are back, unmodified.
 - **Fixed a buffer over-read while porting it.** Sky Sweeper computed the
   beacon IE payload length as "everything to the end of the frame", which fed

@@ -33,6 +33,7 @@
 #include <freertos/task.h>
 #include <vector>
 #include "attack_detectors.h"
+#include "axon_checks.h"
 #include <algorithm>
 #include "hardware_manager.h"
 #include "capabilities.h"
@@ -158,7 +159,16 @@ static const char *SIG_FILE_PATH = "/data/signatures.json";
 //        tab (from OVERWATCH). Cradlepoint's second block 00:e0:1c, same weight
 //        as 00:30:44. Luxottica Tristar 80:aa:1c and 38:47:12, the maker of
 //        Ray-Ban / Oakley Meta glasses, listed at 60 (from ouispy-detector).
-#define SIG_SCHEMA_VERSION 22
+//   v23: upstream scan 2026-11-09. Fixes: 0x034D no longer flags IDO /
+//        VeryFit watches that put their own address in the payload
+//        (bleTaserIdSquatter, from RF Sentinel, GPL-3.0); a bare fe6c lists
+//        at 60 and only fe6c service data with a serial beeps (bleAxonSignal),
+//        AxonCadabra's X87002FP4 excluded (OVERWATCH, BSD-3); Wi-Fi Remote ID
+//        on Parrot's 90:3A:E6 requires vendor type 0x0D. Added Raven
+//        3101/3102 (60). RF Sentinel's ~110 registry-only prefixes were
+//        reviewed and NOT added: no field sighting, and most of that gear
+//        never transmits Wi-Fi or BLE.
+#define SIG_SCHEMA_VERSION 23
 
 static SemaphoreHandle_t watchersMutex = NULL;
 static bool watchersRunning = false;
@@ -396,7 +406,10 @@ static void ensureSignaturesFileExists() {
             // v19: back, at 60 (listed, never beeps alone). Exact match fixed
             // the v5 problem; the values are field captures of Raven units
             // (all-cameras-are-beacons, Flock-You), not a registry.
-            for (const char* u : {"3100", "3200", "3300", "3400", "3500"})
+            // v23: 3101 and 3102 (both GPS, like 3100), from RF Sentinel
+            // (CIS-C0/RFSentinel 843c738, SignatureEngine.kt:73, GPL-3.0), which
+            // credits an all-cameras-are-beacons field capture.
+            for (const char* u : {"3100", "3101", "3102", "3200", "3300", "3400", "3500"})
                 addRule("Flock Raven service UUID", "Flock Safety", "", "", "", u, 60);
 
             addRule("Flock battery (auth service)", "Flock Safety", "", "", "",
@@ -437,12 +450,22 @@ static void ensureSignaturesFileExists() {
             addRule("Axon Body 3 camera (pairing)", "Axon", "", "", "", "", 0, "AB3-");
             addRule("Axon Body 4 camera (pairing)", "Axon", "", "", "", "", 0, "AB4-");
             addRule("Axon device hotspot", "Axon", "", "", "", "", 0, "AXON-");
-            addRule("Axon Signal System", "Axon", "", "", "", "fe6c");
+            // fe6c is TASER International's member UUID. Until v23 it beeped
+            // as "Axon Signal System" on the bare UUID, which any replay tool
+            // or phone app can advertise. Now the bare UUID lists (60) and
+            // names only what it proves; fe6c service data carrying a serial
+            // (the Signal trigger layout) beeps in code (bleAxonSignal), and
+            // AxonCadabra's replayed serial X87002FP4 is excluded there and
+            // in the matcher (OVERWATCH, BSD-3).
+            addRule("Axon service UUID (fe6c)", "Axon", "", "", "", "fe6c", 60);
             // fe6d was here too until v19: the SIG registers it to the
             // University of Tokyo.
             // TASER International (= Axon) company ID and Axon's other two
             // SIG UUIDs (OUI-Spy AXEOFF 2026-10-09, SquachWatch-CYD). The
             // "BWCDEVICE" advert tag is matched in code (bleAxonBwc).
+            // v23: IDO / VeryFit smartwatches squat on 0x034D; the matcher
+            // drops those (bleTaserIdSquatter, from RF Sentinel), so the
+            // rule keeps its 70 for everything else.
             addRule("Axon (TASER company ID)", "Axon", "", "0x034D", "", "", 70);
             addRule("Axon service UUID", "Axon", "", "", "", "fc81");
             addRule("Axon service UUID", "Axon", "", "", "", "fe6b");
@@ -743,6 +766,12 @@ static void ensureSignaturesFileExists() {
 #define W_PENGUIN    80
 // Axon's "BWCDEVICE" advert tag (bleAxonBwc): police-only, so it beeps.
 #define W_AXON_BWC   80
+// v23: fe6c service data carrying an ASCII serial, the Axon Signal trigger
+// layout (bleAxonSignal). Police-only, so it beeps; the bare fe6c UUID lists.
+#define W_AXON_SIGNAL 70
+// v23: AxonCadabra's replay of one captured trigger (serial X87002FP4).
+// Hacking gear, reported only while Attack is on, like the attack-SSID rules.
+#define W_AXONCADABRA 70
 // Flock "FS-<hex>" accessory name (bleFlockFsName): one source, lists only.
 #define W_FLOCK_FS   60
 // Pwnagotchi (pwngrid) presence: a beacon from the fixed source MAC
@@ -950,6 +979,10 @@ static bool uuidMatches(const NimBLEUUID& u, const String& ruleUuid) {
     return have == want;
 }
 
+// Axon payload checks (v23), defined beside bleAxonBwc().
+static bool bleTaserIdSquatter(SWEEP_ADV* dev);
+static AxonSignalKind bleAxonSignal(SWEEP_ADV* dev);
+
 /**
  * @brief Match a device against one signature rule. Returns an accumulated
  * confidence weight (0 = no match). A rule ANDs its non-empty conditions; the
@@ -1009,6 +1042,11 @@ static int matchDeviceAgainstRule(SWEEP_ADV* dev, const WatcherSignature& sig, S
         if (devMfgId != targetMfgId) {
             return 0;
         }
+        // v23: an IDO / VeryFit watch borrowing TASER's ID is not Axon. Checked
+        // here, not per rule, so a pushed 0x034D rule is covered too.
+        if (targetMfgId == TASER_COMPANY_ID && bleTaserIdSquatter(dev)) {
+            return 0;
+        }
         weight += W_MFG;
     }
 
@@ -1041,6 +1079,12 @@ static int matchDeviceAgainstRule(SWEEP_ADV* dev, const WatcherSignature& sig, S
         for (size_t i = 0; i < sdCount && !uuidMatched; i++)
             uuidMatched = uuidMatches(dev->getServiceDataUUID(i), sig.serviceUuid);
         if (!uuidMatched) {
+            return 0;
+        }
+        // v23: AxonCadabra's replayed trigger is the tool, not Axon gear, so no
+        // fe6c rule names it (the Attack detector reports it instead).
+        if (uuidMatches(NimBLEUUID((uint16_t)0xFE6C), sig.serviceUuid) &&
+            bleAxonSignal(dev) == AXON_SIG_CADABRA) {
             return 0;
         }
         weight += W_UUID;
@@ -1271,6 +1315,46 @@ static bool bleAxonBwc(SWEEP_ADV* dev) {
         if (fw || bw) return true;
     }
     return false;
+}
+
+// v23: an IDO / VeryFit smartwatch (IDW26, ID205...) sends TASER's company ID
+// 0x034D with its own address as the first 6 payload bytes, plus service
+// 0x0AF0 or an "ID<digits>" model name. Axon gear never repeats its address.
+// Ported from RF Sentinel's isTaserIdSquatter() (CIS-C0/RFSentinel 843c738,
+// SignatureEngine.kt:195-229, GPL-3.0); the byte test is taserIdSquatter() in
+// axon_checks.h, host-tested in firmware/test/axon_checks_test.cpp.
+static bool bleTaserIdSquatter(SWEEP_ADV* dev) {
+    if (!dev->haveManufacturerData()) return false;
+    std::string mfg = dev->getManufacturerData();
+    if (mfg.length() < 8) return false;
+    // The address in display order (the order it prints). Parsed from the
+    // string so it reads the same on NimBLE 1.x (S3) and 2.x (C5).
+    std::string a = dev->getAddress().toString();
+    if (a.length() < 17) return false;
+    uint8_t addr[6];
+    for (int i = 0; i < 6; i++) {
+        char hex[3] = {a[i * 3], a[i * 3 + 1], 0};
+        addr[i] = (uint8_t)strtoul(hex, NULL, 16);
+    }
+    const NimBLEUUID ido((uint16_t)IDO_WATCH_SERVICE);
+    bool hasIdo = false;
+    size_t count = dev->haveServiceUUID() ? dev->getServiceUUIDCount() : 0;
+    for (size_t i = 0; i < count && !hasIdo; i++) hasIdo = dev->getServiceUUID(i) == ido;
+    size_t sdCount = dev->getServiceDataCount();
+    for (size_t i = 0; i < sdCount && !hasIdo; i++) hasIdo = dev->getServiceDataUUID(i) == ido;
+    std::string name = dev->haveName() ? dev->getName() : std::string();
+    return taserIdSquatter((const uint8_t*)mfg.data(), mfg.length(), addr, hasIdo, name.c_str());
+}
+
+// v23: what the fe6c service data says. A serial-shaped payload is the Axon
+// Signal trigger layout and beeps (W_AXON_SIGNAL); AxonCadabra's replayed
+// serial X87002FP4 is the tool and is told apart. KaraZajac/OVERWATCH
+// (BSD-3), AxonSignatures.kt + HackerTargets.kt; the byte test is
+// axonSignalKind() in axon_checks.h.
+static AxonSignalKind bleAxonSignal(SWEEP_ADV* dev) {
+    if (dev->getServiceDataCount() == 0) return AXON_SIG_NONE;
+    std::string d = dev->getServiceData(NimBLEUUID((uint16_t)0xFE6C));
+    return axonSignalKind((const uint8_t*)d.data(), d.length());
 }
 
 // "FS-" plus 4-12 hex digits and nothing else (e.g. FS-BEC46A): a Flock
@@ -1524,6 +1608,7 @@ class WatchersScanCallbacks : public NimBLEAdvertisedDeviceCallbacks {
             // strong, unambiguous match, so they set the category directly.
             String trackerNet = bleTrackerNetwork(advertisedDevice);
             bool droneDecoded = false;
+            AxonSignalKind axonSig = AXON_SIG_NONE;
             if (bleDecodeRemoteId(advertisedDevice, bleUas)) {
                 droneDecoded = odidUseful(bleUas);
                 confidence += W_DRONE;
@@ -1559,6 +1644,20 @@ class WatchersScanCallbacks : public NimBLEAdvertisedDeviceCallbacks {
                     bestWeight = W_AXON_BWC;
                     matchedRule = "Axon body cam (BWCDEVICE)";
                     matchedCategory = "Axon";
+                }
+            } else if ((axonSig = bleAxonSignal(advertisedDevice)) == AXON_SIG_SERIAL) {
+                confidence += W_AXON_SIGNAL;
+                if (W_AXON_SIGNAL > bestWeight) {
+                    bestWeight = W_AXON_SIGNAL;
+                    matchedRule = "Axon Signal trigger (fe6c serial)";
+                    matchedCategory = "Axon";
+                }
+            } else if (axonSig == AXON_SIG_CADABRA && attackDetect) {
+                confidence += W_AXONCADABRA;
+                if (W_AXONCADABRA > bestWeight) {
+                    bestWeight = W_AXONCADABRA;
+                    matchedRule = "AxonCadabra (replayed Axon Signal)";
+                    matchedCategory = HACKING_GEAR_CATEGORY;
                 }
             } else if (bleFlockFsName(advertisedDevice)) {
                 confidence += W_FLOCK_FS;
@@ -2042,10 +2141,14 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
                     if (W_WIFI_IE > bestWeight) { bestWeight = W_WIFI_IE; matchedRule = "Lite-On Vendor IE (weak)"; }
                 }
 
-                // Drone Remote ID over WiFi Beacon: ASTM (90:3A:E6) or French
-                // (FA:0B:BC) vendor IE, decoded in full.
+                // Drone Remote ID over WiFi Beacon, decoded in full. FA:0B:BC is
+                // the ASD-STAN / ASTM OUI (odid_wifi.c); 90:3A:E6 is Parrot's
+                // MA-L, which early Parrot Remote ID beacons used. Parrot puts
+                // other vendor IEs under the same OUI, so that branch must carry
+                // the Remote ID vendor type 0x0D or it scored W_DRONE on any
+                // Parrot IE (v23; spotted via RF Sentinel's RemoteId.kt).
                 if (id == 221 && elen >= 6 &&
-                    ((body[b+2] == 0x90 && body[b+3] == 0x3A && body[b+4] == 0xE6) ||
+                    ((body[b+2] == 0x90 && body[b+3] == 0x3A && body[b+4] == 0xE6 && body[b+5] == 0x0D) ||
                      (body[b+2] == 0xFA && body[b+3] == 0x0B && body[b+4] == 0xBC))) {
                     odidHeard = true;
                     wifiConfidence += W_DRONE;
