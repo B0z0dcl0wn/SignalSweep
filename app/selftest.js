@@ -362,6 +362,21 @@ else {
     }
     if (end < 0 || briNoteAt < briRowAt || briNoteAt > end) briFail.push('#bri-note is not inside the #bri-row element');
 }
+// Night Ops' note names Low or Dim by whether `bri` is reported, and `bri`
+// can land after theme and led, so setBriUi must repaint the theme note.
+const setBriUiMatch = appSrc.match(/function setBriUi\([^)]*\) \{([\s\S]*?)\n        function setBri\(/);
+if (!setBriUiMatch) briFail.push('setBriUi not found');
+else if (!/paintThemeNote\(\)/.test(setBriUiMatch[1])) briFail.push('setBriUi does not repaint the theme note');
+// The Lights description ships in index.html and is repainted by ledNote() on
+// the first frame; the two Bar texts must be the same string.
+{
+    const shipped = ((htmlSrc.match(/<p [^>]*id="led-note"[^>]*>([^<]*)<\/p>/) || [])[1] || '').replace(/&rsquo;/g, '\u2019');
+    const ledNoteBody = (appSrc.match(/function ledNote\([^)]*\) \{[\s\S]*?\n        \}/) || [''])[0];
+    const barText = ((ledNoteBody.match(/\? '([^']*)'/) || [])[1] || '').replace(/\\u2019/g, '\u2019');
+    if (!shipped) briFail.push('#led-note not found in index.html');
+    else if (!barText) briFail.push('ledNote Bar text not found in app.js');
+    else if (shipped !== barText) briFail.push('#led-note text in index.html differs from ledNote Bar text in app.js');
+}
 if (briFail.length) { console.log('FAIL: brightness:', briFail); process.exit(1); }
 console.log('[signalsweep self-test] brightness is its own setting, 3 levels: ok');
 

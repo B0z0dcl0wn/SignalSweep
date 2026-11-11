@@ -3730,6 +3730,13 @@
         function ledTapIsNoop(n, led) {
             return n === led || (n === 4 && led >= 2);
         }
+        // The Lights description, naming the buttons the board shows: Bar
+        // when it reports `bri` (bri is a number), Dim / Full when it does not.
+        function ledNote(bri) {
+            return typeof bri === 'number'
+                ? 'What the LED bar shows. Bar lights the whole bar for alerts; One lights a single LED in the alert\u2019s color; Off keeps the bar dark, even during an alert.'
+                : 'What the LED bar shows. Full lights the whole bar for alerts and Dim does the same, dimmer; One lights a single LED in the alert\u2019s color; Off keeps the bar dark, even during an alert.';
+        }
         function paintLed() {
             const split = briLevel !== null;
             document.querySelectorAll('#led-modes .radio-tab').forEach(function (el) {
@@ -3738,6 +3745,8 @@
                 el.setAttribute('aria-pressed', st.on ? 'true' : 'false');
                 el.classList.remove('pending');
             });
+            const note = document.getElementById('led-note');
+            if (note) note.textContent = ledNote(briLevel);
         }
         function setLedUi(n) {
             ledMode = (typeof n === 'number') ? n : null;
@@ -3769,6 +3778,9 @@
                 el.classList.remove('pending');
             });
             paintLed();
+            // Night Ops' note names Low or Dim depending on whether `bri` is
+            // reported, and `bri` can arrive after theme and led.
+            paintThemeNote();
         }
         function setBri(n) {
             if (briLevel === null) { showToast('Waiting for the device', '…'); return; }
@@ -3802,18 +3814,25 @@
         const THEMES = ['classic', 'night', 'terminal', 'glacier', 'party'];
         let themeId = null;
         // The two things a theme costs you, said plainly under the picker.
-        function themeNote(theme, led) {
+        // bri = the reported brightness level, or null / undefined when the
+        // board reports none (its bar levels are then the legacy Dim / Full).
+        function themeNote(theme, led, bri) {
             // One LED is Classic-only regardless of theme -- check it first,
             // or Party's note would show even though One overrides it.
             if (typeof theme === 'number' && theme !== 0 && led === 1)
                 return 'One LED keeps Classic colours, so you can still tell alerts apart.';
+            // Night Ops renders Bar at Low whatever the brightness (firmware
+            // ledRenderBri); the note states that rule whenever Night Ops is on
+            // with Bar, at any brightness.
+            if (theme === 1 && (led === 2 || led === 3))
+                return typeof bri === 'number' ? 'Night Ops holds the bar at Low.' : 'Night Ops holds the bar at Dim.';
             if (theme === 4 && led !== 0) return 'Party lights the whole bar all the time. Anyone nearby can see it.';
             return '';
         }
         function paintThemeNote() {
             const el = document.getElementById('theme-note');
             if (!el) return;
-            const t = themeNote(themeId, ledMode);
+            const t = themeNote(themeId, ledMode, briLevel);
             el.textContent = t;
             el.hidden = !t;
         }
@@ -5234,6 +5253,32 @@
                     themeNote(0, 1) === '' &&
                     themeNote(2, 3) === '' &&
                     themeNote(null, 1) === '';
+                // Third argument is the reported `bri` level: Low (0) is
+                // reported too, only null / undefined means no `bri`.
+                results.themeNoteNightOps =
+                    themeNote(1, 2, 0) === 'Night Ops holds the bar at Low.' &&
+                    themeNote(1, 3, 2) === 'Night Ops holds the bar at Low.' &&
+                    themeNote(1, 3, 1) === 'Night Ops holds the bar at Low.' &&
+                    themeNote(1, 2, null) === 'Night Ops holds the bar at Dim.' &&
+                    themeNote(1, 3, undefined) === 'Night Ops holds the bar at Dim.' &&
+                    themeNote(1, 3) === 'Night Ops holds the bar at Dim.' &&
+                    themeNote(1, 1, 0).startsWith('One LED') &&
+                    themeNote(1, 1, null).startsWith('One LED') &&
+                    themeNote(1, 0, 0) === '' &&
+                    themeNote(1, 0, null) === '' &&
+                    themeNote(1, null, 2) === '' &&
+                    themeNote(null, 2, 0) === '' &&
+                    themeNote(0, 3, 2) === '' &&
+                    themeNote(2, 3, 0) === '' &&
+                    themeNote(4, 3, 2).startsWith('Party');
+                // Lights description follows the buttons shown: Bar when `bri`
+                // is reported (any level, Low included), Dim / Full when not.
+                results.ledNote =
+                    ledNote(0).indexOf('Bar lights') > 0 && ledNote(0).indexOf('Dim') === -1 &&
+                    ledNote(2) === ledNote(0) &&
+                    ledNote(null).indexOf('Full lights') > 0 && ledNote(null).indexOf('Dim does') > 0 &&
+                    ledNote(null).indexOf('Bar') === -1 &&
+                    ledNote(undefined) === ledNote(null);
                 // Lights: with `bri` reported, Bar paints for led 2 and 3 and
                 // the legacy Dim / Full hide; without it, Bar hides and they show.
                 results.ledBarOnForDimAndFull =

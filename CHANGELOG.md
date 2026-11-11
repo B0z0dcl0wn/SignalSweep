@@ -39,6 +39,9 @@ row: Low (8/255, the old Dim), Med (20) and High (50, the old Full). Brightness
 applies to every Lights option, One included; Night Ops still holds the bar at
 Low, except under One. Because One now follows brightness, an old app that
 picks Dim and then One gets a dim single LED, which it has no way to show.
+With Night Ops and Lights on Bar, the note under Theme says the bar is held at
+Low (at Dim on firmware with no `bri`), and on firmware with no `bri` the Lights
+description names Dim and Full instead of Bar.
 Requested in B0z0dcl0wn/SignalSweep#5.
 
 Wire contract: `{"bri":0..2}` sets brightness only and is answered with
