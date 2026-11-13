@@ -88,6 +88,10 @@ decodes. Pushes stayed at 74 in 75 s.
   and takes either lid. A single lid for both was rejected because it would
   cost the diffuser its separator bars. The 57 pocket is 0.2 mm tighter than
   the 54's, after a jig printed with the 54's gaps came out loose on that stick.
+  On the 57 the LEDs sit so close to the board edge that the diffuser's base
+  is trimmed on that side (2.8 mm from the LED line, not 3.5) and the lid's
+  slot stops flush with the pocket wall: the diffuser drops in through the
+  stick pocket, and a full-width slot there would be an undercut that traps it.
 - **The tube under the lid's buzzer hole is gone from both lids.** It made no
   audible difference; the hole through the top skin stays.
 
