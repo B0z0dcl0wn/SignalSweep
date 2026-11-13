@@ -116,6 +116,40 @@ registry.
   Oakley Meta glasses (via ouispy-detector), list at 60 under Smart glasses.
   The address proves the maker, not the product, so the rule says "device".
 
+### Changed -- Brightness is its own setting
+
+Lights was Off / One / Dim / Full, so how bright the bar was came bundled with
+how much of it lit. Lights is now Off / One / Bar, and Brightness is a separate
+row: Low (8/255, the old Dim), Med (20) and High (50, the old Full). Brightness
+applies to every Lights option, One included; Night Ops still holds the bar at
+Low, except under One. Because One now follows brightness, an old app that
+picks Dim and then One gets a dim single LED, which it has no way to show.
+With Night Ops and Lights on Bar, the note under Theme says the bar is held at
+Low (at Dim on firmware with no `bri`), and on firmware with no `bri` the Lights
+description names Dim and Full instead of Bar.
+Requested in B0z0dcl0wn/SignalSweep#5.
+
+Wire contract: `{"bri":0..2}` sets brightness only and is answered with
+`CMD:CFG`. `{"led":2}` is Bar + Low and `{"led":3}` is Bar + High, so old apps'
+Dim and Full act as before; `{"led":4}` is Bar at the current brightness, which
+is what the new app sends (old firmware clamps it to Full). The reported `led`
+stays 0..3 for old apps (Bar reports 2 at Low, 3 otherwise), and `bri` joins
+`CMD:CFG` and the 1 Hz push (~8 B). The app shows the old four Lights buttons
+and no Brightness row when the board reports no `bri`.
+
+Persistence: new NVS key `bri` in `sweep-bz`, written with every Lights or
+Brightness change; `led` stores Bar as 3. A board with no `bri` key loads a
+stored Dim (2) as Bar + Low and Full (3) as Bar + High. `selftest.js` checks
+that there are three levels and three Brightness buttons, and that the app
+adopts `bri` from both frames.
+
+Bench, both boards over a real Bluetooth link (2026-11-12): 14 of 14 `led`/`bri`
+commands read back correctly from `CMD:CFG`, 60 of 60 pushes in a 60 s soak with
+none torn, and no reboot. A board flashed over the old firmware loaded a stored
+Dim as Bar + Low (S3) and a stored Full as Bar + High (C5), and Bar + Med and
+One + Low both survived a reboot on the S3. On the bar, One looks much the same
+at all three levels.
+
 ## [0.11.0] — 2026-10-30 — Quiet about trackers
 
 ### Changed -- A new board stays quiet about trackers and always keeps a log
