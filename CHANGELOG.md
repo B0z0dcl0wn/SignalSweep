@@ -75,6 +75,20 @@ and Hacking gear with it on. Parrot `90:3A:E6` decodes as a drone with type
 `0x0D` and lists as nothing with `0x0E`, and the ASTM `FA:0B:BC` control still
 decodes. Pushes stayed at 74 in 75 s.
 
+### Changed -- Case v3 lids are named by LED stick length
+
+- **`case-lid.stl` and `case-diffuser.stl` are now `case-lid-54` and
+  `case-diffuser-54`, and a `-57` pair joins them.** Generic 8-LED WS2812
+  sticks have no standard outline: three batches gave three boards (57 x 10.5
+  at 7 mm pitch, 54 x 10 at 6.5 mm, and now 57.25 x 10.5 at 7 mm with the LEDs
+  2.75 mm from the edge). Measure the stick you have and print the lid and
+  diffuser that match its length; `case-main.stl` is unchanged (byte for byte)
+  and takes either lid. A single lid for both was rejected because it would
+  cost the diffuser its separator bars. The 57 pocket is 0.2 mm tighter than
+  the 54's, after a jig printed with the 54's gaps came out loose on that stick.
+- **The tube under the lid's buzzer hole is gone from both lids.** It made no
+  audible difference; the hole through the top skin stays.
+
 ### Added -- The v3 case STLs
 
 - **`hardware/case-v3/`** ships the printable case for the carrier v3 board
