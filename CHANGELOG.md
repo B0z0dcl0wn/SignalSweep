@@ -4,6 +4,8 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+## [0.12.0] — 2026-11-12 — Dimmer switch
+
 ### Changed -- Signatures v23: a smartwatch is not a TASER, and fe6c needs a serial
 
 From the 2026-11-09 upstream scan. Boards pick the new rules up on their next
