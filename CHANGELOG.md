@@ -4,6 +4,8 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+## [0.12.1] — 2026-11-14 — Quiet lot
+
 ### Changed -- the Flock wildcard probe lists, it no longer beeps alone
 
 A board sitting in a parking lot with no camera in it beeped ALPR four times
