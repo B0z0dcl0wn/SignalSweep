@@ -517,14 +517,16 @@ for (const o of ouis) {
     if (parseInt(o.slice(0, 2), 16) & 0x02) flockFail.push('default OUI ' + o + ' is locally-administered');
 }
 
-// The wildcard-probe weights must each be able to trip the alarm alone, and the
+// The wildcard-probe weights must LIST but never beep alone (demoted 2026-11-14:
+// the listed prefixes are mostly Lite-On's general blocks), and the
 // path must be gated on the Flock category (not just any OUI) and on a wildcard
 // SSID (not just any probe) -- both gates are what stop it firing on every phone.
 const alertMin = Number((fw.match(/#define CONF_ALERT_MIN\s+(\d+)/) || [])[1]);
 const wProbe = Number((fw.match(/#define W_WIFI_PROBE\s+(\d+)/) || [])[1]);
 const wIeSig = Number((fw.match(/#define W_WIFI_IE_SIG\s+(\d+)/) || [])[1]);
-if (!(wProbe >= alertMin)) flockFail.push('W_WIFI_PROBE ' + wProbe + ' < CONF_ALERT_MIN ' + alertMin);
-if (!(wIeSig >= alertMin)) flockFail.push('W_WIFI_IE_SIG ' + wIeSig + ' < CONF_ALERT_MIN ' + alertMin);
+const listMin = Number((fw.match(/#define CONF_LIST_MIN\s+(\d+)/) || [])[1]);
+if (!(wProbe >= listMin && wProbe < alertMin)) flockFail.push('W_WIFI_PROBE ' + wProbe + ' must list (>= ' + listMin + ') and not beep alone (< ' + alertMin + ')');
+if (!(wIeSig >= listMin && wIeSig < alertMin)) flockFail.push('W_WIFI_IE_SIG ' + wIeSig + ' must list (>= ' + listMin + ') and not beep alone (< ' + alertMin + ')');
 if (!/if\s*\(flockOui && wildcardSsid\)/.test(fw)) flockFail.push('wildcard-probe scoring is not gated on flockOui && wildcardSsid');
 // The 50:6f:9a:16:03:01:03 IE must NEVER alert on its own: consumer WiFi
 // modules (AzureWave and others) send it, and standalone it beeped at passers-by.
