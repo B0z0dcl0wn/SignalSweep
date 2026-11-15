@@ -746,7 +746,14 @@ static void ensureSignaturesFileExists() {
 // in front of the hardware it is named after.
 // Research: DeFlockJoplin, via colonelpanichacks/flock-you. Drive-tested in
 // Joplin at 11 of 12 cameras caught with 2 false positives.
-#define W_WIFI_PROBE   70
+// DEMOTED to 60 (2026-11-14): listed, never beeps alone. 22 of the 35 listed
+// prefixes are Lite-On's general blocks (9 Silicon Labs, 2 USI, 1 Samsung), so
+// with every client sending wildcard probes this was "any Lite-On Wi-Fi client".
+// One such device (e0:0a:f6, -86..-92) beeped ALPR four times in a parking lot
+// with no camera in it, and a deployed Falcon keeps Wi-Fi off anyway. The IE
+// tightener is 60 too: it is the MBO attribute, which consumer modules send.
+// selftest pins both at >= CONF_LIST_MIN and < CONF_ALERT_MIN.
+#define W_WIFI_PROBE   60
 // The same, plus the exact vendor IE payload (221, len 7, 50:6f:9a:16:03:01:03).
 // Only ever a tightener on that path, never standalone: consumer WiFi sends it
 // too (see the scoring block). This is the discriminating core of
@@ -754,7 +761,7 @@ static void ensureSignaturesFileExists() {
 // builder (TLV resync, phantom-overflow recovery, a signature string compared
 // against one hardcoded allowlist entry) buys very little over these 7 bytes
 // and is tied to a single camera firmware revision.
-#define W_WIFI_IE_SIG  80
+#define W_WIFI_IE_SIG  60
 #define W_CORROBORATION 15   // same MAC seen on both BLE and WiFi
 // Protocol matches are unambiguous: an ASTM Remote-ID beacon IS a drone, an
 // Apple Find My "offline finding" advert IS a tracker. Presence alone is the

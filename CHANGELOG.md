@@ -4,6 +4,27 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Changed -- the Flock wildcard probe lists, it no longer beeps alone
+
+A board sitting in a parking lot with no camera in it beeped ALPR four times
+at one device (`e0:0a:f6:67:4a:33`, -86 to -92 dBm), once per probe after each
+two-minute stale-out. The rule was "listed Flock OUI + wildcard probe" at 70.
+Of the 35 listed prefixes, 22 are Lite-On's general blocks, 9 Silicon Labs,
+2 Universal Global Scientific and 1 Samsung, and every Wi-Fi client sends
+wildcard probes, so in practice it was "any Lite-On Wi-Fi client". A deployed
+Falcon keeps Wi-Fi off on LTE anyway (2026-09-21 firmware dump).
+
+- `W_WIFI_PROBE` 70 -> 60 and `W_WIFI_IE_SIG` 80 -> 60: both list under
+  Cameras and never sound the buzzer on their own. The IE tightener goes too
+  because it is the MBO attribute, which consumer modules send (it beeped at a
+  `b8:1e:a4` client at -95 on 2026-11-11).
+- Still beeping: Flock's own registered block `b4:1e:52`, the `Flock-` hotspot
+  SSID, the battery GATT services.
+- `selftest.js` now fails if either weight reaches `CONF_ALERT_MIN` or drops
+  below `CONF_LIST_MIN`. The Signatures page says "Listed, never beeps alone".
+- Accepted cost: a Wi-Fi-on camera on a community prefix is silent on a
+  headless board.
+
 ## [0.12.0] — 2026-11-12 — Dimmer switch
 
 ### Changed -- Signatures v23: a smartwatch is not a TASER, and fe6c needs a serial
