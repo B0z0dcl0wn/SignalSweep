@@ -42,7 +42,10 @@ promised for v24 in the v23 entry and slipped; they are here now.
   and i-PRO `d4:2d:c5` (registry only, the same reason as the v23 decline).
 - **Bench-proven over the air** on the S3 from the Kali Pi's raw HCI adverts:
   AirTag (80), third-party tag (80), AirPods (60), Apple device (60), and the
-  2-byte status ping not listed.
+  2-byte status ping not listed. And from the Pi's Alfa (scapy beacons on
+  channel 6): DJI DroneID listed at 60, the French beacon at 90 (one alert,
+  the board's counter went 0 to 1), and a French look-alike with type `0x02`
+  ignored.
 - `selftest.js` pins the two beacon checks, the status-byte split and Snap's
   registrant.
 
