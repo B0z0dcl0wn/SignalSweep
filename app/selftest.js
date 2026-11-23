@@ -435,6 +435,23 @@ for (const [f, min] of [['oui.txt', 20000], ['bt-company.txt', 1000]]) {
 }
 console.log('[signalsweep self-test] vendor lists ship: ok');
 
+// Brand prefixes (BRANDS in app.js) must each name a real registry entry on a
+// word boundary, or the row silently falls back to the raw registry text.
+{
+    const names = ['oui.txt', 'bt-company.txt'].flatMap(f => readFileSync(new URL('./public/' + f, import.meta.url), 'utf8')
+        .split('\n').map(l => (l.split('\t')[1] || '').trim().toLowerCase()).filter(Boolean));
+    const block = (appSrc.match(/const BRANDS = \[([\s\S]*?)\n\s*\];/) || [])[1] || '';
+    const prefixes = [...block.matchAll(/\['([^']+)', '/g)].map(x => x[1]);
+    const dead = prefixes.filter(p => !names.some(n => n.startsWith(p) && !/[a-z0-9]/.test(n.charAt(p.length))));
+    if (prefixes.length < 40 || dead.length) { console.log('FAIL: brand prefixes', prefixes.length, 'dead:', dead); process.exit(1); }
+    // Firmware labels are label-only: bleRole() is called only where no rule matched.
+    const fwSrc = readFileSync(new URL('../firmware/src/mode_watchers_watch.cpp', import.meta.url), 'utf8');
+    if (!/matchedRule\.length\(\) == 0\) \{[\s\S]{0,400}?bleRole\(advertisedDevice\)/.test(fwSrc)) {
+        console.log('FAIL: bleRole() must stay inside the no-rule-matched label branch'); process.exit(1);
+    }
+}
+console.log('[signalsweep self-test] brand names resolve, BLE labels label-only: ok');
+
 // The Flock wildcard-probe signature is the only way a current camera reaches
 // the buzzer (management AP dead Dec 2025, BLE dead spring 2026). No host C++
 // compiler ships here and there is no native test env, so we can't unit-test the

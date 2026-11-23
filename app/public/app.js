@@ -166,6 +166,67 @@
             return (m.cid != null && btNames.get(m.cid)) || '';
         }
 
+        // Registry names -> what people call the maker, plus the kind of thing
+        // where the maker sells basically one kind. A wall of MACs means
+        // nothing; "Google" means your Pixel. [lowercase registry-name prefix,
+        // brand, kind, chip]. A prefix must end on a word boundary ("intel"
+        // is not "Intelligent ..."); selftest.js fails if a prefix matches no
+        // name in oui.txt / bt-company.txt. chip = the maker sells radio chips
+        // to no-name brands, so the chip says what the gadget probably is.
+        const BRANDS = [
+            ['apple', 'Apple'], ['samsung', 'Samsung'], ['google', 'Google'], ['microsoft', 'Microsoft'],
+            ['sony', 'Sony'], ['lg electronics', 'LG'], ['motorola mobility', 'Motorola'], ['lenovo', 'Lenovo'],
+            ['oculus vr', 'Meta', 'VR headset'], ['huawei', 'Huawei'], ['honor', 'Honor'], ['oneplus', 'OnePlus'], ['guangdong oppo', 'Oppo'],
+            ['vivo mobile', 'vivo'], ['realme', 'realme'], ['nothing technology', 'Nothing'],
+            ['xiaomi', 'Xiaomi'], ['beijing xiaomi', 'Xiaomi'], ['amazon', 'Amazon'], ['nintendo', 'Nintendo'],
+            ['intel', 'Intel'], ['dell', 'Dell'], ['hewlett packard', 'HP'], ['logitech', 'Logitech'],
+            ['tp-link', 'TP-Link'], ['netgear', 'NETGEAR'], ['ubiquiti', 'Ubiquiti'], ['cisco', 'Cisco'],
+            ['zte', 'ZTE'], ['nokia', 'Nokia'], ['tuya smart', 'Tuya', 'smart-home gadget'],
+            ['allterco', 'Shelly', 'smart-home switch'], ['shelly', 'Shelly', 'smart-home switch'],
+            ['shenzhen intellirocks', 'Govee', 'smart light or sensor'], ['signify', 'Philips Hue', 'light'],
+            ['wyze labs', 'Wyze'], ['tesla', 'Tesla', 'car or phone key'], ['ford motor', 'Ford', 'car'],
+            ['general motors', 'GM', 'car'], ['toyota motor', 'Toyota', 'car'], ['honda motor', 'Honda', 'car'],
+            ['roku', 'Roku', 'streamer'], ['sonos', 'Sonos', 'speaker'], ['eero', 'eero', 'router'],
+            ['bose', 'Bose', 'headphones or speaker'], ['harman', 'Harman/JBL', 'headphones or speaker'],
+            ['sennheiser', 'Sennheiser', 'headphones'], ['skullcandy', 'Skullcandy', 'headphones'],
+            ['beats electronics', 'Beats', 'headphones'], ['anker', 'Anker', 'charger or earbuds'],
+            ['fitbit', 'Fitbit', 'fitness band'], ['garmin', 'Garmin', 'watch or bike computer'],
+            ['polar electro', 'Polar', 'sports watch'], ['suunto', 'Suunto', 'sports watch'],
+            ['withings', 'Withings', 'health watch or scale'], ['oura', 'Oura', 'smart ring'],
+            // Chip makers: the brand on the box is someone else.
+            ['zhuhai jieli', 'Jieli', 'cheap earbuds, watch or speaker', 1],
+            ['bluetrum', 'Bluetrum', 'cheap earbuds or speaker', 1],
+            ['airoha', 'Airoha', 'earbuds or headphones', 1], ['bestechnic', 'Bestechnic', 'earbuds', 1],
+            ['actions technology', 'Actions', 'earbuds or speaker', 1],
+            ['actions semiconductor', 'Actions', 'earbuds or speaker', 1],
+            ['beken', 'Beken', 'cheap smart-home or audio gadget', 1],
+            ['telink', 'Telink', 'smart light, remote or sensor', 1],
+            ['espressif', 'Espressif', 'ESP32 board or smart-home gadget', 1],
+            ['realtek', 'Realtek', 'Bluetooth gadget', 1], ['nordic semiconductor', 'Nordic', 'Bluetooth gadget', 1],
+            ['silicon laboratories', 'Silicon Labs', 'smart-home or IoT gadget', 1],
+            ['hon hai', 'Foxconn', 'Wi-Fi in a laptop, TV or console', 1],
+            ['cloud network technology', 'Foxconn', 'Wi-Fi in a laptop, TV or console', 1],
+            ['azurewave', 'AzureWave', 'Wi-Fi in a laptop or IoT gadget', 1],
+            ['murata manufacturing', 'Murata', 'Wi-Fi in a phone or IoT gadget', 1],
+            ['liteon', 'Lite-On', 'Wi-Fi in a laptop or TV', 1], ['lite-on', 'Lite-On', 'Wi-Fi in a laptop or TV', 1],
+            ['universal global scientific', 'USI', 'Wi-Fi in a laptop or IoT gadget', 1]
+        ];
+        // { brand, kind, chip, vendor } for a device, or null with no maker.
+        function brandOf(m) {
+            const v = vendorOf(m);
+            if (!v) return null;
+            const n = v.toLowerCase();
+            for (const [p, brand, kind, chip] of BRANDS)
+                if (n.startsWith(p) && !/[a-z0-9]/.test(n.charAt(p.length))) return { brand, kind: kind || '', chip: !!chip, vendor: v };
+            return { brand: v, kind: '', chip: false, vendor: v };
+        }
+        // The row's title when the device has no name, SSID or rule.
+        function guessTitle(g) {
+            if (!g) return '';
+            if (g.chip) return g.kind.charAt(0).toUpperCase() + g.kind.slice(1);
+            return g.brand + ' ' + (g.kind || 'device');
+        }
+
         // Remote ID serials are ANSI/CTA-2063-A: a 4-char ICAO maker code, one
         // length char (1-9, A-F = 10-15), then that many chars. The length
         // check means a CAA registration or session ID can't pass as a serial.
@@ -376,8 +437,18 @@
         // Only the last belongs in a category band.
         function bandOf(m) {
             if (!m.type && !m.rule) return 'none';
-            if (!m.type) return 'weak';
+            // A rule with no category is either a weak hint (the Lite-On IE,
+            // which carries confidence) or a label-only name (appleRole /
+            // bleRole: "Google Fast Pair accessory"), which carries none and
+            // matched nothing -- calling that a hint oversold it.
+            if (!m.type) return m.confidence ? 'weak' : 'none';
             return categoryOf(m.type).key;
+        }
+        // A row's category. A label-only row ("Google: Android / Google
+        // device") has a rule but matched nothing; reading the category off
+        // its rule text filed it under 'other', orange with a warning icon.
+        function catOf(m) {
+            return bandOf(m) === 'none' ? categoryOf('') : categoryOf(m.type || m.rule);
         }
 
         // Radio filter. When you are looking for one kind of thing, the other
@@ -733,12 +804,14 @@
             }
 
             function rowHtml(m, extraBadges, extraHtml, noActions, forceHunted) {
-                const cat = categoryOf(m.type || m.rule);
+                const cat = catOf(m);
                 // Name it by whatever a person would recognise: its own name,
                 // then the network it is announcing, then the rule it tripped,
                 // then its address. Never invent a word for it.
                 const maker = cat.key === 'drone' ? droneMaker(m) : '';
-                const title = (maker && maker + ' drone') || m.name || m.ssid || m.rule || cat.label || m.mac;
+                const g = brandOf(m);
+                const guess = guessTitle(g);
+                const title = (maker && maker + ' drone') || m.name || m.ssid || m.rule || guess || cat.label || m.mac;
                 // With the filter off the list contains devices that matched
                 // nothing. Saying so is the difference between a tool and a
                 // scaremonger: a listed device is not a detection.
@@ -753,7 +826,10 @@
                 const isHunted = !!huntMac && (String(m.mac).toUpperCase() === huntMac.toUpperCase() || !!forceHunted);
                 // A random address with no company ID has no maker to name;
                 // say so rather than leave the blank unexplained.
-                const vendor = vendorOf(m) || (publicMac(m) || m.cid != null ? '' : 'random MAC');
+                // The brand line says who made it; when it is already the
+                // title it would only repeat itself.
+                const vendor = g ? (g.chip ? g.brand + ' chip' : title === guess ? '' : g.brand)
+                                 : (publicMac(m) || m.cid != null ? '' : 'random MAC');
                 const expandable = cat.key === 'drone' && !/\s/.test(String(m.mac));
                 const agoS = Math.floor((Date.now() - m.ts) / 1000);
                 const faded = agoS * 1000 >= LIVE_FADE_MS && !isHunted;
@@ -783,7 +859,7 @@
                             [ esc(vendor),
                               (title === m.mac ? '' : '<span class="mono">' + esc(m.mac) + '</span>'),
                               (m.ssid && m.ssid !== title ? esc(m.ssid) : ''),
-                              (m.rule ? esc(m.rule) : ''),
+                              (m.rule && m.rule !== title ? esc(m.rule) : ''),
                               (unmatched ? '' : 'conf\u00a0' + (m.confidence | 0))
                             ].filter(Boolean).join(' \u00b7 ') + '</div>' +
                     '</div>' +
@@ -833,7 +909,7 @@
                         '<div class="scope-actions"><button class="scope-act" data-act="expand" data-group="' + esc(u.key) + '">' +
                         (open ? '\u25be Hide radios' : '\u25b8 Show ' + u.members.length + ' radios') + '</button></div>') +
                     (open ? '<div class="group-members">' + u.members.map(function (m) {
-                        const mc = categoryOf(m.type || m.rule);
+                        const mc = catOf(m);
                         return '<div class="group-member">' + bandChip(m.ch) +
                             ' <span class="mono">' + esc(m.mac) + '</span> \u00b7 <span class="mono">' + esc(m.rssi) + ' dBm</span>' +
                             actionRow(m, mc) + '</div>';
@@ -986,8 +1062,8 @@
                 return;
             }
 
-            const cat = categoryOf(m.type || m.rule);
-            if (nameEl) nameEl.textContent = m.name || m.rule || cat.label;
+            const cat = catOf(m);
+            if (nameEl) nameEl.textContent = m.name || m.rule || guessTitle(brandOf(m)) || cat.label;
             if (rssiEl) rssiEl.textContent = m.rssi;
 
             pushHuntSample(m.rssi, m.ts);
@@ -1216,7 +1292,7 @@
 
             let ringed = 0;
             for (const m of rows) {
-                const cat = categoryOf(m.type || m.rule);
+                const cat = catOf(m);
                 const color = cssColor(cat.color);   // Leaflet writes SVG attributes: no var()
                 const title = esc(m.name || m.rule || cat.label);
                 const label = ico(cat.icon) + ' ' + title;
@@ -2049,7 +2125,7 @@
             // leave the live list half-populated.
             const textEl = document.getElementById('consent-text');
             if (!textEl) return;
-            const cat = categoryOf(m.type || m.rule);
+            const cat = catOf(m);
             textEl.innerHTML =
                 'Record <strong style="color:' + cat.color + '">' + esc(cat.label) + '</strong> here?<br>' +
                 '<span style="color:var(--text-muted); font-size:0.85rem">' + esc(m.name || m.rule || m.mac) + '</span>';
@@ -2092,7 +2168,7 @@
             savePinMute();
             document.getElementById('consent-modal').classList.remove('active');
             consentQueue = consentQueue.filter(
-                m => categoryOf(m.type || m.rule).key !== key);
+                m => catOf(m).key !== key);
             showToast('Not asking about ' + (PIN_MUTE_NAME[key] || 'these')
                       + ' — undo in Settings › Recording', 'bell-off');
             if (consentQueue.length) setTimeout(showNextConsent, 300);
@@ -2170,7 +2246,7 @@
         }
 
         async function writePin(m, fix, auto) {
-            const cat = categoryOf(m.type || m.rule);
+            const cat = catOf(m);
             pinsCache.push({
                 mac: m.mac, category: cat.label, rule: m.rule || '', name: m.name || '',
                 rssi: m.rssi, lat: fix.lat, lng: fix.lng, acc: fix.acc, ts: Date.now()
@@ -5145,6 +5221,9 @@
                     { mac: 'CC:00:04', type: 'Tracker', matched_rule: 'Apple Find My Tracker',
                       rssi: -80, protocol: 'BLE', confidence: 80, tier: 'Confirmed' }
                 ]);
+                results.labelIsNotAHint = bandOf({ rule: 'Google Fast Pair accessory', confidence: 0 }) === 'none' &&
+                    catOf({ rule: 'Google: Android / Google device' }).key === 'none' &&
+                    catOf({ rule: 'Lite-On Vendor IE (weak)', confidence: 30 }).key !== 'none';
                 results.weakIsNotACamera = bandOf(liveMatches['CC:00:02']) === 'weak' &&
                                            liveRows('alpr').length === 1;
                 results.ssidCarried = liveMatches['CC:00:02'].ssid === 'NestCam_5G';
@@ -5242,6 +5321,17 @@
                     vendorOf({ mac: '00:1A:11:00:00:01', protocol: 'BLE', pub: true, cid: 1 }) === 'Google' &&
                     // ...but a "Private" registration names nobody, so fall back.
                     vendorOf({ mac: '98:17:3C:00:00:01', protocol: 'BLE', pub: true, cid: 76 }) === 'Apple';
+                // Brands: a registry name shortens to the maker, a chip maker
+                // titles the row with what the gadget probably is, and a
+                // prefix only matches on a word boundary.
+                btNames = new Map([[1494, 'Zhuhai Jieli technology'], [117, 'Samsung Electronics'], [9, 'Intelligent Thing'], [158, 'Bose']]);
+                const bf = cid => brandOf({ mac: 'F2:00:00:00:00:01', protocol: 'BLE', cid });
+                results.brandLookup =
+                    bf(117).brand === 'Samsung' && guessTitle(bf(117)) === 'Samsung device' &&
+                    bf(1494).chip && guessTitle(bf(1494)) === 'Cheap earbuds, watch or speaker' &&
+                    bf(9).brand === 'Intelligent Thing' &&
+                    guessTitle(bf(158)) === 'Bose headphones or speaker' &&
+                    bf(9999) === null && guessTitle(null) === '';
                 ouiNames = savedOui; btNames = savedBt;
 
                 results.themeNote =

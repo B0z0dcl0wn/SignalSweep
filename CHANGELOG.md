@@ -4,6 +4,41 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Added -- unknown devices get a name, not just a MAC
+
+With the filter off, most of the list matched nothing, and a nameless device
+showed only its address with the raw registry text under it
+("SAMSUNG ELECTRO MECHANICS"). A wall of MACs tells you nothing; "Google"
+tells you it is your Pixel.
+
+- **Brands.** About 70 registry names map to what people call the maker
+  (Samsung, Google, Bose, Garmin...), with the kind of thing where a maker
+  sells basically one kind: "Sonos speaker", "Oura smart ring", "Tesla car or
+  phone key". A nameless row is titled "Google device" instead of its MAC.
+- **Chip makers.** Jieli, Bluetrum, Airoha, Bestechnic, Actions, Beken,
+  Telink, Espressif and the Wi-Fi module houses (Foxconn, AzureWave, Murata,
+  Lite-On, USI) sell radios to no-name brands, so the row says what the gadget
+  probably is ("Cheap earbuds, watch or speaker") and keeps "Jieli chip" under
+  it. Idea from AirSnifMonitor.
+- **Firmware labels** for non-Apple adverts, the same contract as the Apple
+  ones: label only, no confidence, never beeps or lists on its own. Google
+  Fast Pair accessories, Eddystone beacons, BTHome sensors, Xiaomi MiBeacon,
+  pvvx/ATC thermometers, Microsoft Swift Pair and Windows PCs, and devices
+  advertising a Samsung, Sonos, Amazon, SwitchBot, Philips Hue, Bose, Sony,
+  Logitech, LG, HP or Estimote service UUID. Every UUID was checked against
+  the Bluetooth SIG member list; a label names the registrant and adds a use
+  only where a public spec defines one.
+- **Fixed:** a label-only row (every Apple label, too) was tagged "weak hint".
+  It matched nothing, so it now says "no match"; the Lite-On IE, which carries
+  confidence, is still the only weak hint. Those rows also took their colour
+  from the rule text, so "Google: Android / Google device" drew orange with a
+  warning icon; `catOf()` now gives every unmatched row the grey no-match
+  look, and the label is no longer printed twice. Checked on the phone with
+  the filter off: Sonos, Windows PC, Telink chip and Google rows all grey.
+- `selftest.js` fails if a brand prefix matches no shipped registry name (a
+  prefix must end on a word boundary: "intel" is not "Intelligent ...") or if
+  `bleRole()` leaves the no-rule-matched branch.
+
 ### Changed -- Signatures v24: PRO-VISION lists, a second Axon tag, PorkChop BACON
 
 From the 2026-11-23 upstream scan. Boards pick the new rules up on their next
