@@ -67,9 +67,16 @@ turns into something useful. Verify with your own eyes before you submit.
   one a module maker) and three of our own mislabelled "Sierra Wireless" prefixes.
 - **[RF Sentinel](https://github.com/CIS-C0/RFSentinel)** (GPL-3.0) by CIS-C0 — the TASER
   company-ID squatter check (IDO / VeryFit smartwatches), ported into `firmware/src/axon_checks.h`
-  with its unit-test case, and the Raven `3101`/`3102` UUIDs.
+  with its unit-test case, the Raven `3101`/`3102` UUIDs, and the French drone beacon layout.
 - **[OVERWATCH](https://github.com/KaraZajac/OVERWATCH)** (BSD-3-Clause) by Kara Zajac — the Fusus
-  blocks, the Axon `fe6c` Signal trigger layout, and AxonCadabra's replayed serial. Values only.
+  blocks, the Axon `fe6c` Signal trigger layout, AxonCadabra's replayed serial, and the attack-gear
+  default APs, BSSIDs and nyanBOX UUID in v25. Values only.
+- **[AirGuard](https://github.com/seemoo-lab/AirGuard)** (Apache-2.0) by SEEMOO, TU Darmstadt — the
+  Find My status-byte layout that tells an AirTag from AirPods or an iPhone. Facts only.
+- **[Fieldwatch](https://github.com/OffGridPete/Fieldwatch)** (MIT) and
+  **[Kismet](https://github.com/kismetwireless/kismet)** — the DJI DroneID vendor IE `26:37:12`. Values only.
+- **[Porkchop-cyd-Port](https://github.com/Xombi3/Porkchop-cyd-Port)** — the GhostLink / WarDriveGo
+  bridge UUID, read from its source. Value only.
 - **[le_detector_c5](https://github.com/datafx/le_detector_c5)** (GPL-3.0) by datafx — the road test
   that showed PRO-VISION `9c:83:bf` firing on school buses. Values only.
 - **[All Cameras Are Beacons](https://github.com/soyboitech/beacons)** (Apache-2.0) by Spencer Sams —

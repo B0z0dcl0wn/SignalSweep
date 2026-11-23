@@ -4,6 +4,51 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Changed -- Signatures v25: DJI and French drone beacons, Find My by type, more attack gear
+
+From the 2026-11-09 and 2026-11-16 upstream scans. The first three were
+promised for v24 in the v23 entry and slipped; they are here now.
+
+- **DJI DroneID.** Older DJI aircraft put a DJI vendor IE (`26:37:12`) in
+  their Wi-Fi beacons and may send no Remote ID at all. It proves DJI
+  hardware, not that it is flying, so it lists at 60 under Drone and never
+  beeps alone. The payload's position is not decoded. Facts from Fieldwatch
+  (catalog 99) and Kismet's DroneID parser.
+- **French drone ID beacon.** France's own drone broadcast, vendor IE
+  `6A:5C:35` type `0x01`. Only a drone sends it, so it scores like Remote ID.
+  Detected, not decoded. Facts from RF Sentinel.
+- **Find My named by type.** The status byte after `0x12 0x19` says who is
+  sending: AirTag, another maker's Find My tag, AirPods, or an iPhone / iPad /
+  Mac away from its owner. Every separated Find My advert used to be "Apple
+  Find My Tracker" at tracker weight. Now the two tags stay trackers (80) and
+  AirPods and Apple devices are named and listed at 60, never beeping. The
+  bit layout is AirGuard's (bits 4-5). ouispy-detector masks `0x18` and puts
+  third-party tags at `0x08`; AirGuard's study says `0x20`, and only AirTag
+  (`0x10`) is the same in both, so we follow AirGuard. The tag-flood detector
+  still counts every separated Find My advert, as before.
+- **Attack gear** (Attack toggle only): Flipper Zero `3080` (no case colour);
+  the default APs of the Flipper Wi-Fi dev board (`blackmagic`), O.MG cable,
+  USB Nugget, WiFi Duck, Evil Crow RF and NEMO's evil portal; the shipped
+  BSSIDs of eaphammer and WiFi-Pumpkin 3 (whole address, they are spoofed);
+  nyanBOX's service UUID, all at 70. The GhostLink / WarDriveGo phone bridge
+  UUID (on by default in the PorkChop CYD port) and GhostESP's unnumbered Rick
+  Roll lyrics list at 60: a bridge is not an attack, and one lyric is also a
+  joke home-network name. Values from OVERWATCH, each traced there to the
+  tool's own source.
+- **Snap** `98:a4:0e` lists at 60 as "Snap device". The address proves Snap
+  made it, not which product; the `fe45` and `0x03C2` rules still beep.
+- Not taken: wifiphisher's `00:00:00` default prefix (Xerox's registered
+  block; matching it safely needs an all-zero exclusion), P4wnP1's emoji SSID,
+  and i-PRO `d4:2d:c5` (registry only, the same reason as the v23 decline).
+- **Bench-proven over the air** on the S3 from the Kali Pi's raw HCI adverts:
+  AirTag (80), third-party tag (80), AirPods (60), Apple device (60), and the
+  2-byte status ping not listed. And from the Pi's Alfa (scapy beacons on
+  channel 6): DJI DroneID listed at 60, the French beacon at 90 (one alert,
+  the board's counter went 0 to 1), and a French look-alike with type `0x02`
+  ignored.
+- `selftest.js` pins the two beacon checks, the status-byte split and Snap's
+  registrant.
+
 ### Added -- unknown devices get a name, not just a MAC
 
 With the filter off, most of the list matched nothing, and a nameless device
@@ -147,7 +192,7 @@ can come back with a sighting.
 Also not in v23: the Axon Fleet `axon<n>-5g` SSID and Meta `0x058E` +
 `META_RB_GLASS` (both wait for a field capture); Cellebrite, GrayKey and
 IMSI-catcher makers (skipped); the DJI DroneID IE `26:37:12`, the French
-`6A:5C:35` beacon and the GhostLink BLE UUID (planned for v24).
+`6A:5C:35` beacon and the GhostLink BLE UUID (planned for v24, shipped in v25).
 
 **Bench-proven over the air** on the C5, from a Kali Pi sending crafted raw
 HCI adverts and injected beacons, each case on its own address so a ratcheted

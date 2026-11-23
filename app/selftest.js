@@ -852,6 +852,13 @@ if (!/payloadHasTag\(p, len, "METROPOLISDEVICE", 16\)/.test(wwSrc)) sigFail.push
 // v24: PorkChop BACON = vendor IE 50:52:4B AND type 0x01, on beacons, Attack only.
 if (!/attackDetect && fsubtype == 8 && id == 221 && elen >= 4 &&\s*body\[b\+2\] == 0x50 && body\[b\+3\] == 0x52 && body\[b\+4\] == 0x4B &&\s*body\[b\+5\] == 0x01/.test(wwSrc))
     sigFail.push('PorkChop BACON check must need Attack, a beacon, OUI 50:52:4B and type 0x01');
+// v25: DJI DroneID (26:37:12) and French drone (6A:5C:35 type 0x01) beacons.
+if (!/fsubtype == 8 && id == 221 && elen >= 3 &&\s*body\[b\+2\] == 0x26 && body\[b\+3\] == 0x37 && body\[b\+4\] == 0x12/.test(wwSrc) ||
+    !/fsubtype == 8 && id == 221 && elen >= 4 &&\s*body\[b\+2\] == 0x6A && body\[b\+3\] == 0x5C && body\[b\+4\] == 0x35 &&\s*body\[b\+5\] == 0x01/.test(wwSrc))
+    sigFail.push('DJI DroneID or French drone beacon check missing');
+// v25: Find My status byte bits 4-5 (AirGuard). Only AirTag (1) and other tags (2) are trackers.
+if (!/\(static_cast<uint8_t>\(mfg\[4\]\) >> 4\) & 3/.test(wwSrc) || !/\(fm == 1 \|\| fm == 2\) \? W_TRACKER : W_FINDMY_DEVICE/.test(wwSrc))
+    sigFail.push('Find My status byte no longer separates tags from AirPods / Apple devices');
 // A drone alternating serial and CAA registration must keep the serial.
 if (!/basicIdRank\(ty\) < basicIdRank\(t\.uasIdType\)/.test(wwSrc) || !/ODID_IDTYPE_SERIAL_NUMBER\) return 3/.test(wwSrc))
     sigFail.push('applyDroneData() no longer prefers the serial Basic ID');
@@ -916,7 +923,7 @@ const OUI_OWNER = {
     'Codan radio': 'Codan', 'Codan (Daniels) radio': 'Daniels Electronics',
     'Skydio drone': 'Skydio', 'Teal drone': 'Teal', 'AeroVironment drone': 'AeroVironment',
     'Shield AI drone': 'Shield AI',
-    'Luxottica Tristar device': 'Luxottica Tristar'
+    'Luxottica Tristar device': 'Luxottica Tristar', 'Snap device': 'Snap'
 };
 const defaults = (wwSrc.match(/auto addRule = [\s\S]*?serializeJsonPretty\(doc, file\)/) || [''])[0];
 let ouiRules = 0;
@@ -956,8 +963,8 @@ for (const call of defaults.match(/addRule\([^;]*\);/g) || []) {
     const hasLux = /0x0D53|0x01AB/i.test(call);
     if (hasFd5f !== hasLux) regFail.push(`glasses rule states fd5f/0x0D53 without the other: ${call.replace(/\s+/g, ' ')}`);
 }
-if (!/#define SIG_SCHEMA_VERSION 24\b/.test(wwSrc)) regFail.push('SIG_SCHEMA_VERSION not bumped to 24');
-if (!/\/\/   v24:/.test(wwSrc)) regFail.push('no v24 line in the SIG_SCHEMA_VERSION comment block');
+if (!/#define SIG_SCHEMA_VERSION 25\b/.test(wwSrc)) regFail.push('SIG_SCHEMA_VERSION not bumped to 25');
+if (!/\/\/   v25:/.test(wwSrc)) regFail.push('no v25 line in the SIG_SCHEMA_VERSION comment block');
 // v20: BLE name substrings anyone can type never beep alone as Flock, and
 // "fs_" (it matches "Chiefs_...") is gone.
 for (const m of wwSrc.matchAll(/addRule\("Flock BLE Name"[^;]*;/g))

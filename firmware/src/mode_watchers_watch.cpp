@@ -173,7 +173,18 @@ static const char *SIG_FILE_PATH = "/data/signatures.json";
 //        second advert tag METROPOLISDEVICE joins BWCDEVICE in bleAxonBwc
 //        (two field captures, soyboitech/beacons). PorkChop BACON beacons
 //        (vendor IE 50:52:4B type 0x01) are a built-in Attack detector.
-#define SIG_SCHEMA_VERSION 24
+//   v25: upstream scans 2026-11-09 and 11-16, including the three v24 had
+//        promised. Built-in beacon detectors, neither decoded: the DJI
+//        DroneID vendor IE 26:37:12 (60, Drone; Fieldwatch, Kismet) and the
+//        French drone beacon IE 6A:5C:35 type 0x01 (W_DRONE; RF Sentinel).
+//        Find My adverts are named from the status byte (AirGuard): AirTag
+//        and third-party tags stay trackers, AirPods and other Apple devices
+//        list at 60. Attack gear: Flipper 3080, the GhostLink bridge UUID
+//        (60), nyanBOX's UUID, eaphammer / WiFi-Pumpkin 3 default BSSIDs,
+//        the blackmagic / O.MG / Nugget AP / wifiduck / Evil Crow RF v2 /
+//        NEMO Free WiFi APs (OVERWATCH, BSD-3, values only), GhostESP's
+//        unnumbered Rick Roll lines (60). Snap 98:a4:0e lists at 60.
+#define SIG_SCHEMA_VERSION 25
 
 static SemaphoreHandle_t watchersMutex = NULL;
 static bool watchersRunning = false;
@@ -629,6 +640,9 @@ static void ensureSignaturesFileExists() {
             // Snap's and Vuzix's only hardware is glasses.
             addRule("Snap Spectacles", "Smart glasses", "", "", "", "fe45", 70);
             addRule("Vuzix smart glasses", "Smart glasses", "", "0x060C", "", "", 70);
+            // v25: Snap's MA-L. The address proves Snap made it, not which
+            // product, so it lists (the fe45 / 0x03C2 rules above beep).
+            addRule("Snap device", "Smart glasses", "98:a4:0e", "", "", "", 60);
             // v22: the factory behind Ray-Ban / Oakley Meta. The address proves
             // the maker, not the product, so it lists and the name says so.
             addRule("Luxottica Tristar device", "Smart glasses", "80:aa:1c", "", "", "", 60);
@@ -648,6 +662,9 @@ static void ensureSignaturesFileExists() {
             addRule("Flipper Zero (black)", HACKING_GEAR_CATEGORY, "", "", "", "3081", 80);
             addRule("Flipper Zero (white)", HACKING_GEAR_CATEGORY, "", "", "", "3082", 80);
             addRule("Flipper Zero (transparent)", HACKING_GEAR_CATEGORY, "", "", "", "3083", 80);
+            // v25: 0x3080 with no colour bits: dev units and some firmware
+            // builds (ouispy-detector).
+            addRule("Flipper Zero", HACKING_GEAR_CATEGORY, "", "", "", "3080", 80);
             // Flipper Devices' own company ID and MAC block were removed at
             // v18: they are what the BUSY Bar (Flipper's desk sign) sends, and
             // three real Zeros on SquachWatch-CYD's bench sent neither. A Zero
@@ -694,6 +711,29 @@ static void ensureSignaturesFileExists() {
             addRule("Bruce BLE attack mode", HACKING_GEAR_CATEGORY, "", "", "bruce-pn532-ble", "", 70);
             addRule("GhostESP evil portal AP", HACKING_GEAR_CATEGORY, "", "", "", "", 70, "EvilPortal");
             addRule("GhostESP evil portal AP", HACKING_GEAR_CATEGORY, "", "", "", "", 70, "EvilAP");
+            // v25, from OVERWATCH's HackerTargets.kt (BSD-3, values only),
+            // each read from the tool's own source or docs. Default APs:
+            addRule("Flipper Wi-Fi dev board AP", HACKING_GEAR_CATEGORY, "", "", "", "", 70, "blackmagic");
+            addRule("O.MG cable AP", HACKING_GEAR_CATEGORY, "", "", "", "", 70, "O.MG");
+            addRule("USB Nugget AP", HACKING_GEAR_CATEGORY, "", "", "", "", 70, "Nugget AP");
+            addRule("WiFi Duck AP", HACKING_GEAR_CATEGORY, "", "", "", "", 70, "wifiduck");
+            addRule("Evil Crow RF AP", HACKING_GEAR_CATEGORY, "", "", "", "", 70, "Evil Crow RF v2");
+            addRule("NEMO evil portal AP", HACKING_GEAR_CATEGORY, "", "", "", "", 70, "NEMO Free WiFi");
+            // Rogue-AP frameworks' shipped BSSIDs (eaphammer hostapd.ini,
+            // wifipumpkin3 config.ini). Spoofed on purpose, so the IEEE owner
+            // (CIMSYS, D-Link) is meaningless; the whole address must match.
+            addRule("eaphammer rogue AP (default BSSID)", HACKING_GEAR_CATEGORY, "00:11:22:33:44:00", "", "", "", 70);
+            addRule("WiFi-Pumpkin 3 rogue AP (default BSSID)", HACKING_GEAR_CATEGORY, "bc:f6:85:03:36:5b", "", "", "", 70);
+            // nyanBOX announces itself with "nyanBOX-service!" as a UUID.
+            addRule("nyanBOX", HACKING_GEAR_CATEGORY, "", "", "", "6e79616e-424f-582d-7365-727669636521", 70);
+            // GhostLink / WarDriveGo phone bridge ("GhostESPBridgeSv"), on by
+            // default in the PorkChop CYD port (piggyblues_bridge_protocol.h).
+            // It proves a wardrive bridge, not an attack: listed.
+            addRule("WarDriveGo BLE bridge (PorkChop CYD / WardriveESP)", HACKING_GEAR_CATEGORY, "", "", "",
+                    "47686f73-7445-5350-4272-696467655376", 60);
+            // GhostESP's Rick Roll list has no "01 " numbering. One lyric is
+            // also a joke home-network name, so these list without beeping.
+            addRule("Rick Roll lyric SSID (GhostESP beacon spam)", HACKING_GEAR_CATEGORY, "", "", "", "", 60, "Never gonna ");
 
             // Trackers (planted-on-you category). Keyed on service UUID, which
             // the matcher already handles. AirTag is matched in code (its Find
@@ -795,6 +835,8 @@ static void ensureSignaturesFileExists() {
 // editable, so it is only corroboration. Strong: it identifies on its own.
 #define W_PWNGRID    90
 #define W_BACON      70   // PorkChop BACON vendor IE (v24), Attack only
+#define W_DJI_DRONEID 60  // DJI DroneID vendor IE (v25): proves a DJI stack, not a flight
+#define W_FINDMY_DEVICE 60 // Find My from an iPhone/AirPods away from its owner (v25)
 #define W_ATTACK 90   // attack-detector rows: above CONF_ALERT_MIN, generic beep
 // A single weak, non-Flock-specific signal (a broad OUI prefix, or the Lite-On
 // vendor IE that rides countless consumer WiFi chips) is noise on its own. Only
@@ -1275,6 +1317,20 @@ static bool bleIsAirtag(SWEEP_ADV* dev) {
                              && static_cast<uint8_t>(mfg[3]) == 0x19;
 }
 
+// v25: the status byte after 0x19 says who sent the Find My advert. Bits 4-5,
+// from seemoo-lab/AirGuard DeviceManager.kt (Apache-2.0, facts only): 0 an
+// Apple device (iPhone, iPad, Mac), 1 AirTag, 2 a third-party Find My tag,
+// 3 AirPods. Only the two tags are trackers; the rest list at 60.
+// ouispy-detector masks 0x18 and puts the third-party tag at 0x08; AirGuard's
+// study says 0x20. AirTag is 0x10 in both.
+static const char* const FINDMY_NAMES[4] = {
+    "Apple device away from its owner", "AirTag",
+    "Find My tag (non-Apple)", "AirPods away from their owner" };
+static uint8_t findMyKind(SWEEP_ADV* dev) {
+    std::string mfg = dev->getManufacturerData();
+    return mfg.length() > 4 ? (static_cast<uint8_t>(mfg[4]) >> 4) & 3 : 1;
+}
+
 // Flock's solar battery pack, codename "Penguin" (Nordic; the camera's own app
 // calls it ExternalBattery). A Falcon itself never advertises BLE and keeps its
 // Wi-Fi off on LTE, so this battery is the only radio on the pole -- and the
@@ -1712,10 +1768,12 @@ class WatchersScanCallbacks : public NimBLEAdvertisedDeviceCallbacks {
                     matchedCategory = "Drone";
                 }
             } else if (bleIsAirtag(advertisedDevice)) {
-                confidence += W_TRACKER;
-                if (W_TRACKER > bestWeight) {
-                    bestWeight = W_TRACKER;
-                    matchedRule = "Apple Find My Tracker";
+                uint8_t fm = findMyKind(advertisedDevice);
+                int fmW = (fm == 1 || fm == 2) ? W_TRACKER : W_FINDMY_DEVICE;
+                confidence += fmW;
+                if (fmW > bestWeight) {
+                    bestWeight = fmW;
+                    matchedRule = FINDMY_NAMES[fm];
                     matchedCategory = "Tracker";
                 }
             } else if (trackerNet.length() > 0) {
@@ -2279,6 +2337,35 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
                         bestWeight = W_BACON;
                         matchedRule = "PorkChop BACON beacon";
                         matchedCategory = HACKING_GEAR_CATEGORY;
+                    }
+                }
+
+                // v25: DJI DroneID, vendor IE 26:37:12 in an older DJI
+                // aircraft's beacons (Fieldwatch catalog 99; Kismet's
+                // dot11_ie_221_dji_droneid.h). It proves a DJI flight stack,
+                // so it lists; the payload's position is not decoded.
+                if (fsubtype == 8 && id == 221 && elen >= 3 &&
+                    body[b+2] == 0x26 && body[b+3] == 0x37 && body[b+4] == 0x12) {
+                    wifiConfidence += W_DJI_DRONEID;
+                    if (W_DJI_DRONEID > bestWeight) {
+                        bestWeight = W_DJI_DRONEID;
+                        matchedRule = "DJI DroneID beacon";
+                        matchedCategory = "Drone";
+                    }
+                }
+                // v25: France's "signalement electronique" drone beacon
+                // (decree of 27 Dec 2019): vendor IE 6A:5C:35 type 0x01 (RF
+                // Sentinel RemoteId.kt; khancyr/droneID_FR). Only a drone sends
+                // it, so it scores like Remote ID. Presence only: the TLVs
+                // (ID, position) are not decoded.
+                if (fsubtype == 8 && id == 221 && elen >= 4 &&
+                    body[b+2] == 0x6A && body[b+3] == 0x5C && body[b+4] == 0x35 &&
+                    body[b+5] == 0x01) {
+                    wifiConfidence += W_DRONE;
+                    if (W_DRONE > bestWeight) {
+                        bestWeight = W_DRONE;
+                        matchedRule = "French drone ID beacon";
+                        matchedCategory = "Drone";
                     }
                 }
 
