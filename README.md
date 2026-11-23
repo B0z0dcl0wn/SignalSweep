@@ -35,9 +35,9 @@
 | **What** | Assembled, flashed and tested, in a 3D-printed case. Plug in USB and go. | Every part plus the printed case. You put it together. | Bring a bare XIAO ESP32-C5. Flash it from your browser. |
 | **Inside** | XIAO ESP32-C5, dual-band external antenna, buzzer, LED bar, microSD reader | Same parts, loose | Just the board. Add parts as you go |
 | **Price** | $75 | $40 | About $13 for the board |
-| **Status** | **[Reserve one](https://signalsweep.net)** | **[Reserve one](https://signalsweep.net)** | **[Available now](#build-your-own)** |
+| **Status** | **[On sale now](https://signalsweep.net)** | Sold out, **[get on the list](https://signalsweep.net/#reserve)** | **[Available now](#build-your-own)** |
 
-Kits and built units are at **[signalsweep.net](https://signalsweep.net)**: join the waitlist, no money down, US only for now. First batch is small.
+Built units are on sale now at **[signalsweep.net](https://signalsweep.net)**. Kits are sold out; join the list for the next batch. US only for now.
 
 ## The app
 
