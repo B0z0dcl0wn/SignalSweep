@@ -30,7 +30,11 @@ tells you it is your Pixel.
   only where a public spec defines one.
 - **Fixed:** a label-only row (every Apple label, too) was tagged "weak hint".
   It matched nothing, so it now says "no match"; the Lite-On IE, which carries
-  confidence, is still the only weak hint.
+  confidence, is still the only weak hint. Those rows also took their colour
+  from the rule text, so "Google: Android / Google device" drew orange with a
+  warning icon; `catOf()` now gives every unmatched row the grey no-match
+  look, and the label is no longer printed twice. Checked on the phone with
+  the filter off: Sonos, Windows PC, Telink chip and Google rows all grey.
 - `selftest.js` fails if a brand prefix matches no shipped registry name (a
   prefix must end on a word boundary: "intel" is not "Intelligent ...") or if
   `bleRole()` leaves the no-rule-matched branch.

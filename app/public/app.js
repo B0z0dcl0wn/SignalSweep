@@ -176,7 +176,7 @@
         const BRANDS = [
             ['apple', 'Apple'], ['samsung', 'Samsung'], ['google', 'Google'], ['microsoft', 'Microsoft'],
             ['sony', 'Sony'], ['lg electronics', 'LG'], ['motorola mobility', 'Motorola'], ['lenovo', 'Lenovo'],
-            ['huawei', 'Huawei'], ['honor', 'Honor'], ['oneplus', 'OnePlus'], ['guangdong oppo', 'Oppo'],
+            ['oculus vr', 'Meta', 'VR headset'], ['huawei', 'Huawei'], ['honor', 'Honor'], ['oneplus', 'OnePlus'], ['guangdong oppo', 'Oppo'],
             ['vivo mobile', 'vivo'], ['realme', 'realme'], ['nothing technology', 'Nothing'],
             ['xiaomi', 'Xiaomi'], ['beijing xiaomi', 'Xiaomi'], ['amazon', 'Amazon'], ['nintendo', 'Nintendo'],
             ['intel', 'Intel'], ['dell', 'Dell'], ['hewlett packard', 'HP'], ['logitech', 'Logitech'],
@@ -443,6 +443,12 @@
             // matched nothing -- calling that a hint oversold it.
             if (!m.type) return m.confidence ? 'weak' : 'none';
             return categoryOf(m.type).key;
+        }
+        // A row's category. A label-only row ("Google: Android / Google
+        // device") has a rule but matched nothing; reading the category off
+        // its rule text filed it under 'other', orange with a warning icon.
+        function catOf(m) {
+            return bandOf(m) === 'none' ? categoryOf('') : categoryOf(m.type || m.rule);
         }
 
         // Radio filter. When you are looking for one kind of thing, the other
@@ -798,7 +804,7 @@
             }
 
             function rowHtml(m, extraBadges, extraHtml, noActions, forceHunted) {
-                const cat = categoryOf(m.type || m.rule);
+                const cat = catOf(m);
                 // Name it by whatever a person would recognise: its own name,
                 // then the network it is announcing, then the rule it tripped,
                 // then its address. Never invent a word for it.
@@ -853,7 +859,7 @@
                             [ esc(vendor),
                               (title === m.mac ? '' : '<span class="mono">' + esc(m.mac) + '</span>'),
                               (m.ssid && m.ssid !== title ? esc(m.ssid) : ''),
-                              (m.rule ? esc(m.rule) : ''),
+                              (m.rule && m.rule !== title ? esc(m.rule) : ''),
                               (unmatched ? '' : 'conf\u00a0' + (m.confidence | 0))
                             ].filter(Boolean).join(' \u00b7 ') + '</div>' +
                     '</div>' +
@@ -903,7 +909,7 @@
                         '<div class="scope-actions"><button class="scope-act" data-act="expand" data-group="' + esc(u.key) + '">' +
                         (open ? '\u25be Hide radios' : '\u25b8 Show ' + u.members.length + ' radios') + '</button></div>') +
                     (open ? '<div class="group-members">' + u.members.map(function (m) {
-                        const mc = categoryOf(m.type || m.rule);
+                        const mc = catOf(m);
                         return '<div class="group-member">' + bandChip(m.ch) +
                             ' <span class="mono">' + esc(m.mac) + '</span> \u00b7 <span class="mono">' + esc(m.rssi) + ' dBm</span>' +
                             actionRow(m, mc) + '</div>';
@@ -1056,7 +1062,7 @@
                 return;
             }
 
-            const cat = categoryOf(m.type || m.rule);
+            const cat = catOf(m);
             if (nameEl) nameEl.textContent = m.name || m.rule || guessTitle(brandOf(m)) || cat.label;
             if (rssiEl) rssiEl.textContent = m.rssi;
 
@@ -1286,7 +1292,7 @@
 
             let ringed = 0;
             for (const m of rows) {
-                const cat = categoryOf(m.type || m.rule);
+                const cat = catOf(m);
                 const color = cssColor(cat.color);   // Leaflet writes SVG attributes: no var()
                 const title = esc(m.name || m.rule || cat.label);
                 const label = ico(cat.icon) + ' ' + title;
@@ -2119,7 +2125,7 @@
             // leave the live list half-populated.
             const textEl = document.getElementById('consent-text');
             if (!textEl) return;
-            const cat = categoryOf(m.type || m.rule);
+            const cat = catOf(m);
             textEl.innerHTML =
                 'Record <strong style="color:' + cat.color + '">' + esc(cat.label) + '</strong> here?<br>' +
                 '<span style="color:var(--text-muted); font-size:0.85rem">' + esc(m.name || m.rule || m.mac) + '</span>';
@@ -2162,7 +2168,7 @@
             savePinMute();
             document.getElementById('consent-modal').classList.remove('active');
             consentQueue = consentQueue.filter(
-                m => categoryOf(m.type || m.rule).key !== key);
+                m => catOf(m).key !== key);
             showToast('Not asking about ' + (PIN_MUTE_NAME[key] || 'these')
                       + ' — undo in Settings › Recording', 'bell-off');
             if (consentQueue.length) setTimeout(showNextConsent, 300);
@@ -2240,7 +2246,7 @@
         }
 
         async function writePin(m, fix, auto) {
-            const cat = categoryOf(m.type || m.rule);
+            const cat = catOf(m);
             pinsCache.push({
                 mac: m.mac, category: cat.label, rule: m.rule || '', name: m.name || '',
                 rssi: m.rssi, lat: fix.lat, lng: fix.lng, acc: fix.acc, ts: Date.now()
@@ -5215,7 +5221,9 @@
                     { mac: 'CC:00:04', type: 'Tracker', matched_rule: 'Apple Find My Tracker',
                       rssi: -80, protocol: 'BLE', confidence: 80, tier: 'Confirmed' }
                 ]);
-                results.labelIsNotAHint = bandOf({ rule: 'Google Fast Pair accessory', confidence: 0 }) === 'none';
+                results.labelIsNotAHint = bandOf({ rule: 'Google Fast Pair accessory', confidence: 0 }) === 'none' &&
+                    catOf({ rule: 'Google: Android / Google device' }).key === 'none' &&
+                    catOf({ rule: 'Lite-On Vendor IE (weak)', confidence: 30 }).key !== 'none';
                 results.weakIsNotACamera = bandOf(liveMatches['CC:00:02']) === 'weak' &&
                                            liveRows('alpr').length === 1;
                 results.ssidCarried = liveMatches['CC:00:02'].ssid === 'NestCam_5G';
