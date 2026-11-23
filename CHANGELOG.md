@@ -4,6 +4,8 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+## [0.13.0] — 2026-11-23 — Name that thing
+
 ### Changed -- Signatures v25: DJI and French drone beacons, Find My by type, more attack gear
 
 From the 2026-11-09 and 2026-11-16 upstream scans. The first three were
