@@ -37,6 +37,17 @@ static void test_deauth_broadcast_counts_double() {
     assert(c >= ATTACK_DEAUTH_THRESHOLD);
 }
 
+// Field false positive (cyd-scanner 4b4f8fb, 2026-11-22 drive): a NETGEAR AP
+// sent 21 unicast reason-7 deauths to one of its own clients. That must stay
+// under the threshold; lowering ATTACK_DEAUTH_THRESHOLD below 22 fails here,
+// which is the point -- port cyd-scanner's "router kicks one client" filter
+// first (host_core.cpp:371-410) before ever doing that.
+static void test_deauth_router_kicks_one_client() {
+    DeauthState st; memset(&st, 0, sizeof(st));
+    uint32_t c = 0;
+    for (int i = 0; i < 21; i++) c = deauthNote(&st, mac(1), 0, 1000 + i * 100);
+    assert(c == 21 && c < ATTACK_DEAUTH_THRESHOLD);
+}
 static void test_deauth_window_slides() {
     DeauthState st; memset(&st, 0, sizeof(st));
     for (int i = 0; i < ATTACK_DEAUTH_THRESHOLD; i++) deauthNote(&st, mac(1), 0, 1000 + i);
@@ -226,6 +237,7 @@ int main() {
     test_deauth_fires_at_threshold();
     test_deauth_slow_trickle_never_fires();
     test_deauth_broadcast_counts_double();
+    test_deauth_router_kicks_one_client();
     test_deauth_window_slides();
     test_deauth_wrap_safe();
     test_deauth_lru_keeps_active_burster();

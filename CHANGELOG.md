@@ -4,6 +4,31 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Changed -- Signatures v24: PRO-VISION lists, a second Axon tag, PorkChop BACON
+
+From the 2026-11-23 upstream scan. Boards pick the new rules up on their next
+boot.
+
+- **PRO-VISION `9c:83:bf` lists at 60 instead of beeping at 70**, renamed
+  "PRO-VISION device" and filed on the All tab only. PRO-VISION Video Systems
+  sells school-bus, transit and fleet cameras as well as body cams, and
+  datafx/le_detector_c5 turned the same prefix off after it fired on school
+  buses in road tests. That fails the rule that only police- or ALPR-only
+  makers beep on an address alone.
+- **Axon's second advert tag, `METROPOLISDEVICE`**, is searched alongside
+  `BWCDEVICE` (same layout, both byte orders, 80). Two field captures on Axon's
+  own `00:25:df` (All Cameras Are Beacons). The product is unknown, probably
+  in-car, so the rule says "Axon device", not "body cam". Like `BWCDEVICE` it
+  survives address rotation.
+- **PorkChop BACON beacons** are a built-in Attack detector: vendor IE
+  `50:52:4B` ("PRK", not a registered OUI) with type `0x01` on a beacon, 70,
+  Hacking gear. Off unless Attack is on.
+- **Deauth:** a new host test pins a field false positive from cyd-scanner (a
+  router sending 21 unicast deauths to one of its own clients). Our threshold
+  of 30 already ignores it. The test fails if the threshold ever drops below
+  22, so whoever lowers it has to port cyd-scanner's "router kicks one client"
+  filter first.
+
 ## [0.12.1] — 2026-11-14 — Quiet lot
 
 ### Changed -- the Flock wildcard probe lists, it no longer beeps alone
