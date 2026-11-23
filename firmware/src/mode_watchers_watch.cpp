@@ -1492,6 +1492,77 @@ static String appleRole(SWEEP_ADV* dev) {
     }
 }
 
+// Label-only names for non-Apple adverts, the same contract as appleRole():
+// no confidence, no category, never beeps or lists on its own; a real rule
+// always wins. Each UUID was checked against the Bluetooth SIG member list
+// (2026-11-23). The registrant is all a UUID proves, so a label names the
+// company and adds a use only where a public spec defines it (Fast Pair,
+// Eddystone, BTHome, MiBeacon, pvvx thermometers on Environmental Sensing).
+// ponytail: linear scan, ~20 entries, only for adverts no rule matched.
+static const struct { uint16_t uuid; const char* label; } BLE_UUID_ROLES[] = {
+    { 0xFE2C, "Google Fast Pair accessory" },        // earbuds/speakers, Fast Pair spec
+    { 0xFEAA, "Eddystone beacon" },                  // Google, Eddystone spec
+    { 0xFEF3, "Google: Android / Google device" },
+    { 0xFCF1, "Google: Android / Google device" },
+    { 0xFE9F, "Google: Android / Google device" },
+    { 0xFDF0, "Google: Android / Google device" },
+    { 0xFE50, "Google device" },
+    { 0xFE26, "Google device" },
+    { 0xFCD2, "BTHome sensor (Shelly BLU...)" },     // Allterco, BTHome spec
+    { 0xFE95, "Xiaomi device (MiBeacon)" },
+    { 0xFD2D, "Xiaomi device" },
+    { 0xFDAB, "Xiaomi device" },
+    { 0x181A, "Thermometer (pvvx/ATC firmware)" },   // SIG Environmental Sensing service data
+    { 0xFD69, "Samsung device" },
+    { 0xFE07, "Sonos speaker" },
+    { 0xFE03, "Amazon device (Echo/Fire?)" },
+    { 0xFE00, "Amazon device (Echo/Fire?)" },
+    { 0xFD3D, "SwitchBot device" },                  // Woan Technology
+    { 0xFE0F, "Philips Hue light" },                 // Signify
+    { 0xFEBE, "Bose audio device" },
+    { 0xFD82, "Sony device" },
+    { 0xFE61, "Logitech device" },
+    { 0xFEB9, "LG device" },
+    { 0xFE78, "HP device (printer?)" },
+    { 0xFE9A, "Estimote beacon" },
+};
+
+static const char* bleUuidRole(const NimBLEUUID& u) {
+    if (u.bitSize() != 16) return nullptr;
+    for (const auto& r : BLE_UUID_ROLES)
+        if (u == NimBLEUUID(r.uuid)) return r.label;
+    return nullptr;
+}
+
+static const char* bleRole(SWEEP_ADV* dev) {
+    if (dev->haveManufacturerData()) {
+        std::string mfg = dev->getManufacturerData();
+        uint16_t company = mfg.length() >= 2
+            ? (uint16_t)(static_cast<uint8_t>(mfg[0]) | (static_cast<uint8_t>(mfg[1]) << 8)) : 0;
+        // Microsoft beacons (Swift Pair docs; MS-CDP 2.2.2.2.1): byte 2 is the
+        // beacon / scenario type, and a CDP beacon's next byte carries the
+        // device type in its low 5 bits.
+        if (company == 0x0006 && mfg.length() >= 3) {
+            uint8_t kind = static_cast<uint8_t>(mfg[2]);
+            if (kind == 0x03) return "Microsoft Swift Pair accessory";
+            if (kind == 0x01 && mfg.length() >= 4) {
+                switch (static_cast<uint8_t>(mfg[3]) & 0x1F) {
+                    case 1:  return "Microsoft: Xbox";
+                    case 9: case 15: case 16: return "Microsoft: Windows PC";
+                    default: return "Microsoft: Connected Devices beacon";
+                }
+            }
+        }
+    }
+    size_t sd = dev->getServiceDataCount();
+    for (size_t i = 0; i < sd; i++)
+        if (const char* r = bleUuidRole(dev->getServiceDataUUID(i))) return r;
+    size_t n = dev->haveServiceUUID() ? dev->getServiceUUIDCount() : 0;
+    for (size_t i = 0; i < n; i++)
+        if (const char* r = bleUuidRole(dev->getServiceUUID(i))) return r;
+    return nullptr;
+}
+
 // Bluetooth SIG company ID from the manufacturer data, or -1 if this advert
 // carries none. The app names the vendor from it -- the one vendor hint that
 // survives a randomized address, which is most of BLE.
@@ -1694,6 +1765,10 @@ class WatchersScanCallbacks : public NimBLEAdvertisedDeviceCallbacks {
                 // not listed while the filter is on, and counts under Everything
                 // alone. A real signature rule always wins the name.
                 String role = appleRole(advertisedDevice);
+                if (role.length() == 0) {
+                    const char* r = bleRole(advertisedDevice);
+                    if (r) role = r;
+                }
                 if (role.length() > 0) matchedRule = role;
             }
 
