@@ -70,6 +70,14 @@ turns into something useful. Verify with your own eyes before you submit.
   with its unit-test case, and the Raven `3101`/`3102` UUIDs.
 - **[OVERWATCH](https://github.com/KaraZajac/OVERWATCH)** (BSD-3-Clause) by Kara Zajac — the Fusus
   blocks, the Axon `fe6c` Signal trigger layout, and AxonCadabra's replayed serial. Values only.
+- **[le_detector_c5](https://github.com/datafx/le_detector_c5)** (GPL-3.0) by datafx — the road test
+  that showed PRO-VISION `9c:83:bf` firing on school buses. Values only.
+- **[All Cameras Are Beacons](https://github.com/soyboitech/beacons)** (Apache-2.0) by Spencer Sams —
+  the field captures of Axon's `METROPOLISDEVICE` advert tag. Values only.
+- **[M5PORKCHOP](https://github.com/0ct0sec/M5PORKCHOP)** (MIT) by 0ct0sec — the BACON vendor IE
+  (`50:52:4B`, type `0x01`), read from its source. Values only.
+- **[cyd-scanner](https://github.com/negativeaffirmations/cyd-scanner)** (GPL-3.0) — the field
+  capture of a router deauthing its own client, now a regression test.
 
 ## Tile
 

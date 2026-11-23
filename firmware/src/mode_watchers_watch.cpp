@@ -168,7 +168,12 @@ static const char *SIG_FILE_PATH = "/data/signatures.json";
 //        3101/3102 (60). RF Sentinel's ~110 registry-only prefixes were
 //        reviewed and NOT added: no field sighting, and most of that gear
 //        never transmits Wi-Fi or BLE.
-#define SIG_SCHEMA_VERSION 23
+//   v24: upstream scan 2026-11-23. PRO-VISION 9c:83:bf drops to 60, All tab
+//        only (school-bus false positives, datafx/le_detector_c5). Axon's
+//        second advert tag METROPOLISDEVICE joins BWCDEVICE in bleAxonBwc
+//        (two field captures, soyboitech/beacons). PorkChop BACON beacons
+//        (vendor IE 50:52:4B type 0x01) are a built-in Attack detector.
+#define SIG_SCHEMA_VERSION 24
 
 static SemaphoreHandle_t watchersMutex = NULL;
 static bool watchersRunning = false;
@@ -522,7 +527,10 @@ static void ensureSignaturesFileExists() {
             addRule("VIEVU camera", "VIEVU body cam", "fc:01:9e", "", "", "", 70);
             addRule("Digital Barriers camera", "Digital Barriers body cam", "00:24:39", "", "", "", 70);
             addRule("Zepcam camera", "Zepcam body cam", "48:46:8d", "", "", "", 70);
-            addRule("PRO-VISION camera", "PRO-VISION body cam", "9c:83:bf", "", "", "", 70);
+            // v24: PRO-VISION also sells school-bus and fleet video, so it lists
+            // (All only) instead of beeping. datafx/le_detector_c5 dropped it
+            // after it fired on school buses in road tests (29d6c50).
+            addRule("PRO-VISION device", "PRO-VISION Video Systems", "9c:83:bf", "", "", "", 60);
             addRule("L-3 Mobile-Vision camera", "Mobile-Vision body cam", "38:73:ea:0", "", "", "", 70);
             // Plate-reader makers whose registered block is the ALPR business.
             addRule("Redflex (traffic enforcement)", "Redflex ALPR", "00:30:7e", "", "", "", 70);
@@ -786,6 +794,7 @@ static void ensureSignaturesFileExists() {
 // (pwnd_tot/pwnd_run/grid_version) are the real tell — the MAC is trivially
 // editable, so it is only corroboration. Strong: it identifies on its own.
 #define W_PWNGRID    90
+#define W_BACON      70   // PorkChop BACON vendor IE (v24), Attack only
 #define W_ATTACK 90   // attack-detector rows: above CONF_ALERT_MIN, generic beep
 // A single weak, non-Flock-specific signal (a broad OUI prefix, or the Lite-On
 // vendor IE that rides countless consumer WiFi chips) is noise on its own. Only
@@ -1301,18 +1310,10 @@ static bool blePenguin(SWEEP_ADV* dev) {
 // address rotation, so it is the BLE tell that does not need Axon's OUI.
 // Five owner-confirmed field captures (all-cameras-are-beacons, via
 // SquachWatch-CYD 2026-10-14). Searched in the raw payload, both orders.
-static bool bleAxonBwc(SWEEP_ADV* dev) {
-#if CONFIG_IDF_TARGET_ESP32C5
-    const std::vector<uint8_t>& raw = dev->getPayload();
-    const uint8_t* p = raw.data();
-    size_t len = raw.size();
-#else
-    const uint8_t* p = dev->getPayload();
-    size_t len = dev->getPayloadLength();
-#endif
-    static const char F[] = "BWCDEVICE";
-    const size_t n = 9;
-    if (!p) return false;
+// v24: Axon's second tag, METROPOLISDEVICE, the same layout (AD 0x21, reversed
+// ASCII), two field captures on 00:25:df (soyboitech/beacons, Apache-2.0).
+// Product unknown, probably in-car. Returns the rule name, or nullptr.
+static bool payloadHasTag(const uint8_t* p, size_t len, const char* F, size_t n) {
     for (size_t i = 0; i + n <= len; i++) {
         bool fw = true, bw = true;
         for (size_t k = 0; k < n && (fw || bw); k++) {
@@ -1322,6 +1323,20 @@ static bool bleAxonBwc(SWEEP_ADV* dev) {
         if (fw || bw) return true;
     }
     return false;
+}
+static const char* bleAxonBwc(SWEEP_ADV* dev) {
+#if CONFIG_IDF_TARGET_ESP32C5
+    const std::vector<uint8_t>& raw = dev->getPayload();
+    const uint8_t* p = raw.data();
+    size_t len = raw.size();
+#else
+    const uint8_t* p = dev->getPayload();
+    size_t len = dev->getPayloadLength();
+#endif
+    if (!p) return nullptr;
+    if (payloadHasTag(p, len, "BWCDEVICE", 9)) return "Axon body cam (BWCDEVICE)";
+    if (payloadHasTag(p, len, "METROPOLISDEVICE", 16)) return "Axon device (METROPOLISDEVICE)";
+    return nullptr;
 }
 
 // v23: an IDO / VeryFit smartwatch (IDW26, ID205...) sends TASER's company ID
@@ -1616,6 +1631,7 @@ class WatchersScanCallbacks : public NimBLEAdvertisedDeviceCallbacks {
             String trackerNet = bleTrackerNetwork(advertisedDevice);
             bool droneDecoded = false;
             AxonSignalKind axonSig = AXON_SIG_NONE;
+            const char* axonTag = nullptr;
             if (bleDecodeRemoteId(advertisedDevice, bleUas)) {
                 droneDecoded = odidUseful(bleUas);
                 confidence += W_DRONE;
@@ -1645,11 +1661,11 @@ class WatchersScanCallbacks : public NimBLEAdvertisedDeviceCallbacks {
                     matchedRule = "Flock Battery (Penguin)";
                     matchedCategory = "Flock Safety";
                 }
-            } else if (bleAxonBwc(advertisedDevice)) {
+            } else if ((axonTag = bleAxonBwc(advertisedDevice)) != nullptr) {
                 confidence += W_AXON_BWC;
                 if (W_AXON_BWC > bestWeight) {
                     bestWeight = W_AXON_BWC;
-                    matchedRule = "Axon body cam (BWCDEVICE)";
+                    matchedRule = axonTag;
                     matchedCategory = "Axon";
                 }
             } else if ((axonSig = bleAxonSignal(advertisedDevice)) == AXON_SIG_SERIAL) {
@@ -2174,6 +2190,20 @@ static void watchersWifiPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type
                         memset(&wifiUas, 0, sizeof(wifiUas));
                         odidDecodeInto(wifiUas, body + b + 7, (size_t)odidLen);
                         droneDecoded = odidUseful(wifiUas);
+                    }
+                }
+
+                // PorkChop's BACON mode (0ct0sec/M5PORKCHOP bacon.cpp, MIT) puts
+                // vendor IE 50:52:4B ("PRK", not a registered OUI, so nothing
+                // real collides) type 0x01 in its fake beacons. Attack only.
+                if (attackDetect && fsubtype == 8 && id == 221 && elen >= 4 &&
+                    body[b+2] == 0x50 && body[b+3] == 0x52 && body[b+4] == 0x4B &&
+                    body[b+5] == 0x01) {
+                    wifiConfidence += W_BACON;
+                    if (W_BACON > bestWeight) {
+                        bestWeight = W_BACON;
+                        matchedRule = "PorkChop BACON beacon";
+                        matchedCategory = HACKING_GEAR_CATEGORY;
                     }
                 }
 

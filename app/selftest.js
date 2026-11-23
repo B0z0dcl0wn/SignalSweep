@@ -468,7 +468,7 @@ const REGISTRY_VENDORS = {          // name fragment -> [weight, routing keyword
     'Iteris': [70, 'surveil'], 'BLIP Systems': [70, 'surveil'],
     // v19 (alpr_detector's table, IEEE-checked; sub-blocks included)
     'Utility Inc.': [70, 'body'], 'VIEVU': [70, 'body'], 'Digital Barriers': [70, 'body'],
-    'Zepcam': [70, 'body'], 'PRO-VISION': [70, 'body'], 'L-3 Mobile-Vision': [70, 'body'],
+    'Zepcam': [70, 'body'], 'PRO-VISION': [60, null], 'L-3 Mobile-Vision': [70, 'body'],
     'Sensys Traffic': [70, 'alpr'], 'Gatsometer': [70, 'alpr'],
     'Redflex': [70, 'alpr'], 'ELSAG': [70, 'alpr'], 'Perceptics': [70, 'alpr'], 'Ekin': [70, 'alpr'],
     'Stalker': [70, null], 'Kustom': [70, null], 'Decatur': [70, null], 'Federal Signal': [70, null],
@@ -830,6 +830,11 @@ if (!/lastSeenMs > WATCHERS_REPORT_FRESH_MS\) continue;/.test(wwSrc) || !/obj\["
 if (!/ts: now - \(Number\(t\.age\) \|\| 0\) \* 1000/.test(appSrc)) sigFail.push('app stamps rows with push time, not the board age');
 // Axon's BWCDEVICE tag must be searched both ways round (it rides a little-endian 128-bit UUID).
 if (!/F\[n - 1 - k\]/.test(wwSrc) || !/bleAxonBwc\(advertisedDevice\)/.test(wwSrc)) sigFail.push('BWCDEVICE detector missing or forward-only');
+// v24: Axon's second tag rides the same both-ways search.
+if (!/payloadHasTag\(p, len, "METROPOLISDEVICE", 16\)/.test(wwSrc)) sigFail.push('METROPOLISDEVICE tag missing from bleAxonBwc');
+// v24: PorkChop BACON = vendor IE 50:52:4B AND type 0x01, on beacons, Attack only.
+if (!/attackDetect && fsubtype == 8 && id == 221 && elen >= 4 &&\s*body\[b\+2\] == 0x50 && body\[b\+3\] == 0x52 && body\[b\+4\] == 0x4B &&\s*body\[b\+5\] == 0x01/.test(wwSrc))
+    sigFail.push('PorkChop BACON check must need Attack, a beacon, OUI 50:52:4B and type 0x01');
 // A drone alternating serial and CAA registration must keep the serial.
 if (!/basicIdRank\(ty\) < basicIdRank\(t\.uasIdType\)/.test(wwSrc) || !/ODID_IDTYPE_SERIAL_NUMBER\) return 3/.test(wwSrc))
     sigFail.push('applyDroneData() no longer prefers the serial Basic ID');
@@ -885,7 +890,7 @@ const OUI_OWNER = {
     'BLIP Systems (BlipTrack sensor)': 'BLIP Systems',
     'Utility Inc. (BodyWorn) camera': 'Utility', 'VIEVU camera': 'VIEVU',
     'Digital Barriers camera': 'Digital Barriers', 'Zepcam camera': 'Zepcam',
-    'PRO-VISION camera': 'PRO-VISION', 'Redflex (traffic enforcement)': 'Redflex',
+    'PRO-VISION device': 'PRO-VISION', 'Redflex (traffic enforcement)': 'Redflex',
     'Sensys Traffic (traffic enforcement)': 'Sensys Traffic', 'Gatsometer (traffic enforcement)': 'Gatsometer',
     'Decatur Electronics radar': 'Decatur', 'Jenoptik device': 'Jenoptik',
     'Kapsch device': 'Kapsch', 'Elsag Datamat device': 'Elsag Datamat',
@@ -934,8 +939,8 @@ for (const call of defaults.match(/addRule\([^;]*\);/g) || []) {
     const hasLux = /0x0D53|0x01AB/i.test(call);
     if (hasFd5f !== hasLux) regFail.push(`glasses rule states fd5f/0x0D53 without the other: ${call.replace(/\s+/g, ' ')}`);
 }
-if (!/#define SIG_SCHEMA_VERSION 23\b/.test(wwSrc)) regFail.push('SIG_SCHEMA_VERSION not bumped to 23');
-if (!/\/\/   v23:/.test(wwSrc)) regFail.push('no v23 line in the SIG_SCHEMA_VERSION comment block');
+if (!/#define SIG_SCHEMA_VERSION 24\b/.test(wwSrc)) regFail.push('SIG_SCHEMA_VERSION not bumped to 24');
+if (!/\/\/   v24:/.test(wwSrc)) regFail.push('no v24 line in the SIG_SCHEMA_VERSION comment block');
 // v20: BLE name substrings anyone can type never beep alone as Flock, and
 // "fs_" (it matches "Chiefs_...") is gone.
 for (const m of wwSrc.matchAll(/addRule\("Flock BLE Name"[^;]*;/g))
