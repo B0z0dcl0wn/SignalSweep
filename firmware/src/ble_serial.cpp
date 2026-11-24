@@ -16,6 +16,9 @@
 #include <Preferences.h>
 #include <esp_random.h>
 #include <esp_system.h>
+#if __has_include(<esp_mac.h>)
+#include <esp_mac.h>     // esp_read_mac moved here in IDF 5 (C5)
+#endif
 #include "hardware_manager.h"
 
 
@@ -36,12 +39,29 @@ static const char *TAG = "BleSerial";
 
 static uint32_t rebootAtMs = 0;
 
+bool getRandomMacEnabled();
+
+// Default name: "SignalSweep-XXXX", the last two bytes of the factory BT
+// address, so several boards can be told apart and the suffix matches the
+// address the phone shows. esp_read_mac(ESP_MAC_BT) reads eFuse and works
+// before NimBLEDevice::init(), which is when this is first called. With the
+// random address on, the board advertises another address, and a suffix
+// would put part of the real one on the air, so the default is bare.
+static String defaultBleName(bool randomMac) {
+    if (randomMac) return "SignalSweep";
+    uint8_t mac[6];
+    if (esp_read_mac(mac, ESP_MAC_BT) != ESP_OK) return "SignalSweep";
+    char buf[20];
+    snprintf(buf, sizeof(buf), "SignalSweep-%02X%02X", mac[4], mac[5]);
+    return String(buf);
+}
+
 String getBleDeviceName() {
     Preferences prefs;
     prefs.begin(BLE_ID_NVS_NS, true);
-    String name = prefs.getString("name", "SignalSweep");
+    String name = prefs.getString("name", "");
     prefs.end();
-    if (name.length() == 0) name = "SignalSweep";
+    if (name.length() == 0) name = defaultBleName(getRandomMacEnabled());
     return name;
 }
 
@@ -84,6 +104,10 @@ void setBleIdentity(const String& name, bool randomMac) {
         if (c >= 0x20 && c < 0x7F) clean += c;
     }
     clean.trim();
+    // A default name echoed back (a rand_mac-only change reads the current
+    // name, and so may the app) must not be stored, or the MAC suffix sticks
+    // and leaks after the random address is turned on.
+    if (clean == "SignalSweep" || clean == defaultBleName(false)) clean = "";
 
     Preferences prefs;
     prefs.begin(BLE_ID_NVS_NS, false);

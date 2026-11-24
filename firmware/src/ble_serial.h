@@ -43,7 +43,7 @@ void processIncomingCommand(const String& rawCommand);
 // be changed on a running host without tearing the stack down. Setting either
 // therefore stores it and reboots.
 
-/** @brief Advertised BLE name. Default "SignalSweep". */
+/** @brief Advertised BLE name. Default "SignalSweep-XXXX" (BT MAC suffix), bare "SignalSweep" with the random address on. */
 String getBleDeviceName();
 
 /** @brief True if a fresh random static address is generated each boot. */
