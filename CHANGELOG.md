@@ -4,6 +4,14 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Changed -- Default BLE name carries the board's address: `SignalSweep-XXXX`
+
+A board with no saved name now advertises as `SignalSweep-` plus the last two bytes of its Bluetooth address (`SignalSweep-4DF5`), so several boards in one connect picker can be told apart and the suffix matches the address the phone shows. The app's `SignalSweep` name-prefix filter still matches. A name set with `{"ble_name":...}` still wins, and boards that already saved a name keep it; `{"ble_name":""}` returns to the new default.
+
+- **The address is read from eFuse (`esp_read_mac(ESP_MAC_BT)`), not from NimBLE**, because the name is needed before `NimBLEDevice::init()`. Do not derive it from the USB serial number: on the bench the C5's Bluetooth address is its serial + 2, the S3's is serial + 1 (verified by having the C5 hear the S3 advertise `28:84:85:BB:4D:F5`).
+- **With the random address on, the default stays bare `SignalSweep`.** The board advertises a different address then, so a suffix would match nothing and would put part of the real address on the air, which is what the random address exists to hide.
+- **Trap: a default name is never stored.** A `rand_mac`-only change reads the current name and writes it back, so without a guard the suffixed default would be saved as a "custom" name and keep leaking the real address after the random address was turned on. `setBleIdentity()` drops `SignalSweep` and the suffixed default before writing.
+
 ## [0.13.0] — 2026-11-23 — Name that thing
 
 ### Changed -- Signatures v25: DJI and French drone beacons, Find My by type, more attack gear
