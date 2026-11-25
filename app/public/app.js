@@ -1337,8 +1337,15 @@
         // Saved pins are drawn only when the store is already unlocked in this
         // session. Opening the map must never prompt for the PIN -- the PIN
         // gates viewing and export, and nothing else.
+        // Redrawn only when the pins change: renderMap runs every 1.5 s, and
+        // clearing the layer each time closed a pin's popup before it could be read.
+        // ponytail: JSON of the whole list per repaint; fine for tens of pins.
+        let pinsDrawn = '';
         function renderMapPins() {
             if (!pinLayer || !window.L) return;
+            const drawn = pinKey ? JSON.stringify(pinsCache) : '';
+            if (drawn === pinsDrawn) return;
+            pinsDrawn = drawn;
             pinLayer.clearLayers();
             if (!pinKey) return;
             for (const pin of pinsCache) {
