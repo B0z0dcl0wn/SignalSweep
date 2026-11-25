@@ -83,6 +83,17 @@ if (missing.length) {
 }
 console.log('[signalsweep self-test] selectors resolve against index.html: ok');
 
+// Leaflet's default L.marker icon is a PNG found by sniffing leaflet.css, which
+// Vite breaks: a buyer saw broken-image placeholders for every saved pin.
+{
+    const body = appSrc.match(/function renderMapPins\(\) \{[\s\S]*?\n        \}/)[0];
+    if (/L\.marker\(/.test(body)) {
+        console.log('FAIL: renderMapPins uses L.marker( (default icon 404s under Vite)');
+        process.exit(1);
+    }
+    console.log('[signalsweep self-test] map pins are circle markers: ok');
+}
+
 // The beep mask is a bitmask shared with the firmware: app.js's BEEP_BITS must
 // agree with the AlertCategory enum order in hardware_manager.h, or unticking
 // "Tracker" mutes body cams instead. Nothing at runtime would tell you.
