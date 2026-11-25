@@ -10,6 +10,7 @@ With the pin store unlocked, every saved pin drew as a browser broken-image plac
 
 - **A pin is now a circle marker, like every other marker on the map**: filled in its category colour (resolved with `cssColor()`, since Leaflet writes SVG attributes and cannot take `var()`), with a thick light ring so a saved pin never reads as a live drone (solid, same-colour outline, labelled). The popup is unchanged. No image assets, so there is no bundler path left to break.
 - `selftest.js` fails if `renderMapPins` ever calls Leaflet's plain marker again.
+- **A pin's popup now stays open.** The map repaints every 1.5 s and `renderMapPins()` cleared and rebuilt the pin layer on every pass, closing a tapped pin's popup before it could be read. Pins are now redrawn only when the unlocked pin list actually changes (add, delete, lock); verified on the phone with the popup held through several repaints.
 
 ### Changed -- Default BLE name carries the board's address: `SignalSweep-XXXX`
 
