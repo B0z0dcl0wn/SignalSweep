@@ -1344,7 +1344,13 @@
             for (const pin of pinsCache) {
                 if (pin.lat == null || pin.lng == null) continue;
                 const cat = categoryOf(pin.category || pin.rule);
-                window.L.marker([pin.lat, pin.lng]).addTo(pinLayer)
+                // Never Leaflet's plain marker: its default PNG icon 404s under Vite and
+                // shows a broken image. A dot like every other marker, with a
+                // thick light ring so a saved pin never reads as a live drone.
+                window.L.circleMarker([pin.lat, pin.lng], {
+                    radius: 7, color: cssColor('var(--ss-text)'), fillColor: cssColor(cat.color),
+                    fillOpacity: 0.9, weight: 3
+                }).addTo(pinLayer)
                     .bindPopup(ico('pin') + ' ' + esc(pin.name || pin.rule || cat.label) +
                                '<br>' + esc(pin.mac) +
                                '<br>' + esc(new Date(pin.ts).toLocaleString()));

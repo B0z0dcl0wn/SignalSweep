@@ -4,6 +4,13 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Fixed -- Saved pins on the map showed a broken image
+
+With the pin store unlocked, every saved pin drew as a browser broken-image placeholder. `renderMapPins()` used Leaflet's plain marker, whose default icon finds `marker-icon.png` / `marker-shadow.png` by sniffing a path out of `leaflet.css`; once Vite bundles that CSS the sniffed path points nowhere and both images 404 (reproduced from a build: `marker-icon-2x.png` and `marker-shadow.png`, 404). Reported by a buyer; the bench never saw it because pins only draw once the store is unlocked.
+
+- **A pin is now a circle marker, like every other marker on the map**: filled in its category colour (resolved with `cssColor()`, since Leaflet writes SVG attributes and cannot take `var()`), with a thick light ring so a saved pin never reads as a live drone (solid, same-colour outline, labelled). The popup is unchanged. No image assets, so there is no bundler path left to break.
+- `selftest.js` fails if `renderMapPins` ever calls Leaflet's plain marker again.
+
 ### Changed -- Default BLE name carries the board's address: `SignalSweep-XXXX`
 
 A board with no saved name now advertises as `SignalSweep-` plus the last two bytes of its Bluetooth address (`SignalSweep-4DF5`), so several boards in one connect picker can be told apart and the suffix matches the address the phone shows. The app's `SignalSweep` name-prefix filter still matches. A name set with `{"ble_name":...}` still wins, and boards that already saved a name keep it; `{"ble_name":""}` returns to the new default.
