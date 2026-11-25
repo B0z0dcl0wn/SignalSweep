@@ -4,6 +4,8 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+## [0.13.1] — 2026-11-25 — Pin drop
+
 ### Fixed -- Saved pins on the map showed a broken image
 
 With the pin store unlocked, every saved pin drew as a browser broken-image placeholder. `renderMapPins()` used Leaflet's plain marker, whose default icon finds `marker-icon.png` / `marker-shadow.png` by sniffing a path out of `leaflet.css`; once Vite bundles that CSS the sniffed path points nowhere and both images 404 (reproduced from a build: `marker-icon-2x.png` and `marker-shadow.png`, 404). Reported by a buyer; the bench never saw it because pins only draw once the store is unlocked.
