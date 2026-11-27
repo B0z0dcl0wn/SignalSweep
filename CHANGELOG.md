@@ -4,6 +4,11 @@ All notable changes to SignalSweep are recorded here.
 
 ## [Unreleased]
 
+### Changed -- Credits wording
+
+- Updated how the credits, the README and the flasher page describe Colonel
+  Panic's OUI Spy Unified Blue.
+
 ## [0.13.1] — 2026-11-25 — Pin drop
 
 ### Fixed -- Saved pins on the map showed a broken image

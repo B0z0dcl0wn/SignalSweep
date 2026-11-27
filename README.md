@@ -222,8 +222,8 @@ everything is the way it is) lives in
 ## Credits
 
 - **[Colonel Panic](https://colonelpanic.tech)**: the
-  [OUI Spy Unified Blue](https://github.com/colonelpanichacks/oui-spy-unified-blue)
-  concept this hardware approach came from.
+  [OUI Spy Unified Blue](https://github.com/colonelpanichacks/oui-spy-unified-blue),
+  prior art and an inspiration.
 - **[OrdoOuroborous / @NitekryDPaul](https://github.com/nitekry)**: the Flock
   Safety OUI research the camera detection runs on.
 

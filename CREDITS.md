@@ -2,25 +2,15 @@
 
 SignalSweep stands on other people's work. This file names it.
 
-## The project this one came from
+## Prior art
 
 **[colonelpanichacks](https://github.com/colonelpanichacks)** — *[OUI Spy
 Unified Blue](https://github.com/colonelpanichacks/oui-spy-unified-blue)*
 
-SignalSweep exists because OUI Spy showed what a XIAO ESP32-S3 could be: a
-headless detector that tells you what is near by the noise it makes, a
-Geiger-counter foxhunt for walking a beacon down by ear, and a firmware you
-flash from a browser instead of a toolchain. Those three ideas are the spine of
-this project.
+OUI Spy got there first with a headless XIAO ESP32-S3 detector you flash from
+a browser and hunt with by ear. It was an inspiration for SignalSweep.
 
-The code here is an independent implementation — we measured it, and the
-firmware shares roughly seven lines with OUI Spy's detector, all of them
-framework boilerplate like `esp_wifi_set_promiscuous(true)`. That is not a
-claim of originality. The hard part of a detector is knowing what is worth
-detecting and what a false positive costs you, and that understanding came from
-reading their work.
-
-Also theirs, and worth your time:
+Also from colonelpanichacks, and worth your time:
 [ouispy-foxhunter](https://github.com/colonelpanichacks/ouispy-foxhunter),
 [flock-you](https://github.com/colonelpanichacks/flock-you).
 

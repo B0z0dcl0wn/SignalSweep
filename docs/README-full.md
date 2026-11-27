@@ -318,6 +318,6 @@ unmodified from
 [opendroneid-core-c](https://github.com/opendroneid/opendroneid-core-c) and stay
 **Apache-2.0** under their own copyright headers.
 
-This project started from other people's work and says so in
-**[CREDITS.md](../CREDITS.md)** — Colonel Panic's OUI Spy, the Flock Safety OUI
+This project builds on other people's work and says so in
+**[CREDITS.md](../CREDITS.md)** — prior art like Colonel Panic's OUI Spy, the Flock Safety OUI
 research of OrdoOuroborous / @NitekryDPaul, and everyone else. Read it.

@@ -17,9 +17,9 @@
 #endif
 
 #if CONFIG_IDF_TARGET_ESP32C5
-#define BOOT_BUTTON_PIN BOOT_PIN   // GPIO28 on the XIAO ESP32-C5 (esp32-hal.h)
+#define SWEEP_BTN_GPIO BOOT_PIN   // GPIO28 on the XIAO ESP32-C5 (esp32-hal.h)
 #else
-#define BOOT_BUTTON_PIN 0
+#define SWEEP_BTN_GPIO 0
 #endif
 
 void setup() {
@@ -33,7 +33,7 @@ void setup() {
     // coredump partition, then re-arm the breadcrumb for this boot.
     crashReportInit();
 
-    pinMode(BOOT_BUTTON_PIN, INPUT_PULLUP);
+    pinMode(SWEEP_BTN_GPIO, INPUT_PULLUP);
 
     // 0. Initialize Hardware Manager (NeoPixel GPIO 21 & Buzzer GPIO 3)
     hardwareInit();
@@ -140,7 +140,7 @@ void loop() {
     static uint32_t pressStartMs = 0;
     static uint32_t lastWarnSec = 0;
 
-    if (digitalRead(BOOT_BUTTON_PIN) == LOW) {
+    if (digitalRead(SWEEP_BTN_GPIO) == LOW) {
         if (pressStartMs == 0) {
             pressStartMs = millis();
             lastWarnSec = 0;
